@@ -248,15 +248,15 @@ The mandate is stored as canonical JSON off-chain; its `keccak256` hash plus the
 
 | Contract | Responsibility | Key functions |
 |---|---|---|
-| `BondedRegistry` | ERC-8004-compatible agent records; attester set; scores | `registerAgent(uri, operator)`, `postScore(Attestation, sig)`, `scoreOf(agentId)`, `setAttester(addr, bool)` (multisig owner) |
+| `BondedRegistry` | ERC-8004-aligned agent identities (ERC-721; the token owner is the operator); attester set read by every module; scores as relayable signed attestations, each also emitted as an ERC-8004-style `ValidationResponse` (ADR-004) | `register(uri[, metadata])`, `setAgentURI`, `setMetadata`, `validationRequest(...)`, `postScore(Attestation, sig)` (permissionless; attester signature, unexpired, newer than the stored score), `scoreOf(agentId)`, `setAttester(addr, bool)` (multisig owner) |
 | `MandateVaultFactory` | Deploys vaults (full deployments, see ADR-002); the canonical "is this a real vault?" check; holds set-once CoverManager and ClaimsEngine addresses | `createVault(MandateParams, agent, guardian, agentId, name, symbol)`, `isVault(addr)` |
 | `MandateVault` | ERC-4626 over `baseAsset`; NAV across allowed assets via oracle; policy engine; breach log; circuit breaker | `execute(target, value, data)` (agent only), `reconcile()`, `breaches(id)`, `freeze()`, `rotateAgent(newKey)` (guardian), `payPremium(amount)` (CoverManager only) |
-| `OperatorBond` | First-loss stakes per agent | `stake(agentId, amt)`, `requestWithdraw` → cooldown → `withdraw` (blocked while cover is active), `slash(agentId, amt, to)` (ClaimsEngine only) |
+| `OperatorBond` | First-loss stakes per agent; the operator is the agent's registry owner | `stake(agentId, amt)` (anyone, registered agents only), `requestWithdraw` → cooldown → `withdraw` (operator only; blocked until the claim window after the agent's last policy), `slash(agentId, amt, to)` (ClaimsEngine only) |
 | `CoverPool` | ERC-4626 underwriting pool (`bdUSDG` on Robinhood Chain); capital locked by active cover is computed from CoverManager's totals | `deposit`, `requestRedeem` → cooldown → `redeem`/`withdraw` (only from free capital; a matured request is valid for 2 days), `payClaim` (ClaimsEngine) |
 | `CoverManager` | Verifies signed quotes; issues non-transferable **policy NFTs** (ERC-721) to the insured vault; streams premiums and splits them (15% treasury, 5% bounty pool, 80% pool); enforces capacity and correlation caps; 30-day term with a waiting period | `buyCover(Quote, sig)` (vault guardian only), `accrue(policyId)` (permissionless; a missed premium starts a 3-day grace period, after which the policy lapses), `cancel(policyId)` |
-| `ClaimsEngine` | Permissionless parametric claims; loss calculation; unpaid premium netted from the payout; waterfall (bond, then pool) into the vault; 10% deductible; 7-day claim window after a policy ends | `fileClaim(policyId, breachIds[])` |
-| `DisputeModule` | Optimistic resolution for grey-area claims (e.g. drawdown attribution) | `propose(policyId, amount, evidenceHash)` + bond, `challenge(id)`, `resolve(id, outcome)` (council multisig for the hackathon; UMA/Kleros later) |
-| `BountyBoard` | Commit-reveal attack submissions; rewards | `commit(hash)`, `reveal(id, specURI, salt)`, `accept(id, reward)` (Arena attester) |
+| `ClaimsEngine` | Permissionless parametric claims; loss calculation; unpaid premium netted from the payout; waterfall (bond, then pool) into the vault; 10% deductible; 7-day claim window after a policy ends | `fileClaim(policyId, breachIds[])`, `payDispute(policyId, loss)` (DisputeModule only, set once) |
+| `DisputeModule` | Optimistic resolution for grey-area (T4) claims, e.g. drawdown attribution; unchallenged proposals pay after a 2-day challenge period; challenged ones go to the council and the winner takes both bonds | `propose(policyId, loss, evidenceHash, evidenceURI)` + bond, `challenge(id)` + equal bond, `finalize(id)` (anyone, after the deadline), `resolve(id, approve)` (council multisig for the hackathon; UMA/Kleros later) |
+| `BountyBoard` | Commit-reveal attack submissions bound to the hunter's address; rewards from the 5% premium share | `commit(hash)`, `reveal(id, specURI, salt)` (hunter only), `accept(id, reward)` / `reject(id, reasonHash)` (registry attesters) |
 | `IPriceOracle` | Price adapter | `ChainlinkOracle` (Arbitrum/Robinhood where feeds exist), `MockOracle` (testnets, demo) |
 
 ### 6.3 How `MandateVault.execute` classifies actions
@@ -311,7 +311,7 @@ struct Quote {              // accepted by CoverManager
 
 `CoverManager.buyCover` checks all of the following before binding cover:
 - the signature is from an active attester, and the quote hasn't expired
-- the caller is the vault's guardian, and the vault freezes on breach (so a payout can't be drained by the same compromised key)
+- the caller is the vault's guardian and the agent's owner in `BondedRegistry`, and the vault freezes on breach (so a payout can't be drained by the same compromised key)
 - the vault comes from the factory, and its agent id, mandate hash and base asset match the quote
 - the score is insurable (Section 9.3), and the operator bond is at least the larger of `minBond` and the tier's minimum
 - the vault has no other active policy
@@ -540,7 +540,7 @@ The payout lands in the (frozen) vault and restores the share price. Depositors 
 
 ### 13.1 Bounties
 
-1. A hunter commits `hash(attackSpec, salt)` on `BountyBoard`, so the attack can't be front-run.
+1. A hunter commits `keccak256(abi.encode(hunter, specURI, salt))` on `BountyBoard`, so the attack can't be front-run. The hunter's address is part of the commitment, so a copied commitment can't be revealed by anyone else.
 2. They reveal the spec to the Arena API. The Arena runs it against the **reference agent set** (demo agents plus leaderboard agents) in the sandbox.
 3. If it is reproducible and novel (a new class, or a variant beating current defences by a set margin), the attester calls `accept(id, reward)`. The reward is paid from the bounty pool, funded by **5% of premiums**.
 4. The attack enters the library. **All insured agents are re-tested** and premiums reprice.
@@ -609,6 +609,8 @@ Wallets: wagmi/viem (EVM) and Solana wallet adapter.
 | **Arbitrum** | Arbitrum Sepolia | Full EVM suite | Circle testnet USDC, Chainlink feeds |
 | **Ethereum** | Sepolia | ERC-8004 registries (canonical if deployed, otherwise reference implementation) + BondedRegistry + a cover deployment | Canonical ERC-8004 addresses |
 | **Solana** | Devnet | `bonded_vault`, `bonded_cover`, `bonded_registry` | Circle devnet USDC, Jupiter devnet support (else a mock AMM) |
+
+**Testnet demo market (built Day 4, ADR-004).** The testnet deployment doesn't depend on facts we couldn't confirm (USDG, stock token and AMM addresses). `script/Deploy.s.sol` deploys its own market next to the protocol: tUSDG (6 decimals) and tTSLA/tAMZN/tNVDA (18 decimals, like Stock Tokens) with capped faucets, a `MockOracle`, and a `DemoRouter` that swaps at the oracle price minus 0.2%. Addresses are written to `contracts/evm/deployments/<chainId>.json` and read through `parseEvmDeployment` in `@bonded/shared`. `script/Smoke.s.sol` runs the full loop against any deployment; `pnpm demo:local` runs both on anvil.
 
 **Robinhood Chain nuances.** Stock tokens are offered to non-US users. Agents that trade inside Robinhood *brokerage* accounts (the Trading MCP) are off-chain and custodial, so on-chain triggers can't see them. That becomes a later "off-chain adapter" built on Robinhood's own reporting, and a partnership pitch.
 
@@ -732,7 +734,7 @@ Day 1 = Sun Sep 27. Submission target = Day 15 (Sun Oct 11). Day 16 (Mon Oct 12)
 | 1 | Sun Sep 27 | Monorepo scaffold (pnpm, Turbo, CI); `packages/shared` schemas (mandate, attack spec, attestation, quote); chain-facts check (RPCs, chain ids, USDC, oracles, faucets); ADR-001 stack | CI green on an empty build; schemas have tests; chain facts in `packages/shared/chains.ts` |
 | 2 | Mon Sep 28 | `MandateVault` + factory + oracle adapters; classification (T1–T3), `reconcile`, freeze/rotate; ERC-4626 NAV | Forge tests for every breach type, both modes, and reconcile; fuzzed accounting |
 | 3 | Tue Sep 29 | `CoverPool`, `OperatorBond`, `CoverManager` (EIP-712 quotes, policy NFT, streaming, caps), `ClaimsEngine` (waterfall) | Integration test: rate → bind → breach → claim → bond slashed → pool pays → vault restored |
-| 4 | Wed Sep 30 | `BondedRegistry` (ERC-8004 compatible), `DisputeModule`, `BountyBoard`; deploy scripts; **deploy to Robinhood Chain testnet + Arbitrum Sepolia**; mock stock tokens + AMM pool if needed | Addresses in `packages/shared/deployments/`; a smoke script passes on both testnets |
+| 4 | Wed Sep 30 | `BondedRegistry` (ERC-8004 compatible), `DisputeModule`, `BountyBoard`; deploy scripts; **deploy to Robinhood Chain testnet + Arbitrum Sepolia**; mock stock tokens + AMM pool if needed | Addresses in `contracts/evm/deployments/`, read through `@bonded/shared`; a smoke script passes on both testnets |
 | 5 | Thu Oct 1 | Arena core: fork sandbox, world simulator (news/social/DM/price/metadata/tool output), episode runner, **judge = vault breach log**; `vulnerable-agent` v0 | 1 attack class runs end to end on a fork with a correct verdict |
 | 6 | Fri Oct 2 | Attack library (10 classes, ~40 seeds); adaptive attacker (Claude); actuarial model + scoring; report; attestation signing; Sentinel dataset logging; `hardened-agent` v0 | Full rating run on both demo agents; scores differ in the expected direction; report renders |
 | 7 | Sat Oct 3 | API (REST + SSE) + keeper; testnet E2E: Arena → attestation → quote → buyCover → live breach → auto claim | **GATE 1: core loop live on Robinhood Chain testnet.** Founder review #1 |
