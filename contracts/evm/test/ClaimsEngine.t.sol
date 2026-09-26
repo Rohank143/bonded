@@ -32,7 +32,7 @@ contract ClaimsEngineTest is ProtocolBase {
         uint256 paid = claims.fileClaim(policyId, _ids(0));
 
         assertEq(paid, 4500e6); // 5,000 loss minus the 10% deductible
-        assertEq(bond.bondOf(42), BOND - 4500e6); // the operator pays first
+        assertEq(bond.bondOf(agentId), BOND - 4500e6); // the operator pays first
         // The claim first settles one day of premium, then pays 4,500 into the vault.
         uint256 premium = _expectedPremium(COVER, RATE_BPS, 1 days);
         assertEq(usdg.balanceOf(address(vault)), vaultBefore - premium + 4500e6);
@@ -43,8 +43,8 @@ contract ClaimsEngineTest is ProtocolBase {
 
     function test_FullLoop_BondThenPool() public {
         // A second agent whose operator bonded only the 10% minimum.
-        MandateVault vault43 = _vaultFor(43);
-        _stake(43, 2000e6);
+        MandateVault vault43 = _vaultFor(agentId2);
+        _stake(agentId2, 2000e6);
         uint256 p43 = _buy(vault43, _quote(vault43, COVER, RATE_BPS, SCORE));
         vm.warp(block.timestamp + 1 days);
         _exec(vault43, address(usdg), abi.encodeCall(IERC20.transfer, (attacker, 5000e6)));
@@ -55,7 +55,7 @@ contract ClaimsEngineTest is ProtocolBase {
         uint256 paid = claims.fileClaim(p43, _ids(0));
 
         assertEq(paid, 4500e6);
-        assertEq(bond.bondOf(43), 0); // 2,000 slashed
+        assertEq(bond.bondOf(agentId2), 0); // 2,000 slashed
         assertEq(poolBefore - usdg.balanceOf(address(pool)), 2500e6 - _premiumToPool(p43)); // pool paid 2,500
     }
 
@@ -104,8 +104,8 @@ contract ClaimsEngineTest is ProtocolBase {
 
     function test_AClaimThePoolCannotFullyPayRevertsAndStaysClaimable() public {
         // The operator bonded only the minimum, and the pool has almost nothing left.
-        MandateVault vault43 = _vaultFor(43);
-        _stake(43, 2000e6);
+        MandateVault vault43 = _vaultFor(agentId2);
+        _stake(agentId2, 2000e6);
         uint256 p43 = _buy(vault43, _quote(vault43, COVER, RATE_BPS, SCORE));
         vm.warp(block.timestamp + 1 days);
         _exec(vault43, address(usdg), abi.encodeCall(IERC20.transfer, (attacker, 5000e6)));
@@ -147,8 +147,8 @@ contract ClaimsEngineTest is ProtocolBase {
     }
 
     function test_BreachDuringTheWaitingPeriodIsNotCovered() public {
-        MandateVault vault43 = _vaultFor(43);
-        _stake(43, 2000e6);
+        MandateVault vault43 = _vaultFor(agentId2);
+        _stake(agentId2, 2000e6);
         uint256 p43 = _buy(vault43, _quote(vault43, COVER, RATE_BPS, SCORE));
         _exec(vault43, address(usdg), abi.encodeCall(IERC20.transfer, (attacker, 1000e6))); // same block as binding
 
@@ -180,9 +180,9 @@ contract ClaimsEngineTest is ProtocolBase {
     function test_BlockedBreachesAreNotClaimable() public {
         BondedTypes.MandateParams memory params = _params(BondedTypes.MandateMode.Enforce);
         MandateVault strict =
-            MandateVault(factory.createVault(params, agent, guardian, 43, "v", "v"));
+            MandateVault(factory.createVault(params, agent, guardian, agentId2, "v", "v"));
         usdg.mint(address(strict), 10_000e6); // funding without shares is enough for this test
-        _stake(43, 2000e6);
+        _stake(agentId2, 2000e6);
         uint256 p43 = _buy(strict, _quote(strict, COVER, RATE_BPS, SCORE));
         vm.warp(block.timestamp + 1 days);
         _exec(strict, address(usdg), abi.encodeCall(IERC20.transfer, (attacker, 1000e6)));
@@ -205,8 +205,8 @@ contract ClaimsEngineTest is ProtocolBase {
     // ----- Limits ------------------------------------------------------------------------
 
     function test_PayoutIsCappedByRemainingCoverAndExhaustsThePolicy() public {
-        MandateVault vault43 = _vaultFor(43);
-        _stake(43, 1000e6);
+        MandateVault vault43 = _vaultFor(agentId2);
+        _stake(agentId2, 1000e6);
         uint256 p43 = _buy(vault43, _quote(vault43, 2000e6, RATE_BPS, SCORE));
         vm.warp(block.timestamp + 1 days);
         _exec(vault43, address(usdg), abi.encodeCall(IERC20.transfer, (attacker, 5000e6)));
@@ -215,14 +215,14 @@ contract ClaimsEngineTest is ProtocolBase {
         ICoverManager.Policy memory p = _policy(p43);
         assertEq(p.remainingCover, 0);
         assertEq(uint8(p.status), uint8(ICoverManager.Status.Exhausted));
-        assertEq(manager.activeCoverOfAgent(43), 0);
+        assertEq(manager.activeCoverOfAgent(agentId2), 0);
     }
 
     function testFuzz_PayoutFollowsTheWaterfall(uint256 loss, uint256 bonded) public {
         loss = bound(loss, 1e6, 20_000e6);
         bonded = bound(bonded, 2000e6, 20_000e6);
-        MandateVault vault43 = _vaultFor(43);
-        _stake(43, bonded);
+        MandateVault vault43 = _vaultFor(agentId2);
+        _stake(agentId2, bonded);
         uint256 p43 = _buy(vault43, _quote(vault43, COVER, RATE_BPS, SCORE));
         vm.warp(block.timestamp + 1 days);
         _exec(vault43, address(usdg), abi.encodeCall(IERC20.transfer, (attacker, loss)));
@@ -231,7 +231,7 @@ contract ClaimsEngineTest is ProtocolBase {
         uint256 paid = claims.fileClaim(p43, _ids(0));
         assertEq(paid, expected);
         uint256 fromBond = expected < bonded ? expected : bonded;
-        assertEq(bond.bondOf(43), bonded - fromBond);
+        assertEq(bond.bondOf(agentId2), bonded - fromBond);
     }
 
     // ----- Admin -------------------------------------------------------------------------
@@ -253,10 +253,10 @@ contract ClaimsEngineTest is ProtocolBase {
 
     // ----- Helpers -----------------------------------------------------------------------
 
-    function _vaultFor(uint256 agentId) internal returns (MandateVault v) {
+    function _vaultFor(uint256 id) internal returns (MandateVault v) {
         v = MandateVault(
             factory.createVault(
-                _params(BondedTypes.MandateMode.Monitor), agent, guardian, agentId, "v", "v"
+                _params(BondedTypes.MandateMode.Monitor), agent, guardian, id, "v", "v"
             )
         );
         usdg.mint(depositor, DEPOSIT);

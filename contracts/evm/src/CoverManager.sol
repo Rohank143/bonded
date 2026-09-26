@@ -16,6 +16,7 @@ import {ICoverManager} from "./interfaces/ICoverManager.sol";
 import {ICoverPool} from "./interfaces/ICoverPool.sol";
 import {IOperatorBond} from "./interfaces/IOperatorBond.sol";
 import {IMandateVaultFactory} from "./interfaces/IMandateVaultFactory.sol";
+import {IBondedRegistry} from "./interfaces/IBondedRegistry.sol";
 import {MandateVault} from "./MandateVault.sol";
 
 /// @title CoverManager
@@ -30,6 +31,7 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
 
     uint256 public constant YEAR = 365 days;
 
+    IBondedRegistry public immutable registry;
     IMandateVaultFactory public immutable factory;
     ICoverPool public immutable pool;
     IOperatorBond public immutable bond;
@@ -51,7 +53,6 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
     ///         meanwhile, and ClaimsEngine nets the unpaid premium from any payout.
     uint64 public gracePeriod = 3 days;
 
-    mapping(address signer => bool) public isAttester;
     mapping(bytes32 digest => bool) public quoteUsed;
 
     uint256 public nextPolicyId = 1;
@@ -87,7 +88,6 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
     event ClaimRecorded(
         uint256 indexed policyId, uint256 paid, uint256 premiumNetted, uint256 remainingCover
     );
-    event AttesterSet(address indexed attester, bool allowed);
     event TreasurySet(address treasury);
     event BountyPoolSet(address bountyPool);
     event ClaimsEngineSet(address claimsEngine);
@@ -101,6 +101,7 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
     error AlreadySet();
     error InvalidParams(string reason);
     error NotAttester(address signer);
+    error NotAgentOwner();
     error QuoteExpired();
     error QuoteAlreadyUsed();
     error NotAVault(address vault);
@@ -118,6 +119,7 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
 
     constructor(
         address owner_,
+        IBondedRegistry registry_,
         IMandateVaultFactory factory_,
         ICoverPool pool_,
         IOperatorBond bond_,
@@ -129,10 +131,11 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
         Ownable(owner_)
     {
         if (
-            address(factory_) == address(0) || address(pool_) == address(0)
-                || address(bond_) == address(0) || treasury_ == address(0)
-                || bountyPool_ == address(0)
+            address(registry_) == address(0) || address(factory_) == address(0)
+                || address(pool_) == address(0) || address(bond_) == address(0)
+                || treasury_ == address(0) || bountyPool_ == address(0)
         ) revert ZeroAddress();
+        registry = registry_;
         factory = factory_;
         pool = pool_;
         bond = bond_;
@@ -255,12 +258,6 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
     // Admin
     // ---------------------------------------------------------------------------------------
 
-    function setAttester(address attester, bool allowed) external onlyOwner {
-        if (attester == address(0)) revert ZeroAddress();
-        isAttester[attester] = allowed;
-        emit AttesterSet(attester, allowed);
-    }
-
     function setTreasury(address treasury_) external onlyOwner {
         if (treasury_ == address(0)) revert ZeroAddress();
         treasury = treasury_;
@@ -370,7 +367,7 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
     function _checkQuote(BondedTypes.Quote calldata quote, bytes calldata signature) internal {
         bytes32 digest = quoteDigest(quote);
         address signer = ECDSA.recover(digest, signature);
-        if (!isAttester[signer]) revert NotAttester(signer);
+        if (!registry.isAttester(signer)) revert NotAttester(signer);
         if (block.timestamp > quote.expiresAt) revert QuoteExpired();
         if (quoteUsed[digest]) revert QuoteAlreadyUsed();
         quoteUsed[digest] = true;
@@ -381,6 +378,9 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
         if (msg.sender != vault.guardian()) revert NotGuardian();
         if (vault.agentId() != quote.agentId) revert QuoteMismatch("agentId");
         if (vault.mandateHash() != quote.mandateHash) revert QuoteMismatch("mandateHash");
+        // The operator binding cover must own the agent in the registry, so nobody can create a
+        // vault under another operator's agent id and bond.
+        if (registry.agentOwner(quote.agentId) != msg.sender) revert NotAgentOwner();
         if (vault.asset() != address(baseAsset)) revert QuoteMismatch("asset");
         if (!vault.freezeOnBreach()) revert VaultMustFreezeOnBreach();
 

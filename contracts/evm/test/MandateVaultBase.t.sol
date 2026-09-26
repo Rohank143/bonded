@@ -37,6 +37,8 @@ abstract contract MandateVaultBase is Test {
     address internal attacker = makeAddr("attacker");
     address internal coverManager = makeAddr("coverManager");
     address internal claimsEngine = makeAddr("claimsEngine");
+    /// @dev Agent id used by `_createVault`. ProtocolBase replaces it with a registered id.
+    uint256 internal agentId = 42;
 
     function setUp() public virtual {
         usdg = new MockERC20("Global Dollar", "USDG", 6);
@@ -105,7 +107,7 @@ abstract contract MandateVaultBase is Test {
 
     function _createVault(BondedTypes.MandateMode mode) internal returns (MandateVault vault) {
         vault = MandateVault(
-            factory.createVault(_params(mode), agent, guardian, 42, "Bonded Vault 42", "bv42")
+            factory.createVault(_params(mode), agent, guardian, agentId, "Bonded Vault", "bv")
         );
         usdg.mint(depositor, DEPOSIT);
         vm.startPrank(depositor);
