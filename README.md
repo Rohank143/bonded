@@ -16,4 +16,31 @@ Built for the Colosseum Crypto World's Fair on **Robinhood Chain, Arbitrum, Ethe
 
 ## Status
 
-Planning complete. The build runs Sep 27 – Oct 11, 2026. See the day-by-day plan in [`docs/PLAN.md` Section 20](docs/PLAN.md#20-16-day-build-plan).
+Building. The build runs Sep 27 – Oct 11, 2026. See the day-by-day plan in [`docs/PLAN.md` Section 20](docs/PLAN.md#20-16-day-build-plan) and daily notes in [`docs/progress/`](docs/progress/).
+
+## Repo layout
+
+| Path | What's there |
+|---|---|
+| `packages/shared` | Schemas (mandate, attack spec, attestation, quote), chain configs, tiers, EIP-712 types |
+| `contracts/evm` | Solidity contracts (Foundry) |
+| `docs/` | Plan, decision records, daily progress notes |
+
+More packages (Arena, API, keeper, web, Sentinel, Solana programs) arrive as the build progresses.
+
+## Development
+
+Requirements: Node 22, pnpm 10, [Foundry](https://book.getfoundry.sh/getting-started/installation).
+
+```bash
+git clone --recursive https://github.com/ddboy19912/bonded
+cd bonded
+pnpm install
+
+pnpm typecheck        # TypeScript
+pnpm lint
+pnpm test             # Vitest
+pnpm contracts:test   # forge test
+```
+
+If you cloned without `--recursive`, run `git submodule update --init --recursive` before building the contracts.
