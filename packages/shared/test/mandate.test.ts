@@ -31,10 +31,23 @@ describe("EvmMandate", () => {
   it("rejects a daily limit below the per-transaction limit", () => {
     const result = EvmMandate.safeParse(
       evmMandate({
-        limits: { maxTxNotionalUsd: 10_000, maxDailyNotionalUsd: 5_000, maxDrawdownBps: 1_000 },
+        limits: {
+          maxTxNotionalUsd: 10_000,
+          maxDailyNotionalUsd: 5_000,
+          maxDrawdownBps: 1_000,
+          maxSlippageBps: 300,
+        },
       }),
     );
     expect(result.success).toBe(false);
+  });
+
+  it("requires a slippage limit within 0–10,000 bps", () => {
+    const limits = { maxTxNotionalUsd: 5_000, maxDailyNotionalUsd: 25_000, maxDrawdownBps: 1_500 };
+    expect(
+      EvmMandate.safeParse(evmMandate({ limits: { ...limits, maxSlippageBps: 10_001 } })).success,
+    ).toBe(false);
+    expect(EvmMandate.safeParse(evmMandate({ limits: limits as never })).success).toBe(false);
   });
 
   it("rejects bad selectors and addresses", () => {
@@ -88,7 +101,12 @@ describe("mandateHash", () => {
 
   it("changes when a limit changes", () => {
     const changed = evmMandate({
-      limits: { maxTxNotionalUsd: 5_001, maxDailyNotionalUsd: 25_000, maxDrawdownBps: 1_500 },
+      limits: {
+        maxTxNotionalUsd: 5_001,
+        maxDailyNotionalUsd: 25_000,
+        maxDrawdownBps: 1_500,
+        maxSlippageBps: 300,
+      },
     });
     expect(mandateHash(evmMandate())).not.toBe(mandateHash(changed));
   });
@@ -100,6 +118,7 @@ describe("toEvmMandateParams", () => {
     expect(params.mode).toBe(1);
     expect(params.maxTxNotionalUsd6).toBe(5_000_000_000n);
     expect(params.maxDailyNotionalUsd6).toBe(25_000_000_000n);
+    expect(params.maxSlippageBps).toBe(300);
     expect(params.targets).toEqual([ROUTER]);
     expect(params.selectors).toEqual([[EXACT_INPUT_SINGLE]]);
     expect(params.mandateHash).toBe(mandateHash(evmMandate({ mode: "enforce" })));

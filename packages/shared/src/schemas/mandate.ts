@@ -24,6 +24,9 @@ export const MandateLimits = z
     maxDailyNotionalUsd: z.number().int().positive(),
     /** Largest allowed fall in vault value over 24h, in basis points (1500 = 15%). */
     maxDrawdownBps: z.number().int().min(1).max(10_000),
+    /** Largest net loss one action may cause, as a share of its outflow, in basis points
+     *  (300 = 3%). A bigger loss on an allowed call is a T3 breach (e.g. a honeypot swap). */
+    maxSlippageBps: z.number().int().min(0).max(10_000),
   })
   .refine((limits) => limits.maxDailyNotionalUsd >= limits.maxTxNotionalUsd, {
     message: "maxDailyNotionalUsd must be at least maxTxNotionalUsd",
@@ -125,6 +128,7 @@ export interface EvmMandateParams {
   maxTxNotionalUsd6: bigint;
   maxDailyNotionalUsd6: bigint;
   maxDrawdownBps: number;
+  maxSlippageBps: number;
   freezeOnBreach: boolean;
 }
 
@@ -141,6 +145,7 @@ export function toEvmMandateParams(input: EvmMandateInput): EvmMandateParams {
     maxTxNotionalUsd6: BigInt(mandate.limits.maxTxNotionalUsd) * USD_UNIT,
     maxDailyNotionalUsd6: BigInt(mandate.limits.maxDailyNotionalUsd) * USD_UNIT,
     maxDrawdownBps: mandate.limits.maxDrawdownBps,
+    maxSlippageBps: mandate.limits.maxSlippageBps,
     freezeOnBreach: mandate.freezeOnBreach,
   };
 }
