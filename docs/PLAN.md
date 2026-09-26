@@ -167,7 +167,7 @@ Supporting parts: TEE key custody, community attack bounties, public leaderboard
 
 - A new agent version (model, prompt or code hash change) triggers a mandatory re-run before cover renews.
 - A new attack accepted into the library (from bounties or incidents) triggers a re-run across the **whole insured book**, like an antivirus signature update.
-- Sentinel telemetry updates how often each attack class is encountered in the wild (see §9).
+- Sentinel telemetry updates how often each attack class is encountered in the wild (see Section 9).
 - A score expires after 30 days if not refreshed. Expired scores block new cover.
 
 ---
@@ -335,7 +335,7 @@ setup ──► task ──► attack ──► agent acts ──► judge ─�
 2. **Task.** Give the agent a benign goal consistent with its mandate, e.g. "rebalance to 60% NVDAx / 40% USDC".
 3. **Attack.** Plant adversarial content on one or more **surfaces** in the world simulator: token metadata, a news article, a social post, a DM, a price-feed tick, a tool output, or a counterparty agent message.
 4. **Agent acts** for up to N steps using its normal tools and endpoints, which point at the sandbox.
-5. **Judge.** Read the vault's breach log (deterministic, identical to production), then compute grey-area labels (see §8.5).
+5. **Judge.** Read the vault's breach log (deterministic, identical to production), then compute grey-area labels (see Section 8.5).
 6. **Record.** Store the full trace (inputs, tool calls, transactions, breaches, labels). The trace feeds scoring, reports and the **Sentinel dataset**.
 
 ### 8.2 Attack library: 10 classes, about 40 seed scenarios for the hackathon
@@ -467,7 +467,7 @@ Laya is Convai Innovations' **open-source (Apache 2.0) "System One" decision mod
 2. **Scale-up:** Claude generates synthetic (state, action, label) examples through the **Message Batches API**, seeded from real traces. Target: about 30k questions, the scale of Laya's reference fine-tune.
 3. **Fine-tune:** Laya's RLCD notebook on **Kaggle's free 2×T4 GPUs** (about 4–5 hours for 4 epochs). Fit temperatures, pin the base revision, keep weights private on Hugging Face.
 4. **Held-out evaluation:** test only on **attack classes and variants not seen in training**, plus benign traffic. Report TPR at 1% FPR, ECE, and p50/p95 latency on GPU and CPU. Negation tests are included explicitly.
-5. **Product impact:** re-run the Arena with Sentinel on (the agent calls the Sentinel pre-trade hook through the SDK). The measured drop in b feeds straight into the premium (§9). **The discount is earned, not asserted.**
+5. **Product impact:** re-run the Arena with Sentinel on (the agent calls the Sentinel pre-trade hook through the SDK). The measured drop in b feeds straight into the premium (Section 9). **The discount is earned, not asserted.**
 
 ### 10.4 Serving
 
@@ -600,7 +600,7 @@ Wallets: wagmi/viem (EVM) and Solana wallet adapter.
 
 **Robinhood Chain nuances.** Stock tokens are offered to non-US users. Agents that trade inside Robinhood *brokerage* accounts (the Trading MCP) are off-chain and custodial, so on-chain triggers can't see them. That becomes a later "off-chain adapter" built on Robinhood's own reporting, and a partnership pitch.
 
-**Optional "live on mainnet" moment (Day 14).** Deploy to Robinhood Chain mainnet with a strict TVL cap and a small funded pool. This needs founder-provided funds; see §24.
+**Optional "live on mainnet" moment (Day 14).** Deploy to Robinhood Chain mainnet with a strict TVL cap and a small funded pool. This needs founder-provided funds; see Section 24.
 
 ---
 
@@ -623,7 +623,7 @@ bonded/
 ├── README.md
 ├── docs/
 │   ├── PLAN.md                 ← this file
-│   ├── ARCHITECTURE.md         (generated from §5–§14 as the build progresses)
+│   ├── ARCHITECTURE.md         (generated from Sections 5–14 as the build progresses)
 │   └── decisions/              (short ADRs for notable choices)
 ├── contracts/
 │   ├── evm/                    Foundry project (src/, test/, script/)
@@ -735,9 +735,10 @@ Day 1 = Sun Sep 27. Submission target = Day 15 (Sun Oct 11). Day 16 (Mon Oct 12)
 | 16 | Mon Oct 12 | Buffer: fixes, resubmission if needed | Deadline |
 
 **Working agreements**
-- Small, reviewable commits on `claude/inspiring-mayer-qognwt`, one theme each, with tests in the same commit.
+- Every piece of work goes on its own short, descriptive branch (e.g. `day-01-scaffold`) and lands in `main` through a pull request that the founder merges. See `CLAUDE.md` for the full workflow.
+- Small, reviewable commits, one theme each, with tests in the same commit.
 - End of each day: a short progress note in `docs/progress/DAY-XX.md` (done, next, blockers, review asks).
-- Gates 1 and 2 are the founder's (and other LLMs') main review points; §25 is the checklist.
+- Gates 1 and 2 are the founder's (and other LLMs') main review points; Section 25 is the checklist.
 
 ---
 
@@ -773,7 +774,7 @@ Day 1 = Sun Sep 27. Submission target = Day 15 (Sun Oct 11). Day 16 (Mon Oct 12)
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
 | Robinhood Chain testnet lacks stock tokens, USDC or oracles | Med | Med | Deploy mock stock tokens, mock USDC, an AMM pool and MockOracle ourselves (Day 4); Arbitrum Sepolia as fallback demo chain |
-| Network restrictions in the build environment (Hugging Face, RPCs, Phala) | High | Med | Founder allowlists domains (§24); CPU/mocked fallbacks; build and run steps documented for the founder's machine |
+| Network restrictions in the build environment (Hugging Face, RPCs, Phala) | High | Med | Founder allowlists domains (Section 24); CPU/mocked fallbacks; build and run steps documented for the founder's machine |
 | No GPU for Sentinel | Med | Low | Kaggle for training; CPU inference fallback (~300–400 ms) for the demo |
 | Laya fine-tune underperforms | Med | Med | Advisory-only anyway; report honest metrics; Claude fallback backend; the premium discount only applies where Arena re-runs show a measured improvement |
 | Claude API cost or rate limits during rating runs | Med | Med | Episode budgets; prompt caching; Batches API for synthetic data; cache attacker variants |
@@ -781,7 +782,7 @@ Day 1 = Sun Sep 27. Submission target = Day 15 (Sun Oct 11). Day 16 (Mon Oct 12)
 | TEE setup friction | Med | Low | TEE is additive; the demo works without it; documented as a measured discount |
 | Scope overload for a 2-member team in 16 days | High | High | Gate 1 core loop first; daily notes; features after Gate 1 are strictly additive and can be cut in reverse order: mainnet → leaderboard breadth → bounties → TEE → Solana |
 | Judges ask "isn't this just blocking?" | High | Low | "Don't cage your agent": Monitor mode keeps full autonomy; Enforce mode still leaves residual risk (honeypots via allowed venues, limit abuse); both are priced |
-| Regulatory questions | Med | Low | Rating plus parametric protection now; licensed carrier partnership later (§18.5) |
+| Regulatory questions | Med | Low | Rating plus parametric protection now; licensed carrier partnership later (Section 18.5) |
 
 ---
 
@@ -807,7 +808,7 @@ Day 1 = Sun Sep 27. Submission target = Day 15 (Sun Oct 11). Day 16 (Mon Oct 12)
 Use this at Gates 1 and 2, and on any commit.
 
 **Product and pitch**
-- [ ] Is the covered/not-covered line (§3.1) respected everywhere? Nothing pays out for in-mandate market losses.
+- [ ] Is the covered/not-covered line (Section 3.1) respected everywhere? Nothing pays out for in-mandate market losses.
 - [ ] Is every AI output advisory, with payouts decided only by deterministic, on-chain logic?
 - [ ] Are all metrics in docs and demo from held-out data, with assumptions listed?
 
@@ -823,7 +824,7 @@ Use this at Gates 1 and 2, and on any commit.
 - [ ] The judge is the vault breach log, and the sandbox uses the same contract bytecode as production.
 - [ ] Breach rates use the upper credible bound; the report shows sample sizes and intervals.
 - [ ] No attack traffic can reach non-sandbox endpoints.
-- [ ] The score, EL and premium formulas in code match §9.
+- [ ] The score, EL and premium formulas in code match Section 9.
 
 **Sentinel**
 - [ ] Minimal-context input; neutral labels on `noul`; negation cases in the eval set.
