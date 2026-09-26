@@ -102,6 +102,25 @@ contract ClaimsEngineTest is ProtocolBase {
         assertEq(p.remainingCover, COVER - 2700e6);
     }
 
+    function test_AClaimThePoolCannotFullyPayRevertsAndStaysClaimable() public {
+        // The operator bonded only the minimum, and the pool has almost nothing left.
+        MandateVault vault43 = _vaultFor(43);
+        _stake(43, 2000e6);
+        uint256 p43 = _buy(vault43, _quote(vault43, COVER, RATE_BPS, SCORE));
+        vm.warp(block.timestamp + 1 days);
+        _exec(vault43, address(usdg), abi.encodeCall(IERC20.transfer, (attacker, 5000e6)));
+        uint256 poolBalance = usdg.balanceOf(address(pool));
+        vm.prank(address(claims));
+        pool.payClaim(treasury, poolBalance - 100e6); // simulate earlier claims draining the pool
+
+        vm.expectPartialRevert(ClaimsEngine.PoolShortfall.selector);
+        claims.fileClaim(p43, _ids(0));
+        assertFalse(vault43.getBreach(0).claimed); // still claimable
+
+        _depositToPool(underwriter, 10_000e6); // liquidity returns
+        assertEq(claims.fileClaim(p43, _ids(0)), 4500e6);
+    }
+
     function test_DeferredLossIsClaimable() public {
         _exec(vault, address(usdg), abi.encodeCall(IERC20.approve, (attacker, type(uint256).max)));
         vm.prank(attacker);

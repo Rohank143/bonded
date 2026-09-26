@@ -63,6 +63,8 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
     /// @inheritdoc ICoverManager
     mapping(uint256 agentId => uint256) public activeCoverOfAgent;
     mapping(uint8 modelFamily => uint256) public activeCoverOfFamily;
+    /// @inheritdoc ICoverManager
+    mapping(uint256 agentId => uint64) public coverEndOf;
 
     event CoverBound(
         uint256 indexed policyId,
@@ -486,6 +488,7 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
         Policy storage policy = _policies[policyId];
         policy.status = status;
         policy.closedAt = closedAt;
+        if (closedAt > coverEndOf[policy.agentId]) coverEndOf[policy.agentId] = closedAt;
         _reduceExposure(policy, policy.remainingCover);
         if (activePolicyOf[policy.vault] == policyId) activePolicyOf[policy.vault] = 0;
         emit PolicyClosed(policyId, status, closedAt);
