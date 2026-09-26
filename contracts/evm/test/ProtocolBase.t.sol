@@ -8,6 +8,7 @@ import {CoverPool} from "../src/CoverPool.sol";
 import {OperatorBond} from "../src/OperatorBond.sol";
 import {CoverManager} from "../src/CoverManager.sol";
 import {ClaimsEngine} from "../src/ClaimsEngine.sol";
+import {BondedRegistry} from "../src/BondedRegistry.sol";
 import {ICoverManager} from "../src/interfaces/ICoverManager.sol";
 import {MandateVaultBase} from "./MandateVaultBase.t.sol";
 
@@ -20,11 +21,14 @@ abstract contract ProtocolBase is MandateVaultBase {
     uint16 internal constant SCORE = 96;
     uint8 internal constant CLAUDE = 1; // model family code
 
+    BondedRegistry internal registry;
     CoverPool internal pool;
     OperatorBond internal bond;
     CoverManager internal manager;
     ClaimsEngine internal claims;
     MandateVault internal vault;
+    /// @dev A second registered agent owned by the same guardian.
+    uint256 internal agentId2;
 
     address internal attester;
     uint256 internal attesterKey;
@@ -37,11 +41,13 @@ abstract contract ProtocolBase is MandateVaultBase {
         super.setUp();
         (attester, attesterKey) = makeAddrAndKey("attester");
 
+        registry = new BondedRegistry(owner);
         pool = new CoverPool(
             IERC20(address(usdg)), owner, 7 days, "Bonded Underwriting USDG", "bdUSDG"
         );
-        bond = new OperatorBond(IERC20(address(usdg)), owner, 7 days);
-        manager = new CoverManager(owner, factory, pool, bond, protocolTreasury, bountyPool);
+        bond = new OperatorBond(IERC20(address(usdg)), registry, owner, 7 days);
+        manager =
+            new CoverManager(owner, registry, factory, pool, bond, protocolTreasury, bountyPool);
         claims = new ClaimsEngine(owner, manager, pool, bond, factory);
 
         vm.startPrank(owner);
@@ -52,13 +58,18 @@ abstract contract ProtocolBase is MandateVaultBase {
         bond.setCoverManager(manager);
         bond.setClaimsEngine(address(claims));
         manager.setClaimsEngine(address(claims));
-        manager.setAttester(attester, true);
+        registry.setAttester(attester, true);
+        vm.stopPrank();
+
+        vm.startPrank(guardian);
+        agentId = registry.register("ipfs://bonded/agents/1.json");
+        agentId2 = registry.register("ipfs://bonded/agents/2.json");
         vm.stopPrank();
 
         _depositToPool(underwriter, POOL_DEPOSIT);
         vault = _createVault(BondedTypes.MandateMode.Monitor);
         _approveRouter(vault);
-        _stake(42, BOND);
+        _stake(agentId, BOND);
     }
 
     // ----- Helpers -----------------------------------------------------------------------
@@ -71,11 +82,11 @@ abstract contract ProtocolBase is MandateVaultBase {
         vm.stopPrank();
     }
 
-    function _stake(uint256 agentId, uint256 amount) internal {
+    function _stake(uint256 id, uint256 amount) internal {
         usdg.mint(guardian, amount);
         vm.startPrank(guardian);
         usdg.approve(address(bond), amount);
-        bond.stake(agentId, amount);
+        bond.stake(id, amount);
         vm.stopPrank();
     }
 

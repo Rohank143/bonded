@@ -19,7 +19,7 @@ contract CoverManagerTest is ProtocolBase {
         ICoverManager.Policy memory p = _policy(policyId);
         assertEq(policyId, 1);
         assertEq(uint8(p.status), uint8(ICoverManager.Status.Active));
-        assertEq(p.agentId, 42);
+        assertEq(p.agentId, agentId);
         assertEq(p.vault, address(vault));
         assertEq(p.coverAmount, COVER);
         assertEq(p.remainingCover, COVER);
@@ -30,7 +30,7 @@ contract CoverManagerTest is ProtocolBase {
         assertEq(manager.ownerOf(policyId), address(vault));
         assertEq(manager.activePolicyOf(address(vault)), policyId);
         assertEq(manager.totalActiveCover(), COVER);
-        assertEq(manager.activeCoverOfAgent(42), COVER);
+        assertEq(manager.activeCoverOfAgent(agentId), COVER);
         assertEq(manager.activeCoverOfFamily(CLAUDE), COVER);
     }
 
@@ -105,11 +105,25 @@ contract CoverManagerTest is ProtocolBase {
         manager.buyCover(q, signature);
     }
 
+    function test_OnlyTheAgentsRegistryOwnerCanBind() public {
+        // The guardian creates a vault claiming an agent someone else registered.
+        vm.prank(attacker);
+        uint256 othersAgent = registry.register("ipfs://someone-else");
+        BondedTypes.MandateParams memory params = _params(BondedTypes.MandateMode.Monitor);
+        MandateVault squat =
+            MandateVault(factory.createVault(params, agent, guardian, othersAgent, "v", "v"));
+        BondedTypes.Quote memory q = _quote(squat, COVER, RATE_BPS, SCORE);
+        bytes memory signature = _sign(q, attesterKey);
+        vm.prank(guardian);
+        vm.expectRevert(CoverManager.NotAgentOwner.selector);
+        manager.buyCover(q, signature);
+    }
+
     function test_RequiresFreezeOnBreach() public {
         BondedTypes.MandateParams memory params = _params(BondedTypes.MandateMode.Monitor);
         params.freezeOnBreach = false;
         MandateVault loose =
-            MandateVault(factory.createVault(params, agent, guardian, 42, "v", "v"));
+            MandateVault(factory.createVault(params, agent, guardian, agentId, "v", "v"));
         BondedTypes.Quote memory q = _quote(loose, COVER, RATE_BPS, SCORE);
         bytes memory signature = _sign(q, attesterKey);
         vm.prank(guardian);
@@ -172,7 +186,7 @@ contract CoverManagerTest is ProtocolBase {
 
     function test_TierBCoverIsCappedAtTwoPercentOfPool() public {
         BondedTypes.Quote memory q = _quote(vault, 20_001e6, 900, 41); // 2% of 1M = 20,000
-        _stake(42, 10_000e6);
+        _stake(agentId, 10_000e6);
         bytes memory signature = _sign(q, attesterKey);
         vm.prank(guardian);
         vm.expectRevert(abi.encodeWithSelector(CoverManager.CapacityExceeded.selector, "agent"));
@@ -183,7 +197,7 @@ contract CoverManagerTest is ProtocolBase {
         vm.prank(owner);
         manager.setRiskParams(1000, 10_000, 10_000); // total cover <= 10% of pool
         BondedTypes.Quote memory q = _quote(vault, 100_001e6, RATE_BPS, SCORE);
-        _stake(42, 10_001e6);
+        _stake(agentId, 10_001e6);
         bytes memory signature = _sign(q, attesterKey);
         vm.prank(guardian);
         vm.expectRevert(abi.encodeWithSelector(CoverManager.CapacityExceeded.selector, "leverage"));
@@ -362,7 +376,7 @@ contract CoverManagerTest is ProtocolBase {
         vm.expectRevert(
             abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(this))
         );
-        manager.setAttester(address(1), true);
+        manager.setTreasury(address(1));
 
         vm.startPrank(owner);
         vm.expectRevert(
@@ -392,7 +406,7 @@ contract CoverManagerTest is ProtocolBase {
         address at = 0x0000000000000000000000000000000000001234;
         deployCodeTo(
             "CoverManager.sol:CoverManager",
-            abi.encode(owner, factory, pool, bond, protocolTreasury, bountyPool),
+            abi.encode(owner, registry, factory, pool, bond, protocolTreasury, bountyPool),
             at
         );
         BondedTypes.Quote memory q = BondedTypes.Quote({

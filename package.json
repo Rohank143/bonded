@@ -15,7 +15,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "contracts:build": "cd contracts/evm && forge build",
-    "contracts:test": "cd contracts/evm && forge test -vvv"
+    "contracts:test": "cd contracts/evm && forge test -vvv",
+    "demo:local": "contracts/evm/script/local-demo.sh"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

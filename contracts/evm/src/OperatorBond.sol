@@ -9,6 +9,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ICoverManager} from "./interfaces/ICoverManager.sol";
 import {IOperatorBond} from "./interfaces/IOperatorBond.sol";
+import {IBondedRegistry} from "./interfaces/IBondedRegistry.sol";
 
 /// @notice The part of ClaimsEngine OperatorBond reads.
 interface IClaimWindow {
@@ -18,13 +19,12 @@ interface IClaimWindow {
 /// @title OperatorBond
 /// @notice The agent operator's first-loss stake. When a covered agent breaches its mandate,
 ///         the bond is slashed before the pool pays anything. See docs/PLAN.md Section 6.2.
-/// @dev The first staker for an agent id becomes its operator. Day 4's BondedRegistry will
-///      tie this to the agent's registered operator.
+/// @dev The operator is whoever owns the agent in BondedRegistry. Anyone can add to a bond;
+///      only the operator can withdraw, and withdrawals go to the operator.
 contract OperatorBond is IOperatorBond, Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     struct Bond {
-        address operator;
         uint256 amount;
         uint256 pendingWithdrawal;
         uint64 unlockAt;
@@ -33,6 +33,7 @@ contract OperatorBond is IOperatorBond, Ownable2Step, ReentrancyGuard {
     uint256 public constant MAX_COOLDOWN = 30 days;
 
     IERC20 public immutable asset;
+    IBondedRegistry public immutable registry;
     uint256 public cooldown;
     ICoverManager public coverManager;
     address public claimsEngine;
@@ -56,11 +57,17 @@ contract OperatorBond is IOperatorBond, Ownable2Step, ReentrancyGuard {
     error NoPendingWithdrawal();
     error StillCoolingDown();
     error ActiveCover();
+    error UnknownAgent(uint256 agentId);
     error ClaimWindowOpen(uint256 until);
 
-    constructor(IERC20 asset_, address owner_, uint256 cooldown_) Ownable(owner_) {
-        if (address(asset_) == address(0)) revert ZeroAddress();
+    constructor(IERC20 asset_, IBondedRegistry registry_, address owner_, uint256 cooldown_)
+        Ownable(owner_)
+    {
+        if (address(asset_) == address(0) || address(registry_) == address(0)) {
+            revert ZeroAddress();
+        }
         asset = asset_;
+        registry = registry_;
         _setCooldown(cooldown_);
     }
 
@@ -86,16 +93,11 @@ contract OperatorBond is IOperatorBond, Ownable2Step, ReentrancyGuard {
 
     // ----- Operators ---------------------------------------------------------------------
 
-    /// @notice Adds to an agent's bond. The first staker becomes the agent's operator.
+    /// @notice Adds to a registered agent's bond. Anyone can add; only the operator can withdraw.
     function stake(uint256 agentId, uint256 amount) external nonReentrant {
         if (amount == 0) revert ZeroAmount();
-        Bond storage bond = _bonds[agentId];
-        if (bond.operator == address(0)) {
-            bond.operator = msg.sender;
-        } else if (bond.operator != msg.sender) {
-            revert NotOperator();
-        }
-        bond.amount += amount;
+        if (registry.agentOwner(agentId) == address(0)) revert UnknownAgent(agentId);
+        _bonds[agentId].amount += amount;
         asset.safeTransferFrom(msg.sender, address(this), amount);
         emit Staked(agentId, msg.sender, amount);
     }
@@ -103,7 +105,7 @@ contract OperatorBond is IOperatorBond, Ownable2Step, ReentrancyGuard {
     /// @notice Starts the cooldown for withdrawing `amount`. Replaces any earlier request.
     function requestWithdraw(uint256 agentId, uint256 amount) external {
         Bond storage bond = _bonds[agentId];
-        if (msg.sender != bond.operator) revert NotOperator();
+        if (msg.sender != registry.agentOwner(agentId)) revert NotOperator();
         if (amount == 0) revert ZeroAmount();
         if (amount > bond.amount) revert ExceedsBond();
         bond.pendingWithdrawal = amount;
@@ -117,7 +119,7 @@ contract OperatorBond is IOperatorBond, Ownable2Step, ReentrancyGuard {
     ///         the claim window after its last policy ended has passed.
     function withdraw(uint256 agentId) external nonReentrant {
         Bond storage bond = _bonds[agentId];
-        if (msg.sender != bond.operator) revert NotOperator();
+        if (msg.sender != registry.agentOwner(agentId)) revert NotOperator();
         if (bond.pendingWithdrawal == 0) revert NoPendingWithdrawal();
         if (block.timestamp < bond.unlockAt) revert StillCoolingDown();
         _checkNoOpenClaims(agentId);
@@ -153,6 +155,11 @@ contract OperatorBond is IOperatorBond, Ownable2Step, ReentrancyGuard {
     /// @inheritdoc IOperatorBond
     function bondOf(uint256 agentId) external view returns (uint256) {
         return _bonds[agentId].amount;
+    }
+
+    /// @notice The agent's operator (its owner in BondedRegistry).
+    function operatorOf(uint256 agentId) external view returns (address) {
+        return registry.agentOwner(agentId);
     }
 
     function getBond(uint256 agentId) external view returns (Bond memory) {
