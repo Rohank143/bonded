@@ -30,6 +30,12 @@ contract OperatorBondTest is ProtocolBase {
         bond.withdraw(42);
 
         manager.cancel(policyId);
+        // Claims for breaches during the policy stay open for 7 days, so the bond stays too.
+        uint256 until = block.timestamp + 7 days;
+        vm.expectRevert(abi.encodeWithSelector(OperatorBond.ClaimWindowOpen.selector, until));
+        bond.withdraw(42);
+
+        vm.warp(until + 1);
         uint256 before = usdg.balanceOf(guardian);
         bond.withdraw(42);
         vm.stopPrank();

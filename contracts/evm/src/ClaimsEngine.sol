@@ -25,6 +25,7 @@ import {MandateVault} from "./MandateVault.sol";
 ///         drained the vault's premium money is still paid, and cover is never free);
 ///      5. waterfall: slash the operator bond first, then the pool pays the rest;
 ///      6. both pay into the vault, restoring the share price for every depositor.
+///      A claim the pool can't pay in full reverts, leaving its breaches claimable for later.
 contract ClaimsEngine is Ownable2Step, ReentrancyGuard {
     ICoverManager public immutable coverManager;
     ICoverPool public immutable pool;
@@ -56,6 +57,7 @@ contract ClaimsEngine is Ownable2Step, ReentrancyGuard {
     error BreachBlocked(uint256 breachId);
     error BreachOutsideCoverage(uint256 breachId, uint64 timestamp);
     error NothingToPay();
+    error PoolShortfall(uint256 needed, uint256 paid);
 
     constructor(
         address owner_,
@@ -141,7 +143,13 @@ contract ClaimsEngine is Ownable2Step, ReentrancyGuard {
         p.netted = Math.min(coverManager.premiumDebt(policyId), p.gross);
         uint256 toVault = p.gross - p.netted;
         if (toVault > 0) p.fromBond = bond.slash(policy.agentId, toVault, policy.vault);
-        if (toVault > p.fromBond) p.fromPool = pool.payClaim(policy.vault, toVault - p.fromBond);
+        if (toVault > p.fromBond) {
+            uint256 needed = toVault - p.fromBond;
+            p.fromPool = pool.payClaim(policy.vault, needed);
+            // Never finalize a partly paid claim: revert so the breaches stay claimable until the
+            // pool can pay in full.
+            if (p.fromPool < needed) revert PoolShortfall(needed, p.fromPool);
+        }
         paid = p.fromBond + p.fromPool;
 
         coverManager.recordClaim(policyId, paid, p.netted);

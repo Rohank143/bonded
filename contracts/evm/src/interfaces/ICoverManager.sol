@@ -40,6 +40,9 @@ interface ICoverManager {
     /// @notice Remaining cover across an agent's active policies.
     function activeCoverOfAgent(uint256 agentId) external view returns (uint256);
 
+    /// @notice Latest time any of an agent's closed policies stopped covering (0 if none closed).
+    function coverEndOf(uint256 agentId) external view returns (uint64);
+
     function getPolicy(uint256 policyId) external view returns (Policy memory);
 
     /// @notice Time range in which a breach is covered: [coveredFrom, coveredUntil].

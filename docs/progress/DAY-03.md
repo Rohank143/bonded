@@ -25,7 +25,7 @@ Plan reference: docs/PLAN.md Section 20, Day 3. Design record: `docs/decisions/0
 - **Cross-language checks:**
   - The quote digest from viem matches `CoverManager.quoteDigest`.
   - The Solidity tier rules match the TypeScript table.
-- **Tests:** 126 Forge tests, including fuzz tests at 1,024 runs in the CI profile, plus 43 TypeScript tests.
+- **Tests:** 127 Forge tests, including fuzz tests at 1,024 runs in the CI profile, plus 43 TypeScript tests.
 
 ## Fixed in review
 
@@ -33,6 +33,10 @@ CodeRabbit found that a breach draining the vault's base asset made its own clai
 - a full drain is paid
 - a breach during the grace period is paid with the premium netted
 - the grace period, lapse and debt behave as described
+
+CodeRabbit's summary also flagged two limits I'd documented. Both are fixed:
+- The operator bond now stays locked until the claim window after the agent's last policy has passed.
+- A claim the pool can't pay in full now reverts instead of being finalized, so its breaches stay claimable.
 
 ## The demo loop, tested end to end
 
@@ -61,5 +65,5 @@ Unchanged: testnet RPC allowlisting (needed Day 4) and the Anthropic API key (ne
 
 ## Review asks
 
-- Check the known limits in ADR-003, especially bond withdrawal after expiry. Fix it before the demo?
+- Check the remaining known limits in ADR-003 (operator fraud is priced, not prevented; a vault short of base asset loses cover after the grace period).
 - Check the fee split (15% treasury, 5% bounty, 80% underwriters) and the 10% deductible.
