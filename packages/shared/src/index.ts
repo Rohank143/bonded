@@ -1,5 +1,6 @@
 export * from "./canonical.js";
 export * from "./chains.js";
+export * from "./deployments.js";
 export * from "./tiers.js";
 export * from "./schemas/common.js";
 export * from "./schemas/mandate.js";
