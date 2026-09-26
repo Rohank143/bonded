@@ -1,0 +1,28 @@
+{
+  "name": "@bonded/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Schemas, chain configs and signing types shared by Bonded contracts, Arena, API and web.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src test",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "viem": "^2.56.9",
+    "zod": "^4.6.5"
+  }
+}
