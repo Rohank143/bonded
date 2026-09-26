@@ -14,7 +14,7 @@ Plan reference: docs/PLAN.md Section 20, Day 1.
   - `Attestation` and `Quote`, model-family codes, EIP-712 types and signing helpers.
   - Score tiers and underwriting rules (Section 9.3).
   - Chain configs with a source recorded for every fact.
-  - 35 tests.
+  - 41 tests.
 - **Contracts:** Foundry project with forge-std 1.16.2 and OpenZeppelin 5.7.0 (pinned submodules). `BondedTypes.sol` holds the shared enums, structs and EIP-712 typehashes. 4 tests pin the encoding to the TypeScript side.
 
 ## Chain facts found

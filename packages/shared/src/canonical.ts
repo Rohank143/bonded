@@ -29,7 +29,13 @@ function normalise(value: unknown): Json {
     return value.map(normalise);
   }
   if (typeof value === "object") {
-    const sorted: { [key: string]: Json } = {};
+    // Only plain objects: a Date, Map or class instance would silently encode as {}.
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) {
+      throw new Error("canonicalJson: only plain objects are allowed");
+    }
+    // Null prototype so an own "__proto__" key is kept as data instead of changing the prototype.
+    const sorted = Object.create(null) as { [key: string]: Json };
     for (const key of Object.keys(value).sort()) {
       const entry = (value as Record<string, unknown>)[key];
       if (entry !== undefined) {

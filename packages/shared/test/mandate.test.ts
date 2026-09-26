@@ -3,6 +3,7 @@ import {
   EvmMandate,
   Mandate,
   SolanaMandate,
+  base58DecodedLength,
   mandateHash,
   toEvmMandateParams,
 } from "../src/index.js";
@@ -48,6 +49,23 @@ describe("EvmMandate", () => {
 describe("SolanaMandate", () => {
   it("accepts a valid mandate", () => {
     expect(SolanaMandate.safeParse(solanaMandate()).success).toBe(true);
+  });
+
+  it("decodes known addresses to 32 bytes", () => {
+    expect(base58DecodedLength("11111111111111111111111111111111")).toBe(32); // System Program
+    expect(base58DecodedLength("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU")).toBe(32);
+  });
+
+  it("rejects base58 text that does not decode to 32 bytes", () => {
+    const tooLong = "1".repeat(33);
+    expect(SolanaMandate.safeParse(solanaMandate({ destinations: [tooLong] })).success).toBe(false);
+  });
+
+  it("treats addresses that differ only in case as distinct", () => {
+    const a = "So11111111111111111111111111111111111111112";
+    const b = "so11111111111111111111111111111111111111112";
+    expect(base58DecodedLength(b)).toBe(32);
+    expect(SolanaMandate.safeParse(solanaMandate({ destinations: [a, b] })).success).toBe(true);
   });
 
   it("rejects EVM addresses", () => {
