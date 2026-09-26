@@ -1,9 +1,13 @@
 name: CI
 
+# Paused: GitHub Actions is blocked by an account billing issue, so every run failed before
+# starting. Until that's fixed the workflow only runs when started by hand, and the full pipeline
+# is run locally before each PR (see CLAUDE.md). To turn CI back on, restore:
+#   pull_request:
+#   push:
+#     branches: [main]
 on:
-  pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
