@@ -236,7 +236,8 @@ The mandate is stored as canonical JSON off-chain; its `keccak256` hash plus the
   "limits": {
     "maxTxNotionalUsd": 5000,
     "maxDailyNotionalUsd": 25000,
-    "maxDrawdownPct24h": 15
+    "maxDrawdownBps": 1500,                           // 15%, used for T4 disputes (not enforced on-chain)
+    "maxSlippageBps": 300                             // net loss above 3% of an action's outflow is T3
   },
   "freezeOnBreach": true,
   "description": "Rebalance a US tech stock-token basket against USDC on Robinhood Chain."
@@ -248,7 +249,7 @@ The mandate is stored as canonical JSON off-chain; its `keccak256` hash plus the
 | Contract | Responsibility | Key functions |
 |---|---|---|
 | `BondedRegistry` | ERC-8004-compatible agent records; attester set; scores | `registerAgent(uri, operator)`, `postScore(Attestation, sig)`, `scoreOf(agentId)`, `setAttester(addr, bool)` (multisig owner) |
-| `MandateVaultFactory` | Deploys vaults as minimal-proxy clones; the canonical "is this a real vault?" check | `createVault(MandateParams, agentKey, agentId)`, `isVault(addr)` |
+| `MandateVaultFactory` | Deploys vaults (full deployments, see ADR-002); the canonical "is this a real vault?" check; holds set-once CoverManager and ClaimsEngine addresses | `createVault(MandateParams, agent, guardian, agentId, name, symbol)`, `isVault(addr)` |
 | `MandateVault` | ERC-4626 over `baseAsset`; NAV across allowed assets via oracle; policy engine; breach log; circuit breaker | `execute(target, value, data)` (agent only), `reconcile()`, `breaches(id)`, `freeze()`, `rotateAgent(newKey)` (guardian), `payPremium(amount)` (CoverManager only) |
 | `OperatorBond` | First-loss stakes per agent | `stake(agentId, amt)`, `requestWithdraw` → cooldown → `withdraw` (blocked while cover is active), `slash(agentId, amt, to)` (ClaimsEngine only) |
 | `CoverPool` | ERC-4626 underwriting pool (`bdUSDC`); locked vs free capital; fees | `deposit`, `requestWithdraw`/`withdraw` (cooldown, free capital only), `lock/unlock` (CoverManager), `payClaim` (ClaimsEngine), protocol-fee and bounty-fee splits |
@@ -260,29 +261,38 @@ The mandate is stored as canonical JSON off-chain; its `keccak256` hash plus the
 
 ### 6.3 How `MandateVault.execute` classifies actions
 
-```
-execute(target, value, data):
-  require(msg.sender == agentKey && !frozen)
-  pre  = snapshot(balances of baseAsset + allowed assets + native)
-  cls  = classify(target, selector(data), decoded args):
-           T1 UNAUTHORIZED_TARGET   target not in allowlist (or selector not allowed)
-           T1 UNAUTHORIZED_APPROVAL approve/permit/setApprovalForAll to non-allowlisted spender
-           T1 UNAUTHORIZED_TRANSFER transfer/transferFrom to a recipient not in destinations
-  if mode == ENFORCE and cls != OK: record attempt; freeze if freezeOnBreach; revert
-  call(target, value, data)
-  post = snapshot(...)
-  outflowUsd = oracle-priced (pre - post) over tracked assets
-  T2 LIMIT      outflowUsd or tx notional > maxTxNotionalUsd, or 24h rolling notional > maxDaily
-  T3 ASSET      vault received a token not in `assets` (lookalike or honeypot); loss = value paid for it
-  if any breach: record Breach{id, type, target, outflowUsd, block}; if freezeOnBreach: freeze
-                 (in ENFORCE mode, post-call T2/T3 checks revert the whole call instead)
+As built on Day 2. Design choices and trade-offs are in `docs/decisions/002-mandate-vault.md`.
 
-reconcile():   // catches losses realised later, e.g. a malicious spender pulling via an unauthorized approval
-  unexplained  = recorded balances - actual balances (outside any execute)
-  if > 0: record Breach{type: T1_DEFERRED, outflowUsd: priced(unexplained)}
+```
+execute(target, data):                       // ERC-20 only; no native value
+  require(msg.sender == agent && !frozen && target != vault)
+  reconcile()                                // record earlier unexplained drops first; stop if that froze the agent
+  verdict = classify(target, data):          // T1, before the call
+    approve / increaseAllowance / setApprovalForAll  -> spender must be an allowed target (revoking is always fine)
+    transfer / transferFrom                          -> recipient must be the vault or an allowed destination
+    anything else                                    -> target and selector must be allowed
+  if !verdict.allowed and ENFORCE: record blocked breach, freeze, return (call never runs)
+  self-call measuredCall(target, data):      // lets ENFORCE roll back a breaching call
+    pre = balances of allowed assets; call; post = balances
+    outflowUsd, inflowUsd = oracle-priced decreases / increases
+    if ENFORCE and postCheck breaches: revert BreachDetected -> caught -> record blocked breach, freeze
+  postCheck (precedence T3 > T2):
+    T3 ASSET  net loss (outflow - inflow) > maxSlippageBps of outflow   // honeypot, lookalike, bad recipient
+              (skipped for allowed transfers to destinations: that value is meant to leave)
+    T2 LIMIT  outflow > maxTxNotional, or window + outflow > maxDailyNotional
+  record at most ONE breach per action (T1 > T3 > T2), with loss = net loss; freeze if freezeOnBreach
+  add outflow to the 24h window; snapshot balances
+
+reconcile():                                 // permissionless; also runs before deposit, withdraw, premium, execute
+  for each allowed asset: if balance < recorded -> loss += priced(recorded - balance)
+  if loss > 0: record Breach{type: T1_DEFERRED}
 ```
 
-**Known limits, documented honestly.** Complex multicalls and nested routers are classified at the outer-call level for the hackathon. Allowlisting routers with selectors is the mitigation; per-hop decoding comes later. Oracle-priced NAV requires feeds for every allowed asset, so testnets use `MockOracle`.
+**Known limits, documented honestly.**
+- Complex multicalls and nested routers are classified at the outer-call level. The value check after the call still catches any net loss, whatever path it took.
+- The 24h limit uses a fixed window that resets 24h after it starts, not a rolling window.
+- Oracle-priced NAV needs a feed for every allowed asset, so testnets use `MockOracle`. If a feed is stale, NAV-dependent actions (deposits, withdrawals, execute) pause rather than use a bad price.
+- Rebasing and fee-on-transfer tokens must not be allowed assets: their balance changes would look like breaches.
 
 ### 6.4 Signed messages (EIP-712)
 
