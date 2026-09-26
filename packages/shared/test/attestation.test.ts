@@ -112,6 +112,15 @@ describe("Attestation", () => {
 });
 
 describe("Quote", () => {
+  // Same expected digest as test_QuoteDigestMatchesTypeScript in contracts/evm/test/CoverManager.t.sol,
+  // where CoverManager is deployed at this address on chain 31337.
+  it("produces the digest CoverManager expects", () => {
+    const domain = bondedDomain(31337, "0x0000000000000000000000000000000000001234");
+    expect(hashTypedData(quoteTypedData(domain, quote))).toBe(
+      "0x01be0f221106d2450c0f8547deae4a5c5f116de1d04f81e2863e7bc06ce72177",
+    );
+  });
+
   it("round-trips a signature to the attester address", async () => {
     const typed = quoteTypedData(bondedDomain(46630, registry), quote);
     const signature = await attester.signTypedData(typed);
