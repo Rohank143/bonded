@@ -16,6 +16,11 @@ invariant = { runs = 64, depth = 32 }
 fuzz = { runs = 1024 }
 invariant = { runs = 256, depth = 64 }
 
+[lint]
+# Public immutables are part of the external API (vault.factory(), vault.oracle()), so they keep
+# mixedCase. keccak256 in plain Solidity is kept for readability in EIP-712 hashing.
+exclude_lints = ["screaming-snake-case-immutable", "asm-keccak256", "unwrapped-modifier-logic"]
+
 [fmt]
 line_length = 100
 tab_width = 4

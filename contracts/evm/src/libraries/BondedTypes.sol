@@ -9,7 +9,7 @@ library BondedTypes {
     /// @notice How a Mandate Vault treats a breach. See docs/PLAN.md Section 6.
     enum MandateMode {
         Monitor, // breach executes, is recorded, agent is frozen
-        Enforce // breach reverts
+        Enforce // breach is blocked (no effect), the attempt is recorded, agent is frozen
     }
 
     /// @notice Breach types recorded by a Mandate Vault. See docs/PLAN.md Sections 6.3 and 11.1.
@@ -19,7 +19,24 @@ library BondedTypes {
         UnauthorizedTransfer, // T1: transfer to a recipient outside the mandate
         Deferred, // T1: unexplained outflow found by reconcile()
         Limit, // T2: per-transaction or daily notional limit exceeded
-        Asset // T3: vault acquired a token outside the mandate
+        Asset // T3: value left without equivalent allowed assets coming back (e.g. honeypot or lookalike token)
+    }
+
+    /// @notice Enforcement parameters of a mandate, passed to MandateVaultFactory.createVault.
+    /// @dev Field order and meaning match `EvmMandateParams` in packages/shared.
+    struct MandateParams {
+        bytes32 mandateHash; // keccak256 of the canonical mandate JSON
+        MandateMode mode;
+        address baseAsset; // vault denomination; must be in `assets`
+        address[] assets; // tokens the vault may hold
+        address[] targets; // contracts the agent may call
+        bytes4[][] selectors; // selectors[i] = allowed functions on targets[i]; empty = any
+        address[] destinations; // allowed transfer recipients (the vault itself is always allowed)
+        uint256 maxTxNotionalUsd6; // per-action outflow limit, USD with 6 decimals
+        uint256 maxDailyNotionalUsd6; // outflow limit per 24h window, USD with 6 decimals
+        uint16 maxDrawdownBps; // informational for T4 disputes; not enforced by the vault
+        uint16 maxSlippageBps; // largest allowed net loss per action, as a share of its outflow
+        bool freezeOnBreach;
     }
 
     /// @notice Score attestation signed by the Arena attester and posted to BondedRegistry.
