@@ -35,6 +35,8 @@ contract ClaimsEngine is Ownable2Step, ReentrancyGuard {
     uint16 public deductibleBps = 1000; // 10%
     /// @notice After a policy ends, breaches from its coverage window can be claimed for this long.
     uint64 public claimWindow = 7 days;
+    /// @notice DisputeModule, allowed to pay approved grey-area (T4) claims. Set once.
+    address public disputeModule;
 
     event ClaimPaid(
         uint256 indexed policyId,
@@ -48,6 +50,7 @@ contract ClaimsEngine is Ownable2Step, ReentrancyGuard {
     );
     event DeductibleSet(uint16 deductibleBps);
     event ClaimWindowSet(uint64 claimWindow);
+    event DisputeModuleSet(address disputeModule);
 
     error ZeroAddress();
     error InvalidParams(string reason);
@@ -58,6 +61,8 @@ contract ClaimsEngine is Ownable2Step, ReentrancyGuard {
     error BreachOutsideCoverage(uint256 breachId, uint64 timestamp);
     error NothingToPay();
     error PoolShortfall(uint256 needed, uint256 paid);
+    error NotDisputeModule();
+    error AlreadySet();
 
     constructor(
         address owner_,
@@ -98,10 +103,40 @@ contract ClaimsEngine is Ownable2Step, ReentrancyGuard {
         uint256 lossUsd6 =
             _collectLoss(MandateVault(policy.vault), breachIds, coveredFrom, coveredUntil);
         if (lossUsd6 == 0) revert NothingToPay();
-        paid = _pay(policyId, policy, lossUsd6, breachIds);
+        paid = _pay(policyId, policy, _usd6ToBase(MandateVault(policy.vault), lossUsd6), breachIds);
+    }
+
+    /// @notice Pays a grey-area (T4) claim that DisputeModule approved. Same deductible, premium
+    ///         netting and waterfall as parametric claims; no breach records are involved.
+    /// @param lossBase The approved loss in base-asset units.
+    function payDispute(uint256 policyId, uint256 lossBase)
+        external
+        nonReentrant
+        returns (uint256 paid)
+    {
+        if (msg.sender != disputeModule || disputeModule == address(0)) {
+            revert NotDisputeModule();
+        }
+        coverManager.accrue(policyId);
+        ICoverManager.Policy memory policy = coverManager.getPolicy(policyId);
+        (, uint64 coveredUntil) = coverManager.coverageWindow(policyId);
+        if (
+            policy.status != ICoverManager.Status.Active
+                && block.timestamp > coveredUntil + claimWindow
+        ) {
+            revert ClaimWindowClosed();
+        }
+        paid = _pay(policyId, policy, lossBase, new uint256[](0));
     }
 
     // ----- Admin -------------------------------------------------------------------------
+
+    function setDisputeModule(address disputeModule_) external onlyOwner {
+        if (disputeModule_ == address(0)) revert ZeroAddress();
+        if (disputeModule != address(0)) revert AlreadySet();
+        disputeModule = disputeModule_;
+        emit DisputeModuleSet(disputeModule_);
+    }
 
     function setDeductible(uint16 deductibleBps_) external onlyOwner {
         if (deductibleBps_ > 5000) revert InvalidParams("deductibleBps");
@@ -129,11 +164,11 @@ contract ClaimsEngine is Ownable2Step, ReentrancyGuard {
     function _pay(
         uint256 policyId,
         ICoverManager.Policy memory policy,
-        uint256 lossUsd6,
-        uint256[] calldata breachIds
+        uint256 lossBase,
+        uint256[] memory breachIds
     ) internal returns (uint256 paid) {
         Payout memory p;
-        p.lossBase = _usd6ToBase(MandateVault(policy.vault), lossUsd6);
+        p.lossBase = lossBase;
         p.gross = Math.min(
             policy.remainingCover,
             Math.mulDiv(p.lossBase, BondedTypes.BPS - deductibleBps, BondedTypes.BPS)
