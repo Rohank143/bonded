@@ -1,0 +1,8 @@
+node_modules
+dist
+.turbo
+pnpm-lock.yaml
+contracts/evm/lib
+contracts/evm/out
+contracts/evm/cache
+*.md
