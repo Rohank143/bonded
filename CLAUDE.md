@@ -11,6 +11,7 @@ Read `docs/PLAN.md` for the product and the 16-day build plan.
   - Never prefix a branch with `claude/`.
   - Never use random or auto-generated names (e.g. `inspiring-mayer-qognwt`).
 - Don't delete branches unless the founder asks.
+- Commit authorship: the founder is the only author. Author and committer are both `ddboy19912 <ddboy19912@gmail.com>` (set with `git config user.name` / `user.email` in the repo). No `Co-Authored-By` or `Claude-Session` trailers in commit messages. Existing commits are not re-authored.
 - PR descriptions say what changed, why, how it was tested, and what the founder should check.
 - GitHub Actions is currently blocked by an account billing issue. Until that's fixed, run the full pipeline on a fresh clone before opening a PR (format check, typecheck, lint, tests, `forge fmt --check`, `forge test`) and paste the results in the PR description.
 - Treat review-bot findings (e.g. CodeRabbit) as bug reports: verify each one, fix what's real, and reply on the thread.
