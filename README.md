@@ -16,4 +16,4 @@ Built for the Colosseum Crypto World's Fair on **Robinhood Chain, Arbitrum, Ethe
 
 ## Status
 
-Planning complete. The build runs Sep 27 – Oct 11, 2026. See the day-by-day plan in [`docs/PLAN.md` §20](docs/PLAN.md#20-16-day-build-plan).
+Planning complete. The build runs Sep 27 – Oct 11, 2026. See the day-by-day plan in [`docs/PLAN.md` Section 20](docs/PLAN.md#20-16-day-build-plan).
