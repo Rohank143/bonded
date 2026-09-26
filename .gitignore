@@ -16,3 +16,6 @@ contracts/evm/broadcast/*/31337/
 # Python
 __pycache__/
 .venv/
+
+# Local anvil deployments
+contracts/evm/deployments/31337.json
