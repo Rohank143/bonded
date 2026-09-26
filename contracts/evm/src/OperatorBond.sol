@@ -10,6 +10,11 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ICoverManager} from "./interfaces/ICoverManager.sol";
 import {IOperatorBond} from "./interfaces/IOperatorBond.sol";
 
+/// @notice The part of ClaimsEngine OperatorBond reads.
+interface IClaimWindow {
+    function claimWindow() external view returns (uint64);
+}
+
 /// @title OperatorBond
 /// @notice The agent operator's first-loss stake. When a covered agent breaches its mandate,
 ///         the bond is slashed before the pool pays anything. See docs/PLAN.md Section 6.2.
@@ -51,6 +56,7 @@ contract OperatorBond is IOperatorBond, Ownable2Step, ReentrancyGuard {
     error NoPendingWithdrawal();
     error StillCoolingDown();
     error ActiveCover();
+    error ClaimWindowOpen(uint256 until);
 
     constructor(IERC20 asset_, address owner_, uint256 cooldown_) Ownable(owner_) {
         if (address(asset_) == address(0)) revert ZeroAddress();
@@ -107,15 +113,14 @@ contract OperatorBond is IOperatorBond, Ownable2Step, ReentrancyGuard {
         emit WithdrawRequested(agentId, amount, bond.unlockAt);
     }
 
-    /// @notice Withdraws a matured request. Blocked while the agent has active cover.
+    /// @notice Withdraws a matured request. Blocked while the agent has active cover, and until
+    ///         the claim window after its last policy ended has passed.
     function withdraw(uint256 agentId) external nonReentrant {
         Bond storage bond = _bonds[agentId];
         if (msg.sender != bond.operator) revert NotOperator();
         if (bond.pendingWithdrawal == 0) revert NoPendingWithdrawal();
         if (block.timestamp < bond.unlockAt) revert StillCoolingDown();
-        if (address(coverManager) != address(0) && coverManager.activeCoverOfAgent(agentId) > 0) {
-            revert ActiveCover();
-        }
+        _checkNoOpenClaims(agentId);
         uint256 amount = Math.min(bond.pendingWithdrawal, bond.amount);
         bond.amount -= amount;
         bond.pendingWithdrawal = 0;
@@ -152,6 +157,17 @@ contract OperatorBond is IOperatorBond, Ownable2Step, ReentrancyGuard {
 
     function getBond(uint256 agentId) external view returns (Bond memory) {
         return _bonds[agentId];
+    }
+
+    /// @dev A breach near the end of a term can be claimed during the claim window; the bond must
+    ///      still be there to pay first.
+    function _checkNoOpenClaims(uint256 agentId) internal view {
+        if (address(coverManager) == address(0)) return;
+        if (coverManager.activeCoverOfAgent(agentId) > 0) revert ActiveCover();
+        uint64 coverEnd = coverManager.coverEndOf(agentId);
+        if (coverEnd == 0 || claimsEngine == address(0)) return;
+        uint256 until = uint256(coverEnd) + IClaimWindow(claimsEngine).claimWindow();
+        if (block.timestamp <= until) revert ClaimWindowOpen(until);
     }
 
     function _setCooldown(uint256 cooldown_) internal {

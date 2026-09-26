@@ -79,15 +79,17 @@ Then:
 
 The engine settles premiums before checking coverage, so a policy that should have lapsed can't be claimed on as if it were still active.
 
-### 9. Claims can arrive after a policy ends
+### 9. Claims can arrive after a policy ends, and the bond waits for them
 
-Breaches inside the coverage window can still be claimed for 7 days after the policy ends.
+Breaches inside the coverage window can still be claimed for 7 days after the policy ends. The operator bond can't be withdrawn until that claim window after the agent's last policy has passed, so the first-loss money is still there for a late claim.
+
+### 10. A claim is paid in full or not at all
+
+If the pool can't pay its share in full, the claim reverts and its breaches stay claimable until the pool has the funds (new deposits, premiums). A partly paid claim is never finalized. In practice the leverage cap and withdrawal locks keep enough capital in the pool.
 
 ## Known limits
 
 - **Operator fraud is priced, not prevented.** A dishonest operator who drains their own vault to a colluding address loses their bond first. If the bond is smaller than the payout, the pool covers the rest; depositors are made whole minus the deductible. Tier minimum bonds, per-agent caps and the waiting period limit this.
 - **A vault that stays short of base asset still loses cover.** Once the grace period runs out, the policy lapses. Operators should keep a base-asset buffer for premiums.
 - **Netted premium goes to whoever paid the claim.** It stays with the bond or pool that would otherwise have paid it, so the treasury and bounty pool don't get their share of it.
-- **Pool shortfalls aren't carried forward.** If the pool can't pay a claim in full, the shortfall isn't recorded as a debt.
-- **Bond withdrawal after expiry.** The bond can be withdrawn once an agent has no active cover. A breach near the end of a term could be claimed after the bond is gone if nobody files the claim promptly. The keeper files claims immediately; tying withdrawals to the claim window is a Day 13 candidate.
 - **Attesters are managed by CoverManager's owner.** They move to BondedRegistry on Day 4.
