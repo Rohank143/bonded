@@ -111,7 +111,7 @@ contract MandateVaultMonitorTest is MandateVaultBase {
 
         // The attacker pulls funds later, outside execute.
         vm.prank(attacker);
-        usdg.transferFrom(address(vault), attacker, 3000e6);
+        assertTrue(usdg.transferFrom(address(vault), attacker, 3000e6));
         vault.reconcile();
 
         MandateVault.Breach memory deferred = _lastBreach(vault);

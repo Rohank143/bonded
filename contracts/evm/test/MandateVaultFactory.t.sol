@@ -157,7 +157,7 @@ contract MandateVaultFactoryTest is MandateVaultBase {
         p = _params(BondedTypes.MandateMode.Monitor);
         address[] memory many = new address[](17);
         for (uint256 i; i < many.length; ++i) {
-            many[i] = address(uint160(0x1000 + i));
+            many[i] = makeAddr(string.concat("token", vm.toString(i)));
         }
         many[0] = address(usdg);
         p.assets = many;
