@@ -252,9 +252,9 @@ The mandate is stored as canonical JSON off-chain; its `keccak256` hash plus the
 | `MandateVaultFactory` | Deploys vaults (full deployments, see ADR-002); the canonical "is this a real vault?" check; holds set-once CoverManager and ClaimsEngine addresses | `createVault(MandateParams, agent, guardian, agentId, name, symbol)`, `isVault(addr)` |
 | `MandateVault` | ERC-4626 over `baseAsset`; NAV across allowed assets via oracle; policy engine; breach log; circuit breaker | `execute(target, value, data)` (agent only), `reconcile()`, `breaches(id)`, `freeze()`, `rotateAgent(newKey)` (guardian), `payPremium(amount)` (CoverManager only) |
 | `OperatorBond` | First-loss stakes per agent | `stake(agentId, amt)`, `requestWithdraw` → cooldown → `withdraw` (blocked while cover is active), `slash(agentId, amt, to)` (ClaimsEngine only) |
-| `CoverPool` | ERC-4626 underwriting pool (`bdUSDC`); locked vs free capital; fees | `deposit`, `requestWithdraw`/`withdraw` (cooldown, free capital only), `lock/unlock` (CoverManager), `payClaim` (ClaimsEngine), protocol-fee and bounty-fee splits |
-| `CoverManager` | Verifies signed quotes; issues **policy NFTs** (ERC-721); streams premiums; enforces capacity and correlation caps | `buyCover(Quote, sig)`, `accrue(policyId)`, `cancel(policyId)`, `lapse(policyId)` |
-| `ClaimsEngine` | Permissionless parametric claims; loss calculation; waterfall | `fileClaim(policyId, breachIds[])` |
+| `CoverPool` | ERC-4626 underwriting pool (`bdUSDG` on Robinhood Chain); capital locked by active cover is computed from CoverManager's totals | `deposit`, `requestRedeem` → cooldown → `redeem`/`withdraw` (only from free capital; a matured request is valid for 2 days), `payClaim` (ClaimsEngine) |
+| `CoverManager` | Verifies signed quotes; issues non-transferable **policy NFTs** (ERC-721) to the insured vault; streams premiums and splits them (15% treasury, 5% bounty pool, 80% pool); enforces capacity and correlation caps; 30-day term with a waiting period | `buyCover(Quote, sig)` (vault guardian only), `accrue(policyId)` (permissionless; a missed premium starts a 3-day grace period, after which the policy lapses), `cancel(policyId)` |
+| `ClaimsEngine` | Permissionless parametric claims; loss calculation; unpaid premium netted from the payout; waterfall (bond, then pool) into the vault; 10% deductible; 7-day claim window after a policy ends | `fileClaim(policyId, breachIds[])` |
 | `DisputeModule` | Optimistic resolution for grey-area claims (e.g. drawdown attribution) | `propose(policyId, amount, evidenceHash)` + bond, `challenge(id)`, `resolve(id, outcome)` (council multisig for the hackathon; UMA/Kleros later) |
 | `BountyBoard` | Commit-reveal attack submissions; rewards | `commit(hash)`, `reveal(id, specURI, salt)`, `accept(id, reward)` (Arena attester) |
 | `IPriceOracle` | Price adapter | `ChainlinkOracle` (Arbitrum/Robinhood where feeds exist), `MockOracle` (testnets, demo) |
@@ -311,10 +311,12 @@ struct Quote {              // accepted by CoverManager
 
 `CoverManager.buyCover` checks all of the following before binding cover:
 - the signature is from an active attester, and the quote hasn't expired
-- the vault comes from the factory, and its mandate hash matches the quote
-- the operator bond is at least `minBond`
+- the caller is the vault's guardian, and the vault freezes on breach (so a payout can't be drained by the same compromised key)
+- the vault comes from the factory, and its agent id, mandate hash and base asset match the quote
+- the score is insurable (Section 9.3), and the operator bond is at least the larger of `minBond` and the tier's minimum
+- the vault has no other active policy
 - **capacity:** total active cover ≤ `maxLeverage` × pool assets (start at 2×)
-- **per-agent cap:** ≤ 10% of pool assets
+- **per-agent cap:** ≤ the smaller of 10% and the tier cap (2% for tier B) of pool assets
 - **correlation cap:** total cover on agents from the same `modelFamily` ≤ `κ` × pool assets (κ = 40%)
 
 ---

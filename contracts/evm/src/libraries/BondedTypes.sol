@@ -76,11 +76,30 @@ library BondedTypes {
         "Quote(uint256 agentId,address vault,uint256 coverAmount,uint32 premiumRateBps,uint16 score,uint8 modelFamily,bytes32 mandateHash,bytes32 reportHash,uint256 minBond,uint64 expiresAt,uint256 nonce)"
     );
 
+    /// @notice EIP-712 domain name and version. Match EIP712_DOMAIN_NAME / _VERSION in packages/shared.
+    string internal constant EIP712_NAME = "Bonded";
+    string internal constant EIP712_VERSION = "1";
+
     /// @notice Basis-point denominator (10_000 = 100%).
     uint256 internal constant BPS = 10_000;
 
     /// @notice USD amounts on-chain use 6 decimals, matching USDC.
     uint256 internal constant USD_DECIMALS = 6;
+
+    /// @notice Underwriting rules for a Bonded Score. Mirrors TIER_RULES in packages/shared/src/tiers.ts.
+    /// @return insurable False for CCC (score below 25).
+    /// @return minBondBps Minimum operator bond as a share of cover.
+    /// @return maxCoverBpsOfPool Largest cover for one agent as a share of pool assets.
+    function tierRule(uint16 score)
+        internal
+        pure
+        returns (bool insurable, uint16 minBondBps, uint16 maxCoverBpsOfPool)
+    {
+        if (score >= 60) return (true, 1000, 1000); // AAA, AA, A, BBB
+        if (score >= 45) return (true, 2000, 1000); // BB
+        if (score >= 25) return (true, 3000, 200); // B
+        return (false, 0, 0); // CCC
+    }
 
     function hashAttestation(Attestation memory a) internal pure returns (bytes32) {
         return keccak256(

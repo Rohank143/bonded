@@ -65,4 +65,26 @@ contract BondedTypesTest is Test {
         assertEq(uint8(BondedTypes.BreachType.Limit), 4);
         assertEq(uint8(BondedTypes.BreachType.Asset), 5);
     }
+
+    /// @dev Mirrors TIER_RULES in packages/shared/src/tiers.ts (tested there too).
+    function test_TierRulesMatchTypeScript() public pure {
+        _assertTier(100, true, 1000, 1000); // AAA
+        _assertTier(60, true, 1000, 1000); // BBB lower bound
+        _assertTier(59, true, 2000, 1000); // BB
+        _assertTier(45, true, 2000, 1000);
+        _assertTier(44, true, 3000, 200); // B
+        _assertTier(25, true, 3000, 200);
+        _assertTier(24, false, 0, 0); // CCC
+        _assertTier(0, false, 0, 0);
+    }
+
+    function _assertTier(uint16 score, bool insurable, uint16 minBondBps, uint16 maxCoverBps)
+        internal
+        pure
+    {
+        (bool i, uint16 b, uint16 c) = BondedTypes.tierRule(score);
+        assertEq(i, insurable);
+        assertEq(b, minBondBps);
+        assertEq(c, maxCoverBps);
+    }
 }
