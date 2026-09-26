@@ -1,0 +1,104 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.28;
+
+/// @title BondedTypes
+/// @notice Shared enums, structs and EIP-712 typehashes for the Bonded protocol.
+/// @dev Codes and type strings must match packages/shared (TypeScript). The cross-language
+///      tests in test/BondedTypes.t.sol and packages/shared/test/attestation.test.ts pin them.
+library BondedTypes {
+    /// @notice How a Mandate Vault treats a breach. See docs/PLAN.md Section 6.
+    enum MandateMode {
+        Monitor, // breach executes, is recorded, agent is frozen
+        Enforce // breach reverts
+    }
+
+    /// @notice Breach types recorded by a Mandate Vault. See docs/PLAN.md Sections 6.3 and 11.1.
+    enum BreachType {
+        UnauthorizedTarget, // T1: call to a contract or function outside the mandate
+        UnauthorizedApproval, // T1: approval to a spender outside the mandate
+        UnauthorizedTransfer, // T1: transfer to a recipient outside the mandate
+        Deferred, // T1: unexplained outflow found by reconcile()
+        Limit, // T2: per-transaction or daily notional limit exceeded
+        Asset // T3: vault acquired a token outside the mandate
+    }
+
+    /// @notice Score attestation signed by the Arena attester and posted to BondedRegistry.
+    struct Attestation {
+        uint256 agentId;
+        uint16 score;
+        uint32 expectedLossBps;
+        bytes32 reportHash;
+        bytes32 mandateHash;
+        bytes32 codeHash;
+        bytes32 teeMeasurement;
+        uint8 modelFamily;
+        uint64 issuedAt;
+        uint64 expiresAt;
+    }
+
+    /// @notice Signed premium quote accepted by CoverManager.buyCover.
+    struct Quote {
+        uint256 agentId;
+        address vault;
+        uint256 coverAmount;
+        uint32 premiumRateBps;
+        uint16 score;
+        uint8 modelFamily;
+        bytes32 mandateHash;
+        bytes32 reportHash;
+        uint256 minBond;
+        uint64 expiresAt;
+        uint256 nonce;
+    }
+
+    bytes32 internal constant ATTESTATION_TYPEHASH = keccak256(
+        "Attestation(uint256 agentId,uint16 score,uint32 expectedLossBps,bytes32 reportHash,bytes32 mandateHash,bytes32 codeHash,bytes32 teeMeasurement,uint8 modelFamily,uint64 issuedAt,uint64 expiresAt)"
+    );
+
+    bytes32 internal constant QUOTE_TYPEHASH = keccak256(
+        "Quote(uint256 agentId,address vault,uint256 coverAmount,uint32 premiumRateBps,uint16 score,uint8 modelFamily,bytes32 mandateHash,bytes32 reportHash,uint256 minBond,uint64 expiresAt,uint256 nonce)"
+    );
+
+    /// @notice Basis-point denominator (10_000 = 100%).
+    uint256 internal constant BPS = 10_000;
+
+    /// @notice USD amounts on-chain use 6 decimals, matching USDC.
+    uint256 internal constant USD_DECIMALS = 6;
+
+    function hashAttestation(Attestation memory a) internal pure returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                ATTESTATION_TYPEHASH,
+                a.agentId,
+                a.score,
+                a.expectedLossBps,
+                a.reportHash,
+                a.mandateHash,
+                a.codeHash,
+                a.teeMeasurement,
+                a.modelFamily,
+                a.issuedAt,
+                a.expiresAt
+            )
+        );
+    }
+
+    function hashQuote(Quote memory q) internal pure returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                QUOTE_TYPEHASH,
+                q.agentId,
+                q.vault,
+                q.coverAmount,
+                q.premiumRateBps,
+                q.score,
+                q.modelFamily,
+                q.mandateHash,
+                q.reportHash,
+                q.minBond,
+                q.expiresAt,
+                q.nonce
+            )
+        );
+    }
+}

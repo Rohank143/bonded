@@ -1,0 +1,68 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.28;
+
+import {Test} from "forge-std/Test.sol";
+import {BondedTypes} from "../src/libraries/BondedTypes.sol";
+
+/// @notice Pins the EIP-712 encoding to the TypeScript side (packages/shared).
+/// @dev The expected hashes were produced by viem from the same fixtures used in
+///      packages/shared/test/attestation.test.ts. If either side changes, both tests fail.
+contract BondedTypesTest is Test {
+    bytes32 constant EXPECTED_ATTESTATION_TYPEHASH =
+        0xa214f173fdb418ef27d396191b8973aa6cd22ce14cfad5e4d463f9e624545225;
+    bytes32 constant EXPECTED_QUOTE_TYPEHASH =
+        0x77aa80c26f664e0586b9e93f383edc272af05d2cd2ddf13ee5e7597ebe314fcc;
+    bytes32 constant EXPECTED_ATTESTATION_STRUCT_HASH =
+        0xeadd91612246d4cf99532ebfcd87b2b12c432e92bce58ea9f252e29dba4ec938;
+    bytes32 constant EXPECTED_QUOTE_STRUCT_HASH =
+        0xdad36c5fd409fde62c1bec61b5ce3eafb81d2631b5e1e0eb7f3084ef519ff7ff;
+
+    function test_TypehashesMatchTypeScript() public pure {
+        assertEq(BondedTypes.ATTESTATION_TYPEHASH, EXPECTED_ATTESTATION_TYPEHASH);
+        assertEq(BondedTypes.QUOTE_TYPEHASH, EXPECTED_QUOTE_TYPEHASH);
+    }
+
+    function test_AttestationStructHashMatchesTypeScript() public pure {
+        BondedTypes.Attestation memory a = BondedTypes.Attestation({
+            agentId: 42,
+            score: 96,
+            expectedLossBps: 30,
+            reportHash: bytes32(uint256(1)),
+            mandateHash: bytes32(uint256(2)),
+            codeHash: bytes32(uint256(3)),
+            teeMeasurement: bytes32(0),
+            modelFamily: 1, // anthropic-claude
+            issuedAt: 1_790_000_000,
+            expiresAt: 1_792_592_000
+        });
+        assertEq(BondedTypes.hashAttestation(a), EXPECTED_ATTESTATION_STRUCT_HASH);
+    }
+
+    function test_QuoteStructHashMatchesTypeScript() public pure {
+        BondedTypes.Quote memory q = BondedTypes.Quote({
+            agentId: 42,
+            vault: 0x6666666666666666666666666666666666666666,
+            coverAmount: 100_000_000_000,
+            premiumRateBps: 120,
+            score: 96,
+            modelFamily: 1,
+            mandateHash: bytes32(uint256(2)),
+            reportHash: bytes32(uint256(1)),
+            minBond: 10_000_000_000,
+            expiresAt: 1_790_086_400,
+            nonce: 1
+        });
+        assertEq(BondedTypes.hashQuote(q), EXPECTED_QUOTE_STRUCT_HASH);
+    }
+
+    function test_EnumCodesMatchTypeScript() public pure {
+        assertEq(uint8(BondedTypes.MandateMode.Monitor), 0);
+        assertEq(uint8(BondedTypes.MandateMode.Enforce), 1);
+        assertEq(uint8(BondedTypes.BreachType.UnauthorizedTarget), 0);
+        assertEq(uint8(BondedTypes.BreachType.UnauthorizedApproval), 1);
+        assertEq(uint8(BondedTypes.BreachType.UnauthorizedTransfer), 2);
+        assertEq(uint8(BondedTypes.BreachType.Deferred), 3);
+        assertEq(uint8(BondedTypes.BreachType.Limit), 4);
+        assertEq(uint8(BondedTypes.BreachType.Asset), 5);
+    }
+}
