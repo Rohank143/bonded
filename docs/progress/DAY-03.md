@@ -16,15 +16,23 @@ Plan reference: docs/PLAN.md Section 20, Day 3. Design record: `docs/decisions/0
   - Binds cover from EIP-712 quotes signed by an attester.
   - Mints a non-transferable policy NFT to the vault.
   - Streams premiums from the vault, rounded up, split 15/5/80.
-  - Policies expire at the end of the term or lapse if unpaid.
+  - A missed premium starts a 3-day grace period with coverage continuing. After that the policy lapses. Policies expire at the end of the term.
   - Risk caps at binding: leverage, per-agent, tier and model family.
 - **`ClaimsEngine`:**
   - Permissionless parametric claims with a 10% deductible and a 7-day claim window after a policy ends.
+  - Unpaid premium is netted from the payout.
   - Waterfall: bond first, then pool, both paying into the vault.
 - **Cross-language checks:**
   - The quote digest from viem matches `CoverManager.quoteDigest`.
   - The Solidity tier rules match the TypeScript table.
-- **Tests:** 121 Forge tests, including fuzz tests at 1,024 runs in the CI profile, plus 43 TypeScript tests.
+- **Tests:** 126 Forge tests, including fuzz tests at 1,024 runs in the CI profile, plus 43 TypeScript tests.
+
+## Fixed in review
+
+CodeRabbit found that a breach draining the vault's base asset made its own claim fail. The claim first collects the premium, which failed, which lapsed the policy backdated to before the breach. The fix is a grace period plus netting unpaid premium from the payout (ADR-003, decision 5). New tests:
+- a full drain is paid
+- a breach during the grace period is paid with the premium netted
+- the grace period, lapse and debt behave as described
 
 ## The demo loop, tested end to end
 
@@ -53,5 +61,5 @@ Unchanged: testnet RPC allowlisting (needed Day 4) and the Anthropic API key (ne
 
 ## Review asks
 
-- Check the known limits in ADR-003, especially lapse griefing and bond withdrawal after expiry. Should either be fixed before the demo?
+- Check the known limits in ADR-003, especially bond withdrawal after expiry. Fix it before the demo?
 - Check the fee split (15% treasury, 5% bounty, 80% underwriters) and the 10% deductible.

@@ -21,8 +21,10 @@ import {MandateVault} from "./MandateVault.sol";
 ///      2. check each breach was recorded by the covered vault, unclaimed, not blocked, and
 ///         inside the coverage window; mark it claimed on the vault;
 ///      3. payout = min(remaining cover, loss x (1 - deductible));
-///      4. waterfall: slash the operator bond first, then the pool pays the rest;
-///      5. both pay into the vault, restoring the share price for every depositor.
+///      4. unpaid premium for the covered period is netted from the payout (so a breach that
+///         drained the vault's premium money is still paid, and cover is never free);
+///      5. waterfall: slash the operator bond first, then the pool pays the rest;
+///      6. both pay into the vault, restoring the share price for every depositor.
 contract ClaimsEngine is Ownable2Step, ReentrancyGuard {
     ICoverManager public immutable coverManager;
     ICoverPool public immutable pool;
@@ -38,6 +40,7 @@ contract ClaimsEngine is Ownable2Step, ReentrancyGuard {
         address indexed vault,
         uint256 lossBase,
         uint256 payout,
+        uint256 premiumNetted,
         uint256 fromBond,
         uint256 fromPool,
         uint256[] breachIds
@@ -112,26 +115,39 @@ contract ClaimsEngine is Ownable2Step, ReentrancyGuard {
 
     // ----- Internals ---------------------------------------------------------------------
 
-    /// @dev Computes the payout and runs the waterfall: bond first, then the pool.
+    struct Payout {
+        uint256 lossBase;
+        uint256 gross; // min(remaining cover, loss minus deductible)
+        uint256 netted; // unpaid premium settled out of the gross payout
+        uint256 fromBond;
+        uint256 fromPool;
+    }
+
+    /// @dev Computes the payout, nets unpaid premium, and runs the waterfall: bond, then pool.
     function _pay(
         uint256 policyId,
         ICoverManager.Policy memory policy,
         uint256 lossUsd6,
         uint256[] calldata breachIds
     ) internal returns (uint256 paid) {
-        MandateVault vault = MandateVault(policy.vault);
-        uint256 lossBase = _usd6ToBase(vault, lossUsd6);
-        uint256 payout = Math.min(
+        Payout memory p;
+        p.lossBase = _usd6ToBase(MandateVault(policy.vault), lossUsd6);
+        p.gross = Math.min(
             policy.remainingCover,
-            Math.mulDiv(lossBase, BondedTypes.BPS - deductibleBps, BondedTypes.BPS)
+            Math.mulDiv(p.lossBase, BondedTypes.BPS - deductibleBps, BondedTypes.BPS)
         );
-        if (payout == 0) revert NothingToPay();
+        if (p.gross == 0) revert NothingToPay();
 
-        uint256 fromBond = bond.slash(policy.agentId, payout, address(vault));
-        uint256 fromPool = payout > fromBond ? pool.payClaim(address(vault), payout - fromBond) : 0;
-        paid = fromBond + fromPool;
-        coverManager.recordClaim(policyId, paid);
-        emit ClaimPaid(policyId, address(vault), lossBase, payout, fromBond, fromPool, breachIds);
+        p.netted = Math.min(coverManager.premiumDebt(policyId), p.gross);
+        uint256 toVault = p.gross - p.netted;
+        if (toVault > 0) p.fromBond = bond.slash(policy.agentId, toVault, policy.vault);
+        if (toVault > p.fromBond) p.fromPool = pool.payClaim(policy.vault, toVault - p.fromBond);
+        paid = p.fromBond + p.fromPool;
+
+        coverManager.recordClaim(policyId, paid, p.netted);
+        emit ClaimPaid(
+            policyId, policy.vault, p.lossBase, p.gross, p.netted, p.fromBond, p.fromPool, breachIds
+        );
     }
 
     /// @dev Validates each breach, marks it claimed on the vault and sums the losses.

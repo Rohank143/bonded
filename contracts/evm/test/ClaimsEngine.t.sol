@@ -51,12 +51,55 @@ contract ClaimsEngineTest is ProtocolBase {
 
         uint256 poolBefore = usdg.balanceOf(address(pool));
         vm.expectEmit(true, true, false, false);
-        emit ClaimsEngine.ClaimPaid(p43, address(vault43), 0, 0, 0, 0, new uint256[](0));
+        emit ClaimsEngine.ClaimPaid(p43, address(vault43), 0, 0, 0, 0, 0, new uint256[](0));
         uint256 paid = claims.fileClaim(p43, _ids(0));
 
         assertEq(paid, 4500e6);
         assertEq(bond.bondOf(43), 0); // 2,000 slashed
         assertEq(poolBefore - usdg.balanceOf(address(pool)), 2500e6 - _premiumToPool(p43)); // pool paid 2,500
+    }
+
+    function test_FullDrainIsStillPaid() public {
+        // The breach takes every unit of base asset, so the premium can't be collected at claim time.
+        uint256 everything = usdg.balanceOf(address(vault));
+        _steal(everything);
+        assertEq(usdg.balanceOf(address(vault)), 0);
+
+        uint256 paid = claims.fileClaim(policyId, _ids(0));
+
+        // Payout is capped at the 20,000 cover; one day of unpaid premium is netted from it.
+        uint256 premium = _expectedPremium(COVER, RATE_BPS, 1 days);
+        assertEq(paid, COVER - premium);
+        assertEq(usdg.balanceOf(address(vault)), COVER - premium);
+        ICoverManager.Policy memory p = _policy(policyId);
+        assertEq(uint8(p.status), uint8(ICoverManager.Status.Exhausted));
+        assertEq(p.remainingCover, 0);
+        assertEq(manager.totalActiveCover(), 0);
+    }
+
+    function test_BreachDuringTheGracePeriodIsPaidWithDebtNetted() public {
+        // The vault's base asset runs out, so a premium is missed and the grace period starts...
+        uint256 shares = vault.maxRedeem(depositor);
+        vm.prank(depositor);
+        vault.redeem(shares, depositor, depositor);
+        manager.accrue(policyId);
+        assertGt(_policy(policyId).pastDueSince, 0);
+
+        // ...then new deposits arrive and are stolen during the grace period.
+        usdg.mint(address(vault), 3000e6);
+        vm.warp(block.timestamp + 1 days);
+        _steal(3000e6);
+
+        vm.warp(block.timestamp + 1 days);
+        uint256 paid = claims.fileClaim(policyId, _ids(0));
+
+        uint256 debt = _expectedPremium(COVER, RATE_BPS, 3 days); // unpaid since binding
+        assertEq(paid, 2700e6 - debt);
+        ICoverManager.Policy memory p = _policy(policyId);
+        assertEq(uint8(p.status), uint8(ICoverManager.Status.Active));
+        assertEq(p.pastDueSince, 0); // the netted premium brought it current
+        assertEq(p.paidUntil, block.timestamp);
+        assertEq(p.remainingCover, COVER - 2700e6);
     }
 
     function test_DeferredLossIsClaimable() public {

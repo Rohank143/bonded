@@ -31,9 +31,17 @@ The payout lands in the vault. If the compromised agent could keep acting, it co
 
 Scores expire, so cover does too. The term matches the attestation lifetime. Breaches in the first `waitingPeriod` (1 day by default, configurable down to minutes for the demo) aren't covered. That stops "insure after you've already been hit". Each policy stores its own term and waiting period, so later parameter changes don't affect it.
 
-### 5. Premiums stream and round up
+### 5. Premiums stream, round up, and get a grace period
 
-`accrue` is permissionless. It charges `cover x rate x elapsed / year`, rounded **up**, so calling it every block can't round the premium down to zero. If the vault can't pay, the policy **lapses** at the time it was last paid up to, and breaches after that aren't covered. Past the end of the term it **expires**.
+`accrue` is permissionless. It charges `cover x rate x elapsed / year`, rounded **up**, so calling it every block can't round the premium down to zero.
+
+If the vault can't pay, the policy **doesn't lapse straight away**:
+- A **grace period** (3 days by default) starts, and coverage continues through it.
+- If a later collection succeeds, the policy is current again.
+- If the grace period runs out, the policy **lapses at the end of the grace period**. The unpaid premium is kept as debt.
+- Past the end of the term the policy **expires**, also keeping any unpaid premium as debt.
+
+This fixes a flaw CodeRabbit found in review. Originally a failed collection lapsed the policy backdated to when it was last paid up. A breach that drained the vault's base asset made the claim's own premium collection fail, which backdated the lapse to before the breach and rejected the claim. That is exactly the loss the product exists to pay. The grace period also means nobody can cancel a vault's cover by calling `accrue` at a bad moment.
 
 Premiums are split 15% to the treasury, 5% to the bounty pool and 80% to the underwriting pool, where they raise the share price.
 
@@ -64,6 +72,7 @@ Anyone can call `fileClaim(policyId, breachIds)`; the keeper does it within seco
 
 Then:
 - **Payout** = min(remaining cover, loss × (1 − 10% deductible)).
+- **Unpaid premium** for the covered period is netted from the payout, so cover during a grace period is never free.
 - **Waterfall:** slash the operator bond first, then the pool pays the rest.
 - **Destination:** both pay into the vault, restoring the share price for every depositor.
 - **Remaining cover:** it shrinks by what was paid, and a policy with none left is **exhausted**.
@@ -77,7 +86,8 @@ Breaches inside the coverage window can still be claimed for 7 days after the po
 ## Known limits
 
 - **Operator fraud is priced, not prevented.** A dishonest operator who drains their own vault to a colluding address loses their bond first. If the bond is smaller than the payout, the pool covers the rest; depositors are made whole minus the deductible. Tier minimum bonds, per-agent caps and the waiting period limit this.
-- **Lapse griefing.** If a vault holds almost no base asset (e.g. everything is in Stock Tokens), anyone can call `accrue` and lapse its cover. Operators should keep a base-asset buffer. A grace period is a possible improvement.
+- **A vault that stays short of base asset still loses cover.** Once the grace period runs out, the policy lapses. Operators should keep a base-asset buffer for premiums.
+- **Netted premium goes to whoever paid the claim.** It stays with the bond or pool that would otherwise have paid it, so the treasury and bounty pool don't get their share of it.
 - **Pool shortfalls aren't carried forward.** If the pool can't pay a claim in full, the shortfall isn't recorded as a debt.
 - **Bond withdrawal after expiry.** The bond can be withdrawn once an agent has no active cover. A breach near the end of a term could be claimed after the bond is gone if nobody files the claim promptly. The keeper files claims immediately; tying withdrawals to the claim window is a Day 13 candidate.
 - **Attesters are managed by CoverManager's owner.** They move to BondedRegistry on Day 4.

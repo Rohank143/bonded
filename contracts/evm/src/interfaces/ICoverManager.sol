@@ -9,7 +9,7 @@ interface ICoverManager {
         Active,
         Cancelled, // guardian ended it
         Expired, // term ran out
-        Lapsed, // premium couldn't be paid
+        Lapsed, // premium stayed unpaid past the grace period
         Exhausted // claims used up the full cover
     }
 
@@ -27,6 +27,8 @@ interface ICoverManager {
         uint64 endsAt;
         uint64 paidUntil; // premiums are paid up to this time
         uint64 closedAt;
+        uint64 pastDueSince; // first failed premium collection since the last success; 0 if current
+        uint256 premiumDebt; // unpaid premium frozen when a policy closes owing money
     }
 
     /// @notice Sum of remaining cover across active policies (base-asset units).
@@ -46,9 +48,13 @@ interface ICoverManager {
         view
         returns (uint64 coveredFrom, uint64 coveredUntil);
 
+    /// @notice Unpaid premium for the covered period so far. ClaimsEngine nets it from payouts.
+    function premiumDebt(uint256 policyId) external view returns (uint256);
+
     /// @notice Brings premiums up to date; may expire or lapse the policy. Anyone can call.
     function accrue(uint256 policyId) external;
 
-    /// @notice Reduces remaining cover after a payout. ClaimsEngine only.
-    function recordClaim(uint256 policyId, uint256 amount) external;
+    /// @notice Records a payout: `paid` went to the vault and `premiumNetted` settled unpaid
+    ///         premium. Both reduce remaining cover. ClaimsEngine only.
+    function recordClaim(uint256 policyId, uint256 paid, uint256 premiumNetted) external;
 }

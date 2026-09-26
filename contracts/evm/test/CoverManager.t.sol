@@ -246,22 +246,80 @@ contract CoverManagerTest is ProtocolBase {
         assertGe(paid, _expectedPremium(COVER, RATE_BPS, 50));
     }
 
-    function test_LapsesWhenTheVaultCannotPay() public {
+    function _emptyVaultBase() internal {
+        uint256 shares = vault.maxRedeem(depositor);
+        vm.prank(depositor);
+        vault.redeem(shares, depositor, depositor); // empties the vault's base balance
+    }
+
+    function test_AMissedPremiumStartsAGracePeriod() public {
         uint256 policyId = _bindDefault();
         vm.warp(block.timestamp + 5 days);
         manager.accrue(policyId);
         uint64 paidUntil = _policy(policyId).paidUntil;
 
-        uint256 shares = vault.maxRedeem(depositor);
-        vm.prank(depositor);
-        vault.redeem(shares, depositor, depositor); // empties the vault's base balance
+        _emptyVaultBase();
+        vm.warp(block.timestamp + 1 days);
+        manager.accrue(policyId); // fails to collect
 
+        ICoverManager.Policy memory p = _policy(policyId);
+        assertEq(uint8(p.status), uint8(ICoverManager.Status.Active)); // still covered
+        assertEq(p.pastDueSince, block.timestamp);
+        assertEq(p.paidUntil, paidUntil);
+        assertEq(manager.premiumDebt(policyId), _expectedPremium(COVER, RATE_BPS, 1 days));
+        assertEq(manager.totalActiveCover(), COVER);
+    }
+
+    function test_LapsesAtTheEndOfTheGracePeriod() public {
+        uint256 policyId = _bindDefault();
         vm.warp(block.timestamp + 5 days);
         manager.accrue(policyId);
+        uint64 paidUntil = _policy(policyId).paidUntil;
+
+        _emptyVaultBase();
+        vm.warp(block.timestamp + 1 days);
+        manager.accrue(policyId);
+        uint64 pastDueSince = _policy(policyId).pastDueSince;
+
+        vm.warp(block.timestamp + 5 days); // grace (3 days) has run out
+        manager.accrue(policyId);
+
         ICoverManager.Policy memory p = _policy(policyId);
         assertEq(uint8(p.status), uint8(ICoverManager.Status.Lapsed));
-        assertEq(p.closedAt, paidUntil);
+        assertEq(p.closedAt, pastDueSince + 3 days); // covered through the grace period
+        assertEq(p.premiumDebt, _expectedPremium(COVER, RATE_BPS, p.closedAt - paidUntil));
+        assertEq(manager.premiumDebt(policyId), p.premiumDebt);
         assertEq(manager.totalActiveCover(), 0);
+    }
+
+    function test_PayingAgainClearsThePastDueState() public {
+        uint256 policyId = _bindDefault();
+        _emptyVaultBase();
+        vm.warp(block.timestamp + 1 days);
+        manager.accrue(policyId);
+        assertGt(_policy(policyId).pastDueSince, 0);
+
+        usdg.mint(address(vault), 1000e6); // the vault is topped up
+        vm.warp(block.timestamp + 1 days);
+        manager.accrue(policyId);
+
+        ICoverManager.Policy memory p = _policy(policyId);
+        assertEq(uint8(p.status), uint8(ICoverManager.Status.Active));
+        assertEq(p.pastDueSince, 0);
+        assertEq(p.paidUntil, block.timestamp);
+        assertEq(manager.premiumDebt(policyId), 0);
+    }
+
+    function test_ExpiringWhileUnpaidKeepsTheDebt() public {
+        uint256 policyId = _bindDefault();
+        _emptyVaultBase();
+        vm.warp(block.timestamp + 31 days);
+        manager.accrue(policyId);
+
+        ICoverManager.Policy memory p = _policy(policyId);
+        assertEq(uint8(p.status), uint8(ICoverManager.Status.Expired));
+        assertEq(p.closedAt, p.endsAt);
+        assertEq(p.premiumDebt, _expectedPremium(COVER, RATE_BPS, 30 days));
     }
 
     function test_GuardianCancelsAfterSettlingPremium() public {
@@ -297,7 +355,7 @@ contract CoverManagerTest is ProtocolBase {
     function test_OnlyClaimsEngineRecordsClaims() public {
         uint256 policyId = _bindDefault();
         vm.expectRevert(CoverManager.NotClaimsEngine.selector);
-        manager.recordClaim(policyId, 1);
+        manager.recordClaim(policyId, 1, 0);
     }
 
     function test_AdminSettersAreOwnerOnlyAndBounded() public {
@@ -319,6 +377,8 @@ contract CoverManagerTest is ProtocolBase {
             abi.encodeWithSelector(CoverManager.InvalidParams.selector, "waitingPeriod")
         );
         manager.setTerms(1 days, 1 days);
+        vm.expectRevert(abi.encodeWithSelector(CoverManager.InvalidParams.selector, "gracePeriod"));
+        manager.setGracePeriod(15 days);
         vm.expectRevert(CoverManager.AlreadySet.selector);
         manager.setClaimsEngine(address(1));
 

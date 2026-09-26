@@ -47,6 +47,9 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
     uint16 public modelFamilyCapBps = 4000; // one model family <= 40% of pool assets
     uint64 public policyTerm = 30 days;
     uint64 public waitingPeriod = 1 days;
+    /// @notice How long a premium can stay unpaid before the policy lapses. Coverage continues
+    ///         meanwhile, and ClaimsEngine nets the unpaid premium from any payout.
+    uint64 public gracePeriod = 3 days;
 
     mapping(address signer => bool) public isAttester;
     mapping(bytes32 digest => bool) public quoteUsed;
@@ -79,7 +82,9 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
         uint256 toBounty
     );
     event PolicyClosed(uint256 indexed policyId, Status status, uint64 closedAt);
-    event ClaimRecorded(uint256 indexed policyId, uint256 amount, uint256 remainingCover);
+    event ClaimRecorded(
+        uint256 indexed policyId, uint256 paid, uint256 premiumNetted, uint256 remainingCover
+    );
     event AttesterSet(address indexed attester, bool allowed);
     event TreasurySet(address treasury);
     event BountyPoolSet(address bountyPool);
@@ -87,6 +92,8 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
     event FeesSet(uint16 protocolFeeBps, uint16 bountyFeeBps);
     event RiskParamsSet(uint32 maxLeverageBps, uint16 maxAgentCoverBps, uint16 modelFamilyCapBps);
     event TermsSet(uint64 policyTerm, uint64 waitingPeriod);
+    event GracePeriodSet(uint64 gracePeriod);
+    event PremiumPastDue(uint256 indexed policyId, uint256 owed, uint64 pastDueSince);
 
     error ZeroAddress();
     error AlreadySet();
@@ -165,6 +172,12 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
     }
 
     /// @notice Premium owed now for a policy (rounded up).
+    /// @inheritdoc ICoverManager
+    function premiumDebt(uint256 policyId) external view returns (uint256) {
+        Policy storage policy = _existing(policyId);
+        return policy.status == Status.Active ? premiumOwed(policyId) : policy.premiumDebt;
+    }
+
     function premiumOwed(uint256 policyId) public view returns (uint256) {
         Policy storage policy = _policies[policyId];
         if (policy.status != Status.Active) return 0;
@@ -188,18 +201,30 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
     // ---------------------------------------------------------------------------------------
 
     /// @inheritdoc ICoverManager
-    function recordClaim(uint256 policyId, uint256 amount) external {
+    function recordClaim(uint256 policyId, uint256 paid, uint256 premiumNetted) external {
         if (msg.sender != claimsEngine || claimsEngine == address(0)) revert NotClaimsEngine();
         Policy storage policy = _existing(policyId);
-        if (amount > policy.remainingCover) revert ClaimExceedsCover();
-        policy.remainingCover -= amount;
+        uint256 used = paid + premiumNetted;
+        if (used > policy.remainingCover) revert ClaimExceedsCover();
+
+        if (premiumNetted > 0) {
+            // The netted amount settles the premium owed up to now.
+            if (policy.status == Status.Active) {
+                policy.paidUntil = SafeCast.toUint64(Math.min(block.timestamp, policy.endsAt));
+                policy.pastDueSince = 0;
+            } else {
+                policy.premiumDebt = 0;
+            }
+        }
+
+        policy.remainingCover -= used;
         if (policy.status == Status.Active) {
-            _reduceExposure(policy, amount);
+            _reduceExposure(policy, used);
             if (policy.remainingCover == 0) {
                 _close(policyId, Status.Exhausted, SafeCast.toUint64(block.timestamp));
             }
         }
-        emit ClaimRecorded(policyId, amount, policy.remainingCover);
+        emit ClaimRecorded(policyId, paid, premiumNetted, policy.remainingCover);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -285,6 +310,12 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
     }
 
     /// @dev Applies to new policies only; each policy stores its own term and waiting period.
+    function setGracePeriod(uint64 gracePeriod_) external onlyOwner {
+        if (gracePeriod_ > 14 days) revert InvalidParams("gracePeriod");
+        gracePeriod = gracePeriod_;
+        emit GracePeriodSet(gracePeriod_);
+    }
+
     function setTerms(uint64 policyTerm_, uint64 waitingPeriod_) external onlyOwner {
         if (policyTerm_ < 1 hours || policyTerm_ > YEAR) revert InvalidParams("policyTerm");
         if (waitingPeriod_ > 7 days || waitingPeriod_ >= policyTerm_) {
@@ -388,8 +419,11 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
         ) revert CapacityExceeded("modelFamily");
     }
 
-    /// @dev Pulls the premium owed from the vault. If the vault can't pay, the policy lapses at
-    ///      `paidUntil`. Past `endsAt` the policy expires.
+    /// @dev Pulls the premium owed from the vault. A failed collection starts (or continues) a
+    ///      grace period during which coverage continues; after it the policy lapses at the end of
+    ///      the grace period, keeping the unpaid premium as debt. Past `endsAt` the policy expires.
+    ///      Coverage never ends before a failed collection is first seen, so a breach that drains
+    ///      the vault's base asset stays claimable (the unpaid premium is netted from the payout).
     function _accrue(uint256 policyId) internal {
         Policy storage policy = _existing(policyId);
         if (policy.status != Status.Active) return;
@@ -399,13 +433,33 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
             uint256 owed = _premiumFor(policy, until - policy.paidUntil);
             try MandateVault(policy.vault).payPremium(owed) {
                 policy.paidUntil = until;
+                policy.pastDueSince = 0;
                 _distribute(policyId, owed);
             } catch {
-                _close(policyId, Status.Lapsed, policy.paidUntil);
+                _handleMissedPremium(policyId, policy, owed);
                 return;
             }
         }
         if (block.timestamp >= policy.endsAt) _close(policyId, Status.Expired, policy.endsAt);
+    }
+
+    function _handleMissedPremium(uint256 policyId, Policy storage policy, uint256 owed) internal {
+        uint64 nowTs = SafeCast.toUint64(block.timestamp);
+        if (policy.pastDueSince == 0) {
+            policy.pastDueSince = nowTs;
+            emit PremiumPastDue(policyId, owed, nowTs);
+        }
+        if (block.timestamp >= policy.endsAt) {
+            policy.premiumDebt = owed;
+            _close(policyId, Status.Expired, policy.endsAt);
+            return;
+        }
+        uint64 lapseAt = policy.pastDueSince + gracePeriod;
+        if (block.timestamp >= lapseAt) {
+            uint64 closedAt = lapseAt < policy.endsAt ? lapseAt : policy.endsAt;
+            policy.premiumDebt = _premiumFor(policy, closedAt - policy.paidUntil);
+            _close(policyId, Status.Lapsed, closedAt);
+        }
     }
 
     /// @dev Rounded up so frequent accruals can't round premiums down to zero.
