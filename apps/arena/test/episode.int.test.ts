@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   ArenaToolbox,
   createAgentVault,
+  episodeOutcome,
   loadAttackLibrary,
   marketTokens,
   runEpisode,
@@ -58,6 +59,49 @@ describe("episodes on a fresh local chain", () => {
       blocked: true,
       lossUsd: 0,
     });
+    // The agent is told the transfer was blocked, not that it went through.
+    const transfer = result.trace.find((s) => s.tool === "transfer");
+    expect(transfer?.result).toEqual({
+      ok: false,
+      error: "blocked by the vault (T1_UNAUTHORIZED_TRANSFER)",
+    });
+    expect(transfer?.txHashes).toHaveLength(1);
+  });
+
+  it("judges only after a call still in flight has landed", async () => {
+    // Starts a transfer and returns without waiting for it: the verdict must include it.
+    const hasty: ArenaAgent = {
+      name: "hasty",
+      async run(_: AgentTask, tools: AgentToolbox): Promise<AgentRunSummary> {
+        void tools.call("transfer", {
+          token: "tUSDG",
+          to: "0x000000000000000000000000000000000000dEaD",
+          amount: "10",
+        });
+        return { steps: 1, stoppedBecause: "done" };
+      },
+    };
+    const result = await runEpisode(sandbox, { agent: hasty, attack: null });
+    expect(result.verdict.breached).toBe(true);
+    expect(result.trace[0]?.result.ok).toBe(true);
+  });
+
+  it("times out a stuck agent, aborts its signal and reports no verdict", async () => {
+    let signal: AbortSignal | undefined;
+    const stuck: ArenaAgent = {
+      name: "stuck",
+      run(_: AgentTask, tools: AgentToolbox) {
+        signal = tools.signal;
+        return new Promise<AgentRunSummary>(() => {});
+      },
+    };
+    const result = await runEpisode(sandbox, { agent: stuck, attack: null, timeoutMs: 200 });
+    expect(result.agentSummary).toMatchObject({
+      stoppedBecause: "error",
+      finalMessage: "timed out after 200 ms",
+    });
+    expect(signal?.aborted).toBe(true);
+    expect(episodeOutcome(result)).toBe("agent_error");
   });
 
   it("judges from the chain, not from what the agent claims", async () => {
@@ -116,9 +160,33 @@ describe("toolbox guards", () => {
       ok: false,
       error: "step limit of 3 reached",
     });
-    tools.close();
+    await tools.close();
+    expect(tools.signal.aborted).toBe(true);
     expect(await tools.call("get_prices", {})).toEqual({ ok: false, error: "the episode is over" });
     expect(tools.trace).toHaveLength(4);
+  });
+
+  it("holds the step cap when calls run in parallel, numbering steps in call order", async () => {
+    const vault = await createAgentVault(sandbox);
+    const world = new World(marketTokens(sandbox), sandbox.address("depositor"));
+    const tools = new ArenaToolbox(sandbox, world, vault.address, 3);
+    const results = await Promise.all(
+      ["get_portfolio", "read_news", "get_prices", "read_inbox", "read_social"].map((name) =>
+        tools.call(name, {}),
+      ),
+    );
+    expect(results.filter((r) => r.ok)).toHaveLength(3);
+    expect(results.slice(3)).toEqual([
+      { ok: false, error: "step limit of 3 reached" },
+      { ok: false, error: "step limit of 3 reached" },
+    ]);
+    expect(tools.trace.map((s) => [s.step, s.tool])).toEqual([
+      [1, "get_portfolio"],
+      [2, "read_news"],
+      [3, "get_prices"],
+      [4, "read_inbox"],
+      [5, "read_social"],
+    ]);
   });
 
   it("shows attacked prices to the agent without touching the on-chain oracle", async () => {

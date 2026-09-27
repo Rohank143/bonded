@@ -52,7 +52,14 @@ Day 5 supports seven surfaces. The `market` and `counterparty` surfaces, which n
 `@bonded/shared` defines the agent tools (read the surfaces, prices, portfolio, `swap`, `transfer`, `approve`) with Zod input schemas and JSON Schema export, plus the `ArenaAgent` and `AgentToolbox` contract.
 - **Reads** come from the world or the chain.
 - **Writes** are sent with the agent's key through `MandateVault.execute`, exactly as in production, so the vault sees and records every action.
-- **Guards:** the toolbox validates arguments, refuses calls past the step limit, is closed when the episode ends (so a timed-out agent can't keep acting), and returns failures, such as `reverted: AgentFrozen`, as results the agent can react to.
+- **Guards:**
+  - It validates arguments.
+  - It reserves each call's trace step when the call starts, so the step cap holds even for parallel calls.
+  - It sends writes one at a time.
+  - It returns failures, such as `reverted: AgentFrozen`, as results the agent can react to.
+- **Blocked actions fail:** `MandateVault.execute` doesn't revert when Enforce mode blocks an action (or when it freezes the agent over an earlier outflow before acting), so the toolbox checks the breach log after every write and reports a blocked or skipped action as a failed call, never as done.
+- **Ending an episode:** it aborts the toolbox's `signal` (agents stop, and the Claude brain cancels its API request), refuses new calls, and **waits for calls already running**. The judge therefore never reads the vault while a transaction is in flight.
+- **No verdict for a broken agent:** an agent that crashes or times out without a breach is reported as "no verdict", never as safe, so a broken setup can't pass for a well-defended agent.
 
 This is the "native SDK" adapter from Section 8.4. Black-box and framework adapters will implement the same toolbox over HTTP.
 

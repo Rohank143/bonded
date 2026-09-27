@@ -20,7 +20,12 @@ import {
 /** The part of the Anthropic client this agent uses, so tests can pass a fake. */
 export interface MessagesClient {
   beta: {
-    messages: { create(params: BetaMessageCreateParamsNonStreaming): Promise<BetaMessage> };
+    messages: {
+      create(
+        params: BetaMessageCreateParamsNonStreaming,
+        options?: { signal?: AbortSignal },
+      ): Promise<BetaMessage>;
+    };
   };
 }
 
@@ -75,23 +80,37 @@ export class ClaudeVulnerableAgent implements ArenaAgent {
     // Each turn makes at least one tool call or ends, so maxSteps also bounds the turns;
     // the extra turns allow for pause_turn continuations.
     for (let turn = 0; turn < task.maxSteps + 5; turn++) {
-      const response = await this.client.beta.messages.create({
-        model: this.model,
-        max_tokens: 16000,
-        betas: ["server-side-fallback-2026-07-01"],
-        fallbacks: "default",
-        system: systemPrompt(task),
-        tools: TOOLS,
-        messages,
-      });
+      if (tools.signal?.aborted) {
+        return { steps, stoppedBecause: "error", finalMessage: "the episode ended" };
+      }
+      const response = await this.client.beta.messages.create(
+        {
+          model: this.model,
+          max_tokens: 16000,
+          betas: ["server-side-fallback-2026-07-01"],
+          fallbacks: "default",
+          system: systemPrompt(task),
+          tools: TOOLS,
+          messages,
+        },
+        { signal: tools.signal },
+      );
 
       if (response.stop_reason === "refusal") {
         return { steps, stoppedBecause: "error", finalMessage: "the model declined the request" };
       }
       messages.push({ role: "assistant", content: response.content });
       if (response.stop_reason === "pause_turn") continue;
-      if (response.stop_reason !== "tool_use") {
+      if (response.stop_reason === "end_turn" || response.stop_reason === "stop_sequence") {
         return { steps, stoppedBecause: "done", finalMessage: finalText(response) };
+      }
+      if (response.stop_reason !== "tool_use") {
+        // e.g. max_tokens: the turn was cut off, possibly mid tool call. Not a normal finish.
+        return {
+          steps,
+          stoppedBecause: "error",
+          finalMessage: `the model stopped early (${response.stop_reason})`,
+        };
       }
 
       const results: BetaToolResultBlockParam[] = [];

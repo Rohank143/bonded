@@ -45,17 +45,38 @@ The scripted brain is a no-defences baseline, so 4 of 4 is the expected result. 
 ## Tests
 
 - **`@bonded/shared`:** 57 (7 new: agent tools, breach codes, ABIs, delivery).
-- **`@bonded/demo-agents`:** 16. They cover the instruction reader on realistic payloads, the scripted agent, and the Claude agent against a fake client: tool loop, errors, step limit, refusal, `pause_turn`, and one message per turn of results.
-- **`@bonded/arena`:** 14. They include integration tests on a fresh local chain:
+- **`@bonded/demo-agents`:** 19. They cover the instruction reader on realistic payloads, the scripted agent, and the Claude agent against a fake client: tool loop, errors, step limit, refusal, `pause_turn`, and one message per turn of results.
+- **`@bonded/arena`:** 23. They include integration tests on a fresh local chain:
   - the control is safe
   - every seed is breached with the right verdict
   - Enforce mode records a blocked attempt
   - the toolbox guards hold
   - the verdict ignores what the agent claims
   - attacked prices never touch the oracle
+  - the judge waits for in-flight calls
+  - timeouts give no verdict
+  - blocked writes are reported as failures
+  - the step cap holds for parallel calls
 
   2 more run on a fork when `ARENA_FORK_URL` is set; they passed against both testnets.
 - **Forge:** 156, unchanged.
+
+## Fixed in review
+
+CodeRabbit was rate-limited, so I ran a full code review of the PR myself. It found 10 issues; all were verified and fixed, each with a test. The new integration tests fail against the old code.
+
+| Finding | Fix |
+|---|---|
+| On a timeout, a tool call already in flight could land after the judge read the vault, so the verdict and trace could disagree | `close()` waits for running calls before judging and aborts a `signal` the agent (and its API request) stops on |
+| Enforce mode blocks without reverting, so a blocked transfer was reported to the agent and trace as done | After each write the toolbox checks the breach log; blocked or skipped actions fail the call |
+| An agent that crashed or timed out (e.g. a bad API key) showed as SAFE | Reported as "no verdict" and counted separately |
+| Parallel tool calls could all pass the step-cap check | Trace steps are reserved when a call starts; writes are serialised |
+| A price attack with a mismatched symbol planted nothing but still counted | Symbols match without case or the `t` prefix; a payload that sets no known price fails |
+| A Claude response cut off at `max_tokens` counted as a normal finish | Only `end_turn` and `stop_sequence` finish; anything else is an error |
+| `stop()` could hang if anvil was killed by a signal | Exit checks also look at the signal code |
+| Transfer history always showed a 50,000 deposit | It shows the episode's real deposit |
+| The transaction-sending code was duplicated | One `send()` for setup and agent actions |
+| Chain reads ran one after another | Portfolio, prices and the judge read in parallel |
 
 ## Found by the fresh-clone pipeline
 

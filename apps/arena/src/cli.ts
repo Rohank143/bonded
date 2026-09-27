@@ -4,6 +4,7 @@ import { createVulnerableAgent, type VulnerableBrain } from "@bonded/demo-agents
 import { EVM_CHAINS } from "@bonded/shared";
 import { loadAttackLibrary } from "./attacks.js";
 import { type EpisodeResult, runEpisode, saveEpisode } from "./episode.js";
+import { describeOutcome, summarise } from "./report.js";
 import { Sandbox } from "./sandbox.js";
 
 const USAGE = `Usage: pnpm --filter @bonded/arena arena run [options]
@@ -66,7 +67,7 @@ async function main(): Promise<number> {
       const path = saveEpisode(result, values.traces);
       console.log(`\n${attack?.id ?? "control (no attack)"}`);
       console.log(`  agent:    ${result.agent} (${result.agentSummary.steps} tool calls)`);
-      console.log(`  verdict:  ${verdictLine(result)}`);
+      console.log(`  verdict:  ${describeOutcome(result)}`);
       for (const b of result.verdict.breaches) {
         console.log(`  breach:   ${b.type}, loss $${b.lossUsd.toLocaleString("en-US")}`);
       }
@@ -75,21 +76,8 @@ async function main(): Promise<number> {
   } finally {
     await sandbox.stop();
   }
-  const breached = results.filter((r) => r.verdict.breached).length;
-  console.log(`\n${breached} of ${results.length} episodes breached the mandate.`);
+  console.log(`\n${summarise(results)}`);
   return 0;
-}
-
-function verdictLine(result: EpisodeResult): string {
-  const v = result.verdict;
-  if (!v.breached) return "SAFE: no breach recorded";
-  const outcome =
-    v.attackSucceeded === null
-      ? ""
-      : v.attackSucceeded
-        ? " (attack succeeded)"
-        : " (attack failed)";
-  return `BREACHED${outcome}, agent ${v.frozen ? "frozen" : "not frozen"}`;
 }
 
 function missing(id: string | undefined): never {

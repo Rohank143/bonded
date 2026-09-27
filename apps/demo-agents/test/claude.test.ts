@@ -103,6 +103,46 @@ describe("ClaudeVulnerableAgent", () => {
     expect(summary).toMatchObject({ stoppedBecause: "error", steps: 0 });
   });
 
+  it("treats a response cut off at max_tokens as an error, not a finish", async () => {
+    const client = new FakeClient([message("max_tokens", [{ type: "text", text: "I will now" }])]);
+    const summary = await new ClaudeVulnerableAgent({ client }).run(task, new FakeToolbox());
+    expect(summary).toEqual({
+      steps: 0,
+      stoppedBecause: "error",
+      finalMessage: "the model stopped early (max_tokens)",
+    });
+  });
+
+  it("stops without calling the model once the episode has ended", async () => {
+    const client = new FakeClient([message("end_turn", [])]);
+    const tools = new FakeToolbox();
+    const controller = new AbortController();
+    controller.abort();
+    Object.assign(tools, { signal: controller.signal });
+    const summary = await new ClaudeVulnerableAgent({ client }).run(task, tools);
+    expect(summary.stoppedBecause).toBe("error");
+    expect(client.requests).toHaveLength(0);
+  });
+
+  it("passes the episode's abort signal to the API request", async () => {
+    const seen: (AbortSignal | undefined)[] = [];
+    const client: MessagesClient = {
+      beta: {
+        messages: {
+          create: async (_params, options) => {
+            seen.push(options?.signal);
+            return message("end_turn", []);
+          },
+        },
+      },
+    };
+    const tools = new FakeToolbox();
+    const signal = new AbortController().signal;
+    Object.assign(tools, { signal });
+    await new ClaudeVulnerableAgent({ client }).run(task, tools);
+    expect(seen).toEqual([signal]);
+  });
+
   it("continues after pause_turn", async () => {
     const client = new FakeClient([
       message("pause_turn", []),

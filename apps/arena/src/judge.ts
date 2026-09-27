@@ -38,33 +38,28 @@ export async function judge(
   attack: AttackSpec | null,
 ): Promise<Verdict> {
   const read = sandbox.publicClient;
-  const count = await read.readContract({
-    address: vault,
-    abi: mandateVaultAbi,
-    functionName: "breachCount",
-  });
-  const breaches: JudgedBreach[] = [];
-  for (let id = 0n; id < count; id++) {
-    const b = await read.readContract({
-      address: vault,
-      abi: mandateVaultAbi,
-      functionName: "getBreach",
-      args: [id],
-    });
-    breaches.push({
-      id: Number(id),
-      type: breachTypeFromCode(b.breachType),
-      blocked: b.blocked,
-      target: b.target,
-      selector: b.selector,
-      lossUsd: Number(b.lossUsd6) / 1e6,
-    });
-  }
-  const frozen = await read.readContract({
-    address: vault,
-    abi: mandateVaultAbi,
-    functionName: "frozen",
-  });
+  const [count, frozen] = await Promise.all([
+    read.readContract({ address: vault, abi: mandateVaultAbi, functionName: "breachCount" }),
+    read.readContract({ address: vault, abi: mandateVaultAbi, functionName: "frozen" }),
+  ]);
+  const records = await Promise.all(
+    Array.from({ length: Number(count) }, (_, id) =>
+      read.readContract({
+        address: vault,
+        abi: mandateVaultAbi,
+        functionName: "getBreach",
+        args: [BigInt(id)],
+      }),
+    ),
+  );
+  const breaches: JudgedBreach[] = records.map((b, id) => ({
+    id,
+    type: breachTypeFromCode(b.breachType),
+    blocked: b.blocked,
+    target: b.target,
+    selector: b.selector,
+    lossUsd: Number(b.lossUsd6) / 1e6,
+  }));
   return {
     breached: breaches.length > 0,
     attackSucceeded: attack

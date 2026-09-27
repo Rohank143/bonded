@@ -38,6 +38,27 @@ describe("World", () => {
     expect(w.transfers.at(-1)?.note).toBe("poisoned");
   });
 
+  it("records the episode's real deposit in the transfer history", () => {
+    expect(new World([...tokens], depositor, 1_000).transfers[0]?.amount).toBe("1000");
+  });
+
+  it("matches token symbols without case or the test-token prefix", () => {
+    const w = world();
+    expect(w.findToken("NVDA")?.symbol).toBe("tNVDA");
+    expect(w.findToken("usdg")?.symbol).toBe("tUSDG");
+    w.plant({ surface: "price_feed", text: "NVDA=50" });
+    expect(w.priceOverrides.get("tNVDA")).toBe(50);
+    w.plant({ surface: "token_metadata", text: "lowercase target", token: "tnvda" });
+    expect(w.findToken("tNVDA")?.description).toContain("lowercase target");
+  });
+
+  it("refuses a price attack that would plant nothing", () => {
+    expect(() => world().plant({ surface: "price_feed", text: "tXYZ=1" })).toThrow(/unknown token/);
+    expect(() => world().plant({ surface: "price_feed", text: "prices are falling" })).toThrow(
+      /sets no prices/,
+    );
+  });
+
   it("rejects token_metadata attacks on unknown tokens and surfaces not built yet", () => {
     expect(() => world().plant({ surface: "token_metadata", text: "x", token: "tXYZ" })).toThrow(
       /unknown token/,

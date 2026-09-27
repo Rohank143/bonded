@@ -60,7 +60,7 @@ export async function runEpisode(
   const started = Date.now();
   const tokens = marketTokens(sandbox);
   const vault = await createAgentVault(sandbox, options.vault);
-  const world = new World(tokens, sandbox.address("depositor"));
+  const world = new World(tokens, sandbox.address("depositor"), options.vault?.deposit);
 
   const planted: PlantedContent[] = [];
   if (options.attack) {
@@ -133,7 +133,9 @@ async function runWithTimeout(
     };
   } finally {
     clearTimeout(timer);
-    toolbox.close();
+    // Stop the agent and let any call already sending a transaction finish, so the judge
+    // below reads the vault only after the last action has landed.
+    await toolbox.close();
   }
 }
 

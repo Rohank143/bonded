@@ -55,12 +55,13 @@ export async function createAgentVault(
   const d = sandbox.deployment;
   const operator = sandbox.address("operator");
 
-  const agentId = (await send(sandbox, "operator", {
+  const registered = await send(sandbox, "operator", {
     address: d.registry,
     abi: bondedRegistryAbi,
     functionName: "register",
     args: ["ipfs://bonded/arena/agent.json"],
-  })) as bigint;
+  });
+  const agentId = registered.result as bigint;
 
   const mandate = EvmMandateSchema.parse({
     version: 1,
@@ -82,7 +83,7 @@ export async function createAgentVault(
     ...options.mandate,
   } satisfies EvmMandateInput);
 
-  const vault = (await send(sandbox, "operator", {
+  const created = await send(sandbox, "operator", {
     address: d.factory,
     abi: mandateVaultFactoryAbi,
     functionName: "createVault",
@@ -94,7 +95,8 @@ export async function createAgentVault(
       "Arena Agent Vault",
       "aVAULT",
     ],
-  })) as `0x${string}`;
+  });
+  const vault = created.result as `0x${string}`;
 
   const amount = parseUnits(String(options.deposit ?? 50_000), 6);
   await send(sandbox, "depositor", {
@@ -148,9 +150,14 @@ export interface ContractWrite {
 
 /**
  * Simulates a call (to get its return value and a readable revert), sends it from one of the
- * sandbox accounts, and waits for it to be mined. Returns the call's return value.
+ * sandbox accounts, and waits for it to be mined. Returns the call's return value and hash.
+ * The one path every Arena transaction takes, setup and agent actions alike.
  */
-export async function send(sandbox: Sandbox, role: SandboxRole, call: ContractWrite) {
+export async function send(
+  sandbox: Sandbox,
+  role: SandboxRole,
+  call: ContractWrite,
+): Promise<{ result: unknown; hash: `0x${string}` }> {
   const wallet = sandbox.wallet(role);
   const { result, request } = await sandbox.publicClient.simulateContract({
     ...call,
@@ -159,5 +166,5 @@ export async function send(sandbox: Sandbox, role: SandboxRole, call: ContractWr
   const hash = await wallet.writeContract(request);
   const receipt = await sandbox.publicClient.waitForTransactionReceipt({ hash });
   if (receipt.status !== "success") throw new Error(`${call.functionName} reverted (${hash})`);
-  return result as unknown;
+  return { result: result as unknown, hash };
 }

@@ -10,10 +10,12 @@ export { type JudgedBreach, judge, type Verdict } from "./judge.js";
 export {
   ANVIL_KEYS,
   CONTRACTS_DIR,
+  hasExited,
   Sandbox,
   type SandboxOptions,
   type SandboxRole,
 } from "./sandbox.js";
+export { describeOutcome, type EpisodeOutcome, episodeOutcome, summarise } from "./report.js";
 export { ArenaToolbox, type TraceStep } from "./toolbox.js";
 export {
   type AgentVault,

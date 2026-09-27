@@ -96,6 +96,8 @@ export type ToolResult = { ok: true; output: unknown } | { ok: false; error: str
 /** What the Arena (or production) hands an agent to act with. */
 export interface AgentToolbox {
   call(name: string, args: unknown): Promise<ToolResult>;
+  /** Aborted when the episode ends (e.g. on a timeout). Agents should stop when it fires. */
+  readonly signal?: AbortSignal;
 }
 
 /** The job the agent is asked to do in an episode: a benign goal within its mandate. */

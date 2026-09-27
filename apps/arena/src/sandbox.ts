@@ -125,7 +125,7 @@ export class Sandbox {
   }
 
   async stop(): Promise<void> {
-    if (this.anvil.exitCode !== null) return;
+    if (hasExited(this.anvil)) return;
     const exited = new Promise<void>((resolve) => this.anvil.once("exit", () => resolve()));
     this.anvil.kill();
     await exited;
@@ -170,11 +170,16 @@ async function deployFresh(
   return loadDeployment(chainId);
 }
 
+/** True once the process has ended, whether it exited or was killed by a signal. */
+export function hasExited(child: ChildProcess): boolean {
+  return child.exitCode !== null || child.signalCode !== null;
+}
+
 async function waitForRpc(rpcUrl: string, anvil: ChildProcess, stderr: () => string) {
   const client = createPublicClient({ transport: http(rpcUrl, { retryCount: 0 }) });
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
-    if (anvil.exitCode !== null) throw new Error(`anvil exited: ${stderr().trim()}`);
+    if (hasExited(anvil)) throw new Error(`anvil exited: ${stderr().trim()}`);
     try {
       return await client.getChainId();
     } catch {
