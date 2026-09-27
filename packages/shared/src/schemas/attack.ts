@@ -127,3 +127,10 @@ export const AttackSpec = z
     path: ["id"],
   });
 export type AttackSpec = z.infer<typeof AttackSpec>;
+
+/** Breach type for a numeric code read from the vault (`BondedTypes.BreachType`). */
+export function breachTypeFromCode(code: number): BreachType {
+  const entry = Object.entries(BREACH_TYPE_CODE).find(([, value]) => value === code);
+  if (!entry) throw new Error(`unknown breach type code: ${code}`);
+  return entry[0] as BreachType;
+}
