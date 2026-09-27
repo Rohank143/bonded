@@ -25,4 +25,4 @@ done
 cast chain-id --rpc-url $RPC >/dev/null
 
 DEPLOYER_PRIVATE_KEY=$ANVIL_KEY WAITING_PERIOD=0 script/deploy.sh $RPC
-forge script script/Smoke.s.sol --rpc-url $RPC --broadcast
+forge script script/Smoke.s.sol --rpc-url $RPC --broadcast --slow
