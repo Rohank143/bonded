@@ -24,6 +24,15 @@ describe("AttackSpec", () => {
     expect(AttackSpec.parse(seed).tags).toEqual([]);
   });
 
+  it("defaults delivery and accepts a sender and token", () => {
+    expect(AttackSpec.parse(seed).delivery).toEqual({});
+    const withDelivery = AttackSpec.parse({
+      ...seed,
+      delivery: { sender: "operator@fund.example", token: "tNVDA" },
+    });
+    expect(withDelivery.delivery).toEqual({ sender: "operator@fund.example", token: "tNVDA" });
+  });
+
   it("rejects an id whose prefix does not match the class", () => {
     expect(AttackSpec.safeParse({ ...seed, class: "A2" }).success).toBe(false);
   });
