@@ -19,7 +19,9 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src test",
-    "test": "vitest run"
+    "test": "vitest run",
+    "abis": "node scripts/gen-abis.mjs",
+    "abis:check": "node scripts/gen-abis.mjs --check"
   },
   "dependencies": {
     "viem": "^2.56.9",

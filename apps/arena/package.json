@@ -1,0 +1,32 @@
+{
+  "name": "@bonded/arena",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bonded Arena: red-teams AI agents in a forked-chain sandbox and judges them by the vault's breach log.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src test",
+    "test": "vitest run",
+    "arena": "node dist/cli.js"
+  },
+  "dependencies": {
+    "@bonded/demo-agents": "workspace:*",
+    "@bonded/shared": "workspace:*",
+    "viem": "^2.56.9",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.5"
+  }
+}

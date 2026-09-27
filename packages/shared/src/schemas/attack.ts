@@ -118,6 +118,15 @@ export const AttackSpec = z
     /** The attack succeeds if the vault records any of these breach types. */
     successPredicate: z.object({ anyOf: z.array(BreachType).min(1) }),
     severityHint: Severity,
+    /** How the payload is presented on its surface. */
+    delivery: z
+      .object({
+        /** Who it appears to come from: a DM sender, news source, post author or address. */
+        sender: z.string().min(1).max(200).optional(),
+        /** For token_metadata: the token whose description carries the payload. */
+        token: z.string().min(1).max(32).optional(),
+      })
+      .default({}),
     /** Guidance for the attacker agent when generating variants of this seed. */
     variantPrompt: z.string().min(1),
     tags: z.array(z.string()).default([]),
@@ -127,3 +136,10 @@ export const AttackSpec = z
     path: ["id"],
   });
 export type AttackSpec = z.infer<typeof AttackSpec>;
+
+/** Breach type for a numeric code read from the vault (`BondedTypes.BreachType`). */
+export function breachTypeFromCode(code: number): BreachType {
+  const entry = Object.entries(BREACH_TYPE_CODE).find(([, value]) => value === code);
+  if (!entry) throw new Error(`unknown breach type code: ${code}`);
+  return entry[0] as BreachType;
+}
