@@ -57,6 +57,11 @@ The scripted brain is a no-defences baseline, so 4 of 4 is the expected result. 
   2 more run on a fork when `ARENA_FORK_URL` is set; they passed against both testnets.
 - **Forge:** 156, unchanged.
 
+## Found by the fresh-clone pipeline
+
+- **Turbo stripped Foundry's settings from tests.** Turbo's strict environment mode didn't pass `FOUNDRY_SOLC` or the proxy variables to test tasks, so the Arena couldn't deploy under `pnpm test` (it passed when run directly). `turbo.json` now passes them through and keys the test cache on `ARENA_FORK_URL`.
+- **A deploy could hang forever.** One run stalled in `forge script`: its batched broadcast left a gap in the transaction numbering on anvil, with 5 transactions queued and none pending. `deploy.sh` and the local smoke run now use `--slow`, which sends one transaction at a time. Five demo runs and three Arena test runs in a row passed afterwards. This is also safer on the load-balanced testnet RPCs.
+
 ## Changes to the plan
 
 - Section 8.1: what was built and how to run it.
