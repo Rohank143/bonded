@@ -1,6 +1,6 @@
 # Deployments
 
-`<chainId>.json` files written by `script/Deploy.s.sol` when it broadcasts. Local anvil runs (`31337.json`) are git-ignored; testnet and mainnet files are committed and validated by `packages/shared/test/deployments.test.ts`.
+`<chainId>.json` files for each chain Bonded is deployed on, written only after the deployment is confirmed on-chain (see Deploying). Local anvil runs (`31337.json`) are git-ignored; testnet and mainnet files are committed and validated by `packages/shared/test/deployments.test.ts`.
 
 ## Live testnets
 
@@ -35,11 +35,16 @@ Same addresses on both chains:
 From `contracts/evm`, with a funded key in `DEPLOYER_PRIVATE_KEY` (with `0x`):
 
 ```bash
-WAITING_PERIOD=0 forge script script/Deploy.s.sol --rpc-url <rpc> --broadcast
+WAITING_PERIOD=0 script/deploy.sh <rpc>
 ```
 
-- Leave off `--broadcast` for a free dry run. It simulates everything and writes no file.
-- A deploy only happened if forge ends with `ONCHAIN EXECUTION COMPLETE & SUCCESSFUL`.
+It runs two steps:
+1. **`Deploy.s.sol --broadcast`** deploys and writes `<chainId>.pending.json` (git-ignored). Forge runs the script before sending the transactions, so this file alone doesn't prove anything was deployed.
+2. **`RecordDeployment.s.sol`** runs only if every transaction succeeded. It reads the chain, checks every address has code and the modules are wired to each other, then writes `<chainId>.json` and deletes the pending file.
+
+If step 2 fails on a flaky RPC after a successful deploy, re-run it alone: `forge script script/RecordDeployment.s.sol --rpc-url <rpc>`.
+
+For a free dry run that simulates everything and writes nothing: `forge script script/Deploy.s.sol --rpc-url <rpc>`.
 
 ## Smoke run
 

@@ -44,6 +44,6 @@ pnpm contracts:test   # forge test
 pnpm demo:local       # anvil: deploy everything, then run register → cover → breach → claim
 ```
 
-To deploy to a testnet, run from `contracts/evm` with `DEPLOYER_PRIVATE_KEY` set: `forge script script/Deploy.s.sol --rpc-url <rpc> --broadcast`. See [ADR-004](docs/decisions/004-registry-disputes-bounties.md) and [`docs/progress/DAY-04.md`](docs/progress/DAY-04.md).
+Live testnet addresses are in [`contracts/evm/deployments/`](contracts/evm/deployments/README.md). To deploy, run from `contracts/evm` with `DEPLOYER_PRIVATE_KEY` set: `script/deploy.sh <rpc>`. See [ADR-004](docs/decisions/004-registry-disputes-bounties.md) and [`docs/progress/DAY-04.md`](docs/progress/DAY-04.md).
 
 If you cloned without `--recursive`, run `git submodule update --init --recursive` before building the contracts.

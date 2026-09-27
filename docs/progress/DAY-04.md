@@ -60,7 +60,7 @@ This container couldn't reach the testnet RPCs, so the founder ran `Deploy.s.sol
 The addresses are the same on both chains, because the deployer had sent no transactions on either before. They're listed in `contracts/evm/deployments/README.md`.
 
 Things the deploy exposed, fixed in the follow-up PR:
-- **Dry runs wrote files.** `Deploy.s.sol` wrote `deployments/<chainId>.json` during dry runs, leaving addresses that were never deployed. It now writes only when broadcasting.
+- **Files for deploys that never happened.** `Deploy.s.sol` wrote `deployments/<chainId>.json` during dry runs and failed broadcasts, leaving addresses that held nothing. Forge runs a script before sending its transactions, so the script can't know whether they succeed. The deploy now writes a git-ignored pending file. `script/deploy.sh` then runs `RecordDeployment.s.sol` only after a successful broadcast. It checks every contract's code and wiring on-chain before writing the real file. CodeRabbit caught that the first version of this fix, which wrote the file whenever `--broadcast` was passed, still had the gap.
 - **Wrong block number on Arbitrum.** `block.number` is the Ethereum Sepolia block there, so `deployedAtBlock` read the chain's RPC instead.
 - **Smoke keys.** `Smoke.s.sol` now falls back to `DEPLOYER_PRIVATE_KEY` for every role, so one funded key runs the loop on a testnet.
 

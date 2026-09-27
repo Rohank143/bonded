@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-09-27
-- **Code:** `contracts/evm/src/BondedRegistry.sol`, `DisputeModule.sol`, `BountyBoard.sol`, `src/testnet/`, `script/Deploy.s.sol`, `script/Smoke.s.sol`, `packages/shared/src/deployments.ts`
+- **Code:** `contracts/evm/src/BondedRegistry.sol`, `DisputeModule.sol`, `BountyBoard.sol`, `src/testnet/`, `script/Deploy.s.sol`, `script/RecordDeployment.s.sol`, `script/Smoke.s.sol`, `packages/shared/src/deployments.ts`
 
 ## Context
 
@@ -81,22 +81,23 @@ The chain facts (Section 15) left gaps: we couldn't confirm the USDG address, st
 
 Because the router trades at oracle prices, the vault's slippage check (T3) behaves predictably in the demo. On mainnet the protocol uses real tokens, `ChainlinkOracle` and real venues; the testnet contracts live in `src/testnet/` and are never deployed there.
 
-### 8. One deploy script, one smoke script, one JSON file per chain
+### 8. One deploy command, one smoke script, one JSON file per chain
 
 - **`Deploy.s.sol`:**
   - Deploys the market and the protocol, wires every module and sets the cover terms.
-  - Writes `deployments/<chainId>.json`.
+  - Writes `deployments/<chainId>.pending.json`. Forge runs a script before it sends the transactions, so this can't prove anything was deployed.
+- **`RecordDeployment.s.sol`:** checks on-chain that every address has code and the modules are wired, then writes `deployments/<chainId>.json`. `script/deploy.sh` runs it only after a successful broadcast, so a failed or partial deploy never produces a committed file. (Added after the first testnet deploy; see DAY-04.)
   - The deployer owns everything at first. Ownership moves to a multisig afterwards through `Ownable2Step`.
 - **`Smoke.s.sol`:**
   - Reads that file and runs the demo loop: register, create a vault, stake, fund, sign a quote, bind cover, an allowed swap, a breach, and the claim.
   - Asserts the 4,500 payout.
-- **`pnpm demo:local`:** runs both against anvil.
+- **`pnpm demo:local`:** runs the deploy, the record step and the smoke script against anvil.
 - **Committed files:** testnet and mainnet JSON files are committed; the local one is ignored.
 - **`@bonded/shared`:** `parseEvmDeployment` validates the file, so the API and keeper read addresses through one checked path.
 
 ## Known limits
 
-- **The testnet deploy itself is pending.** The container can't reach the testnet RPCs and has no deployer key. The scripts are proven on anvil; the testnet run is one command once both are available (see DAY-04).
+- **Testnet deploys run from the founder's machine.** This container's network policy blocked the testnet RPCs at the time, so the founder ran the deploy locally (Sep 27); the addresses were then checked on-chain from here (see DAY-04).
 - **Optimistic disputes need watchers.** An unchallenged proposal pays after 2 days. The operator (whose bond pays first), underwriters and the keeper are the ones who should challenge. The keeper will flag every proposal (Day 7).
 - **Dispute payouts aren't tied to breach records.** Two disputes on the same loss could both pay, up to the policy's remaining cover. The challenge game is the defence; the council should reject duplicates.
 - **The council can reject any unchallenged proposal.** That is a trust assumption on the multisig until UMA or Kleros replaces it.
