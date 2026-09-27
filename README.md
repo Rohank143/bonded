@@ -23,7 +23,7 @@ Building. The build runs Sep 27 – Oct 11, 2026. See the day-by-day plan in [`d
 | Path | What's there |
 |---|---|
 | `packages/shared` | Schemas (mandate, attack spec, attestation, quote), chain configs, tiers, EIP-712 types, deployment files |
-| `contracts/evm` | Solidity contracts (Foundry), deploy and smoke scripts, `deployments/<chainId>.json` |
+| `contracts/evm` | Solidity contracts (Foundry), deploy and smoke scripts, live addresses. **Start with [its README](contracts/evm/README.md)** for what each contract does. |
 | `docs/` | Plan, decision records, daily progress notes |
 
 More packages (Arena, API, keeper, web, Sentinel, Solana programs) arrive as the build progresses.
