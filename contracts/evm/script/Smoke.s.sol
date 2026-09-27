@@ -19,6 +19,8 @@ import {DemoRouter} from "../src/testnet/DemoRouter.sol";
 /// @dev Keys come from OPERATOR_KEY, AGENT_KEY, USER_KEY and ATTESTER_KEY. On a local anvil
 ///      chain (31337) they default to anvil's well-known test accounts. The deployment must use
 ///      WAITING_PERIOD=0, since the script can't advance chain time between steps.
+///      On other chains each key falls back to DEPLOYER_PRIVATE_KEY, so a single funded deployer
+///      (which is also the attester by default) can play every role.
 contract Smoke is Script {
     uint256 internal constant ANVIL_0 =
         0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
@@ -203,10 +205,11 @@ contract Smoke is Script {
 
     function _keys() internal view returns (Keys memory k) {
         bool local = block.chainid == 31_337;
-        k.attester = vm.envOr("ATTESTER_KEY", local ? ANVIL_0 : 0);
-        k.operator = vm.envOr("OPERATOR_KEY", local ? ANVIL_1 : 0);
-        k.agent = vm.envOr("AGENT_KEY", local ? ANVIL_2 : 0);
-        k.user = vm.envOr("USER_KEY", local ? ANVIL_3 : 0);
+        uint256 deployer = vm.envOr("DEPLOYER_PRIVATE_KEY", uint256(0));
+        k.attester = vm.envOr("ATTESTER_KEY", local ? ANVIL_0 : deployer);
+        k.operator = vm.envOr("OPERATOR_KEY", local ? ANVIL_1 : deployer);
+        k.agent = vm.envOr("AGENT_KEY", local ? ANVIL_2 : deployer);
+        k.user = vm.envOr("USER_KEY", local ? ANVIL_3 : deployer);
         require(
             k.attester != 0 && k.operator != 0 && k.agent != 0 && k.user != 0, "set the smoke keys"
         );
