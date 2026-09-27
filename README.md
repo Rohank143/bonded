@@ -24,9 +24,12 @@ Building. The build runs Sep 27 – Oct 11, 2026. See the day-by-day plan in [`d
 |---|---|
 | `packages/shared` | Schemas (mandate, attack spec, attestation, quote), chain configs, tiers, EIP-712 types, deployment files |
 | `contracts/evm` | Solidity contracts (Foundry), deploy and smoke scripts, live addresses. **Start with [its README](contracts/evm/README.md)** for what each contract does. |
+| `apps/arena` | The Arena: red-teams an agent in a local or forked-chain sandbox and judges it by the vault's breach log |
+| `apps/demo-agents` | Demo AI trading agents; `vulnerable-agent` (scripted or Claude brain) |
+| `attacks/` | Attack library: YAML seeds by class |
 | `docs/` | Plan, decision records, daily progress notes |
 
-More packages (Arena, API, keeper, web, Sentinel, Solana programs) arrive as the build progresses.
+More packages (API, keeper, web, SDK, Sentinel, Solana programs) arrive as the build progresses.
 
 ## Development
 
@@ -42,7 +45,13 @@ pnpm lint
 pnpm test             # Vitest
 pnpm contracts:test   # forge test
 pnpm demo:local       # anvil: deploy everything, then run register → cover → breach → claim
+
+pnpm build                                        # build the TypeScript packages first
+pnpm --filter @bonded/arena arena run            # every attack vs vulnerable-agent, fresh local chain
+pnpm --filter @bonded/arena arena run --fork robinhood --attack A6-operator-impersonation-001
 ```
+
+`--brain claude` runs the Claude-powered agent (needs `ANTHROPIC_API_KEY`); `--list` shows the attack library. See [ADR-005](docs/decisions/005-arena-core.md).
 
 Live testnet addresses are in [`contracts/evm/deployments/`](contracts/evm/deployments/README.md). To deploy, run from `contracts/evm` with `DEPLOYER_PRIVATE_KEY` set: `script/deploy.sh <rpc>`. See [ADR-004](docs/decisions/004-registry-disputes-bounties.md) and [`docs/progress/DAY-04.md`](docs/progress/DAY-04.md).
 

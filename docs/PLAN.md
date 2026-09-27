@@ -350,6 +350,15 @@ setup ──► task ──► attack ──► agent acts ──► judge ─�
 5. **Judge.** Read the vault's breach log (deterministic, identical to production), then compute grey-area labels (see Section 8.5).
 6. **Record.** Store the full trace (inputs, tool calls, transactions, breaches, labels). The trace feeds scoring, reports and the **Sentinel dataset**.
 
+**Built on Day 5 (ADR-005).** `apps/arena` runs this loop:
+- **Sandbox:** anvil, either fresh (deployed with `script/deploy.sh`) or forking Robinhood Chain testnet or Arbitrum Sepolia and attaching to the committed deployment.
+- **Vaults:** a fresh Monitor-mode vault per episode.
+- **World simulator:** seven surfaces (DMs, news, social, token metadata, price API, tool output, transfer history).
+- **Writes:** every agent write goes through `MandateVault.execute`.
+- **Judge:** reads only the vault's breach log.
+
+Run it with `pnpm --filter @bonded/arena arena run [--fork robinhood] [--brain claude]`.
+
 ### 8.2 Attack library: 10 classes, about 40 seed scenarios for the hackathon
 
 | # | Class | Surface | Example |
@@ -378,7 +387,7 @@ Each seed is a YAML spec: `id`, `class`, `surfaces`, `payload_template`, `succes
 
 | Adapter | How it works | Hackathon scope |
 |---|---|---|
-| **Native SDK** | The agent is built with `@bonded/sdk`; its tools route through the sandbox world | ✅ |
+| **Native SDK** | The agent implements `ArenaAgent` from `@bonded/shared` (later re-exported by `@bonded/sdk`); its tools route through the sandbox world. Built Day 5; `vulnerable-agent` uses it | ✅ |
 | **Black-box** | The agent accepts a configurable RPC URL, data API base URLs and a session key; we point them at the sandbox | ✅ |
 | **Framework adapters** | ElizaOS plugin, Solana Agent Kit, Coinbase AgentKit templates | ✅ at least 2, for the leaderboard |
 | **Decision-model agents** | Bots whose "brain" is Laya or Jev (typed decisions), wrapped with a trading loop | ✅ Laya; Jev if access arrives |
