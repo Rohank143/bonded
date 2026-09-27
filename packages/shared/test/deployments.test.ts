@@ -1,5 +1,8 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { evmDeploymentSchema, parseEvmDeployment } from "../src/index.js";
+import { evmChainById, evmDeploymentSchema, parseEvmDeployment } from "../src/index.js";
 
 // Output of `pnpm demo:local` (anvil's deterministic addresses), keys in the order forge writes them.
 const LOCAL = {
@@ -41,5 +44,23 @@ describe("EVM deployment files", () => {
 
   it("rejects invalid addresses", () => {
     expect(evmDeploymentSchema.safeParse({ ...LOCAL, pool: "0x1234" }).success).toBe(false);
+  });
+});
+
+describe("committed deployment files", () => {
+  const dir = fileURLToPath(new URL("../../../contracts/evm/deployments/", import.meta.url));
+  const files = readdirSync(dir).filter(
+    (name) => /^\d+\.json$/.test(name) && name !== "31337.json",
+  );
+
+  it("includes Robinhood Chain testnet and Arbitrum Sepolia", () => {
+    expect(files).toEqual(expect.arrayContaining(["46630.json", "421614.json"]));
+  });
+
+  it.each(files)("%s parses and matches its chain id", (name) => {
+    const chainId = Number(name.replace(".json", ""));
+    const deployment = parseEvmDeployment(readFileSync(join(dir, name), "utf8"), chainId);
+    expect(evmChainById(chainId)).toBeDefined();
+    expect(deployment.deployedAtBlock).toBeGreaterThan(0);
   });
 });
