@@ -43,20 +43,26 @@ Plan reference: docs/PLAN.md Section 20, Day 4. Design record: `docs/decisions/0
 | Agent sends 5,000 tUSDG to an attacker | breach recorded (loss 5,000), agent frozen |
 | Anyone files the claim | **4,500 paid** into the vault from the bond; bond left 5,500 |
 
-## Not done: the testnet deploy
+## Testnet deploy (done Sep 27)
 
-The scripts are ready for Robinhood Chain testnet (46630) and Arbitrum Sepolia (421614), but this container can't do the deploy:
-- The network policy blocks both RPCs (403 from the proxy).
-- There is no funded deployer key.
+This container couldn't reach the testnet RPCs, so the founder ran `Deploy.s.sol` locally with a fresh testnet-only deployer (`0xd42FA5ae8949710479954ae78D1b12Ff2e50A841`, funded from the Google Cloud Sepolia faucet and bridged to Arbitrum Sepolia). Both deployments were then checked on-chain from here:
+- all 14 contracts have code
+- the modules are wired to each other
+- the waiting period is 0
+- the deployer is registry owner and attester
+- the router holds its liquidity
 
-Once both are in place, the deploy is one command per chain, run from `contracts/evm`:
+| Chain | Deploy block | Gas spent |
+|---|---|---|
+| Robinhood Chain testnet (46630) | 125,384,720 | ~0.00025 ETH |
+| Arbitrum Sepolia (421614) | 313,403,556 | ~0.0008 ETH |
 
-```bash
-forge script script/Deploy.s.sol --rpc-url https://rpc.testnet.chain.robinhood.com/rpc --broadcast
-forge script script/Deploy.s.sol --rpc-url https://sepolia-rollup.arbitrum.io/rpc --broadcast
-```
+The addresses are the same on both chains, because the deployer had sent no transactions on either before. They're listed in `contracts/evm/deployments/README.md`.
 
-`DEPLOYER_PRIVATE_KEY` comes from the environment secret. The smoke script needs `WAITING_PERIOD=0` on the deploy (or a separate short-waiting deployment) plus `OPERATOR_KEY`, `AGENT_KEY`, `USER_KEY` and `ATTESTER_KEY`. The resulting JSON files get committed.
+Things the deploy exposed, fixed in the follow-up PR:
+- **Files for deploys that never happened.** `Deploy.s.sol` wrote `deployments/<chainId>.json` during dry runs and failed broadcasts, leaving addresses that held nothing. Forge runs a script before sending its transactions, so the script can't know whether they succeed. The deploy now writes a git-ignored pending file. `script/deploy.sh` then runs `RecordDeployment.s.sol` only after a successful broadcast. It checks every contract's code and wiring on-chain before writing the real file. CodeRabbit caught that the first version of this fix, which wrote the file whenever `--broadcast` was passed, still had the gap.
+- **Wrong block number on Arbitrum.** `block.number` is the Ethereum Sepolia block there, so `deployedAtBlock` read the chain's RPC instead.
+- **Smoke keys.** `Smoke.s.sol` now falls back to `DEPLOYER_PRIVATE_KEY` for every role, so one funded key runs the loop on a testnet.
 
 ## Changes to the plan
 
@@ -68,7 +74,7 @@ forge script script/Deploy.s.sol --rpc-url https://sepolia-rollup.arbitrum.io/rp
 
 ## Blockers
 
-- **Testnet deploy (Day 4, carried to Day 7's gate):** allowlist `rpc.testnet.chain.robinhood.com` and `sepolia-rollup.arbitrum.io` in the environment's network settings, and add a testnet-only deployer key as an environment secret (`DEPLOYER_PRIVATE_KEY`), funded from the faucets.
+- **Testnet smoke run:** the founder runs `Smoke.s.sol` on both chains (see `contracts/evm/deployments/README.md`).
 - **Anthropic API key (Day 5):** unchanged.
 
 ## Next (Day 5)

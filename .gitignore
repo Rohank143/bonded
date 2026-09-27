@@ -11,11 +11,12 @@ coverage/
 # Foundry
 contracts/evm/out/
 contracts/evm/cache/
-contracts/evm/broadcast/*/31337/
+contracts/evm/broadcast/
 
 # Python
 __pycache__/
 .venv/
 
-# Local anvil deployments
+# Local anvil deployments, and deployments not yet confirmed on-chain
 contracts/evm/deployments/31337.json
+contracts/evm/deployments/*.pending.json

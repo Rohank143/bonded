@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {Script, console2} from "forge-std/Script.sol";
+import {VmSafe} from "forge-std/Vm.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BondedRegistry} from "../src/BondedRegistry.sol";
 import {MandateVaultFactory} from "../src/MandateVaultFactory.sol";
@@ -16,13 +17,17 @@ import {TestToken} from "../src/testnet/TestToken.sol";
 import {DemoRouter} from "../src/testnet/DemoRouter.sol";
 
 /// @notice Deploys the demo market and the full Bonded protocol, wires every module, and
-///         writes the addresses to deployments/<chainId>.json.
+///         writes the addresses to deployments/<chainId>.pending.json. Run `script/deploy.sh`,
+///         which then runs RecordDeployment to check the contracts on-chain and promote the file
+///         to deployments/<chainId>.json.
 /// @dev Environment:
 ///      DEPLOYER_PRIVATE_KEY  required; the deployer is the initial owner of everything
 ///      ATTESTER              Arena attester address (default: deployer)
 ///      COUNCIL               dispute council (default: deployer)
 ///      WAITING_PERIOD        cover waiting period in seconds (default: 1 day; the local smoke run uses 0)
-///      WRITE_DEPLOYMENT      write the JSON file (default: true)
+///      WRITE_DEPLOYMENT      write the pending file (default: true). Only written with `--broadcast`.
+///      Forge runs this script before it sends the transactions, so the pending file can't prove
+///      anything was deployed; RecordDeployment does that check afterwards.
 ///      Ownership handover to a multisig happens after deployment (Ownable2Step).
 contract Deploy is Script {
     struct Deployment {
@@ -60,7 +65,9 @@ contract Deploy is Script {
         vm.stopBroadcast();
 
         _log(d);
-        if (vm.envOr("WRITE_DEPLOYMENT", true)) _write(d);
+        bool broadcasting = vm.isContext(VmSafe.ForgeContext.ScriptBroadcast);
+        if (broadcasting && vm.envOr("WRITE_DEPLOYMENT", true)) _writePending(d);
+        else console2.log("Dry run: no deployment file written");
     }
 
     /// @dev Test tokens with faucets, a mock oracle and an oracle-priced router with inventory.
@@ -132,10 +139,10 @@ contract Deploy is Script {
         d.bountyBoard = address(board);
     }
 
-    function _write(Deployment memory d) internal {
+    function _writePending(Deployment memory d) internal {
         string memory k = "deployment";
         vm.serializeUint(k, "chainId", block.chainid);
-        vm.serializeUint(k, "deployedAtBlock", block.number);
+        vm.serializeUint(k, "deployedAtBlock", _chainBlockNumber());
         vm.serializeAddress(k, "usdg", d.usdg);
         vm.serializeAddress(k, "tsla", d.tsla);
         vm.serializeAddress(k, "amzn", d.amzn);
@@ -150,10 +157,22 @@ contract Deploy is Script {
         vm.serializeAddress(k, "claimsEngine", d.claimsEngine);
         vm.serializeAddress(k, "disputeModule", d.disputeModule);
         string memory json = vm.serializeAddress(k, "bountyBoard", d.bountyBoard);
-        string memory path =
-            string.concat(vm.projectRoot(), "/deployments/", vm.toString(block.chainid), ".json");
+        string memory path = string.concat(
+            vm.projectRoot(), "/deployments/", vm.toString(block.chainid), ".pending.json"
+        );
         vm.writeJson(json, path);
         console2.log("Wrote", path);
+    }
+
+    /// @dev The chain's own block number, for indexers, read from the RPC just before the
+    ///      transactions are sent (so it is a safe lower bound for event scans). `block.number`
+    ///      won't do: on Arbitrum Sepolia it returns the parent chain's (Ethereum Sepolia) block,
+    ///      and forge's simulator doesn't run the ArbSys precompile that would give the right one.
+    function _chainBlockNumber() internal returns (uint256 n) {
+        bytes memory raw = vm.rpc("eth_blockNumber", "[]");
+        for (uint256 i; i < raw.length; ++i) {
+            n = (n << 8) | uint8(raw[i]);
+        }
     }
 
     function _log(Deployment memory d) internal pure {

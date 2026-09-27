@@ -23,7 +23,7 @@ Building. The build runs Sep 27 – Oct 11, 2026. See the day-by-day plan in [`d
 | Path | What's there |
 |---|---|
 | `packages/shared` | Schemas (mandate, attack spec, attestation, quote), chain configs, tiers, EIP-712 types, deployment files |
-| `contracts/evm` | Solidity contracts (Foundry), deploy and smoke scripts, `deployments/<chainId>.json` |
+| `contracts/evm` | Solidity contracts (Foundry), deploy and smoke scripts, live addresses. **Start with [its README](contracts/evm/README.md)** for what each contract does. |
 | `docs/` | Plan, decision records, daily progress notes |
 
 More packages (Arena, API, keeper, web, Sentinel, Solana programs) arrive as the build progresses.
@@ -44,6 +44,6 @@ pnpm contracts:test   # forge test
 pnpm demo:local       # anvil: deploy everything, then run register → cover → breach → claim
 ```
 
-To deploy to a testnet, run from `contracts/evm` with `DEPLOYER_PRIVATE_KEY` set: `forge script script/Deploy.s.sol --rpc-url <rpc> --broadcast`. See [ADR-004](docs/decisions/004-registry-disputes-bounties.md) and [`docs/progress/DAY-04.md`](docs/progress/DAY-04.md).
+Live testnet addresses are in [`contracts/evm/deployments/`](contracts/evm/deployments/README.md). To deploy, run from `contracts/evm` with `DEPLOYER_PRIVATE_KEY` set: `script/deploy.sh <rpc>`. See [ADR-004](docs/decisions/004-registry-disputes-bounties.md) and [`docs/progress/DAY-04.md`](docs/progress/DAY-04.md).
 
 If you cloned without `--recursive`, run `git submodule update --init --recursive` before building the contracts.

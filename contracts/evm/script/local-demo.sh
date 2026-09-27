@@ -24,5 +24,5 @@ for _ in $(seq 1 50); do
 done
 cast chain-id --rpc-url $RPC >/dev/null
 
-DEPLOYER_PRIVATE_KEY=$ANVIL_KEY WAITING_PERIOD=0 forge script script/Deploy.s.sol --rpc-url $RPC --broadcast
+DEPLOYER_PRIVATE_KEY=$ANVIL_KEY WAITING_PERIOD=0 script/deploy.sh $RPC
 forge script script/Smoke.s.sol --rpc-url $RPC --broadcast
