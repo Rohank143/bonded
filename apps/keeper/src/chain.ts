@@ -16,6 +16,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import type { EvmDeployment } from "@bonded/shared";
 
 const transactions = new Map<string, Promise<unknown>>();
+/** Connect a deployment and serialize writes per chain/account to avoid nonce races. */
 export function connectChain(deployment: EvmDeployment, rpcUrl: string, key: Hex): ServiceChain {
   const chain = defineChain({
     id: deployment.chainId,
@@ -33,6 +34,7 @@ export function connectChain(deployment: EvmDeployment, rpcUrl: string, key: Hex
     deployment,
     read,
     wallet,
+    /** Simulate, estimate with a margin, serialize the send and require a successful receipt. */
     async send(address: Address, abi: Abi, functionName: string, args: readonly unknown[]) {
       const accountKey = `${deployment.chainId}:${wallet.account.address}`;
       const previous = transactions.get(accountKey) ?? Promise.resolve();

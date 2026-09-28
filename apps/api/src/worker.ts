@@ -25,6 +25,7 @@ export const agentConfig = z.strictObject({
   mandate: EvmMandate,
   codeHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/),
 });
+/** Process one durable rating job under the chain worker lock; retries recover accepted posts. */
 export async function workOne(
   db: Database,
   chain: ServiceChain,
@@ -47,6 +48,7 @@ export async function workOne(
     lock.release();
   }
 }
+/** Run a leased rating, persist report bytes, and post its attestation while ownership holds. */
 async function runLocked(
   db: Database,
   chain: ServiceChain,
@@ -79,7 +81,9 @@ async function runLocked(
       config.mandate.agentId !== row.onchain_id
     )
       throw new Error("agent config identity mismatch");
-    await db.pool.query("UPDATE ratings SET status='running' WHERE id=$1", [job.id]);
+    await db.withLease(job, (c) =>
+      c.query("UPDATE ratings SET status='running' WHERE id=$1", [job.id]),
+    );
     let signed = row.attestation as SignedAttestation | null;
     if (!signed) {
       const sandbox = await Sandbox.start({ forkUrl: rpcUrl, forkDeployment: chain.deployment });
@@ -125,14 +129,13 @@ async function runLocked(
           },
         );
         await check();
-        await db.pool.query(
-          "UPDATE ratings SET report=$2,attestation=$3,report_json=$4 WHERE id=$1",
-          [
+        await db.withLease(job, (c) =>
+          c.query("UPDATE ratings SET report=$2,attestation=$3,report_json=$4 WHERE id=$1", [
             job.id,
             json(result.report),
             json(signed),
             `${JSON.stringify(result.report, null, 2)}\n`,
-          ],
+          ]),
         );
       } finally {
         await sandbox.stop();
@@ -163,9 +166,11 @@ async function runLocked(
           signed.signature,
         ]));
       await check();
-      await db.pool.query(
-        "INSERT INTO attestations(id,agent_id,signed,tx_hash) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",
-        [job.id, row.agent_id, json(signed), hash],
+      await db.withLease(job, (c) =>
+        c.query(
+          "INSERT INTO attestations(id,agent_id,signed,tx_hash) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+          [job.id, row.agent_id, json(signed), hash],
+        ),
       );
     }
     await db.finish(job);

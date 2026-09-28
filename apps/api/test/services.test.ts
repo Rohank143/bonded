@@ -70,6 +70,7 @@ beforeAll(async () => {
   app = createApi({ db: pg.db, chain, attesterKey: ANVIL_KEYS.deployer, apiToken: token });
 }, 180000);
 afterAll(async () => {
+  await app?.close();
   await sandbox?.stop();
   await pg?.stop();
 });
@@ -217,3 +218,30 @@ it("runs a queued rating, persists episodes and report, posts the attestation", 
     (await pg.db.pool.query("SELECT tx_hash FROM attestations WHERE id=$1", [run])).rows[0].tx_hash,
   ).toBe(tx);
 }, 300000);
+
+it("starts arena-worker with only the attester signing key", async () => {
+  const { startService, within } = await import("./lifecycle.js");
+  const service = await startService("arena-worker", pg.url, sandbox);
+  try {
+    service.child.kill("SIGTERM");
+    expect((await within(service.exited, 5000)).code).toBe(0);
+  } finally {
+    await service.stop();
+  }
+});
+it("SIGTERM drains active HTTP SSE responses and exits without client disconnect", async () => {
+  const { startService, within } = await import("./lifecycle.js");
+  const service = await startService("api", pg.url, sandbox);
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  try {
+    const response = await fetch(`${service.url}/events`);
+    expect(response.status).toBe(200);
+    reader = response.body!.getReader();
+    await reader.read();
+    service.child.kill("SIGTERM");
+    expect((await within(service.exited, 5000)).code).toBe(0);
+  } finally {
+    await reader?.cancel();
+    await service.stop();
+  }
+});

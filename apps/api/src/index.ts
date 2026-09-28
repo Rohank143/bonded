@@ -1,13 +1,13 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { streamSSE } from "hono/streaming";
 import { z } from "zod";
-import { Database, json } from "@bonded/db";
+import { Database, json, AgentNotConfiguredError } from "@bonded/db";
 import { QuoteError } from "@bonded/shared";
 import type { ServiceChain } from "@bonded/keeper";
 import type { Hex } from "viem";
 import { issueQuote } from "./quotes.js";
+import { EventStreams } from "./events.js";
 export { issueQuote } from "./quotes.js";
 const uint = z.string().regex(/^\d{1,78}$/);
 const quoteInput = z.strictObject({
@@ -16,6 +16,7 @@ const quoteInput = z.strictObject({
   coverAmount: uint.refine((v) => BigInt(v) > 0n),
 });
 
+/** Build the HTTP API; call close() to drain its SSE listeners before closing Postgres. */
 export function createApi(options: {
   db: Database;
   chain: ServiceChain;
@@ -26,6 +27,7 @@ export function createApi(options: {
   if (options.apiToken.length < 24)
     throw new Error("API_TOKEN must contain at least 24 characters");
   const app = new Hono();
+  const events = new EventStreams(db);
   app.use("*", bodyLimit({ maxSize: 16384 }));
   app.use("*", async (c, next) => {
     if (c.req.method === "POST") {
@@ -39,6 +41,7 @@ export function createApi(options: {
   app.onError((e, c) => {
     if (e instanceof z.ZodError || e instanceof SyntaxError)
       return c.json({ error: "invalid request" }, 400);
+    if (e instanceof AgentNotConfiguredError) return c.json({ error: "agent not configured" }, 404);
     if (e instanceof QuoteError) return c.json({ error: e.message }, 409);
     console.error("API request failed", e.name);
     return c.json({ error: "request failed" }, 503);
@@ -73,8 +76,6 @@ export function createApi(options: {
   app.post("/arena/runs", async (c) => {
     const { agentId } = z.strictObject({ agentId: uint }).parse(await c.req.json());
     const id = `${chain.deployment.chainId}:${agentId}`;
-    const agent = await db.pool.query("SELECT 1 FROM agents WHERE id=$1", [id]);
-    if (!agent.rowCount) return c.json({ error: "agent not configured" }, 404);
     return c.json({ runId: await db.enqueue(id) }, 202);
   });
   for (const path of ["/arena/runs/:id", "/arena/runs/:id/report"])
@@ -102,49 +103,7 @@ export function createApi(options: {
     const after = uint.parse(c.req.header("Last-Event-ID") ?? c.req.query("after") ?? "0");
     const runId = c.req.query("runId");
     if (runId) z.uuid().parse(runId);
-    const listener = await db.pool.connect();
-    await listener.query("LISTEN bonded_events");
-    return streamSSE(c, async (stream) => {
-      let cursor = after,
-        wake: (() => void) | undefined,
-        closed = false;
-      const notify = () => wake?.();
-      listener.on("notification", notify);
-      listener.on("error", notify);
-      stream.onAbort(() => {
-        closed = true;
-        notify();
-      });
-      try {
-        while (!closed) {
-          const rows = await db.pool.query(
-            "SELECT id,topic,payload FROM events WHERE id>$1 ORDER BY id LIMIT 100",
-            [cursor],
-          );
-          for (const row of rows.rows) {
-            if (!runId || row.payload.runId === runId)
-              await stream.writeSSE({ id: row.id, event: row.topic, data: json(row.payload) });
-            cursor = row.id;
-          }
-          if (rows.rowCount === 100) continue;
-          await stream.writeSSE({ event: "heartbeat", data: "{}" });
-          await new Promise<void>((resolve) => {
-            const timer = setTimeout(resolve, 1000);
-            wake = () => {
-              clearTimeout(timer);
-              resolve();
-            };
-            if (closed) wake();
-          });
-          wake = undefined;
-        }
-      } finally {
-        listener.off("notification", notify);
-        listener.off("error", notify);
-        await listener.query("UNLISTEN bonded_events").catch(() => {});
-        listener.release();
-      }
-    });
+    return events.open(c, after, runId);
   });
-  return app;
+  return Object.assign(app, { close: () => events.close() });
 }
