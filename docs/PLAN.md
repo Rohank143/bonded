@@ -785,6 +785,15 @@ Day 1 = Sun Sep 27. Submission target = Day 15 (Sun Oct 11). Day 16 (Mon Oct 12)
 - Small, reviewable commits, one theme each, with tests in the same commit.
 - End of each day: a short progress note in `docs/progress/DAY-XX.md` (done, next, blockers, review asks).
 - Gates 1 and 2 are the founder's (and other LLMs') main review points; Section 25 is the checklist.
+- Deferred work is tracked below and as GitHub issues. Check the list at every gate, and close an item only when its "done when" is met.
+
+**Deferred work**
+
+| Item | Deferred on | Needed by | Tracking |
+|---|---|---|---|
+| Adaptive or held-out attack source, so ratings include attacks the operator couldn't study in advance (Section 8.3) | Day 6 (ADR-007, decision 3) | Before scores price real (non-testnet) cover. Not needed for the demo or the gates | [Issue #11](https://github.com/ddboy19912/bonded/issues/11) |
+| Laya adapter behind the `DecisionModel` interface (Section 10) | Day 6 (ADR-007, decision 5). Hugging Face is blocked in the cloud environment | Day 10: the Sentinel service, evaluation and the Arena re-run | [Issue #12](https://github.com/ddboy19912/bonded/issues/12) |
+| Quote signing | Day 6 | Day 7, with `buyCover` | Day 7 deliverables |
 
 ---
 
