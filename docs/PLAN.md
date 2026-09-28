@@ -601,13 +601,14 @@ The payout lands in the (frozen) vault and restores the share price. Depositors 
 | `POST /bounties/:id/reveal` | Bounty reveal and validation |
 | `POST /sentinel/check` | Proxy to Sentinel (auth, logging, telemetry) |
 
-Storage is Postgres; jobs run on `pg-boss` queues. The attester key lives in an environment secret for the hackathon, with a KMS or threshold signer later.
+Storage is Postgres (Drizzle schema, SQL migrations that run on start); jobs run on `pg-boss` queues. The code reads only `DATABASE_URL`, so the same build runs against local Postgres (`docker compose`) and the live database. The attester key lives in an environment secret for the hackathon, with a KMS or threshold signer later. Hosting and deploys: Section 15 and ADR-008.
 
 ### 14.2 Keeper (`apps/keeper`)
 
 - Watches `BreachRecorded` on every chain and calls `fileClaim` automatically.
 - Calls `accrue` to stream premiums, lapses unpaid policies, and posts new attestations to all registries.
 - Sends alerts to vault guardians.
+- **Restart-safe:** keeps a per-chain block cursor in Postgres and resumes from it, and checks on-chain state before filing, so a restart or sleep delays a claim but never loses or duplicates one. The contracts give it slack (7-day claim window, 3-day premium grace period), and `fileClaim` is permissionless, so a guardian can file if the keeper is down.
 
 ### 14.3 SDK (`packages/sdk`, `@bonded/sdk`)
 
@@ -646,6 +647,17 @@ Wallets: wagmi/viem (EVM) and Solana wallet adapter.
 
 **Robinhood Chain nuances.** Stock tokens are offered to non-US users. Agents that trade inside Robinhood *brokerage* accounts (the Trading MCP) are off-chain and custodial, so on-chain triggers can't see them. That becomes a later "off-chain adapter" built on Robinhood's own reporting, and a partnership pitch.
 
+**Off-chain services (live from Day 7, ADR-008).** The API, keeper and Arena worker run on Railway and stay on:
+
+| Piece | Host | Notes |
+|---|---|---|
+| API | Railway service (`ROLE=api`) | REST and SSE; public domain |
+| Keeper + Arena worker | Railway services (`ROLE=keeper`, `ROLE=arena-worker`) | Always on; the worker runs queued ratings one at a time and streams them live. All services use one Docker image and deploy on every merge to `main` |
+| Postgres | Railway Postgres, same project | Shared by all services through `DATABASE_URL`; jobs via `pg-boss`, live events via `LISTEN/NOTIFY` |
+| Frontend | Vercel, Hobby plan | From Day 12 |
+
+Locally, `docker compose` runs Postgres and the same image, so the one-command demo still works from a clean state. Moving to another Docker host needs no code changes.
+
 **Optional "live on mainnet" moment (Day 14).** Deploy to Robinhood Chain mainnet with a strict TVL cap and a small funded pool. This needs founder-provided funds; see Section 24.
 
 ---
@@ -660,6 +672,8 @@ Wallets: wagmi/viem (EVM) and Solana wallet adapter.
 | Arena, API, keeper, SDK | TypeScript: an OpenAI-compatible LLM client (OpenRouter by default), `viem`, `@solana/web3.js`, Hono (API), `pg-boss`, Zod |
 | Sentinel | Python 3.11: `laya` (pinned), `laya[serve]`; Kaggle fine-tuning notebook |
 | Frontend | Next.js (App Router), Tailwind + shadcn/ui, wagmi/viem, Solana wallet adapter |
+| Storage | Postgres 16 (Railway live, `docker compose` locally), Drizzle migrations, `pg-boss` jobs |
+| Hosting | Railway (API, keeper and Arena worker from one Docker image; Postgres), Vercel Hobby (web); ADR-008 |
 | TEE | Phala Cloud dstack (Docker compose) |
 | CI | GitHub Actions: forge test, anchor test, typecheck, lint, unit tests |
 | AI models | Any LLM via OpenRouter, chosen per role (attackers, demo agents, grey judge, synthetic data, adjudicator), e.g. DeepSeek V4.1 Flash as the cheap default (ADR-006); Laya (Sentinel); Jev optional |
@@ -667,6 +681,8 @@ Wallets: wagmi/viem (EVM) and Solana wallet adapter.
 ```
 bonded/
 ├── README.md
+├── Dockerfile                  API, keeper and Arena worker image (ROLE=api|keeper|arena-worker|all)
+├── docker-compose.yml          local Postgres (+ the image) for the one-command demo
 ├── docs/
 │   ├── PLAN.md                 ← this file
 │   ├── ARCHITECTURE.md         (generated from Sections 5–14 as the build progresses)
@@ -769,7 +785,7 @@ Day 1 = Sun Sep 27. Submission target = Day 15 (Sun Oct 11). Day 16 (Mon Oct 12)
 | 4 | Wed Sep 30 | `BondedRegistry` (ERC-8004 compatible), `DisputeModule`, `BountyBoard`; deploy scripts; **deploy to Robinhood Chain testnet + Arbitrum Sepolia**; mock stock tokens + AMM pool if needed | Addresses in `contracts/evm/deployments/`, read through `@bonded/shared`; a smoke script passes on both testnets |
 | 5 | Thu Oct 1 | Arena core: fork sandbox, world simulator (news/social/DM/price/metadata/tool output), episode runner, **judge = vault breach log**; `vulnerable-agent` v0 | 1 attack class runs end to end on a fork with a correct verdict |
 | 6 | Fri Oct 2 | Attack library (10 classes, ~40 seeds); adaptive attacker (LLM via OpenRouter); actuarial model + scoring; report; attestation signing; Sentinel dataset logging; `hardened-agent` v0 | Full rating run on both demo agents; scores differ in the expected direction; report renders |
-| 7 | Sat Oct 3 | API (REST + SSE) + keeper; testnet E2E: Arena → attestation → quote → buyCover → live breach → auto claim | **GATE 1: core loop live on Robinhood Chain testnet.** Founder review #1 |
+| 7 | Sat Oct 3 | API (REST + SSE) + keeper, deployed live (ADR-008); testnet E2E: Arena → attestation → quote → buyCover → live breach → auto claim | **GATE 1: core loop live on Robinhood Chain testnet.** Founder review #1 |
 | 8 | Sun Oct 4 | Web app: Arena live feed, agent profile, vault, underwrite, claims pages; synthetic Sentinel data via the Batches API | Demo flow clickable in the browser against testnet |
 | 9 | Mon Oct 5 | **Founder runs the Laya fine-tune on Kaggle** (dataset and notebook provided); meanwhile Solana programs (vault, cover, registry) in Anchor | Fine-tuned checkpoint pushed (private); Anchor programs compile |
 | 10 | Tue Oct 6 | Solana tests + devnet deploy + keeper/SDK support; Sentinel service + held-out eval + Arena re-run with Sentinel on | Solana E2E breach → claim on devnet; Sentinel eval report (TPR@1%FPR, ECE, latency) |
@@ -855,6 +871,8 @@ Day 1 = Sun Sep 27. Submission target = Day 15 (Sun Oct 11). Day 16 (Mon Oct 12)
 | 8 | Join the **Jev waitlist** (optional) | A second Sentinel backend; Jev-bot leaderboard entry | Anytime |
 | 9 | Colosseum Copilot token (optional) | Check uniqueness against 5,400+ past submissions | Anytime |
 | 10 | Decide on the optional mainnet deploy + small pool funding | "Live on Robinhood Chain mainnet" moment | By Day 13 |
+| 11 | **Railway** account (Hobby plan) connected to the GitHub repo, with a usage limit set; set the secrets from ADR-008 in Railway | Live API, keeper and Arena worker (ADR-008) | Day 7 |
+| 12 | Free **Vercel** account (Hobby) | Frontend hosting | Day 12 |
 
 ---
 
@@ -889,6 +907,7 @@ Use this at Gates 1 and 2, and on any commit.
 **Engineering**
 - [ ] CI green (forge, anchor, typecheck, lint, tests); no secrets committed; env vars documented.
 - [ ] One-command demo from a clean state works.
+- [ ] The live API answers `GET /health`; the keeper resumes from its cursor after a restart and files each breach once; migrations run on start.
 
 ---
 
