@@ -24,10 +24,9 @@ export default defineRailway(() => {
     source: repo,
     build: { builder: "DOCKERFILE" as const, dockerfilePath: "Dockerfile" },
     deploy: {
+      // Restart on failure (10 retries) and sleeping off are Railway's defaults; Railway stores
+      // defaults as null, so spelling them out here makes every plan show a false change.
       startCommand: "node apps/api/dist/main.js",
-      restartPolicyType: "ON_FAILURE" as const,
-      restartPolicyMaxRetries: 10,
-      sleepApplication: false,
       ...deploy,
     },
     replicas: { sfo: 1 },
