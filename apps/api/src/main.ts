@@ -71,6 +71,10 @@ if (role === "migrate") {
       chain,
       attesterKey: key("ATTESTER_KEY"),
       apiToken: required("API_TOKEN"),
+      webOrigins: (process.env.WEB_ORIGINS ?? "")
+        .split(",")
+        .map((origin) => origin.trim())
+        .filter(Boolean),
     });
     server = serve({
       fetch: api.fetch,

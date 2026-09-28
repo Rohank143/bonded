@@ -1,6 +1,7 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { cors } from "hono/cors";
 import { z } from "zod";
 import { Database, json, AgentNotConfiguredError } from "@bonded/db";
 import { QuoteError } from "@bonded/shared";
@@ -22,12 +23,25 @@ export function createApi(options: {
   chain: ServiceChain;
   attesterKey: Hex;
   apiToken: string;
+  /** Browser origins allowed to call the API, e.g. the web app's URL. Empty allows none. */
+  webOrigins?: readonly string[];
 }) {
   const { db, chain } = options;
   if (options.apiToken.length < 24)
     throw new Error("API_TOKEN must contain at least 24 characters");
   const app = new Hono();
   const events = new EventStreams(db);
+  // Before the token check, so a browser can read a 401 and preflight requests succeed.
+  const origins = new Set(options.webOrigins ?? []);
+  app.use(
+    "*",
+    cors({
+      origin: (origin) => (origins.has(origin) ? origin : null),
+      allowMethods: ["GET", "POST"],
+      allowHeaders: ["Content-Type", "Authorization", "Last-Event-ID"],
+      maxAge: 600,
+    }),
+  );
   app.use("*", bodyLimit({ maxSize: 16384 }));
   app.use("*", async (c, next) => {
     if (c.req.method === "POST") {
@@ -53,7 +67,7 @@ export function createApi(options: {
   app.get("/agents/:id/score", async (c) => {
     const id = uint.parse(c.req.param("id"));
     const r = await db.pool.query(
-      "SELECT signed,tx_hash FROM attestations WHERE agent_id=$1 ORDER BY created_at DESC LIMIT 1",
+      'SELECT id AS "runId",signed,tx_hash FROM attestations WHERE agent_id=$1 ORDER BY created_at DESC LIMIT 1',
       [`${chain.deployment.chainId}:${id}`],
     );
     return r.rowCount ? c.json(r.rows[0]) : c.json({ error: "score not found" }, 404);
