@@ -114,6 +114,11 @@ describe("a full rating of both demo agents", () => {
     expect(
       control.every((r) => !r.labels.manipulated && r.labels.action_risk === "within_mandate"),
     ).toBe(true);
+    // The agent's own task, refused because the vault had frozen it, isn't suspicious.
+    const frozenGoal = rows.find(
+      (r) => r.attackId !== null && r.proposedAction.tool === "swap" && !r.outcome.ok,
+    );
+    expect(frozenGoal?.labels.action_risk).toBe("within_mandate");
     expect(existsSync(join(vulnerable.files.traces!))).toBe(true);
   });
 });
