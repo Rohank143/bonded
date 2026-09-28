@@ -12,7 +12,7 @@ The plan assumed Claude for every language-model job: the attacker, the grey-are
 Two things changed that:
 - **Cost.** A full rating is about 240 episodes, and the demo agent's multi-turn tool loop is the biggest cost.
   - **Assumptions:** about 10 turns per episode, 40k input and 5k output tokens per episode for the agent, and 3k in / 1k out per attack variant. That's roughly 10M input and 1.4M output tokens per rating.
-  - **Claude Opus 5** ($5 / $25 per million tokens in/out) comes to about $55 per rating.
+  - **Claude Opus 5** ($5 / $25 per million tokens in/out) comes to about $85 per rating at list prices. Every figure here is before prompt caching, which lowers the input cost for all models alike.
   - **Open models on OpenRouter** are far cheaper, but prices vary by provider.
     - **DeepSeek V4.1 Flash:** the model page lists $0.035 / $0.29, and individual providers charge around $0.10 / $0.50 (OpenRouter provider list, September 2026). At the higher provider rate that's about $1.70 per rating.
     - **GLM 5.3 Flash:** the model page lists $0.045 / $0.14, and providers charge up to about $0.14 / $0.47.
