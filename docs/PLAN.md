@@ -177,7 +177,7 @@ Supporting parts: TEE key custody, community attack bounties, public leaderboard
 ```
                                    OFF-CHAIN
 ┌──────────────────────────────────────────────────────────────────────────────────┐
-│  web (Next.js)  ──►  api (REST + SSE)  ──►  Postgres (runs, reports, datasets)   │
+│  web (Vite+React) ──►  api (REST + SSE)  ──►  Postgres (runs, reports, datasets) │
 │                        │      │                                                  │
 │                        ▼      ▼                                                  │
 │   ┌───────────────── ARENA ─────────────────┐     ┌──── SENTINEL (Laya) ────┐    │
@@ -617,7 +617,7 @@ Storage is Postgres (Drizzle schema, SQL migrations that run on start); jobs run
 - A tool kit for native agents (swap, transfer, price, news, messages), switchable between sandbox and production endpoints.
 - Mandate builder and validator (a JSON schema shared with contracts and the Arena).
 
-### 14.4 Frontend (`apps/web`, Next.js)
+### 14.4 Frontend (`apps/web`, Vite + React, ADR-010)
 
 | Page | Contents |
 |---|---|
@@ -671,7 +671,7 @@ Locally, `docker compose` runs Postgres and the same image, so the one-command d
 | Solana programs | Anchor (Rust); `solana-test-validator` |
 | Arena, API, keeper, SDK | TypeScript: an OpenAI-compatible LLM client (OpenRouter by default), `viem`, `@solana/web3.js`, Hono (API), a Postgres `FOR UPDATE SKIP LOCKED` queue, Zod |
 | Sentinel | Python 3.11: `laya` (pinned), `laya[serve]`; Kaggle fine-tuning notebook |
-| Frontend | Next.js (App Router), Tailwind + shadcn/ui, wagmi/viem, Solana wallet adapter |
+| Frontend | Vite + React single-page app, React Router, Tailwind, wagmi/viem; Solana wallet adapter with the Solana work (ADR-010) |
 | Storage | Postgres 16 (Railway live, `docker compose` locally), Drizzle migrations, jobs on a Postgres `FOR UPDATE SKIP LOCKED` queue |
 | Hosting | Railway (API, keeper and Arena worker from one Docker image; Postgres), Vercel Hobby (web); ADR-008 |
 | TEE | Phala Cloud dstack (Docker compose) |
@@ -697,7 +697,7 @@ bonded/
 │   ├── arena/                  red-team engine, world simulator, adapters, judge, actuarial model
 │   ├── api/                    REST + SSE
 │   ├── keeper/                 claims, premiums, attestation posting
-│   ├── web/                    Next.js dApp
+│   ├── web/                    Vite + React dApp
 │   └── demo-agents/            vulnerable-agent, hardened-agent, laya-decision-bot
 ├── services/
 │   ├── sentinel/               Laya service, dataset builder, eval, Kaggle notebook
@@ -786,7 +786,7 @@ Day 1 = Sun Sep 27. Submission target = Day 15 (Sun Oct 11). Day 16 (Mon Oct 12)
 | 5 | Thu Oct 1 | Arena core: fork sandbox, world simulator (news/social/DM/price/metadata/tool output), episode runner, **judge = vault breach log**; `vulnerable-agent` v0 | 1 attack class runs end to end on a fork with a correct verdict |
 | 6 | Fri Oct 2 | Attack library (10 classes, ~40 seeds); adaptive attacker (LLM via OpenRouter); actuarial model + scoring; report; attestation signing; Sentinel dataset logging; `hardened-agent` v0 | Full rating run on both demo agents; scores differ in the expected direction; report renders |
 | 7 | Sat Oct 3 | API (REST + SSE) + keeper, deployed live (ADR-008); testnet E2E: Arena → attestation → quote → buyCover → live breach → auto claim | **GATE 1: core loop live on Robinhood Chain testnet.** Founder review #1 |
-| 8 | Sun Oct 4 | Web app: Arena live feed, agent profile, vault, underwrite, claims pages; synthetic Sentinel data via the Batches API | Demo flow clickable in the browser against testnet |
+| 8 | Sun Oct 4 | Web app: Arena live feed, agent profile, vault, underwrite, claims pages; synthetic Sentinel data via the provider-neutral LLM client (ADR-006; no batch API) | Demo flow clickable in the browser against testnet |
 | 9 | Mon Oct 5 | **Founder runs the Laya fine-tune on Kaggle** (dataset and notebook provided); meanwhile Solana programs (vault, cover, registry) in Anchor | Fine-tuned checkpoint pushed (private); Anchor programs compile |
 | 10 | Tue Oct 6 | Solana tests + devnet deploy + keeper/SDK support; Sentinel service + held-out eval + Arena re-run with Sentinel on | Solana E2E breach → claim on devnet; Sentinel eval report (TPR@1%FPR, ECE, latency) |
 | 11 | Wed Oct 7 | TEE: hardened agent on Phala dstack, measurement bound in the attestation; Ethereum Sepolia registry deployment; multi-chain attestation posting | TEE badge shows on the agent profile; a score is readable on 4 chains |

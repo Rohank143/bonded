@@ -28,3 +28,6 @@ ratings/
 
 # Local Gate 1 evidence; reviewed testnet evidence is copied to docs/progress/evidence.
 artifacts/
+
+# Local preview launch settings (may hold local-only test values)
+.claude/launch.json
