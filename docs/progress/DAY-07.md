@@ -70,10 +70,12 @@ The hosted services have not yet rated a new agent or paid a new claim on their 
 
 ### Follow-ups
 
-- External uptime check (for example UptimeRobot) on `https://api-production-ba50.up.railway.app/health`, emailing the founder when it fails.
-- Alerts to a chat channel for crashes and stuck keeper claims.
-- Top up testnet ETH: the attester (deployer) had about 0.0067 ETH and the keeper 0.003 ETH at deploy time.
-- Automatic deep-reorg recovery for the keeper; today it stops and waits for an operator.
+Deferred items are tracked in the Deferred work table in `docs/PLAN.md` (Section 20) and as issues.
+
+- External uptime check (for example UptimeRobot) on `https://api-production-ba50.up.railway.app/health`, emailing the founder when it fails: [issue #23](https://github.com/ddboy19912/bonded/issues/23).
+- Alerts to a chat channel for crashes and stuck keeper claims: [issue #24](https://github.com/ddboy19912/bonded/issues/24).
+- Top up testnet ETH: the attester (deployer) had about 0.0067 ETH and the keeper 0.003 ETH at deploy time. A founder task, not deferred work.
+- Automatic deep-reorg recovery for the keeper; today it stops and waits for an operator: [issue #25](https://github.com/ddboy19912/bonded/issues/25).
 
 ## Section 25 review checklist
 
