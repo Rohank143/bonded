@@ -25,3 +25,6 @@ contracts/evm/deployments/*.pending.json
 traces/
 # Arena rating output (reports, attestations, datasets)
 ratings/
+
+# Local Gate 1 evidence; reviewed testnet evidence is copied to docs/progress/evidence.
+artifacts/

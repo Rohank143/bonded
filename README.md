@@ -125,3 +125,11 @@ cd contracts/evm && forge fmt --check && forge test
 ```
 
 Design records: [ADR-004](docs/decisions/004-registry-disputes-bounties.md) (registry and deploys), [ADR-005](docs/decisions/005-arena-core.md) (Arena), [ADR-006](docs/decisions/006-provider-neutral-llm.md) (language models), [ADR-007](docs/decisions/007-ratings.md) (ratings).
+
+## Day 7 API, keeper and Gate 1
+
+`pnpm test:services` runs real Postgres and Anvil tests without Docker. `pnpm gate:local` runs the complete rating → attestation → quote → cover → injected breach → automatic payout loop, using embedded Postgres and a fresh Anvil deployment. Results go to `artifacts/gate-1-local.json`.
+
+`pnpm gate:testnet` broadcasts the same demo on Robinhood Chain testnet using `DEPLOYER_PRIVATE_KEY` from `.env`. It spends test ETH and faucet tokens, creates a new demo agent and vault, and requires the existing deployment to have a zero waiting period. Review the command before running it. Results go to `artifacts/gate-1-testnet.json`; partial results are saved if a step fails.
+
+Long-running service setup and API requests: [docs/SERVICES.md](docs/SERVICES.md). Day 7 evidence and the Section 25 checklist: [docs/progress/DAY-07.md](docs/progress/DAY-07.md). The committed hosting configuration has not yet been deployed to Railway.
