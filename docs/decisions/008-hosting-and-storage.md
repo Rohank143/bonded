@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-09-28
-- **Code:** `apps/api/`, `apps/keeper/`, `apps/arena/`, `Dockerfile`, `docker-compose.yml`, `railway.json` (from Day 7)
+- **Code:** `apps/api/`, `apps/keeper/`, `apps/arena/`, `Dockerfile`, `docker-compose.yml`, `.railway/railway.ts` (from Day 7)
 
 ## Context
 
@@ -69,7 +69,7 @@ Settings:
 ### 5. Deploys
 
 - Railway deploys each service from GitHub **on every merge to `main`**. The founder merges every PR, so nothing reaches the live services without review.
-- Build and deploy settings live in `railway.json` in the repo, not only in the dashboard.
+- Build and deploy settings live in `.railway/railway.ts` in the repo (Railway infrastructure as code), not only in the dashboard. `railway config plan` shows drift; `railway config apply` applies the file after merge. It replaced `railway.json`, which Railway deprecated.
 - CI is paused (billing issue), so the full pipeline still runs on a fresh clone before each PR is opened, and the results go in the PR description.
 
 ### 6. Secrets
