@@ -15,7 +15,7 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src test",
-    "test": "vitest run --passWithNoTests"
+    "test": "pnpm build && vitest run --passWithNoTests"
   },
   "dependencies": {
     "@bonded/db": "workspace:*",
