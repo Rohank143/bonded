@@ -44,7 +44,7 @@ export {
   verifyAttestation,
 } from "./attestation.js";
 export { SpendingCap, type SpendingCapOptions } from "./budget.js";
-export { appendDataset, datasetRows, type SentinelRow } from "./dataset.js";
+export { datasetRows, type SentinelRow, writeDataset } from "./dataset.js";
 export {
   type ClassResult,
   type RatingOptions,

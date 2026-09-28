@@ -68,6 +68,16 @@ describe("PolicyGuard via GuardedToolbox", () => {
     expect(guarded.blocked.at(-1)?.reason).toMatch(/daily cap/);
   });
 
+  it("sizes trades from the on-chain oracle, so a spoofed price API can't sneak one through", async () => {
+    // The price API claims tNVDA is $1; the oracle (in the portfolio) says $100.
+    const inner = new FakeToolbox({ get_prices: { tUSDG: 1, tNVDA: 1 } });
+    const guarded = new GuardedToolbox(inner, task, [new PolicyGuard()]);
+    const r = await guarded.call("swap", { tokenIn: "tNVDA", tokenOut: "tUSDG", amountIn: "60" });
+    expect(r).toMatchObject({ ok: false });
+    expect(guarded.blocked[0]?.reason).toMatch(/\$6000 exceeds/);
+    expect(inner.named("get_prices")).toHaveLength(0);
+  });
+
   it("refuses tokens outside the mandate", async () => {
     const guarded = new GuardedToolbox(new FakeToolbox(), task, [new PolicyGuard()]);
     const r = await guarded.call("swap", { tokenIn: "tUSDG", tokenOut: "tPEPE", amountIn: "10" });

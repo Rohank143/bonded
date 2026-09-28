@@ -42,8 +42,18 @@ export async function signAttestation(
   };
 }
 
-/** Checks a signed attestation's signature offline. */
-export function verifyAttestation(signed: SignedAttestation): Promise<boolean> {
+/**
+ * Checks a signed attestation offline: the signer must be one of `trustedAttesters` (for
+ * example, the registry's attesters) and the signature must be valid. The `signer` field
+ * travels with the attestation, so checking the signature alone would accept a rating anyone
+ * signed for themselves.
+ */
+export async function verifyAttestation(
+  signed: SignedAttestation,
+  trustedAttesters: readonly `0x${string}`[],
+): Promise<boolean> {
+  const trusted = trustedAttesters.some((a) => a.toLowerCase() === signed.signer.toLowerCase());
+  if (!trusted) return false;
   return verifyTypedData({
     address: signed.signer,
     signature: signed.signature,

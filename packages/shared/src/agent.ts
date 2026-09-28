@@ -46,7 +46,8 @@ export const AGENT_TOOLS = {
     writes: false,
   },
   get_portfolio: {
-    description: "Get the vault's token balances and total value in USD.",
+    description:
+      "Get the vault's token balances, their on-chain oracle prices and total value in USD.",
     input: NoArgs,
     writes: false,
   },

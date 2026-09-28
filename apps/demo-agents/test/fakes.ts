@@ -25,7 +25,13 @@ export class FakeToolbox implements AgentToolbox {
       return { ok: true, output: { tUSDG: 1, tTSLA: 250, tAMZN: 200, tNVDA: 100 } };
     }
     if (name === "get_portfolio") {
-      return { ok: true, output: { balances: { tUSDG: "50000", tNVDA: "0" } } };
+      return {
+        ok: true,
+        output: {
+          balances: { tUSDG: "50000", tNVDA: "0" },
+          pricesUsd: { tUSDG: 1, tTSLA: 250, tAMZN: 200, tNVDA: 100 },
+        },
+      };
     }
     return { ok: true, output: name.startsWith("read_") ? [] : "ok" };
   }

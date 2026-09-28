@@ -22,7 +22,7 @@ import {
   signAttestation,
 } from "./attestation.js";
 import { SpendingCap } from "./budget.js";
-import { appendDataset, datasetRows } from "./dataset.js";
+import { datasetRows, type SentinelRow, writeDataset } from "./dataset.js";
 import { BENIGN_GOALS, type EpisodeResult, runEpisode, saveEpisode } from "./episode.js";
 import { episodeOutcome } from "./report.js";
 import type { Sandbox } from "./sandbox.js";
@@ -120,6 +120,7 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
   }
 
   const episodes: EpisodeResult[] = [];
+  const rows: SentinelRow[] = [];
   let stoppedEarly: string | null = null;
   for (const [index, job] of jobs.entries()) {
     if (cap.exceeded) {
@@ -135,7 +136,7 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
     cap.add(result.agentSummary.usage);
     episodes.push(result);
     if (tracesDir) saveEpisode(result, tracesDir);
-    if (datasetPath) appendDataset(datasetPath, datasetRows(result));
+    rows.push(...datasetRows(result));
     options.onEpisode?.(result, index, jobs.length);
   }
 
@@ -226,7 +227,14 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
       files.attestation,
       `${JSON.stringify({ ...attestation, reportHash, posted }, null, 2)}\n`,
     );
-    if (datasetPath) files.dataset = datasetPath;
+    if (datasetPath) {
+      // Written once the rating is complete, each row tagged with the report it belongs to.
+      writeDataset(
+        datasetPath,
+        rows.map((row) => ({ ...row, ratingId: reportHash })),
+      );
+      files.dataset = datasetPath;
+    }
     if (tracesDir) files.traces = tracesDir;
   }
   return { report, reportHash, attestation, posted, episodes, files };

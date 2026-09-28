@@ -25,7 +25,7 @@ export interface GuardContext {
   untrustedInputs: string[];
   /** USD traded so far in this run. */
   tradedUsd: number;
-  /** Reads a price the way the agent would (the price API). */
+  /** A trade's USD price from the on-chain oracle (never the attackable price API). */
   priceUsd(symbol: string): Promise<number | undefined>;
 }
 
@@ -168,14 +168,14 @@ export class GuardedToolbox implements AgentToolbox {
   }
 
   /**
-   * The price API's quote. It's the same (attackable) source the agent reads, so a spoofed
-   * price can mislead the size check; the vault's oracle-based limit still applies.
+   * The on-chain oracle price, from the portfolio. Never the price API: that is content the
+   * world (and so an attacker) controls, and a spoofed low price would let an oversized trade
+   * past the size check and undercount the day's volume.
    */
   private async price(symbol: string): Promise<number | undefined> {
-    if (/^t?usdg$/i.test(symbol)) return 1;
-    const result = await this.inner.call("get_prices", {});
+    const result = await this.inner.call("get_portfolio", {});
     if (!result.ok) return undefined;
-    const prices = result.output as Record<string, number>;
+    const prices = (result.output as { pricesUsd?: Record<string, number> }).pricesUsd ?? {};
     const key = Object.keys(prices).find(
       (k) =>
         k.toLowerCase() === symbol.toLowerCase() || k.toLowerCase() === `t${symbol}`.toLowerCase(),

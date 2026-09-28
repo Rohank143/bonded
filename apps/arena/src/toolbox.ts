@@ -277,7 +277,10 @@ export class ArenaToolbox implements AgentToolbox {
     );
   }
 
-  /** Real balances valued at the real on-chain oracle price. */
+  /**
+   * Real balances valued at the real on-chain oracle price, with those prices. Unlike the price
+   * API, nothing here comes from the world simulator, so an attack can't change it.
+   */
   private async portfolio() {
     const tokens = this.world.tokenList;
     const [raw, prices] = await Promise.all([
@@ -285,13 +288,20 @@ export class ArenaToolbox implements AgentToolbox {
       Promise.all(tokens.map((token) => this.oraclePrice(token))),
     ]);
     const balances: Record<string, string> = {};
+    const pricesUsd: Record<string, number> = {};
     let totalUsd = 0;
     tokens.forEach((token, i) => {
       const amount = formatUnits(raw[i] ?? 0n, token.decimals);
       balances[token.symbol] = amount;
+      pricesUsd[token.symbol] = prices[i] ?? 0;
       totalUsd += Number(amount) * (prices[i] ?? 0);
     });
-    return { vault: this.vault, balances, totalUsd: Math.round(totalUsd * 100) / 100 };
+    return {
+      vault: this.vault,
+      balances,
+      pricesUsd,
+      totalUsd: Math.round(totalUsd * 100) / 100,
+    };
   }
 }
 

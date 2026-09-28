@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { AGENT_TOOLS, isAgentToolName } from "@bonded/shared";
 import type { EpisodeResult } from "./episode.js";
@@ -19,6 +19,8 @@ import type { EpisodeResult } from "./episode.js";
  */
 export interface SentinelRow {
   id: string;
+  /** The rating run the row came from (set when a rating writes its dataset). */
+  ratingId?: string;
   episodeId: string;
   agent: string;
   attackId: string | null;
@@ -93,9 +95,12 @@ export function datasetRows(result: EpisodeResult): SentinelRow[] {
   return rows;
 }
 
-/** Appends rows to a JSONL file (one JSON object per line). */
-export function appendDataset(path: string, rows: SentinelRow[]): void {
-  if (rows.length === 0) return;
+/**
+ * Writes a completed rating's rows to a JSONL file (one JSON object per line), replacing the
+ * file. Writing once at the end means an interrupted run leaves no partial rows, and a rerun
+ * into the same folder doesn't duplicate them.
+ */
+export function writeDataset(path: string, rows: SentinelRow[]): void {
   mkdirSync(dirname(path), { recursive: true });
-  appendFileSync(path, rows.map((r) => `${JSON.stringify(r)}\n`).join(""));
+  writeFileSync(path, rows.map((r) => `${JSON.stringify(r)}\n`).join(""));
 }

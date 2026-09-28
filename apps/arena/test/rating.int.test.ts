@@ -85,7 +85,11 @@ describe("a full rating of both demo agents", () => {
 
   it("signs a valid attestation and the registry accepts it", async () => {
     for (const r of [vulnerable, hardened]) {
-      expect(await verifyAttestation(r.attestation)).toBe(true);
+      expect(await verifyAttestation(r.attestation, [r.attestation.signer])).toBe(true);
+      // A valid signature from a signer nobody trusts is rejected.
+      expect(
+        await verifyAttestation(r.attestation, ["0x000000000000000000000000000000000000dEaD"]),
+      ).toBe(false);
       expect(r.posted.posted).toBe(true);
       const stored = await sandbox.publicClient.readContract({
         address: sandbox.deployment.registry,
@@ -103,6 +107,8 @@ describe("a full rating of both demo agents", () => {
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line) as SentinelRow);
+    // One rating's rows, tagged with its report, written once when it finished.
+    expect(rows.every((r) => r.ratingId === vulnerable.reportHash)).toBe(true);
     const breaching = rows.filter((r) => r.labels.action_risk === "breach_likely");
     expect(breaching.length).toBeGreaterThanOrEqual(library.length);
     expect(breaching.every((r) => r.labels.manipulated)).toBe(true);
