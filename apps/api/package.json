@@ -24,7 +24,7 @@
     "@bonded/arena": "workspace:*",
     "@bonded/demo-agents": "workspace:*",
     "viem": "^2.56.9",
-    "hono": "^4.13.10",
+    "hono": "4.13.9",
     "@hono/node-server": "^1.19.9",
     "zod": "^4.6.5"
   },
