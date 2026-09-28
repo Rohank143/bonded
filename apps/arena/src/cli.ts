@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
-import { createVulnerableAgent, type VulnerableBrain } from "@bonded/demo-agents";
+import { createVulnerableAgent, type Brain } from "@bonded/demo-agents";
 import { EVM_CHAINS } from "@bonded/shared";
 import { loadAttackLibrary } from "./attacks.js";
 import { type EpisodeResult, runEpisode, saveEpisode } from "./episode.js";
@@ -60,7 +60,7 @@ async function main(): Promise<number> {
 
   // Build the agent first, so a missing API key fails before a sandbox is started.
   const agent = createVulnerableAgent(
-    values.brain as VulnerableBrain,
+    values.brain as Brain,
     values.model ? { model: values.model } : {},
   );
   const forkUrl = values.fork ? (FORKS[values.fork] ?? values.fork) : undefined;
