@@ -106,6 +106,10 @@ export class OpenAICompatibleClient implements ChatClient {
     this.retryDelayMs = options.retryDelayMs ?? 1000;
   }
 
+  /**
+   * Sends one chat-completion request and returns the response. Retries rate limits, server
+   * errors and dropped connections; throws `LlmError` for other HTTP errors.
+   */
   async complete(
     request: ChatRequest,
     options: { signal?: AbortSignal } = {},

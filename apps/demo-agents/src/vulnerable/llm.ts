@@ -54,6 +54,7 @@ export class LlmVulnerableAgent implements ArenaAgent {
     this.name = `vulnerable-agent/${this.model}`;
   }
 
+  /** Runs the tool-calling loop for one episode until the model finishes, errs or hits maxSteps. */
   async run(task: AgentTask, tools: AgentToolbox): Promise<AgentRunSummary> {
     const messages: ChatMessage[] = [
       { role: "system", content: systemPrompt(task) },
@@ -62,6 +63,7 @@ export class LlmVulnerableAgent implements ArenaAgent {
     const usage = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
     let costReported = false;
     let steps = 0;
+    /** The run summary, with cost included only when the endpoint reported it. */
     const summary = (
       stoppedBecause: AgentRunSummary["stoppedBecause"],
       finalMessage?: string,
@@ -125,6 +127,7 @@ export class LlmVulnerableAgent implements ArenaAgent {
   }
 }
 
+/** A tool result message answering the model's tool call `id`. */
 function toolMessage(id: string, payload: unknown): ChatMessage {
   return { role: "tool", tool_call_id: id, content: JSON.stringify(payload) };
 }
