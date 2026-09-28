@@ -5,6 +5,7 @@ export * from "./agent.js";
 export * from "./llm.js";
 export * from "./abis.js";
 export * from "./tiers.js";
+export * from "./actuarial.js";
 export * from "./schemas/common.js";
 export * from "./schemas/mandate.js";
 export * from "./schemas/attack.js";
