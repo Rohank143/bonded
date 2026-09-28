@@ -31,14 +31,17 @@ export class Database {
     }
   }
   async migrate() {
-    const sql = await readFile(new URL("../migrations/0001_services.sql", import.meta.url), "utf8");
+    const migrations = ["0001_services.sql", "0002_report_bytes.sql"];
     await this.transaction(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(7001)");
       await c.query("CREATE TABLE IF NOT EXISTS schema_migrations (version integer PRIMARY KEY)");
-      const done = await c.query("SELECT 1 FROM schema_migrations WHERE version=1");
-      if (!done.rowCount) {
-        await c.query(sql);
-        await c.query("INSERT INTO schema_migrations VALUES (1)");
+      for (const [index, file] of migrations.entries()) {
+        const version = index + 1;
+        const done = await c.query("SELECT 1 FROM schema_migrations WHERE version=$1", [version]);
+        if (!done.rowCount) {
+          await c.query(await readFile(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
+          await c.query("INSERT INTO schema_migrations VALUES ($1)", [version]);
+        }
       }
     });
   }

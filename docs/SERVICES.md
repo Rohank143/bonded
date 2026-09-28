@@ -22,6 +22,8 @@ POST endpoints require `Authorization: Bearer <API_TOKEN>`. GET endpoints are pu
 
 Amounts are integer strings in base-asset units. Quotes use the registry score and one block's pool exposure, bond and caps, then simulate `buyCover` as the guardian. Quotes do not reserve capacity: chain state can change before purchase, and the contract checks again. Missing or invalid chain state currently returns a generic 503; underwriting cap failures return 409.
 
+The report endpoint returns the exact JSON bytes hashed by the attestation; a text column preserves them alongside the queryable JSONB report. Migration 2 adds this column without fabricating original bytes for older rows.
+
 The worker rates on a local fork, never against the live RPC. It awaits every episode write, saves the report and signature, then posts the attestation to the configured registry. Jobs retry three times and then remain `failed` for inspection. `events` retains history without pruning; configure retention before sustained public traffic. SSE uses a dedicated Postgres connection per subscriber, so the initial pool supports a small demo audience rather than an unbounded public feed.
 
 The keeper scans up to 500 blocks per tick, with five confirmations by default (`KEEPER_CONFIRMATIONS=0` only for local tests). It accrues active policies every minute. Breaches stay pending after RPC or liquidity failures. Claims are checked against historical coverage windows and simulated after accrual. A deep reorg triggers an error and stops scanning until an operator reconciles the database. Monitor service error logs and pending jobs; this initial deployment does not include an alerting integration.

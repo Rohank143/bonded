@@ -28,6 +28,7 @@ export const ratings = pgTable("ratings", {
     .references(() => agents.id),
   status: text().notNull().default("queued"),
   report: jsonb(),
+  reportJson: text("report_json"),
   attestation: jsonb(),
   error: text(),
   createdAt: created(),

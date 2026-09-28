@@ -20,7 +20,7 @@ import {
   type SignedQuote,
   mandateHash,
 } from "@bonded/shared";
-import { encodeFunctionData } from "viem";
+import { encodeFunctionData, keccak256, stringToBytes } from "viem";
 import { createApi } from "../src/index.js";
 import { postgres } from "./postgres.js";
 let pg: Awaited<ReturnType<typeof postgres>>,
@@ -206,6 +206,8 @@ it("runs a queued rating, persists episodes and report, posts the attestation", 
   ).toBe(42);
   expect((await app.request(`/agents/${vault.agentId}/score`)).status).toBe(200);
   expect((await app.request(`/arena/runs/${run}/report`)).status).toBe(200);
+  const reportBody = await (await app.request(`/arena/runs/${run}/report`)).text();
+  expect(keccak256(stringToBytes(reportBody))).toBe(result.attestation.attestation.reportHash);
   const tx = (await pg.db.pool.query("SELECT tx_hash FROM attestations WHERE id=$1", [run])).rows[0]
     .tx_hash;
   await pg.db.pool.query("DELETE FROM attestations WHERE id=$1", [run]);
