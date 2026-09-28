@@ -809,7 +809,10 @@ Day 1 = Sun Sep 27. Submission target = Day 15 (Sun Oct 11). Day 16 (Mon Oct 12)
 |---|---|---|---|
 | Adaptive or held-out attack source, so ratings include attacks the operator couldn't study in advance (Section 8.3) | Day 6 (ADR-007, decision 3) | Before scores price real (non-testnet) cover. Not needed for the demo or the gates | [Issue #11](https://github.com/ddboy19912/bonded/issues/11) |
 | Laya adapter behind the `DecisionModel` interface (Section 10) | Day 6 (ADR-007, decision 5). Hugging Face is blocked in the cloud environment | Day 10: the Sentinel service, evaluation and the Arena re-run | [Issue #12](https://github.com/ddboy19912/bonded/issues/12) |
-| Quote signing | Day 6 | Day 7, with `buyCover` | Day 7 deliverables |
+| Quote signing | Day 6 | Day 7, with `buyCover` | Done on Day 7 ([PR #17](https://github.com/ddboy19912/bonded/pull/17)) |
+| External uptime check on the public API `/health` | Day 7 | Day 13 (hardening), before the demo is recorded against the hosted API | [Issue #23](https://github.com/ddboy19912/bonded/issues/23) |
+| Chat alerts for crashes, a lagging keeper, stuck claims and failed ratings; guardian alerts (Section 14.2) | Day 7 | Day 13 (hardening). Required before any mainnet deploy | [Issue #24](https://github.com/ddboy19912/bonded/issues/24) |
+| Automatic keeper recovery from deep chain reorganisations (today it stops for an operator) | Day 7 | Before mainnet or real funds. Not needed for the testnet demo or the gates | [Issue #25](https://github.com/ddboy19912/bonded/issues/25) |
 
 ---
 

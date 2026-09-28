@@ -60,4 +60,4 @@ What watches the hosted services today:
 - **Keeper progress.** `keeper_cursors.block_number` should stay within a few blocks of the chain head. `handled_events` rows with `status='pending'` and a non-empty `error` are breaches the keeper is retrying.
 - **Logs.** `railway logs --service <name>`. Services log `service iteration failed; retrying` on a failed loop iteration and never log secret values.
 
-Not yet in place: an external uptime check on the public `/health` URL, and alerts to a chat channel. These are listed as follow-ups in `docs/progress/DAY-07.md`.
+Not yet in place: an external uptime check on the public `/health` URL, and alerts to a chat channel. These are tracked as [issue #23](https://github.com/ddboy19912/bonded/issues/23) and [issue #24](https://github.com/ddboy19912/bonded/issues/24), and in the Deferred work table in `docs/PLAN.md`.
