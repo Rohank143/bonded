@@ -31,35 +31,97 @@ Building. The build runs Sep 27 – Oct 11, 2026. See the day-by-day plan in [`d
 
 More packages (API, keeper, web, SDK, Sentinel, Solana programs) arrive as the build progresses.
 
-## Development
+## Run it yourself
 
-Requirements: Node 22, pnpm 10, [Foundry](https://book.getfoundry.sh/getting-started/installation).
+Everything below runs on your own machine. Steps 1–3 need no keys, accounts or network access beyond installing dependencies.
+
+### 1. Install the tools
+
+| Tool | Version | Install |
+|---|---|---|
+| Node.js | 22 or newer | [nodejs.org](https://nodejs.org) |
+| pnpm | 10 | `corepack enable` (ships with Node) |
+| Foundry (`forge`, `anvil`, `cast`) | latest | `curl -L https://foundry.paradigm.xyz \| bash`, then `foundryup` |
+
+### 2. Get the code and build it
 
 ```bash
 git clone --recursive https://github.com/ddboy19912/bonded
 cd bonded
 pnpm install
-
-pnpm typecheck        # TypeScript
-pnpm lint
-pnpm test             # Vitest
-pnpm contracts:test   # forge test
-pnpm demo:local       # anvil: deploy everything, then run register → cover → breach → claim
-
-pnpm build                                        # build the TypeScript packages first
-pnpm --filter @bonded/arena arena run            # every attack vs vulnerable-agent, fresh local chain
-pnpm --filter @bonded/arena arena run --fork robinhood --attack A6-operator-impersonation-001
-pnpm --filter @bonded/arena arena rate            # full rating: score, report, attestation, dataset
-pnpm --filter @bonded/arena arena rate --agent hardened --enforce --repeats 5
+pnpm build            # TypeScript packages
+pnpm contracts:build  # Solidity contracts
 ```
 
-`--brain llm --model <id>` runs the agent on any model through OpenRouter (needs `OPENROUTER_API_KEY`; `LLM_BASE_URL` points it at any other OpenAI-compatible endpoint); `--list` shows the attack library.
-- **Agents:** `--agent vulnerable|hardened|decision` picks the demo agent.
-- **Sentinel:** `--sentinel-model <id>` adds a Sentinel guard to hardened-agent.
-- **Spending cap:** `--max-usd <n>` caps model spend per rating.
+If you cloned without `--recursive`, run `git submodule update --init --recursive` first; the contracts need their libraries.
 
-See [ADR-005](docs/decisions/005-arena-core.md), [ADR-006](docs/decisions/006-provider-neutral-llm.md) and [ADR-007](docs/decisions/007-ratings.md).
+### 3. Try it locally (no keys needed)
 
-Live testnet addresses are in [`contracts/evm/deployments/`](contracts/evm/deployments/README.md). To deploy, run from `contracts/evm` with `DEPLOYER_PRIVATE_KEY` set: `script/deploy.sh <rpc>`. See [ADR-004](docs/decisions/004-registry-disputes-bounties.md) and [`docs/progress/DAY-04.md`](docs/progress/DAY-04.md).
+These run on a local chain (anvil) with its public test accounts. They never touch a real network and never read `.env`.
 
-If you cloned without `--recursive`, run `git submodule update --init --recursive` before building the contracts.
+```bash
+pnpm test             # all TypeScript tests (starts local chains for the Arena's tests)
+pnpm contracts:test   # all contract tests
+
+pnpm demo:local       # deploy everything to a local chain, then run
+                      # register → vault → bond → cover → breach → claim (the claim pays 4,500)
+
+pnpm arena --list                           # the attack library
+pnpm arena run                              # every attack against vulnerable-agent
+pnpm arena rate                             # full rating: score, report, attestation, dataset
+pnpm arena rate --agent hardened --enforce  # the guarded agent, for comparison
+```
+
+Arena output goes to `apps/arena/traces/` and `apps/arena/ratings/<agent>/`; `report.md` there is the human-readable rating.
+
+### 4. Optional: settings in `.env`
+
+You only need a `.env` to use language models or real testnets:
+
+```bash
+cp .env.example .env   # then fill in what you need; the file explains every setting
+```
+
+- **Precedence:** values already set in your shell win over `.env`.
+- **Git:** `.env` is git-ignored, so it never gets committed.
+- **Local runs:** step 3's commands ignore `.env` completely.
+
+**Language models.** Set `OPENROUTER_API_KEY` (one key reaches hundreds of models), or point `LLM_BASE_URL` at any OpenAI-compatible endpoint, such as a local Ollama. Then:
+
+```bash
+pnpm arena rate --brain llm --model deepseek/deepseek-v4.1-flash --max-usd 2
+```
+
+| Flag | What it does |
+|---|---|
+| `--agent vulnerable\|hardened\|decision` | Picks the demo agent |
+| `--brain scripted\|llm` and `--model <id>` | Picks its brain; the model is any OpenRouter model id |
+| `--sentinel-model <id>` | Adds a Sentinel guard to hardened-agent |
+| `--enforce` | Runs the vault in Enforce mode |
+| `--repeats <n>` | Runs every attack n times |
+| `--max-usd <n>` | Caps model spend for the run |
+| `--fork robinhood\|arbitrum` | Runs against a copy of a live testnet instead of a fresh chain |
+| `--help` | Lists everything |
+
+**Testnets.** Bonded is already deployed on Robinhood Chain testnet and Arbitrum Sepolia; the addresses are in [`contracts/evm/deployments/`](contracts/evm/deployments/README.md). To deploy your own copy or run the demo loop there:
+
+1. Create a **testnet-only** wallet (for example `cast wallet new`). Never use a wallet that holds real funds.
+2. Get test ETH from the chain's faucet. For Arbitrum Sepolia you can also bridge Sepolia ETH.
+3. Put the key in `.env` as `DEPLOYER_PRIVATE_KEY`.
+4. Run:
+
+```bash
+pnpm contracts:deploy robinhood   # or: arbitrum, or any RPC URL
+pnpm contracts:smoke robinhood    # the demo loop on that chain (see .env.example for per-role keys)
+```
+
+A deploy writes `contracts/evm/deployments/<chainId>.json` only after checking everything on-chain.
+
+### Checks before a pull request
+
+```bash
+pnpm format:check && pnpm --filter @bonded/shared abis:check && pnpm typecheck && pnpm lint && pnpm test
+cd contracts/evm && forge fmt --check && forge test
+```
+
+Design records: [ADR-004](docs/decisions/004-registry-disputes-bounties.md) (registry and deploys), [ADR-005](docs/decisions/005-arena-core.md) (Arena), [ADR-006](docs/decisions/006-provider-neutral-llm.md) (language models), [ADR-007](docs/decisions/007-ratings.md) (ratings).

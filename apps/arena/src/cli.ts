@@ -10,6 +10,7 @@ import {
 } from "@bonded/demo-agents";
 import { type ArenaAgent, EVM_CHAINS } from "@bonded/shared";
 import { loadAttackLibrary } from "./attacks.js";
+import { loadDotEnv } from "./env.js";
 import { type EpisodeResult, runEpisode, saveEpisode } from "./episode.js";
 import { rateAgent } from "./rate.js";
 import { describeOutcome, summarise } from "./report.js";
@@ -45,6 +46,8 @@ const FORKS: Record<string, string> = {
 };
 
 async function main(): Promise<number> {
+  // API keys (and anything else) from the repo root's .env; see .env.example.
+  loadDotEnv();
   const { values, positionals } = parseArgs({
     allowPositionals: true,
     options: {

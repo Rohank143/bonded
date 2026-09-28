@@ -265,7 +265,7 @@ src/
   interfaces/    what the contracts read from each other
   libraries/     BondedTypes: shared structs, signed-message formats, tier rules
 test/            Forge tests (156), one file per contract plus full-loop tests
-script/          Deploy, RecordDeployment, Smoke, deploy.sh, local-demo.sh
+script/          Deploy, RecordDeployment, Smoke; deploy.sh, smoke.sh, local-demo.sh, env.sh
 deployments/     live addresses per chain
 ```
 
@@ -277,7 +277,8 @@ From this folder, with [Foundry](https://book.getfoundry.sh/getting-started/inst
 forge build                 # compile
 forge test                  # run all tests
 pnpm demo:local             # (from the repo root) local chain: deploy everything, then run the demo loop
-script/deploy.sh <rpc-url>  # deploy to a real chain (needs DEPLOYER_PRIVATE_KEY)
+pnpm contracts:deploy robinhood   # (from the repo root) deploy to a testnet; needs DEPLOYER_PRIVATE_KEY in .env
+pnpm contracts:smoke robinhood    # (from the repo root) run the demo loop on a testnet
 ```
 
 [`deployments/README.md`](deployments/README.md) has step-by-step deploy and smoke-test instructions.

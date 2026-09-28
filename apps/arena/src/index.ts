@@ -14,6 +14,7 @@ export {
   runEpisode,
   saveEpisode,
 } from "./episode.js";
+export { loadDotEnv, ROOT_ENV_FILE } from "./env.js";
 export { type JudgedBreach, judge, type Verdict } from "./judge.js";
 export {
   ANVIL_KEYS,

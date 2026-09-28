@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
 # Deploys the protocol to a chain and records it only once the deployment is confirmed on-chain.
-# Usage (from contracts/evm, with DEPLOYER_PRIVATE_KEY set): script/deploy.sh <rpc-url>
+# Usage: script/deploy.sh <robinhood|arbitrum|rpc-url>   (or from the repo root: pnpm contracts:deploy <...>)
+# Reads DEPLOYER_PRIVATE_KEY (and the optional ATTESTER, COUNCIL, WAITING_PERIOD) from your shell
+# or from the repo root's .env. See .env.example.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-RPC=${1:?usage: script/deploy.sh <rpc-url>}
+source script/env.sh
+load_env
+normalise_keys
+RPC=$(resolve_rpc "${1:-}")
+: "${DEPLOYER_PRIVATE_KEY:?set DEPLOYER_PRIVATE_KEY in .env or your shell (see .env.example)}"
 
 # forge exits non-zero if any transaction fails, and set -e then stops here.
 # --slow sends one transaction at a time and waits for each receipt: batch sending can leave a

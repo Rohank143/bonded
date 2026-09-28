@@ -32,11 +32,13 @@ Same addresses on both chains:
 
 ## Deploying
 
-From `contracts/evm`, with a funded key in `DEPLOYER_PRIVATE_KEY` (with `0x`):
+Put a funded, testnet-only key in the repo root's `.env` as `DEPLOYER_PRIVATE_KEY` (copy [`.env.example`](../../../.env.example); a shell variable works too), then from the repo root:
 
 ```bash
-WAITING_PERIOD=0 script/deploy.sh <rpc>
+pnpm contracts:deploy robinhood   # or: arbitrum, or any RPC URL
 ```
+
+Set `WAITING_PERIOD=0` in `.env` if you want to run the demo loop right away, as the live deployments do.
 
 It runs two steps:
 1. **`Deploy.s.sol --broadcast`** deploys and writes `<chainId>.pending.json` (git-ignored). Forge runs the script before sending the transactions, so this file alone doesn't prove anything was deployed.
@@ -48,10 +50,12 @@ For a free dry run that simulates everything and writes nothing: `forge script s
 
 ## Smoke run
 
-This runs the demo loop against a deployment: register, vault, bond, cover, breach, claim. The claim must pay 4,500. With only `DEPLOYER_PRIVATE_KEY` set, the deployer plays every role:
+This runs the demo loop against a deployment: register, vault, bond, cover, breach, claim. The claim must pay 4,500.
+
+With only `DEPLOYER_PRIVATE_KEY` set, the deployer plays every role. Set `OPERATOR_KEY`, `AGENT_KEY`, `USER_KEY` and `ATTESTER_KEY` in `.env` to use separate wallets.
 
 ```bash
-forge script script/Smoke.s.sol --rpc-url <rpc> --broadcast
+pnpm contracts:smoke robinhood   # or: arbitrum, or any RPC URL
 ```
 
 | Chain | RPC |

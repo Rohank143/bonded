@@ -182,7 +182,16 @@ async function deployFresh(
   try {
     const { stdout } = await run("script/deploy.sh", [rpcUrl], {
       cwd: CONTRACTS_DIR,
-      env: { ...process.env, DEPLOYER_PRIVATE_KEY: ANVIL_KEYS.deployer, WAITING_PERIOD: "0" },
+      // Every role is set explicitly and .env is ignored, so testnet settings (a real attester
+      // or key in .env or the shell) never leak into a local sandbox.
+      env: {
+        ...process.env,
+        BONDED_SKIP_DOTENV: "1",
+        DEPLOYER_PRIVATE_KEY: ANVIL_KEYS.deployer,
+        ATTESTER: privateKeyToAccount(ANVIL_KEYS.deployer).address,
+        COUNCIL: privateKeyToAccount(ANVIL_KEYS.deployer).address,
+        WAITING_PERIOD: "0",
+      },
       maxBuffer: 16 * 1024 * 1024,
     });
     log(
