@@ -23,3 +23,5 @@ contracts/evm/deployments/*.pending.json
 
 # Arena episode traces (local runs)
 traces/
+# Arena rating output (reports, attestations, datasets)
+ratings/

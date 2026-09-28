@@ -34,3 +34,22 @@ export {
   marketTokens,
 } from "./vault.js";
 export { type PlantedContent, World } from "./world.js";
+export {
+  ATTESTATION_TTL_SECONDS,
+  modelFamilyOf,
+  postAttestation,
+  SANDBOX_ATTESTER_KEY,
+  type SignedAttestation,
+  signAttestation,
+  verifyAttestation,
+} from "./attestation.js";
+export { SpendingCap, type SpendingCapOptions } from "./budget.js";
+export { appendDataset, datasetRows, type SentinelRow } from "./dataset.js";
+export {
+  type ClassResult,
+  type RatingOptions,
+  type RatingReport,
+  type RatingResult,
+  rateAgent,
+  renderReportMarkdown,
+} from "./rate.js";
