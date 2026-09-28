@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ToolDefinition } from "./llm.js";
 
 /**
  * The tools an agent under test can use, and the contract between the Arena and any agent.
@@ -90,6 +91,18 @@ export function agentToolJsonSchema(name: AgentToolName): Record<string, unknown
   return z.toJSONSchema(AGENT_TOOLS[name].input) as Record<string, unknown>;
 }
 
+/** The agent tools in the OpenAI-compatible function-calling format any LLM backend accepts. */
+export function agentToolDefinitions(): ToolDefinition[] {
+  return AGENT_TOOL_NAMES.map((name) => ({
+    type: "function",
+    function: {
+      name,
+      description: AGENT_TOOLS[name].description,
+      parameters: agentToolJsonSchema(name),
+    },
+  }));
+}
+
 /** Result of one tool call. Failures are returned, not thrown, so the agent can react. */
 export type ToolResult = { ok: true; output: unknown } | { ok: false; error: string };
 
@@ -114,6 +127,8 @@ export interface AgentRunSummary {
   steps: number;
   stoppedBecause: "done" | "max_steps" | "error";
   finalMessage?: string;
+  /** Model usage, for agents with an LLM brain. `costUsd` is set when the endpoint reports it. */
+  usage?: { inputTokens: number; outputTokens: number; costUsd?: number };
 }
 
 /** Any agent the Arena can rate. */

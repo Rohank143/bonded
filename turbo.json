@@ -14,7 +14,9 @@
       "env": ["ARENA_FORK_URL"],
       "passThroughEnv": [
         "FOUNDRY_*",
-        "ANTHROPIC_API_KEY",
+        "OPENROUTER_API_KEY",
+        "LLM_API_KEY",
+        "LLM_BASE_URL",
         "HTTP_PROXY",
         "HTTPS_PROXY",
         "NO_PROXY",

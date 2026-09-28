@@ -2,6 +2,7 @@ export * from "./canonical.js";
 export * from "./chains.js";
 export * from "./deployments.js";
 export * from "./agent.js";
+export * from "./llm.js";
 export * from "./abis.js";
 export * from "./tiers.js";
 export * from "./schemas/common.js";

@@ -1,17 +1,21 @@
 import type { ArenaAgent } from "@bonded/shared";
-import { ClaudeVulnerableAgent, type ClaudeVulnerableAgentOptions } from "./vulnerable/claude.js";
+import { LlmVulnerableAgent, type LlmVulnerableAgentOptions } from "./vulnerable/llm.js";
 import { ScriptedVulnerableAgent } from "./vulnerable/scripted.js";
 
-export { ClaudeVulnerableAgent, type MessagesClient } from "./vulnerable/claude.js";
 export { findInstructions, type Instruction } from "./vulnerable/instructions.js";
+export {
+  DEFAULT_AGENT_MODEL,
+  LlmVulnerableAgent,
+  type LlmVulnerableAgentOptions,
+} from "./vulnerable/llm.js";
 export { ScriptedVulnerableAgent } from "./vulnerable/scripted.js";
 
-export type VulnerableBrain = "scripted" | "claude";
+export type VulnerableBrain = "scripted" | "llm";
 
-/** vulnerable-agent v0 with the chosen brain. See ADR-005. */
+/** vulnerable-agent v0 with the chosen brain. See ADR-005 and ADR-006. */
 export function createVulnerableAgent(
   brain: VulnerableBrain,
-  claude: ClaudeVulnerableAgentOptions = {},
+  llm: LlmVulnerableAgentOptions = {},
 ): ArenaAgent {
-  return brain === "claude" ? new ClaudeVulnerableAgent(claude) : new ScriptedVulnerableAgent();
+  return brain === "llm" ? new LlmVulnerableAgent(llm) : new ScriptedVulnerableAgent();
 }

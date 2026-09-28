@@ -25,7 +25,7 @@ Building. The build runs Sep 27 – Oct 11, 2026. See the day-by-day plan in [`d
 | `packages/shared` | Schemas (mandate, attack spec, attestation, quote), chain configs, tiers, EIP-712 types, deployment files |
 | `contracts/evm` | Solidity contracts (Foundry), deploy and smoke scripts, live addresses. **Start with [its README](contracts/evm/README.md)** for what each contract does. |
 | `apps/arena` | The Arena: red-teams an agent in a local or forked-chain sandbox and judges it by the vault's breach log |
-| `apps/demo-agents` | Demo AI trading agents; `vulnerable-agent` (scripted or Claude brain) |
+| `apps/demo-agents` | Demo AI trading agents; `vulnerable-agent` (scripted or LLM brain, any model) |
 | `attacks/` | Attack library: YAML seeds by class |
 | `docs/` | Plan, decision records, daily progress notes |
 
@@ -51,7 +51,7 @@ pnpm --filter @bonded/arena arena run            # every attack vs vulnerable-ag
 pnpm --filter @bonded/arena arena run --fork robinhood --attack A6-operator-impersonation-001
 ```
 
-`--brain claude` runs the Claude-powered agent (needs `ANTHROPIC_API_KEY`); `--list` shows the attack library. See [ADR-005](docs/decisions/005-arena-core.md).
+`--brain llm --model <id>` runs the agent on any model through OpenRouter (needs `OPENROUTER_API_KEY`; `LLM_BASE_URL` points it at any other OpenAI-compatible endpoint); `--list` shows the attack library. See [ADR-005](docs/decisions/005-arena-core.md) and [ADR-006](docs/decisions/006-provider-neutral-llm.md).
 
 Live testnet addresses are in [`contracts/evm/deployments/`](contracts/evm/deployments/README.md). To deploy, run from `contracts/evm` with `DEPLOYER_PRIVATE_KEY` set: `script/deploy.sh <rpc>`. See [ADR-004](docs/decisions/004-registry-disputes-bounties.md) and [`docs/progress/DAY-04.md`](docs/progress/DAY-04.md).
 
