@@ -34,14 +34,20 @@ export async function postgres() {
   }
   const url = `postgres://postgres:test@127.0.0.1:${port}/postgres`;
   const db = new Database(url);
-  await db.migrate();
+  const cleanup = async () => {
+    await db.close().catch(() => {});
+    await pg.stop().catch(() => {});
+    await rm(directory, { recursive: true, force: true });
+  };
+  try {
+    await db.migrate();
+  } catch (error) {
+    await cleanup();
+    throw error;
+  }
   return {
     db,
     url,
-    stop: async () => {
-      await db.close();
-      await pg.stop();
-      await rm(directory, { recursive: true, force: true });
-    },
+    stop: cleanup,
   };
 }
