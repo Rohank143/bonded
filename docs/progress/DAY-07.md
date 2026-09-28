@@ -8,14 +8,15 @@ Build-day label: **Day 7**. Executed on September 28, 2026; this is the build se
 - `apps/api`: Hono health, score, quote, rating/run/report and SSE endpoints. POST requests require a server token. Quotes read registry attestations, bond, aggregate agent exposure and all three risk caps, then simulate `buyCover`.
 - `apps/keeper`: factory discovery, historical policy tracking, breach ingestion, claim eligibility checks, automatic `fileClaim`, premium accrual and restart recovery. Failed claims remain pending independently of the block cursor.
 - Arena worker: server-configured scripted adapters, 42 sandbox episodes, awaited progress events, persisted reports and signed attestations, on-chain posting and crash recovery.
-- Dockerfile, Compose, Railway configuration and environment variables. These files are supplied; no hosted Railway service was deployed during this task.
+- Dockerfile, Compose and Railway infrastructure as code (`.railway/railway.ts`). The API, keeper and Arena worker run live on Railway with Postgres; see "Hosted services" below.
 - `pnpm gate:local` and `pnpm gate:testnet`: complete runnable demos. The latter sends actual testnet transactions.
+- Event retention (hourly, 30 days by default) and the hosted agents file `config/agents.46630.json`.
 
 PRs are stacked: `api-keeper` is based on `main`; `gate-1-e2e` is based on `api-keeper`. The founder reviews and merges them in that order.
 
 ## Verification
 
-The API/keeper commit passed the complete pipeline in a fresh clone with submodules: frozen install, Prettier, ABI drift, TypeScript, ESLint, all default TypeScript tests, Forge formatting and Forge tests. Counts: **230 TypeScript tests passed**, **156 Solidity tests passed**; two opt-in external-fork tests skipped. The five service tests use real embedded Postgres 18 and Anvil, including claim retry, lease fencing, chain isolation, SSE replay, worker episodes and interrupted-post recovery.
+The API/keeper commit passed the complete pipeline in a fresh clone with submodules: frozen install, Prettier, ABI drift, TypeScript, ESLint, all default TypeScript tests, Forge formatting and Forge tests. Counts at that commit: **230 TypeScript tests passed**, **156 Solidity tests passed**; two opt-in external-fork tests skipped. After review fixes and the Day 7 close-out, `main` has **248 TypeScript tests** (23 in the API package) and the same 156 Solidity tests. The service tests use real embedded Postgres 18 and Anvil, including claim retry, lease fencing, chain isolation, SSE replay, worker episodes and interrupted-post recovery.
 
 The local Gate 1 rehearsal passed, including keeper restart. It rated the scripted hardened adapter in Monitor mode: **56 (BB)**, 42 episodes (40 fixed attack seeds and two controls), zero agent errors and zero control breaches. This is an in-library demonstration, not a held-out evaluation. Priors and upper credible bounds remain the Day 6 actuarial assumptions. A deliberately injected 1,000-unit transfer produced a 900-unit payout after the 10% deductible.
 
@@ -52,6 +53,27 @@ The evidence also preserves `reportJson`: hashing its UTF-8 bytes with Keccak-25
 Full machine-readable evidence: [gate-1-testnet.json](evidence/gate-1-testnet.json). This includes the report, signed attestation, signed quote and before/after balances.
 
 The `claim`, `verifiedReceipts` and `reportHashVerified` fields in that file were added after the testnet run by a separate check against the chain; the script that produced the run did not write them. The script now decodes `ClaimPaid`, re-checks every receipt, verifies the report hash and counts on-chain `ClaimPaid` logs after the keeper restart itself, so a new run produces all of these fields directly. The local demo was re-run with these checks and passed.
+
+## Hosted services
+
+Gate 1's hosting half is complete: the core loop runs live on Railway against Robinhood Chain testnet.
+
+- **Public API:** https://api-production-ba50.up.railway.app. `GET /health` returned `{"ok":true,"chainId":46630}` with status 200 from outside Railway.
+- **Services:** `api`, `keeper` and `arena-worker` from one Docker image, plus Postgres 18, region `sfo`. Defined in `.railway/railway.ts`; signing keys and the API token are Railway secrets. The keeper uses its own funded account, separate from the attester.
+- **Deploys from `main`:** the image builds on Railway without git submodules (the Dockerfile fetches the pinned contract libraries). The deploy from merge commit `5110f38` succeeded.
+- **Restarts:** each of the three services was restarted on Railway and logged ready again within seconds; `/health` stayed at 200. The keeper resumed from its saved cursor (block 125,413,719 before, still advancing after) instead of rescanning from the deployment block.
+- **Keeper on live data:** starting from the deployment block, the hosted keeper caught up with the chain head (block 125,895,237 against a head of 125,895,253 at 22:04 UTC). It discovered both vaults and policy 1, and found the Gate 1 breach already paid: it marked it `claimed` without sending a second claim.
+- **Docker runtime:** before deploying, the image ran locally against Anvil with Postgres 16, with all roles in one container and each role in its own container; `/health`, a container restart and keeper progress were checked.
+- **Spending:** $10 soft and $25 hard workspace limits. Expected cost is about $3 a month.
+
+The hosted services have not yet rated a new agent or paid a new claim on their own; Gate 1's rating and payout ran through the same code in `pnpm gate:testnet`. Retention and monitoring are described in `docs/SERVICES.md`.
+
+### Follow-ups
+
+- External uptime check (for example UptimeRobot) on `https://api-production-ba50.up.railway.app/health`, emailing the founder when it fails.
+- Alerts to a chat channel for crashes and stuck keeper claims.
+- Top up testnet ETH: the attester (deployer) had about 0.0067 ETH and the keeper 0.003 ETH at deploy time.
+- Automatic deep-reorg recovery for the keeper; today it stops and waits for an operator.
 
 ## Section 25 review checklist
 
@@ -91,10 +113,11 @@ Checked items below record automated evidence within this task, not a substitute
 - [x] Environment variables documented; no private keys or `.env` files committed.
 - [x] `pnpm gate:local` completed using real Postgres and Anvil without Docker.
 - [x] Migrations run before roles start; keeper restart and claim deduplication pass.
-- [ ] Public hosted API `/health`: not verified. The in-process API health endpoint was exercised; Railway deployment remains outstanding.
+- [x] Public hosted API `/health` returns 200 on Railway; each service restarted cleanly and the keeper resumed from its cursor.
+- [x] Event retention runs hourly; spending limits set. An external uptime check is a listed follow-up.
 
 ## Review
 
 Run `pnpm test:services` and `pnpm gate:local`. Expect the vault balance to increase after the keeper submits the claim and only one `claim.paid` event after restart. Inspect `apps/api/src/quotes.ts`, `apps/keeper/src/index.ts`, and `docs/SERVICES.md` for underwriting, retry behavior and deployment limits.
 
-Before marking the full “core loop live” hosting gate complete, deploy the roles and Postgres to Railway, confirm its public health endpoint and restart behavior, and set monitoring and retention. Docker runtime validation, automatic deep-reorg rollback, guardian alerts, arbitrary agent adapters and Sentinel evaluation remain outside this delivered slice.
+The hosting gate is complete (see "Hosted services"). Automatic deep-reorg rollback, guardian alerts, an external uptime check, arbitrary agent adapters and Sentinel evaluation remain outside this delivered slice.

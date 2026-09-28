@@ -90,6 +90,15 @@ if (role === "migrate") {
       .parse(process.env.KEEPER_CONFIRMATIONS ?? 5);
     const keeper = new Keeper(db, chain, BigInt(confirmations));
     tasks.push(loop(() => keeper.tick(), 5000));
+    // The keeper role is always deployed once, so it owns event retention.
+    const retentionDays = z.coerce
+      .number()
+      .int()
+      .min(1)
+      .parse(process.env.EVENTS_RETENTION_DAYS ?? 30);
+    tasks.push(
+      loop(() => db.pruneEvents(new Date(Date.now() - retentionDays * 86_400_000)), 3_600_000),
+    );
   }
   if (role === "arena-worker" || role === "all") {
     // Separate account/nonce flow from the keeper, even in all mode.

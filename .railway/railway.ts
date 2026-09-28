@@ -19,6 +19,8 @@ export default defineRailway(() => {
     DATABASE_URL: Postgres.env.DATABASE_URL,
     RPC_URL: "https://rpc.testnet.chain.robinhood.com/rpc",
     DEPLOYMENT_FILE: "contracts/evm/deployments/46630.json",
+    // Complete set of agents the worker may rate; see docs/SERVICES.md.
+    AGENTS_FILE: "config/agents.46630.json",
   };
   const role = (deploy: { healthcheckPath?: string; healthcheckTimeout?: number }) => ({
     source: repo,
