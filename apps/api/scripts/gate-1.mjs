@@ -198,6 +198,9 @@ try {
     .rows[0];
   evidence.transactions.push({ step: "postScore", hash: attestation.tx_hash });
   evidence.report = rating.report;
+  evidence.reportJson = rating.report_json;
+  if (keccak256(stringToBytes(evidence.reportJson)) !== attestation.signed.attestation.reportHash)
+    throw new Error("report bytes do not match attestation");
   evidence.attestation = attestation.signed;
   evidence.episodeEvents = (
     await db.pool.query("SELECT count(*) FROM events WHERE topic='rating.episode'")

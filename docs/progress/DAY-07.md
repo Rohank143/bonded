@@ -47,6 +47,8 @@ All 42 episode events were persisted. The posted rating is **56 (BB)** with zero
 
 Independent receipt verification confirmed all **13 transactions succeeded**. `ClaimPaid` reports policy **1**, breach **0**, loss **1,000 tUSDG**, gross payout **900 tUSDG**, **900 from the bond**, **0 from the pool**, and **0 premium netted**. The smaller balance increase reflects premium accrual in separate transactions.
 
+The evidence also preserves `reportJson`: hashing its UTF-8 bytes with Keccak-256 reproduces the on-chain report hash. For this run, the original serializer order was recovered from the stored report and hash-verified. Migration 2 now stores the exact report bytes directly, and an integration assertion checks the API response against the signed hash.
+
 Full machine-readable evidence: [gate-1-testnet.json](evidence/gate-1-testnet.json). This includes the report, signed attestation, signed quote and before/after balances.
 
 ## Section 25 review checklist
