@@ -647,15 +647,16 @@ Wallets: wagmi/viem (EVM) and Solana wallet adapter.
 
 **Robinhood Chain nuances.** Stock tokens are offered to non-US users. Agents that trade inside Robinhood *brokerage* accounts (the Trading MCP) are off-chain and custodial, so on-chain triggers can't see them. That becomes a later "off-chain adapter" built on Robinhood's own reporting, and a partnership pitch.
 
-**Off-chain services (live from Day 7, ADR-008).** The API and keeper are always live, on free tiers for the hackathon:
+**Off-chain services (live from Day 7, ADR-008).** The API, keeper and Arena worker run on Railway and stay on:
 
 | Piece | Host | Notes |
 |---|---|---|
-| API + keeper | Render, one free web service | Both run in one process (free tier has no background workers); one Docker image with `ROLE=all\|api\|keeper`. Deploys on every merge to `main`. An uptime monitor calls `GET /health` every 5 minutes so the free service doesn't sleep |
-| Postgres | Supabase, free project | No compute-hour cap (Neon's free cap would run out with an always-on keeper). Connect through the session pooler (IPv4), not the transaction pooler |
+| API | Railway service (`ROLE=api`) | REST and SSE; public domain |
+| Keeper + Arena worker | Railway services (`ROLE=keeper`, `ROLE=arena-worker`) | Always on; the worker runs queued ratings one at a time and streams them live. All services use one Docker image and deploy on every merge to `main` |
+| Postgres | Railway Postgres, same project | Shared by all services through `DATABASE_URL`; jobs via `pg-boss`, live events via `LISTEN/NOTIFY` |
 | Frontend | Vercel, Hobby plan | From Day 12 |
 
-Locally, `docker compose` runs Postgres and the same image, so the one-command demo still works from a clean state. Moving to another host (paid Render, Fly.io, an Oracle Cloud Always Free VM) needs no code changes. Arena rating runs happen on a developer machine and are published to the live database; the free host serves stored results.
+Locally, `docker compose` runs Postgres and the same image, so the one-command demo still works from a clean state. Moving to another Docker host needs no code changes.
 
 **Optional "live on mainnet" moment (Day 14).** Deploy to Robinhood Chain mainnet with a strict TVL cap and a small funded pool. This needs founder-provided funds; see Section 24.
 
@@ -671,8 +672,8 @@ Locally, `docker compose` runs Postgres and the same image, so the one-command d
 | Arena, API, keeper, SDK | TypeScript: an OpenAI-compatible LLM client (OpenRouter by default), `viem`, `@solana/web3.js`, Hono (API), `pg-boss`, Zod |
 | Sentinel | Python 3.11: `laya` (pinned), `laya[serve]`; Kaggle fine-tuning notebook |
 | Frontend | Next.js (App Router), Tailwind + shadcn/ui, wagmi/viem, Solana wallet adapter |
-| Storage | Postgres 16 (Supabase live, `docker compose` locally), Drizzle migrations, `pg-boss` jobs |
-| Hosting | Render free web service (API + keeper, one Docker image), Vercel Hobby (web); ADR-008 |
+| Storage | Postgres 16 (Railway live, `docker compose` locally), Drizzle migrations, `pg-boss` jobs |
+| Hosting | Railway (API, keeper and Arena worker from one Docker image; Postgres), Vercel Hobby (web); ADR-008 |
 | TEE | Phala Cloud dstack (Docker compose) |
 | CI | GitHub Actions: forge test, anchor test, typecheck, lint, unit tests |
 | AI models | Any LLM via OpenRouter, chosen per role (attackers, demo agents, grey judge, synthetic data, adjudicator), e.g. DeepSeek V4.1 Flash as the cheap default (ADR-006); Laya (Sentinel); Jev optional |
@@ -680,7 +681,7 @@ Locally, `docker compose` runs Postgres and the same image, so the one-command d
 ```
 bonded/
 ├── README.md
-├── Dockerfile                  API + keeper image (ROLE=all|api|keeper)
+├── Dockerfile                  API, keeper and Arena worker image (ROLE=api|keeper|arena-worker|all)
 ├── docker-compose.yml          local Postgres (+ the image) for the one-command demo
 ├── docs/
 │   ├── PLAN.md                 ← this file
@@ -870,7 +871,7 @@ Day 1 = Sun Sep 27. Submission target = Day 15 (Sun Oct 11). Day 16 (Mon Oct 12)
 | 8 | Join the **Jev waitlist** (optional) | A second Sentinel backend; Jev-bot leaderboard entry | Anytime |
 | 9 | Colosseum Copilot token (optional) | Check uniqueness against 5,400+ past submissions | Anytime |
 | 10 | Decide on the optional mainnet deploy + small pool funding | "Live on Robinhood Chain mainnet" moment | By Day 13 |
-| 11 | Free **Render** account connected to the GitHub repo, a free **Supabase** project, and a free uptime monitor (e.g. UptimeRobot); set the secrets from ADR-008 in Render | Live API and keeper (ADR-008) | Day 7 |
+| 11 | **Railway** account (Hobby plan) connected to the GitHub repo, with a usage limit set; set the secrets from ADR-008 in Railway | Live API, keeper and Arena worker (ADR-008) | Day 7 |
 | 12 | Free **Vercel** account (Hobby) | Frontend hosting | Day 12 |
 
 ---
