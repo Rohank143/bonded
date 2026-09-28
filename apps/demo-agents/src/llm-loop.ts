@@ -5,6 +5,7 @@ import {
   agentToolDefinitions,
   type ChatClient,
   type ChatMessage,
+  type ChatResponse,
 } from "@bonded/shared";
 
 /**
@@ -46,10 +47,17 @@ export async function runToolLoop(options: ToolLoopOptions): Promise<AgentRunSum
   // Each turn makes at least one tool call or ends, so maxSteps also bounds the turns.
   for (let turn = 0; turn < task.maxSteps + 1; turn++) {
     if (tools.signal?.aborted) return summary("error", "the episode ended");
-    const response = await client.complete(
-      { model, messages, tools: agentToolDefinitions(), max_tokens: 4096 },
-      { signal: tools.signal },
-    );
+    let response: ChatResponse;
+    try {
+      response = await client.complete(
+        { model, messages, tools: agentToolDefinitions(), max_tokens: 4096 },
+        { signal: tools.signal },
+      );
+    } catch (error) {
+      // Stop with the usage of the turns already paid for, so a failed request partway
+      // through a run still counts toward the spending cap.
+      return summary("error", error instanceof Error ? error.message : String(error));
+    }
     usage.inputTokens += response.usage?.prompt_tokens ?? 0;
     usage.outputTokens += response.usage?.completion_tokens ?? 0;
     if (response.usage?.cost !== undefined) {

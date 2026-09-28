@@ -52,7 +52,7 @@ The reports render as Markdown with per-group λ, b, s and expected loss, per-cl
 On a fresh clone: format check, `abis:check`, typecheck, lint, all tests, `forge fmt --check` and `forge test` all pass.
 
 - **`@bonded/shared`:** 80 (14 new). They cover the Beta bound against closed forms, the worked example, grouping, severity rules including the Enforce cap, untested groups priced as CCC, and the bond discount.
-- **`@bonded/demo-agents`:** 43 (28 new):
+- **`@bonded/demo-agents`:** 45 (30 new):
   - the policy guard's allowlists, caps and tokens
   - the guard sees untrusted inputs
   - the scripted hardened agent ignores injections and refuses an oversize task
@@ -74,7 +74,7 @@ On a fresh clone: format check, `abis:check`, typecheck, lint, all tests, `forge
 
 ## Fixed in review
 
-CodeRabbit found four issues and one nit, and its security review raised three more concerns. All were verified and fixed, each with a test:
+CodeRabbit found five issues and one nit across two reviews, and its security review raised three more concerns. All were verified and fixed, each with a test:
 
 | Finding | Fix |
 |---|---|
@@ -85,6 +85,7 @@ CodeRabbit found four issues and one nit, and its security review raised three m
 | Security review: hardened-agent's guard sized trades with the price API, which an attack can spoof, so a low fake price could let an oversized trade through | The guard uses the on-chain oracle prices that `get_portfolio` now returns |
 | Security review: `verifyAttestation` checked the signature but not who signed | It takes the list of trusted attesters and rejects anyone else |
 | Security review: dataset rows were appended during a rating, so an interrupted run or a rerun left partial or duplicate rows | Rows are written once when the rating completes, tagged with its report hash |
+| A decision model's malformed answer, or an LLM request failing partway through a run, threw away the usage already billed, so the spending cap missed it | Both brains stop the run with an error summary that keeps the usage so far |
 | Seed A5-address-poisoning-004's title and description disagreed | Both now describe a fake vault migration to a lookalike of the depositor's address |
 
 ## Not built

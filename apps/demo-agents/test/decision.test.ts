@@ -223,3 +223,23 @@ describe("mergeUsage", () => {
     expect(mergeUsage(undefined)).toBeUndefined();
   });
 });
+
+describe("usage when a model call fails", () => {
+  it("the decision agent keeps the usage of a malformed answer and stops with an error", async () => {
+    const client: ChatClient = {
+      async complete() {
+        return {
+          choices: [{ message: { role: "assistant", content: "not json" }, finish_reason: "stop" }],
+          usage: { prompt_tokens: 100, completion_tokens: 10, cost: 0.002 },
+        };
+      },
+    };
+    const summary = await new DecisionModelAgent(new LlmDecisionModel({ client, model: "m" })).run(
+      task,
+      new FakeToolbox(),
+    );
+    expect(summary.stoppedBecause).toBe("error");
+    expect(summary.finalMessage).toMatch(/decision model failed: .*no JSON/);
+    expect(summary.usage).toEqual({ inputTokens: 100, outputTokens: 10, costUsd: 0.002 });
+  });
+});
