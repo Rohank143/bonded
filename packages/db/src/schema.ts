@@ -1,5 +1,6 @@
 import {
   pgTable,
+  boolean,
   text,
   integer,
   numeric,
@@ -18,6 +19,7 @@ export const agents = pgTable(
     chainId: integer("chain_id").notNull(),
     agentId: numeric("agent_id", { precision: 78, scale: 0 }).notNull(),
     config: jsonb().notNull(),
+    enabled: boolean().notNull().default(true),
   },
   (t) => [unique().on(t.chainId, t.agentId)],
 );

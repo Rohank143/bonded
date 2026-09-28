@@ -42,7 +42,7 @@ if (!local && !process.argv.includes("--broadcast"))
 const output =
   process.env.GATE_OUTPUT ??
   (local ? "artifacts/gate-1-local.json" : "artifacts/gate-1-testnet.json");
-let sandbox, pg, db, directory;
+let sandbox, pg, db, app, directory;
 const evidence = {
   network: local ? "Anvil" : "Robinhood Chain testnet",
   transactions: [],
@@ -165,19 +165,19 @@ try {
   await pg.start();
   db = new Database(`postgres://postgres:test@127.0.0.1:${port}/postgres`);
   await db.migrate();
-  const id = `${d.chainId}:${agentId}`;
-  await db.pool.query("INSERT INTO agents VALUES($1,$2,$3,$4)", [
-    id,
-    d.chainId,
-    agentId.toString(),
-    json({
-      kind: "hardened",
-      mandate,
-      codeHash: keccak256(stringToBytes("bonded/scripted-hardened/v0")),
-    }),
+  // Same path the services use to load operator-configured agents.
+  await db.reconcileAgents(d.chainId, [
+    {
+      agentId: agentId.toString(),
+      config: {
+        kind: "hardened",
+        mandate,
+        codeHash: keccak256(stringToBytes("bonded/scripted-hardened/v0")),
+      },
+    },
   ]);
   const token = randomBytes(24).toString("hex");
-  const app = createApi({ db, chain: base, attesterKey: key, apiToken: token });
+  app = createApi({ db, chain: base, attesterKey: key, apiToken: token });
   const post = async (path, body) => {
     const r = await app.request(path, {
       method: "POST",
@@ -325,6 +325,7 @@ try {
       await mkdir(dirname(output), { recursive: true });
       await writeFile(output, `${json(evidence)}\n`);
     },
+    () => app?.close(),
     () => db?.close(),
     () => pg?.stop(),
     () => sandbox?.stop(),

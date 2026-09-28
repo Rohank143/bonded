@@ -11,7 +11,7 @@ Bonded has to be live, not just runnable on a laptop. From Day 7 there are three
 - **Keeper** (Section 14.2): polls every chain for breaches, files claims and accrues premiums. It never stops.
 - **Arena worker:** runs rating jobs queued through the API (`POST /arena/runs`), so anyone can start a rating from the web app and watch it live.
 
-The plan already said "Postgres, with jobs on a Postgres `FOR UPDATE SKIP LOCKED` queue" (Section 14.1), but it named no host, no migration tool, no local database setup and no deploy flow.
+The plan originally said "Postgres, with jobs on pg-boss" (Section 14.1), but it named no host, no migration tool, no local database setup and no deploy flow.
 
 Serverless functions (Vercel-style) don't fit any of these: functions time out, so they can't hold SSE connections, run a polling loop or run a two-minute rating.
 
@@ -64,7 +64,7 @@ Settings:
 
 - `apps/api`, `apps/keeper` and `apps/arena` stay separate packages with their own tests.
 - One `Dockerfile` builds them all, with Foundry's `anvil` installed for the Arena. `ROLE` picks what a container runs: `api`, `keeper`, `arena-worker`, or `all` (all three in one process, for local development).
-- The Arena worker takes one job at a time from the a Postgres `FOR UPDATE SKIP LOCKED` queue queue and streams each episode as an event, so the web app's live attack feed shows the run as it happens. A queued job waits if the worker is busy or restarting; it isn't lost.
+- The Arena worker takes one job at a time from the Postgres `FOR UPDATE SKIP LOCKED` queue and streams each episode as an event, so the web app's live attack feed shows the run as it happens. A queued job waits if the worker is busy or restarting; it isn't lost.
 
 ### 5. Deploys
 

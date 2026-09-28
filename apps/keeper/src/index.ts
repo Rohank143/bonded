@@ -18,6 +18,7 @@ export class Keeper {
     readonly confirmations = 5n,
     readonly accrueIntervalMs = 60_000,
   ) {}
+  /** Index a confirmed batch, accrue policies independently, then retry saved breaches. */
   async tick() {
     const c = await this.db.pool.connect();
     const id = this.chain.deployment.chainId;
@@ -33,23 +34,19 @@ export class Keeper {
           [id],
         );
         for (const p of policies.rows) {
-          const policy = await this.chain.read.readContract({
-            address: this.chain.deployment.coverManager,
-            abi: coverManagerAbi,
-            functionName: "getPolicy",
-            args: [BigInt(p.policy_id)],
-          });
-          if (policy.status === 1) {
-            try {
+          try {
+            const policy = await this.chain.read.readContract({
+              address: this.chain.deployment.coverManager,
+              abi: coverManagerAbi,
+              functionName: "getPolicy",
+              args: [BigInt(p.policy_id)],
+            });
+            if (policy.status === 1)
               await this.chain.send(this.chain.deployment.coverManager, coverManagerAbi, "accrue", [
                 BigInt(p.policy_id),
               ]);
-            } catch {
-              await this.db.publish("keeper.accrual_failed", {
-                chainId: id,
-                policyId: p.policy_id,
-              });
-            }
+          } catch {
+            await this.db.publish("keeper.accrual_failed", { chainId: id, policyId: p.policy_id });
           }
         }
         this.lastAccrual = Date.now();
@@ -60,6 +57,7 @@ export class Keeper {
       c.release();
     }
   }
+  /** Commit discovered vaults, policies and breaches with their confirmed block cursor. */
   private async scan() {
     const { read, deployment: d } = this.chain;
     if ((await read.getChainId()) !== d.chainId) throw new Error("RPC chain mismatch");
@@ -140,6 +138,7 @@ export class Keeper {
       );
     });
   }
+  /** Pay eligible breaches; only classify a no-match after indexing through its block. */
   private async claim() {
     const { read, deployment: d } = this.chain;
     const pending = await this.db.pool.query(
@@ -166,6 +165,7 @@ export class Keeper {
           "SELECT policy_id FROM keeper_policies WHERE chain_id=$1 AND vault=$2 ORDER BY policy_id",
           [d.chainId, e.vault],
         );
+        let claimed = false;
         for (const p of policies.rows) {
           const policyId = BigInt(p.policy_id);
           const [start, end] = await read.readContract({
@@ -197,7 +197,30 @@ export class Keeper {
               c,
             );
           });
+          claimed = true;
           break;
+        }
+        if (!claimed) {
+          // Both policy and breach logs are committed through the same cursor. A later
+          // policy cannot cover an earlier block, but may cover an earlier transaction at
+          // the SAME timestamp (coverageWindow is inclusive). Wait until the scanner has
+          // reached a strictly later timestamp before making this classification terminal.
+          const cursor = (
+            await this.db.pool.query("SELECT block_number FROM keeper_cursors WHERE chain_id=$1", [
+              d.chainId,
+            ])
+          ).rows[0];
+          const scanned = cursor
+            ? await read.getBlock({ blockNumber: BigInt(cursor.block_number) })
+            : undefined;
+          const complete = !!scanned && scanned.timestamp > breach.timestamp;
+          await this.db.pool.query("UPDATE handled_events SET status=$2,error=$3 WHERE id=$1", [
+            e.id,
+            complete ? "ignored" : "pending",
+            complete
+              ? "no policy covers this breach within its claim window"
+              : "waiting for policy indexing past breach timestamp",
+          ]);
         }
       } catch {
         await this.db.pool.query("UPDATE handled_events SET error=$2 WHERE id=$1", [
