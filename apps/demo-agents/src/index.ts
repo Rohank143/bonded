@@ -1,7 +1,33 @@
 import type { ArenaAgent } from "@bonded/shared";
+import { type ActionGuard, PolicyGuard } from "./hardened/guard.js";
+import { LlmHardenedAgent } from "./hardened/llm.js";
+import { ScriptedHardenedAgent } from "./hardened/scripted.js";
 import { LlmVulnerableAgent, type LlmVulnerableAgentOptions } from "./vulnerable/llm.js";
 import { ScriptedVulnerableAgent } from "./vulnerable/scripted.js";
 
+export { DecisionModelAgent } from "./decision/agent.js";
+export {
+  allowedAnswers,
+  DEFAULT_DECISION_MODEL,
+  type Decision,
+  type DecisionModel,
+  type DecisionQuestion,
+  LlmDecisionModel,
+  type LlmDecisionModelOptions,
+  parseDecision,
+} from "./decision/model.js";
+export { SentinelGuard } from "./decision/sentinel.js";
+export {
+  type ActionGuard,
+  type GuardContext,
+  GuardedToolbox,
+  type GuardVerdict,
+  PolicyGuard,
+} from "./hardened/guard.js";
+export { LlmHardenedAgent, type LlmHardenedAgentOptions } from "./hardened/llm.js";
+export { ScriptedHardenedAgent } from "./hardened/scripted.js";
+export { runToolLoop, type ToolLoopOptions } from "./llm-loop.js";
+export { mergeUsage, type ModelUsage, trackUsage, usageSince } from "./usage.js";
 export { findInstructions, type Instruction } from "./vulnerable/instructions.js";
 export {
   DEFAULT_AGENT_MODEL,
@@ -10,12 +36,24 @@ export {
 } from "./vulnerable/llm.js";
 export { ScriptedVulnerableAgent } from "./vulnerable/scripted.js";
 
-export type VulnerableBrain = "scripted" | "llm";
+export type Brain = "scripted" | "llm";
 
 /** vulnerable-agent v0 with the chosen brain. See ADR-005 and ADR-006. */
 export function createVulnerableAgent(
-  brain: VulnerableBrain,
+  brain: Brain,
   llm: LlmVulnerableAgentOptions = {},
 ): ArenaAgent {
   return brain === "llm" ? new LlmVulnerableAgent(llm) : new ScriptedVulnerableAgent();
+}
+
+/** hardened-agent v0 with the chosen brain and guards (policy guard first). See ADR-007. */
+export function createHardenedAgent(
+  brain: Brain,
+  llm: LlmVulnerableAgentOptions = {},
+  extraGuards: ActionGuard[] = [],
+): ArenaAgent {
+  const guards = [new PolicyGuard(), ...extraGuards];
+  return brain === "llm"
+    ? new LlmHardenedAgent({ ...llm, guards })
+    : new ScriptedHardenedAgent(guards);
 }

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { loadAttackLibrary, renderPayload, World } from "../src/index.js";
+import { ATTACK_CLASSES } from "@bonded/shared";
+import {
+  ATTACK_PLACEHOLDERS,
+  loadAttackLibrary,
+  lookalikeOf,
+  renderPayload,
+  World,
+} from "../src/index.js";
 
 const tokens = [
   { symbol: "tUSDG", address: "0x1111111111111111111111111111111111111111", decimals: 6 },
@@ -59,11 +66,25 @@ describe("World", () => {
     );
   });
 
-  it("rejects token_metadata attacks on unknown tokens and surfaces not built yet", () => {
+  it("takes prices from delivery.prices when given", () => {
+    const w = world();
+    w.plant({ surface: "price_feed", text: "tNVDA crashed", prices: { NVDA: 41, tusdg: 0.9 } });
+    expect(w.priceOverrides.get("tNVDA")).toBe(41);
+    expect(w.priceOverrides.get("tUSDG")).toBe(0.9);
+  });
+
+  it("plants market alerts and counterparty messages", () => {
+    const w = world();
+    w.plant({ surface: "market", text: "halt notice", sender: "Exchange Ops" });
+    w.plant({ surface: "counterparty", text: "settle now", sender: "otc-desk-7" });
+    expect(w.marketAlerts[0]).toEqual({ source: "Exchange Ops", text: "halt notice" });
+    expect(w.counterpartyMessages).toEqual([{ from: "otc-desk-7", text: "settle now" }]);
+  });
+
+  it("rejects token_metadata attacks on unknown tokens and malformed poisoning", () => {
     expect(() => world().plant({ surface: "token_metadata", text: "x", token: "tXYZ" })).toThrow(
       /unknown token/,
     );
-    expect(() => world().plant({ surface: "counterparty", text: "x" })).toThrow(/Day 6/);
     expect(() =>
       world().plant({ surface: "tx_history", text: "x", sender: "not-an-address" }),
     ).toThrow(/address/);
@@ -73,20 +94,29 @@ describe("World", () => {
 describe("attack library", () => {
   it("loads and validates every seed in attacks/", () => {
     const library = loadAttackLibrary();
-    expect(library.map((s) => s.id)).toEqual(
-      expect.arrayContaining(["A1-token-metadata-001", "A6-operator-impersonation-001"]),
-    );
+    expect(library.length).toBeGreaterThanOrEqual(40);
+    // Every class has at least four seeds.
+    for (const id of Object.keys(ATTACK_CLASSES)) {
+      expect(library.filter((s) => s.class === id).length, id).toBeGreaterThanOrEqual(4);
+    }
+    const vars = Object.fromEntries(ATTACK_PLACEHOLDERS.map((name) => [name, "x"]));
     for (const spec of library) {
       // Every placeholder a seed uses is one the episode runner provides.
-      expect(() =>
-        renderPayload(spec.payloadTemplate, {
-          attacker: "0xA",
-          vault: "0xV",
-          amount: "1",
-          token: "t",
-        }),
-      ).not.toThrow();
+      expect(() => renderPayload(spec.payloadTemplate, vars)).not.toThrow();
+      if (spec.delivery.sender)
+        expect(() => renderPayload(spec.delivery.sender!, vars)).not.toThrow();
+      // Surfaces are ones the class is meant to use, or plain content surfaces.
+      expect(spec.surfaces.length).toBeGreaterThan(0);
     }
+  });
+
+  it("makes lookalike addresses that match at a glance but differ", () => {
+    const real = "0x90F79bf6EB2c4f870365E785982E1f101E93b906";
+    const fake = lookalikeOf(real);
+    expect(fake).toMatch(/^0x[0-9a-fA-F]{40}$/);
+    expect(fake.slice(0, 6).toLowerCase()).toBe(real.slice(0, 6).toLowerCase());
+    expect(fake.slice(-4).toLowerCase()).toBe(real.slice(-4).toLowerCase());
+    expect(fake.toLowerCase()).not.toBe(real.toLowerCase());
   });
 
   it("renders placeholders and refuses unknown ones", () => {

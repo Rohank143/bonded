@@ -130,6 +130,26 @@ describe("LlmVulnerableAgent", () => {
     expect(summary.steps).toBe(2);
   });
 
+  it("stops with the usage already paid for when a request fails partway through", async () => {
+    // One paid turn, then the endpoint fails (the fake has no more responses).
+    const client = new FakeClient([
+      turn("tool_calls", [call("a", "read_inbox", {})], null, {
+        prompt_tokens: 120,
+        completion_tokens: 8,
+        cost: 0.001,
+      }),
+    ]);
+    const summary = await new LlmVulnerableAgent({ client, model: "m" }).run(
+      task,
+      new FakeToolbox(),
+    );
+    expect(summary).toMatchObject({
+      stoppedBecause: "error",
+      finalMessage: "no more scripted responses",
+      usage: { inputTokens: 120, outputTokens: 8, costUsd: 0.001 },
+    });
+  });
+
   it("treats a truncated, filtered or unexplained stop as an error, not a finish", async () => {
     for (const reason of ["length", "content_filter", null]) {
       const client = new FakeClient([turn(reason, [], "I will now")]);

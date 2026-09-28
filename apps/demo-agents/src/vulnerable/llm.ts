@@ -2,13 +2,12 @@ import {
   type AgentRunSummary,
   type AgentTask,
   type AgentToolbox,
-  agentToolDefinitions,
   type ArenaAgent,
   type ChatClient,
-  type ChatMessage,
   llmConfigFromEnv,
   OpenAICompatibleClient,
 } from "@bonded/shared";
+import { runToolLoop } from "../llm-loop.js";
 
 /**
  * Default brain for the demo agent: cheap, widely used and good at tool calling, which is
@@ -55,79 +54,13 @@ export class LlmVulnerableAgent implements ArenaAgent {
   }
 
   /** Runs the tool-calling loop for one episode until the model finishes, errs or hits maxSteps. */
-  async run(task: AgentTask, tools: AgentToolbox): Promise<AgentRunSummary> {
-    const messages: ChatMessage[] = [
-      { role: "system", content: systemPrompt(task) },
-      { role: "user", content: `Task: ${task.goal}` },
-    ];
-    const usage = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
-    let costReported = false;
-    let steps = 0;
-    /** The run summary, with cost included only when the endpoint reported it. */
-    const summary = (
-      stoppedBecause: AgentRunSummary["stoppedBecause"],
-      finalMessage?: string,
-    ): AgentRunSummary => ({
-      steps,
-      stoppedBecause,
-      ...(finalMessage === undefined ? {} : { finalMessage }),
-      usage: costReported
-        ? usage
-        : { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens },
+  run(task: AgentTask, tools: AgentToolbox): Promise<AgentRunSummary> {
+    return runToolLoop({
+      client: this.client,
+      model: this.model,
+      system: systemPrompt(task),
+      task,
+      tools,
     });
-
-    // Each turn makes at least one tool call or ends, so maxSteps also bounds the turns.
-    for (let turn = 0; turn < task.maxSteps + 1; turn++) {
-      if (tools.signal?.aborted) return summary("error", "the episode ended");
-      const response = await this.client.complete(
-        { model: this.model, messages, tools: agentToolDefinitions(), max_tokens: 4096 },
-        { signal: tools.signal },
-      );
-      usage.inputTokens += response.usage?.prompt_tokens ?? 0;
-      usage.outputTokens += response.usage?.completion_tokens ?? 0;
-      if (response.usage?.cost !== undefined) {
-        usage.costUsd += response.usage.cost;
-        costReported = true;
-      }
-
-      const choice = response.choices[0];
-      if (!choice) return summary("error", "the model returned no answer");
-      const { content, tool_calls: calls = [] } = choice.message;
-      messages.push({ role: "assistant", content, ...(calls.length ? { tool_calls: calls } : {}) });
-
-      if (calls.length === 0) {
-        // Providers differ on finish_reason; with no tool calls, only a natural stop is a finish.
-        if (choice.finish_reason === "stop") {
-          return summary("done", (content ?? "").trim());
-        }
-        return summary("error", `the model stopped early (${choice.finish_reason})`);
-      }
-
-      for (const call of calls) {
-        if (steps >= task.maxSteps) {
-          messages.push(toolMessage(call.id, { error: `step limit of ${task.maxSteps} reached` }));
-          continue;
-        }
-        let args: unknown;
-        try {
-          args = JSON.parse(call.function.arguments || "{}");
-        } catch {
-          // A malformed call still costs a step, like any other call the agent makes.
-          steps++;
-          messages.push(toolMessage(call.id, { error: "arguments were not valid JSON" }));
-          continue;
-        }
-        steps++;
-        const result = await tools.call(call.function.name, args);
-        messages.push(toolMessage(call.id, result.ok ? result.output : { error: result.error }));
-      }
-      if (steps >= task.maxSteps) return summary("max_steps");
-    }
-    return summary("max_steps");
   }
-}
-
-/** A tool result message answering the model's tool call `id`. */
-function toolMessage(id: string, payload: unknown): ChatMessage {
-  return { role: "tool", tool_call_id: id, content: JSON.stringify(payload) };
 }

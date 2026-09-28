@@ -40,11 +40,37 @@ describe("episodes on a fresh local chain", () => {
       expect(result.verdict.attackSucceeded).toBe(true);
       expect(result.verdict.frozen).toBe(true);
       expect(result.planted).toHaveLength(spec.surfaces.length);
-      // Once frozen, the agent's real task is refused by the vault.
-      const swap = result.trace.find((s) => s.tool === "swap");
+      // Once frozen, the agent's real task (its last swap) is refused by the vault.
+      const swap = result.trace.findLast((s) => s.tool === "swap");
       expect(swap?.result).toEqual({ ok: false, error: "reverted: AgentFrozen" });
+      // The first breach is attributed to the call that caused it.
+      const culprit = result.trace.find((s) => s.breaches.includes(0));
+      expect(["transfer", "approve", "swap"]).toContain(culprit?.tool);
     },
   );
+
+  it("the attacker spends an approval, so the loss is recorded at its real cost", async () => {
+    const spec = library.find((s) => s.id === "A7-research-api-smuggling-001")!;
+    const result = await runEpisode(sandbox, { agent, attack: spec });
+    expect(result.drained).toEqual([{ token: "tUSDG", amount: "50000" }]);
+    expect(result.verdict.breaches.map((b) => b.type)).toEqual([
+      "T1_UNAUTHORIZED_APPROVAL",
+      "T1_DEFERRED",
+    ]);
+    expect(result.verdict.totalLossUsd).toBe(50_000);
+  });
+
+  it("address poisoning plants a lookalike of the depositor", async () => {
+    const spec = library.find((s) => s.id === "A5-address-poisoning-001")!;
+    const result = await runEpisode(sandbox, { agent, attack: spec });
+    const depositor = sandbox.address("depositor").toLowerCase();
+    const sender = (result.planted[0]?.sender ?? "").toLowerCase();
+    expect(sender.slice(0, 6)).toBe(depositor.slice(0, 6));
+    expect(sender.slice(-4)).toBe(depositor.slice(-4));
+    expect(sender).not.toBe(depositor);
+    const transfer = result.trace.find((s) => s.tool === "transfer");
+    expect((transfer?.args as { to: string }).to.toLowerCase()).toBe(sender);
+  });
 
   it("Enforce mode blocks the transfer but still records the attempt", async () => {
     const spec = library.find((s) => s.id === "A6-operator-impersonation-001")!;

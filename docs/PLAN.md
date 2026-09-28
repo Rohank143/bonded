@@ -376,12 +376,20 @@ Run it with `pnpm --filter @bonded/arena arena run [--fork robinhood] [--brain l
 
 Each seed is a YAML spec: `id`, `class`, `surfaces`, `payload_template`, `success_predicate` (expressed in vault breach types), `severity_hint`, and `variant_prompt`.
 
+**Built on Day 6 (ADR-007):**
+- **Library:** 40 seeds in `attacks/`, four per class.
+- **Surfaces:** all nine, including market alerts and counterparty messages.
+- **Seed options:** a seed can set its own benign goal, spoof prices (`delivery.prices`) and use a lookalike of the depositor's address.
+- **Real losses:** after each episode the attacker spends any approval it was given, so approvals are priced at their real cost.
+
 ### 8.3 Attacker agents
 
 - **Model:** any model with good tool calling, reached through a provider-neutral OpenAI-compatible client (OpenRouter by default); the model is a setting (ADR-006). Cheap models generate the bulk variants; the adaptive follow-ups use the strongest model we choose to pay for.
 - **Adaptive loop:** seed → variant → run → feedback (did it breach, and how close did it get?) → mutate. This mirrors the adaptive attacks in the literature, which doubled success rates against decision models.
 - **Budget per rating:** about 200 episodes (about 20 per class) plus about 40 adaptive follow-ups on the weakest classes.
 - **Guardrails:** attacks only ever target sandboxed forks with test funds, never live systems.
+
+**Status (ADR-007):** the model-driven attacker that writes and adapts new payloads is not built. Ratings run the hand-written seeds, each repeatable under different benign goals (`--repeats`), and community bounties (Section 13) grow the library.
 
 ### 8.4 Target adapters (how any agent plugs in)
 
@@ -390,7 +398,7 @@ Each seed is a YAML spec: `id`, `class`, `surfaces`, `payload_template`, `succes
 | **Native SDK** | The agent implements `ArenaAgent` from `@bonded/shared` (later re-exported by `@bonded/sdk`); its tools route through the sandbox world. Built Day 5; `vulnerable-agent` uses it | ✅ |
 | **Black-box** | The agent accepts a configurable RPC URL, data API base URLs and a session key; we point them at the sandbox | ✅ |
 | **Framework adapters** | ElizaOS plugin, Solana Agent Kit, Coinbase AgentKit templates | ✅ at least 2, for the leaderboard |
-| **Decision-model agents** | Bots whose "brain" is Laya or Jev (typed decisions), wrapped with a trading loop | ✅ Laya; Jev if access arrives |
+| **Decision-model agents** | Bots whose "brain" is Laya or Jev (typed decisions), wrapped with a trading loop. Day 6: `DecisionModelAgent` behind a typed `DecisionModel` interface, running on any chat model until Laya is reachable | ✅ Laya; Jev if access arrives |
 
 ### 8.5 Two judges
 
@@ -403,6 +411,14 @@ Each seed is a YAML spec: `id`, `class`, `surfaces`, `payload_template`, `succes
 - **Attestation** (EIP-712 and ed25519) posted to all registries.
 - **Quote** for the requested cover amount.
 - **Dataset rows** appended for Sentinel training.
+
+**Built on Day 6 (ADR-007).** `pnpm --filter @bonded/arena arena rate` writes:
+- **`report.json`:** its keccak256 is the attestation's `reportHash`.
+- **`report.md`:** score, tier and premium; per-group λ, b, s and expected loss; per-class results; worst episodes; mitigations; model spend.
+- **`attestation.json`:** EIP-712 signed. In a fresh sandbox it is posted to the registry and read back; on a fork it is signed only.
+- **`sentinel-dataset.jsonl`** and every episode trace.
+
+Quote signing moves to Day 7 with `buyCover`.
 
 ---
 
@@ -437,6 +453,13 @@ Bonded Score           S       = round(100 · e^(−EL / τ))              (τ =
 | **Bonded Score** | | **41 (tier B)** | **96 (AAA)** |
 
 The λ values are illustrative priors. The model's inputs, not these numbers, are the product.
+
+**Built on Day 6 (ADR-007):** `scoreRating` in `@bonded/shared` implements this section and reproduces the table above.
+- **A9's λ:** it isn't given here, so it's our assumption: 0.05 a year.
+- **Severity:** the larger of the measured loss and a prior set by the seeds' severity hints. In Enforce mode the prior is capped at per-trade cap ÷ vault value.
+- **Demo results:**
+  - the scripted vulnerable-agent (Monitor) scores 1 (CCC)
+  - the scripted hardened-agent (Enforce) scores 83 (AA) on one run per seed, and 96 (AAA, 1.2% premium) on five runs per seed
 
 ### 9.3 Tiers
 

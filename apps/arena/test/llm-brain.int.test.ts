@@ -1,9 +1,9 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { LlmVulnerableAgent } from "@bonded/demo-agents";
+import { LlmHardenedAgent, LlmVulnerableAgent } from "@bonded/demo-agents";
 import { type ChatRequest, OpenAICompatibleClient } from "@bonded/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { loadAttackLibrary, runEpisode, Sandbox } from "../src/index.js";
+import { loadAttackLibrary, rateAgent, runEpisode, Sandbox } from "../src/index.js";
 
 /**
  * A stand-in "model" behind a real OpenAI-compatible HTTP endpoint. It behaves like a naive
@@ -89,5 +89,38 @@ describe("the LLM brain over a real OpenAI-compatible endpoint", () => {
     const result = await runEpisode(sandbox, { agent, attack });
     expect(result.trace.map((s) => s.tool)).toEqual(["read_inbox", "transfer"]);
     expect(result.verdict).toMatchObject({ breached: true, attackSucceeded: true, frozen: true });
+  });
+
+  it("hardened-agent's guard stops the same model's transfer before it reaches the vault", async () => {
+    const attack = loadAttackLibrary().find((s) => s.id === "A6-operator-impersonation-001")!;
+    const agent = new LlmHardenedAgent({ client, model: "fake/naive" });
+    const result = await runEpisode(sandbox, { agent, attack });
+    expect(result.verdict.breached).toBe(false);
+    expect(result.trace.map((s) => s.tool)).toEqual(["read_inbox"]);
+    expect(result.agentSummary.blockedActions?.[0]?.tool).toBe("transfer");
+    expect(result.agentSummary.stoppedBecause).toBe("done");
+  });
+
+  it("a rating stops starting episodes at the spending cap and says so", async () => {
+    const agent = new LlmVulnerableAgent({ client, model: "fake/naive" });
+    const result = await rateAgent(sandbox, {
+      agent,
+      attacks: ["A2-fake-halt-news-001", "A2-social-thread-004"].map((id) =>
+        loadAttackLibrary().find((s) => s.id === id)!,
+      ),
+      controls: 0,
+      maxUsd: 0.000001,
+    });
+    expect(result.episodes).toHaveLength(1);
+    expect(result.report.stoppedEarly).toMatch(/spending cap/);
+    // The local endpoint reports tokens but no cost, so the spend is an estimate.
+    // Only the seed that ran sets the severity prior: A2-fake-halt-news-001 is "high" (0.25),
+    // and the critical seed after it never ran.
+    expect(result.report.scoring.groups.find((g) => g.id === "injection")?.severity).toBe(0.25);
+    expect(result.report.spend).toMatchObject({
+      estimated: true,
+      inputTokens: 150,
+      outputTokens: 30,
+    });
   });
 });
