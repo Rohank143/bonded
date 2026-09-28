@@ -1,5 +1,5 @@
 import { type ChildProcess, execFile, spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -70,6 +70,11 @@ export class Sandbox {
     const rpcUrl = `http://127.0.0.1:${port}`;
 
     const args = ["--port", String(port), "--silent"];
+    if (!options.forkUrl) {
+      // A chain id unique to this sandbox (its port is unique while it runs), so sandboxes
+      // started at the same time write separate deployment files instead of racing on one.
+      args.push("--chain-id", String(313_370_000 + port));
+    }
     if (options.forkUrl) {
       // Fork a few blocks behind the tip: some public RPCs load-balance across nodes that lag,
       // and a node that hasn't seen the tip yet can't serve state for it.
@@ -103,6 +108,8 @@ export class Sandbox {
       } else {
         log("Deploying the protocol to a fresh local chain");
         deployment = await deployFresh(rpcUrl, chainId, log);
+        // The addresses now live in memory; the file only existed to hand them over.
+        rmSync(`${CONTRACTS_DIR}deployments/${chainId}.json`, { force: true });
       }
       return new Sandbox(anvil, rpcUrl, chain, deployment, Boolean(options.forkUrl), publicClient);
     } catch (error) {
