@@ -4,6 +4,7 @@ import {
   coverManagerAbi,
   coverPoolAbi,
   mandateVaultAbi,
+  mandateVaultFactoryAbi,
   operatorBondAbi,
   type Quote,
   quoteMessage,
@@ -12,6 +13,7 @@ import {
   signQuote,
   type SignedQuote,
   testTokenAbi,
+  toEvmMandateParams,
 } from "@bonded/shared";
 import { hashTypedData } from "viem";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -191,5 +193,77 @@ describe("quotes against the deployed CoverManager", () => {
     expect(policy.score).toBe(96);
 
     await expect(buyCover(signed)).rejects.toThrow(/QuoteAlreadyUsed/);
+  });
+
+  // Runs after the test above, which bound 20,000 of cover on the first vault.
+  it("prices a second vault for the same agent against the agent's real active cover", async () => {
+    const d = sandbox.deployment;
+    // A second vault under the same agent id and mandate, so the attestation still matches it.
+    const created = await sandbox.publicClient.simulateContract({
+      address: d.factory,
+      abi: mandateVaultFactoryAbi,
+      functionName: "createVault",
+      args: [
+        toEvmMandateParams(vault.mandate),
+        sandbox.address("agent"),
+        sandbox.address("operator"),
+        vault.agentId,
+        "Arena Agent Vault 2",
+        "aVAULT2",
+      ],
+      account: sandbox.wallet("operator").account,
+    });
+    await send("operator", d.factory, mandateVaultFactoryAbi, "createVault", created.request.args);
+    const secondVault = created.result;
+    expect(secondVault).not.toBe(vault.address);
+
+    const existingCover = await sandbox.publicClient.readContract({
+      address: d.coverManager,
+      abi: coverManagerAbi,
+      functionName: "activeCoverOfAgent",
+      args: [vault.agentId],
+    });
+    expect(existingCover).toBe(COVER);
+
+    const { quote: second, pricing } = buildQuote({
+      attestation,
+      vault: secondVault,
+      coverAmount: COVER,
+      bond: BOND,
+      existingCover,
+      now,
+    });
+    // The 10,000 bond is now measured against 40,000 of total cover: a 25% ratio, so a 15%
+    // discount (0.0119 × 0.85 = 0.010115 → 102 bps) instead of the first vault's 30% (84 bps).
+    expect(pricing.bondRatio).toBe(0.25);
+    expect(second.premiumRateBps).toBe(102);
+    // 10% of the agent's total cover, not just this vault's.
+    expect(second.minBond).toBe(usd(4_000).toString());
+
+    await buyCover(await sign(second));
+
+    const policyId = await sandbox.publicClient.readContract({
+      address: d.coverManager,
+      abi: coverManagerAbi,
+      functionName: "activePolicyOf",
+      args: [secondVault],
+    });
+    const policy = await sandbox.publicClient.readContract({
+      address: d.coverManager,
+      abi: coverManagerAbi,
+      functionName: "getPolicy",
+      args: [policyId],
+    });
+    expect(policy.vault).toBe(secondVault);
+    expect(policy.coverAmount).toBe(COVER);
+    expect(policy.premiumRateBps).toBe(102);
+    expect(
+      await sandbox.publicClient.readContract({
+        address: d.coverManager,
+        abi: coverManagerAbi,
+        functionName: "activeCoverOfAgent",
+        args: [vault.agentId],
+      }),
+    ).toBe(2n * COVER);
   });
 });
