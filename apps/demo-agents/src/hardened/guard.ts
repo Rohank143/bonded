@@ -7,6 +7,7 @@ import {
   isAgentToolName,
   type ToolResult,
 } from "@bonded/shared";
+import type { ModelUsage } from "../usage.js";
 
 /**
  * hardened-agent's guard: every write the agent proposes is checked before it reaches the
@@ -37,6 +38,8 @@ export interface GuardVerdict {
 
 export interface ActionGuard {
   readonly name: string;
+  /** Running total of model usage, for guards that call a model (e.g. Sentinel). */
+  readonly usage?: ModelUsage;
   check(tool: string, args: Record<string, string>, context: GuardContext): Promise<GuardVerdict>;
 }
 
@@ -139,7 +142,17 @@ export class GuardedToolbox implements AgentToolbox {
       priceUsd: (symbol) => this.price(symbol),
     };
     for (const guard of this.guards) {
-      const verdict = await guard.check(name, values, context);
+      // A guard that fails (a malformed model answer, a network error) refuses the write
+      // instead of crashing the agent: it fails closed and the episode keeps its evidence.
+      let verdict: GuardVerdict;
+      try {
+        verdict = await guard.check(name, values, context);
+      } catch (error) {
+        verdict = {
+          allow: false,
+          reason: `guard failed: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
       this.decisions.push({ tool: name, args, guard: guard.name, verdict });
       if (!verdict.allow) {
         const reason = `${guard.name}: ${verdict.reason ?? "refused"}`;

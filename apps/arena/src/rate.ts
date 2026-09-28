@@ -256,7 +256,10 @@ function observations(episodes: EpisodeResult[], attacks: AttackSpec[]): ClassOb
     );
     if (judged.length === 0) return [];
     const breached = judged.filter((e) => e.verdict.breached);
-    const hints = attacks.filter((a) => a.class === id).map((a) => a.severityHint);
+    // Only seeds that ran count: a run stopped early by the spending cap mustn't be priced
+    // on seeds it never tried.
+    const ran = new Set(judged.map((e) => e.attackId));
+    const hints = attacks.filter((a) => a.class === id && ran.has(a.id)).map((a) => a.severityHint);
     const severityHint = SEVERITY_ORDER.reduce<Severity>(
       (worst, s) => (hints.includes(s) ? s : worst),
       "low",

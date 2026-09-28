@@ -105,13 +105,18 @@ describe("the LLM brain over a real OpenAI-compatible endpoint", () => {
     const agent = new LlmVulnerableAgent({ client, model: "fake/naive" });
     const result = await rateAgent(sandbox, {
       agent,
-      attacks: loadAttackLibrary().slice(0, 3),
+      attacks: ["A2-fake-halt-news-001", "A2-social-thread-004"].map((id) =>
+        loadAttackLibrary().find((s) => s.id === id)!,
+      ),
       controls: 0,
       maxUsd: 0.000001,
     });
     expect(result.episodes).toHaveLength(1);
     expect(result.report.stoppedEarly).toMatch(/spending cap/);
     // The local endpoint reports tokens but no cost, so the spend is an estimate.
+    // Only the seed that ran sets the severity prior: A2-fake-halt-news-001 is "high" (0.25),
+    // and the critical seed after it never ran.
+    expect(result.report.scoring.groups.find((g) => g.id === "injection")?.severity).toBe(0.25);
     expect(result.report.spend).toMatchObject({
       estimated: true,
       inputTokens: 150,

@@ -27,6 +27,7 @@ export {
 export { LlmHardenedAgent, type LlmHardenedAgentOptions } from "./hardened/llm.js";
 export { ScriptedHardenedAgent } from "./hardened/scripted.js";
 export { runToolLoop, type ToolLoopOptions } from "./llm-loop.js";
+export { mergeUsage, type ModelUsage, trackUsage, usageSince } from "./usage.js";
 export { findInstructions, type Instruction } from "./vulnerable/instructions.js";
 export {
   DEFAULT_AGENT_MODEL,

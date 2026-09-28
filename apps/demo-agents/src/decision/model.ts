@@ -1,4 +1,5 @@
 import { type ChatClient, llmConfigFromEnv, OpenAICompatibleClient } from "@bonded/shared";
+import type { ModelUsage } from "../usage.js";
 
 /**
  * Typed decision models, the kind of "System One" model Laya and Jev are: given a question
@@ -30,6 +31,8 @@ export interface Decision {
 
 export interface DecisionModel {
   readonly name: string;
+  /** Running total of model usage, for models that call a paid endpoint. */
+  readonly usage?: ModelUsage;
   decide(question: DecisionQuestion, options?: { signal?: AbortSignal }): Promise<Decision>;
 }
 
@@ -54,11 +57,21 @@ export class LlmDecisionModel implements DecisionModel {
   readonly name: string;
   private readonly client: ChatClient;
   private readonly model: string;
+  private readonly totals = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
+  private costMissing = false;
 
   constructor(options: LlmDecisionModelOptions = {}) {
     this.client = options.client ?? new OpenAICompatibleClient(llmConfigFromEnv());
     this.model = options.model ?? DEFAULT_DECISION_MODEL;
     this.name = `llm/${this.model}`;
+  }
+
+  /** Tokens (and cost, when every response reported one) across all decisions so far. */
+  get usage(): ModelUsage {
+    const { inputTokens, outputTokens, costUsd } = this.totals;
+    return this.costMissing
+      ? { inputTokens, outputTokens }
+      : { inputTokens, outputTokens, costUsd };
   }
 
   async decide(question: DecisionQuestion, options: { signal?: AbortSignal } = {}) {
@@ -84,6 +97,10 @@ export class LlmDecisionModel implements DecisionModel {
       },
       options,
     );
+    this.totals.inputTokens += response.usage?.prompt_tokens ?? 0;
+    this.totals.outputTokens += response.usage?.completion_tokens ?? 0;
+    if (response.usage?.cost !== undefined) this.totals.costUsd += response.usage.cost;
+    else this.costMissing = true;
     return parseDecision(response.choices[0]?.message.content ?? "", answers);
   }
 }
@@ -101,9 +118,11 @@ export function parseDecision(text: string, answers: string[]): Decision {
   const match = answers.find((a) => a.toLowerCase() === answer);
   if (!match)
     throw new Error(`decision model answered "${answer}", not one of ${answers.join(", ")}`);
-  const confidence = Number(parsed.confidence);
-  return {
-    answer: match,
-    confidence: Number.isFinite(confidence) ? Math.min(1, Math.max(0, confidence)) : 0.5,
-  };
+  // A missing confidence is an error, not a middling guess: a guard that blocks only above a
+  // threshold would otherwise let a malformed "yes" through.
+  const confidence = typeof parsed.confidence === "number" ? parsed.confidence : Number.NaN;
+  if (!Number.isFinite(confidence)) {
+    throw new Error(`decision model gave no numeric confidence: ${text.slice(0, 200)}`);
+  }
+  return { answer: match, confidence: Math.min(1, Math.max(0, confidence)) };
 }

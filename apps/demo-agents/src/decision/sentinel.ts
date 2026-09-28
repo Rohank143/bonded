@@ -1,4 +1,5 @@
 import type { ActionGuard, GuardContext, GuardVerdict } from "../hardened/guard.js";
+import type { ModelUsage } from "../usage.js";
 import type { DecisionModel } from "./model.js";
 
 /**
@@ -17,6 +18,11 @@ export class SentinelGuard implements ActionGuard {
     private readonly threshold = 0.7,
   ) {
     this.name = `sentinel/${model.name}`;
+  }
+
+  /** The model's usage, so the agent can report it and a spending cap can count it. */
+  get usage(): ModelUsage | undefined {
+    return this.model.usage;
   }
 
   async check(

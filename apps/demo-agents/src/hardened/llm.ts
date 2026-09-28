@@ -9,6 +9,7 @@ import {
 } from "@bonded/shared";
 import { runToolLoop } from "../llm-loop.js";
 import { DEFAULT_AGENT_MODEL } from "../vulnerable/llm.js";
+import { mergeUsage, trackUsage } from "../usage.js";
 import { type ActionGuard, GuardedToolbox, PolicyGuard } from "./guard.js";
 
 export interface LlmHardenedAgentOptions {
@@ -62,13 +63,17 @@ export class LlmHardenedAgent implements ArenaAgent {
 
   async run(task: AgentTask, tools: AgentToolbox): Promise<AgentRunSummary> {
     const guarded = new GuardedToolbox(tools, task, this.guards);
-    const summary = await runToolLoop({
+    const guardUsage = trackUsage(this.guards);
+    const loop = await runToolLoop({
       client: this.client,
       model: this.model,
       system: systemPrompt(task),
       task,
       tools: guarded,
     });
+    // Count the guards' model calls (e.g. Sentinel) with the brain's, for the spending cap.
+    const usage = mergeUsage(loop.usage, guardUsage());
+    const summary = usage ? { ...loop, usage } : loop;
     return guarded.blocked.length ? { ...summary, blockedActions: guarded.blocked } : summary;
   }
 }

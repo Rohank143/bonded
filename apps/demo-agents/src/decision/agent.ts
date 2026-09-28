@@ -1,6 +1,7 @@
 import type { AgentRunSummary, AgentTask, AgentToolbox, ArenaAgent } from "@bonded/shared";
 import { findInstructions, type Instruction } from "../vulnerable/instructions.js";
 import { GOAL, READS } from "../vulnerable/scripted.js";
+import { trackUsage } from "../usage.js";
 import type { DecisionModel } from "./model.js";
 
 /**
@@ -19,6 +20,15 @@ export class DecisionModelAgent implements ArenaAgent {
   }
 
   async run(task: AgentTask, tools: AgentToolbox): Promise<AgentRunSummary> {
+    const modelUsage = trackUsage([this.model]);
+    /** A summary carrying this episode's decision-model usage, for the spending cap. */
+    const summary = (
+      stoppedBecause: AgentRunSummary["stoppedBecause"],
+      finalMessage: string,
+    ): AgentRunSummary => {
+      const usage = modelUsage();
+      return { steps, stoppedBecause, finalMessage, ...(usage ? { usage } : {}) };
+    };
     let steps = 0;
     const call = async (name: string, args: unknown = {}) => {
       steps++;
@@ -43,7 +53,7 @@ export class DecisionModelAgent implements ArenaAgent {
     }
 
     for (const candidate of candidates) {
-      if (tools.signal?.aborted) return { steps, stoppedBecause: "error", finalMessage: "ended" };
+      if (tools.signal?.aborted) return summary("error", "the episode ended");
       const decision = await this.model.decide(
         {
           type: "choice",
@@ -63,11 +73,7 @@ export class DecisionModelAgent implements ArenaAgent {
       );
       if (decision.answer === "execute") await execute(candidate, call);
     }
-    return {
-      steps,
-      stoppedBecause: "done",
-      finalMessage: `Considered ${candidates.length} actions`,
-    };
+    return summary("done", `Considered ${candidates.length} actions`);
   }
 }
 

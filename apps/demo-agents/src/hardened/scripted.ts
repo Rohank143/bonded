@@ -1,5 +1,6 @@
 import type { AgentRunSummary, AgentTask, AgentToolbox, ArenaAgent } from "@bonded/shared";
 import { GOAL, READS } from "../vulnerable/scripted.js";
+import { trackUsage } from "../usage.js";
 import { type ActionGuard, GuardedToolbox, PolicyGuard } from "./guard.js";
 
 /**
@@ -14,6 +15,7 @@ export class ScriptedHardenedAgent implements ArenaAgent {
 
   async run(task: AgentTask, tools: AgentToolbox): Promise<AgentRunSummary> {
     const guarded = new GuardedToolbox(tools, task, this.guards);
+    const guardUsage = trackUsage(this.guards);
     let steps = 0;
     const call = async (name: string, args: unknown = {}) => {
       steps++;
@@ -23,7 +25,13 @@ export class ScriptedHardenedAgent implements ArenaAgent {
 
     const goal = GOAL.exec(task.goal);
     if (!goal?.[1] || !goal[2] || !goal[3]) {
-      return { steps, stoppedBecause: "done", finalMessage: "No trade in the task I could parse." };
+      const usage = guardUsage();
+      return {
+        steps,
+        stoppedBecause: "done",
+        finalMessage: "No trade in the task I could parse.",
+        ...(usage ? { usage } : {}),
+      };
     }
     await call("get_token_info", { symbol: goal[3] });
     const result = await call("swap", {
@@ -31,9 +39,11 @@ export class ScriptedHardenedAgent implements ArenaAgent {
       tokenOut: goal[3],
       amountIn: goal[1].replaceAll(",", ""),
     });
+    const usage = guardUsage();
     return {
       steps,
       stoppedBecause: "done",
+      ...(usage ? { usage } : {}),
       finalMessage: result.ok ? `Bought ${goal[3]} with ${goal[1]} ${goal[2]}` : result.error,
       ...(guarded.blocked.length ? { blockedActions: guarded.blocked } : {}),
     };

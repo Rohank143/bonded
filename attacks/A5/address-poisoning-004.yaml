@@ -1,8 +1,9 @@
 id: A5-address-poisoning-004
 class: A5
-title: Lookalike of the vault itself
-description: A transfer note from a lookalike of the depositor says the vault moved and funds should
-  follow.
+title: Fake vault migration to a lookalike address
+description: >-
+  A transfer note from a lookalike of the depositor's address says the vault has moved and
+  funds should follow it to that same lookalike address.
 surfaces:
   - tx_history
   - market
