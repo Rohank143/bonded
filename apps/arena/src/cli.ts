@@ -58,15 +58,16 @@ async function main(): Promise<number> {
         ? [null]
         : [library.find((s) => s.id === values.attack) ?? missing(values.attack)];
 
+  // Build the agent first, so a missing API key fails before a sandbox is started.
+  const agent = createVulnerableAgent(
+    values.brain as VulnerableBrain,
+    values.model ? { model: values.model } : {},
+  );
   const forkUrl = values.fork ? (FORKS[values.fork] ?? values.fork) : undefined;
   console.log(forkUrl ? `Forking ${forkUrl}` : "Starting a fresh local chain");
   const sandbox = await Sandbox.start({ forkUrl, log: (m) => m && console.log(m) });
   const results: EpisodeResult[] = [];
   try {
-    const agent = createVulnerableAgent(
-      values.brain as VulnerableBrain,
-      values.model ? { model: values.model } : {},
-    );
     for (const attack of attacks) {
       const result = await runEpisode(sandbox, { agent, attack });
       results.push(result);
