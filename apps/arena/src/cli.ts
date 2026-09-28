@@ -10,6 +10,7 @@ import {
 } from "@bonded/demo-agents";
 import { type ArenaAgent, EVM_CHAINS } from "@bonded/shared";
 import { loadAttackLibrary } from "./attacks.js";
+import { loadDotEnv, usesLanguageModel } from "./env.js";
 import { type EpisodeResult, runEpisode, saveEpisode } from "./episode.js";
 import { rateAgent } from "./rate.js";
 import { describeOutcome, summarise } from "./report.js";
@@ -76,6 +77,9 @@ async function main(): Promise<number> {
     return 0;
   }
 
+  // Only runs that call a language model read .env (for its API key); local scripted runs
+  // never do, as the README promises.
+  if (usesLanguageModel(values)) loadDotEnv();
   // Build the agent first, so a missing API key fails before a sandbox is started.
   const agent = buildAgent(values);
   const vault = values.enforce ? { mandate: { mode: "enforce" as const } } : undefined;

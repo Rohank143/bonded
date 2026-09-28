@@ -24,5 +24,9 @@ for _ in $(seq 1 50); do
 done
 cast chain-id --rpc-url $RPC >/dev/null
 
-DEPLOYER_PRIVATE_KEY=$ANVIL_KEY WAITING_PERIOD=0 script/deploy.sh $RPC
+ANVIL_ADDRESS=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 # its address: owner, attester, council
+# Local only: ignore .env (testnet settings) and set every role explicitly.
+export BONDED_SKIP_DOTENV=1
+DEPLOYER_PRIVATE_KEY=$ANVIL_KEY ATTESTER=$ANVIL_ADDRESS COUNCIL=$ANVIL_ADDRESS WAITING_PERIOD=0 \
+  script/deploy.sh $RPC
 forge script script/Smoke.s.sol --rpc-url $RPC --broadcast --slow

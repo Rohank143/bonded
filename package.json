@@ -16,7 +16,10 @@
     "format:check": "prettier --check .",
     "contracts:build": "cd contracts/evm && forge build",
     "contracts:test": "cd contracts/evm && forge test -vvv",
-    "demo:local": "contracts/evm/script/local-demo.sh"
+    "contracts:deploy": "contracts/evm/script/deploy.sh",
+    "contracts:smoke": "contracts/evm/script/smoke.sh",
+    "demo:local": "contracts/evm/script/local-demo.sh",
+    "arena": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena arena"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
