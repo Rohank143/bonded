@@ -2,7 +2,7 @@ import process from "node:process";
 import console from "node:console";
 import { mkdtemp, readFile, writeFile, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { createServer } from "node:net";
 import { randomBytes } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
@@ -21,6 +21,7 @@ import {
   coverManagerAbi,
   operatorBondAbi,
   coverPoolAbi,
+  claimsEngineAbi,
   demoRouterAbi,
   quoteMessage,
 } from "@bonded/shared";
@@ -78,11 +79,17 @@ try {
   });
   if (waiting !== 0n) throw new Error("demo requires an existing zero-waiting-period deployment");
   console.log(`Starting ${evidence.network}; sender ${account}`);
+  let lastBlock = start;
   const send = async (address, abi, name, args) => {
     const hash = await base.send(address, abi, name, args);
     evidence.transactions.push({ step: name, hash });
     console.log(`${name}: ${hash}`);
-    return base.read.waitForTransactionReceipt({ hash, confirmations: local ? 1 : 2 });
+    const receipt = await base.read.waitForTransactionReceipt({
+      hash,
+      confirmations: local ? 1 : 2,
+    });
+    lastBlock = receipt.blockNumber;
+    return receipt;
   };
   const registered = await send(d.registry, bondedRegistryAbi, "register", [
     "ipfs://bonded/gate-1/scripted-hardened",
@@ -185,9 +192,13 @@ try {
   evidence.runId = runId;
   evidence.agentId = agentId.toString();
   evidence.vault = vault;
-  // Permit the fork's five-block lag to include the newly registered agent and market state.
-  if (!local) await delay(3000);
-  else for (let i = 0; i < 6; i++) await base.read.request({ method: "evm_mine", params: [] });
+  // The rating sandbox forks five blocks behind the tip; wait until that includes our setup.
+  if (local)
+    for (let i = 0; i < 6; i++) await base.read.request({ method: "evm_mine", params: [] });
+  for (let i = 0; (await base.read.getBlockNumber({ cacheTime: 0 })) < lastBlock + 5n; i++) {
+    if (i >= 120) throw new Error("fork point did not reach setup transactions");
+    await delay(1000);
+  }
   console.log("Running 42 sandbox episodes");
   await workOne(db, base, rpc, key, (e) =>
     console.error(e instanceof Error ? e.message : "worker failed"),
@@ -201,6 +212,7 @@ try {
   evidence.reportJson = rating.report_json;
   if (keccak256(stringToBytes(evidence.reportJson)) !== attestation.signed.attestation.reportHash)
     throw new Error("report bytes do not match attestation");
+  evidence.reportHashVerified = true;
   evidence.attestation = attestation.signed;
   evidence.episodeEvents = (
     await db.pool.query("SELECT count(*) FROM events WHERE topic='rating.episode'")
@@ -245,8 +257,26 @@ try {
   }
   const claims = await db.pool.query("SELECT * FROM handled_events WHERE status='claimed'");
   if (!claims.rowCount) throw new Error("keeper did not claim within deadline");
-  for (const claim of claims.rows)
-    evidence.transactions.push({ step: "fileClaim (keeper)", hash: claim.tx_hash });
+  if (claims.rowCount !== 1 || !claims.rows[0].tx_hash)
+    throw new Error("expected one keeper claim transaction");
+  const claimHash = claims.rows[0].tx_hash;
+  evidence.transactions.push({ step: "fileClaim (keeper)", hash: claimHash });
+  const [paid] = parseEventLogs({
+    abi: claimsEngineAbi,
+    logs: (await base.read.getTransactionReceipt({ hash: claimHash })).logs,
+    eventName: "ClaimPaid",
+  });
+  if (!paid) throw new Error("keeper claim emitted no ClaimPaid");
+  evidence.claim = {
+    policyId: paid.args.policyId.toString(),
+    vault: paid.args.vault,
+    lossBase: paid.args.lossBase.toString(),
+    payout: paid.args.payout.toString(),
+    premiumNetted: paid.args.premiumNetted.toString(),
+    fromBond: paid.args.fromBond.toString(),
+    fromPool: paid.args.fromPool.toString(),
+    breachIds: paid.args.breachIds.map(String),
+  };
   const after = await balance();
   if (after <= before) throw new Error("payout did not increase vault balance");
   evidence.vaultBefore = before.toString();
@@ -260,14 +290,47 @@ try {
   ).tick();
   if ((await db.pool.query("SELECT * FROM events WHERE topic='claim.paid'")).rowCount !== 1)
     throw new Error("duplicate claim event after restart");
+  // The database check alone cannot see a second on-chain claim; count ClaimPaid logs too.
+  const onChainClaims = await base.read.getLogs({
+    address: d.claimsEngine,
+    event: getAbiItem({ abi: claimsEngineAbi, name: "ClaimPaid" }),
+    args: { vault },
+    fromBlock: start,
+    toBlock: "latest",
+    strict: true,
+  });
+  if (onChainClaims.length !== 1)
+    throw new Error(`expected one on-chain ClaimPaid, found ${onChainClaims.length}`);
   evidence.restartVerified = true;
+  evidence.verifiedReceipts = [];
+  for (const { step, hash } of evidence.transactions) {
+    const receipt = await base.read.getTransactionReceipt({ hash });
+    if (receipt.status !== "success") throw new Error(`${step} did not succeed: ${hash}`);
+    evidence.verifiedReceipts.push({
+      step,
+      hash,
+      blockNumber: receipt.blockNumber.toString(),
+      status: receipt.status,
+    });
+  }
   evidence.completedAt = new Date().toISOString();
   console.log(`Gate 1 passed; payout increase ${evidence.payoutIncrease}`);
+} catch (error) {
+  evidence.error = error instanceof Error ? error.message : String(error);
+  throw error;
 } finally {
-  await mkdir("artifacts", { recursive: true });
-  await writeFile(output, `${json(evidence)}\n`);
-  await db?.close();
-  await pg?.stop();
-  await sandbox?.stop();
-  if (directory) await rm(directory, { recursive: true, force: true });
+  // Run every cleanup step even if an earlier one fails, so no Postgres or Anvil process leaks.
+  for (const step of [
+    async () => {
+      await mkdir(dirname(output), { recursive: true });
+      await writeFile(output, `${json(evidence)}\n`);
+    },
+    () => db?.close(),
+    () => pg?.stop(),
+    () => sandbox?.stop(),
+    () => directory && rm(directory, { recursive: true, force: true }),
+  ])
+    await Promise.resolve()
+      .then(step)
+      .catch((e) => console.error(`cleanup: ${e instanceof Error ? e.message : e}`));
 }

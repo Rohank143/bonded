@@ -51,6 +51,8 @@ The evidence also preserves `reportJson`: hashing its UTF-8 bytes with Keccak-25
 
 Full machine-readable evidence: [gate-1-testnet.json](evidence/gate-1-testnet.json). This includes the report, signed attestation, signed quote and before/after balances.
 
+The `claim`, `verifiedReceipts` and `reportHashVerified` fields in that file were added after the testnet run by a separate check against the chain; the script that produced the run did not write them. The script now decodes `ClaimPaid`, re-checks every receipt, verifies the report hash and counts on-chain `ClaimPaid` logs after the keeper restart itself, so a new run produces all of these fields directly. The local demo was re-run with these checks and passed.
+
 ## Section 25 review checklist
 
 Checked items below record automated evidence within this task, not a substitute for founder or independent security review.
