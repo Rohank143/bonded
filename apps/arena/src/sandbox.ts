@@ -99,7 +99,12 @@ export class Sandbox {
         nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
         rpcUrls: { default: { http: [rpcUrl] } },
       });
-      const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
+      // anvil mines instantly, so poll for receipts often rather than every 4 seconds.
+      const publicClient = createPublicClient({
+        chain,
+        transport: http(rpcUrl),
+        pollingInterval: 50,
+      });
 
       let deployment: EvmDeployment;
       if (options.forkUrl) {
@@ -125,6 +130,24 @@ export class Sandbox {
       chain: this.chain,
       transport: http(this.rpcUrl),
     });
+  }
+
+  /**
+   * A wallet that sends as any address, with test ETH for gas (anvil impersonation). Used for
+   * the attacker, whose addresses (such as a lookalike) have no key the Arena knows.
+   */
+  async impersonate(address: `0x${string}`): Promise<WalletClient<Transport, Chain, Account>> {
+    await this.anvil_("anvil_impersonateAccount", [address]);
+    await this.anvil_("anvil_setBalance", [address, `0x${(10n ** 18n).toString(16)}`]);
+    return createWalletClient({
+      account: address,
+      chain: this.chain,
+      transport: http(this.rpcUrl),
+    });
+  }
+
+  private anvil_(method: string, params: unknown[]): Promise<unknown> {
+    return this.publicClient.request({ method: method as never, params: params as never });
   }
 
   address(role: SandboxRole): `0x${string}` {

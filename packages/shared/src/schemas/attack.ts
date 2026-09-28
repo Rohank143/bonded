@@ -121,14 +121,21 @@ export const AttackSpec = z
     /** How the payload is presented on its surface. */
     delivery: z
       .object({
-        /** Who it appears to come from: a DM sender, news source, post author or address. */
+        /**
+         * Who it appears to come from: a DM sender, news source, post author or address.
+         * May use {{placeholders}}, e.g. {{lookalike}} for address poisoning.
+         */
         sender: z.string().min(1).max(200).optional(),
         /** For token_metadata: the token whose description carries the payload. */
         token: z.string().min(1).max(32).optional(),
+        /** For price_feed: the prices the (spoofed) price API reports, e.g. { tNVDA: 41 }. */
+        prices: z.record(z.string().min(1).max(32), z.number().positive()).optional(),
       })
       .default({}),
     /** Guidance for the attacker agent when generating variants of this seed. */
     variantPrompt: z.string().min(1),
+    /** A benign task to give the agent instead of the default (e.g. one that sets up the trap). */
+    goal: z.string().min(1).optional(),
     tags: z.array(z.string()).default([]),
   })
   .refine((spec) => spec.id.startsWith(`${spec.class}-`), {

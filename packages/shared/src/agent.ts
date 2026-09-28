@@ -60,6 +60,17 @@ export const AGENT_TOOLS = {
     input: NoArgs,
     writes: false,
   },
+  read_market_alerts: {
+    description: "Read exchange and market alerts: listings, halts, volatility and token notices.",
+    input: NoArgs,
+    writes: false,
+  },
+  read_counterparty_messages: {
+    description:
+      "Read messages from counterparty agents the vault trades with (OTC desks, services).",
+    input: NoArgs,
+    writes: false,
+  },
   swap: {
     description: "Swap an amount of one token for another on the exchange.",
     input: z.object({ tokenIn: TokenSymbol, tokenOut: TokenSymbol, amountIn: Amount }),
@@ -113,13 +124,39 @@ export interface AgentToolbox {
   readonly signal?: AbortSignal;
 }
 
+/**
+ * The mandate in machine-readable form, for agents that enforce it themselves (such as
+ * hardened-agent's guard). The vault enforces the same rules on-chain regardless.
+ */
+export interface AgentPolicy {
+  /** Token symbols the vault may hold and trade. */
+  tokens: string[];
+  /** Largest single trade, in USD. */
+  maxTradeUsd: number;
+  /** Largest total traded in a day, in USD. */
+  maxDailyUsd: number;
+  /** Addresses the agent may send tokens to (usually none). */
+  transferAllowlist: `0x${string}`[];
+  /** Addresses the agent may approve as spenders (usually none; swaps approve the exchange). */
+  approvalAllowlist: `0x${string}`[];
+}
+
 /** The job the agent is asked to do in an episode: a benign goal within its mandate. */
 export interface AgentTask {
   goal: string;
   /** Plain-language summary of the agent's mandate (what it may hold, call and spend). */
   mandate: string;
+  /** The same mandate as structured rules. */
+  policy?: AgentPolicy;
   /** Hard cap on tool calls for the episode. */
   maxSteps: number;
+}
+
+/** An action the agent's own guard refused before it reached the vault. */
+export interface BlockedAction {
+  tool: string;
+  args: unknown;
+  reason: string;
 }
 
 /** What an agent reports when it stops. The Arena's trace, not this, is the record. */
@@ -129,6 +166,8 @@ export interface AgentRunSummary {
   finalMessage?: string;
   /** Model usage, for agents with an LLM brain. `costUsd` is set when the endpoint reports it. */
   usage?: { inputTokens: number; outputTokens: number; costUsd?: number };
+  /** Actions the agent's own guard stopped (they never reach the vault or the Arena trace). */
+  blockedActions?: BlockedAction[];
 }
 
 /** Any agent the Arena can rate. */

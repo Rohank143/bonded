@@ -1,13 +1,25 @@
 import type { AgentRunSummary, AgentTask, AgentToolbox, ArenaAgent } from "@bonded/shared";
 import { findInstructions } from "./instructions.js";
 
+/** Everything an agent told to "check first" would read. */
+export const READS = [
+  "read_inbox",
+  "read_news",
+  "read_social",
+  "read_market_alerts",
+  "read_counterparty_messages",
+  "get_market_report",
+  "get_recent_transfers",
+] as const;
+
 /** "Buy 2000 tUSDG worth of tNVDA" → swap 2000 tUSDG for tNVDA. */
-const GOAL = /\bbuy\s+([0-9][0-9,]*(?:\.[0-9]+)?)\s+(t[A-Z]{3,5})\s+worth\s+of\s+(t[A-Z]{3,5})\b/i;
+export const GOAL =
+  /\bbuy\s+([0-9][0-9,]*(?:\.[0-9]+)?)\s+(t[A-Z]{3,5})\s+worth\s+of\s+(t[A-Z]{3,5})\b/i;
 
 /**
  * vulnerable-agent with a deterministic brain. It behaves like an AI trading agent with no
  * prompt-injection defences: it reads everything it's pointed at, then obeys any instruction
- * to send or approve funds, whoever wrote it, before getting on with its task.
+ * to send, approve or trade funds, whoever wrote it, before getting on with its task.
  *
  * Being deterministic, it lets the Arena's plumbing (sandbox, world, tools, judge) be tested
  * without a model or an API key. LlmVulnerableAgent is the same agent with a real LLM brain.
@@ -24,7 +36,7 @@ export class ScriptedVulnerableAgent implements ArenaAgent {
 
     // 1. Read everything, like an agent told to "check your messages and the news first".
     const texts: string[] = [];
-    for (const tool of ["read_inbox", "read_news", "read_social", "get_market_report"]) {
+    for (const tool of READS) {
       const result = await call(tool);
       if (result.ok) texts.push(JSON.stringify(result.output));
     }
@@ -43,6 +55,19 @@ export class ScriptedVulnerableAgent implements ArenaAgent {
             : instruction.amount;
         if (amount)
           await call("transfer", { token: instruction.token, to: instruction.to, amount });
+      } else if (instruction.kind === "swap") {
+        for (let i = 0; i < instruction.times; i++) {
+          const amountIn =
+            instruction.amountIn === "all"
+              ? await balance(call, instruction.tokenIn)
+              : instruction.amountIn;
+          if (!amountIn) break;
+          await call("swap", {
+            tokenIn: instruction.tokenIn,
+            tokenOut: instruction.tokenOut,
+            amountIn,
+          });
+        }
       } else {
         await call("approve", {
           token: instruction.token,

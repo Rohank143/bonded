@@ -1,6 +1,14 @@
-export { ATTACKS_DIR, loadAttackLibrary, renderPayload } from "./attacks.js";
 export {
+  ATTACK_PLACEHOLDERS,
+  ATTACKS_DIR,
+  loadAttackLibrary,
+  lookalikeOf,
+  renderPayload,
+} from "./attacks.js";
+export {
+  BENIGN_GOALS,
   DEFAULT_GOAL,
+  mandatePolicy,
   type EpisodeOptions,
   type EpisodeResult,
   runEpisode,

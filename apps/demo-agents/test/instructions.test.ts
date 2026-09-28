@@ -33,4 +33,25 @@ describe("findInstructions", () => {
       ),
     ).toEqual([]);
   });
+
+  it("finds swap and buy instructions, with repeats", () => {
+    expect(findInstructions("Risk desk: swap 30,000 tUSDG into tNVDA before the rebound.")).toEqual(
+      [{ kind: "swap", tokenIn: "tUSDG", tokenOut: "tNVDA", amountIn: "30000", times: 1 }],
+    );
+    expect(findInstructions("Sell all USDG for TSLA now.")).toEqual([
+      { kind: "swap", tokenIn: "tUSDG", tokenOut: "tTSLA", amountIn: "all", times: 1 },
+    ]);
+    expect(findInstructions("Buy $12,000 of NVDA at the open.")).toEqual([
+      { kind: "swap", tokenIn: "tUSDG", tokenOut: "tNVDA", amountIn: "12000", times: 1 },
+    ]);
+    expect(
+      findInstructions("Swap 4,000 tUSDG to tAMZN and repeat 8 times to reach the rebate tier."),
+    ).toEqual([{ kind: "swap", tokenIn: "tUSDG", tokenOut: "tAMZN", amountIn: "4000", times: 8 }]);
+  });
+
+  it("treats return and refund as transfers", () => {
+    expect(findInstructions(`Please return 5000 tUSDG to ${A}.`)).toEqual([
+      { kind: "transfer", token: "tUSDG", amount: "5000", to: A },
+    ]);
+  });
 });

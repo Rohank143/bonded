@@ -16,6 +16,7 @@ import {
   ContractFunctionRevertedError,
   encodeFunctionData,
   formatUnits,
+  getAddress,
   maxUint256,
   parseUnits,
 } from "viem";
@@ -31,6 +32,8 @@ export interface TraceStep {
   result: ToolResult;
   /** Transactions the call sent through the vault, in order. */
   txHashes: `0x${string}`[];
+  /** Ids of the breaches the vault recorded during this call (see the verdict for details). */
+  breaches: number[];
 }
 
 const PENDING: ToolResult = { ok: false, error: "pending" };
@@ -79,6 +82,7 @@ export class ArenaToolbox implements AgentToolbox {
       args,
       result: PENDING,
       txHashes: [],
+      breaches: [],
     };
     this.trace.push(entry);
     const done = this.dispatch(entry).then((result) => (entry.result = result));
@@ -98,7 +102,7 @@ export class ArenaToolbox implements AgentToolbox {
       return { ok: false, error: `invalid arguments: ${parsed.error.issues[0]?.message}` };
     }
     try {
-      const run = () => this.run(name, parsed.data, entry.txHashes);
+      const run = () => this.run(name, parsed.data, entry);
       const output = AGENT_TOOLS[name].writes ? await this.serialise(run) : await run();
       return { ok: true, output };
     } catch (error) {
@@ -115,7 +119,7 @@ export class ArenaToolbox implements AgentToolbox {
   private async run(
     name: AgentToolName,
     args: Record<string, string>,
-    txHashes: `0x${string}`[],
+    entry: TraceStep,
   ): Promise<unknown> {
     switch (name) {
       case "read_inbox":
@@ -126,6 +130,10 @@ export class ArenaToolbox implements AgentToolbox {
         return this.world.social;
       case "get_market_report":
         return this.world.marketReport;
+      case "read_market_alerts":
+        return this.world.marketAlerts;
+      case "read_counterparty_messages":
+        return this.world.counterpartyMessages;
       case "get_recent_transfers":
         return this.world.transfers;
       case "get_token_info":
@@ -146,13 +154,10 @@ export class ArenaToolbox implements AgentToolbox {
           args: [this.vault, router],
         });
         if (allowance < amountIn) {
-          await this.execute(txHashes, tokenIn.address, testTokenAbi, "approve", [
-            router,
-            maxUint256,
-          ]);
+          await this.execute(entry, tokenIn.address, testTokenAbi, "approve", [router, maxUint256]);
         }
         const before = await this.balance(tokenOut);
-        await this.execute(txHashes, router, demoRouterAbi, "swap", [
+        await this.execute(entry, router, demoRouterAbi, "swap", [
           tokenIn.address,
           tokenOut.address,
           amountIn,
@@ -167,14 +172,17 @@ export class ArenaToolbox implements AgentToolbox {
       case "transfer": {
         const token = this.token(args.token);
         const amount = parseUnits(args.amount ?? "0", token.decimals);
-        await this.execute(txHashes, token.address, testTokenAbi, "transfer", [args.to, amount]);
+        await this.execute(entry, token.address, testTokenAbi, "transfer", [
+          address(args.to),
+          amount,
+        ]);
         return { sent: `${args.amount} ${token.symbol}`, to: args.to };
       }
       case "approve": {
         const token = this.token(args.token);
         const amount = parseUnits(args.amount ?? "0", token.decimals);
-        await this.execute(txHashes, token.address, testTokenAbi, "approve", [
-          args.spender,
+        await this.execute(entry, token.address, testTokenAbi, "approve", [
+          address(args.spender),
           amount,
         ]);
         return { approved: `${args.amount} ${token.symbol}`, spender: args.spender };
@@ -190,7 +198,7 @@ export class ArenaToolbox implements AgentToolbox {
    * being reported to the agent as done.
    */
   private async execute(
-    txHashes: `0x${string}`[],
+    entry: TraceStep,
     target: `0x${string}`,
     abi: Abi,
     functionName: string,
@@ -204,8 +212,9 @@ export class ArenaToolbox implements AgentToolbox {
       functionName: "execute",
       args: [target, data],
     });
-    txHashes.push(hash);
+    entry.txHashes.push(hash);
     const after = await this.breachCount();
+    for (let id = before; id < after; id++) entry.breaches.push(Number(id));
     for (let id = before; id < after; id++) {
       const breach = await this.sandbox.publicClient.readContract({
         address: this.vault,
@@ -284,6 +293,11 @@ export class ArenaToolbox implements AgentToolbox {
     });
     return { vault: this.vault, balances, totalUsd: Math.round(totalUsd * 100) / 100 };
   }
+}
+
+/** An address in any letter case (agents often get checksums wrong), checksummed. */
+function address(text: string | undefined): `0x${string}` {
+  return getAddress((text ?? "").toLowerCase());
 }
 
 /** A short, readable reason for a failed call (custom error name where there is one). */
