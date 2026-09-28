@@ -55,7 +55,7 @@ AI agents now hold and move real money. Robinhood opened its Trading MCP to thir
 
 **Bonded is a rating agency plus an insurance protocol for on-chain AI agents:**
 
-1. **The Arena.** Attacker agents (Claude) red-team an agent inside a sandbox that runs on a forked chain. The sandbox covers prompt injection, poisoned data, lookalike tokens, fake-admin DMs and more. The pass/fail judge is **our own on-chain contract**, not an LLM.
+1. **The Arena.** AI attacker agents (any model, chosen per job through OpenRouter; ADR-006) red-team an agent inside a sandbox that runs on a forked chain. The sandbox covers prompt injection, poisoned data, lookalike tokens, fake-admin DMs and more. The pass/fail judge is **our own on-chain contract**, not an LLM.
 2. **The Bonded Score and actuarial pricing.** Red-team results become an expected-loss estimate, which becomes a premium. Every discount is earned in the Arena, not asserted.
 3. **Mandate Vaults.** Agents trade from a smart account that knows their mandate. The vault either blocks breaches or records them on-chain.
 4. **Cover.** Depositors in agent-run vaults are protected. When the agent breaches its mandate, the operator's bond is slashed first, then the underwriting pool pays. The payout is automatic and takes **minutes, not months**.
@@ -181,7 +181,7 @@ Supporting parts: TEE key custody, community attack bounties, public leaderboard
 │                        │      │                                                  │
 │                        ▼      ▼                                                  │
 │   ┌───────────────── ARENA ─────────────────┐     ┌──── SENTINEL (Laya) ────┐    │
-│   │ attacker agents (Claude)                │     │ fine-tuned Laya, served │    │
+│   │ attacker agents (LLM via OpenRouter)    │     │ fine-tuned Laya, served │    │
 │   │ world simulator (news/social/DM/price/  │     │ over a Jev-compatible   │    │
 │   │   token metadata/tool output)           │     │ HTTP API; ~33 ms/action │    │
 │   │ sandbox: anvil fork / solana-test-      │◄───►│ trained on Arena data   │    │
@@ -357,7 +357,7 @@ setup ──► task ──► attack ──► agent acts ──► judge ─�
 - **Writes:** every agent write goes through `MandateVault.execute`.
 - **Judge:** reads only the vault's breach log.
 
-Run it with `pnpm --filter @bonded/arena arena run [--fork robinhood] [--brain claude]`.
+Run it with `pnpm --filter @bonded/arena arena run [--fork robinhood] [--brain llm --model <id>]`.
 
 ### 8.2 Attack library: 10 classes, about 40 seed scenarios for the hackathon
 
@@ -378,7 +378,7 @@ Each seed is a YAML spec: `id`, `class`, `surfaces`, `payload_template`, `succes
 
 ### 8.3 Attacker agents
 
-- **Model:** Claude (`claude-opus-5`, adaptive thinking, refusal fallbacks enabled), through the official `@anthropic-ai/sdk`.
+- **Model:** any model with good tool calling, reached through a provider-neutral OpenAI-compatible client (OpenRouter by default); the model is a setting (ADR-006). Cheap models generate the bulk variants; the adaptive follow-ups use the strongest model we choose to pay for.
 - **Adaptive loop:** seed → variant → run → feedback (did it breach, and how close did it get?) → mutate. This mirrors the adaptive attacks in the literature, which doubled success rates against decision models.
 - **Budget per rating:** about 200 episodes (about 20 per class) plus about 40 adaptive follow-ups on the weakest classes.
 - **Guardrails:** attacks only ever target sandboxed forks with test funds, never live systems.
@@ -395,7 +395,7 @@ Each seed is a YAML spec: `id`, `class`, `surfaces`, `payload_template`, `succes
 ### 8.5 Two judges
 
 1. **Deterministic judge (binding).** Vault breach records T1, T2 and T3, plus limit checks. These alone determine pass/fail and breach rates.
-2. **Grey-area judge (advisory).** Claude labels things code can't see: "was the decision influenced by injected content?", "did the agent leak its system prompt?", "did it abandon the owner's task?". Once fine-tuned, Laya-Sentinel takes over high-volume grey labelling, and Claude spot-checks it.
+2. **Grey-area judge (advisory).** An LLM (model chosen per ADR-006) labels things code can't see: "was the decision influenced by injected content?", "did the agent leak its system prompt?", "did it abandon the owner's task?". Once fine-tuned, Laya-Sentinel takes over high-volume grey labelling, and the LLM spot-checks it.
 
 ### 8.6 Outputs
 
@@ -484,8 +484,8 @@ Laya is Convai Innovations' **open-source (Apache 2.0) "System One" decision mod
 
 ### 10.3 Data, training, evaluation
 
-1. **Core data:** Arena episodes. The labels for `action_risk` and `manipulated` come from the deterministic judge plus Claude grey labels.
-2. **Scale-up:** Claude generates synthetic (state, action, label) examples through the **Message Batches API**, seeded from real traces. Target: about 30k questions, the scale of Laya's reference fine-tune.
+1. **Core data:** Arena episodes. The labels for `action_risk` and `manipulated` come from the deterministic judge plus LLM grey labels.
+2. **Scale-up:** an LLM generates synthetic (state, action, label) examples, seeded from real traces. At open-model prices no batch discount is needed. Target: about 30k questions, the scale of Laya's reference fine-tune.
 3. **Fine-tune:** Laya's RLCD notebook on **Kaggle's free 2×T4 GPUs** (about 4–5 hours for 4 epochs). Fit temperatures, pin the base revision, keep weights private on Hugging Face.
 4. **Held-out evaluation:** test only on **attack classes and variants not seen in training**, plus benign traffic. Report TPR at 1% FPR, ECE, and p50/p95 latency on GPU and CPU. Negation tests are included explicitly.
 5. **Product impact:** re-run the Arena with Sentinel on (the agent calls the Sentinel pre-trade hook through the SDK). The measured drop in b feeds straight into the premium (Section 9). **The discount is earned, not asserted.**
@@ -493,7 +493,7 @@ Laya is Convai Innovations' **open-source (Apache 2.0) "System One" decision mod
 ### 10.4 Serving
 
 - A `services/sentinel` Python service running `laya[serve]` (pinned version and revision), behind our `Classifier` interface.
-- **Backends:** `laya` (default), `claude` (fallback and teacher), `jev` (optional; only if waitlist access arrives).
+- **Backends:** `laya` (default), `llm` (fallback and teacher, any model via ADR-006), `jev` (optional; only if waitlist access arrives).
 - GPU in production. **CPU fallback is fine for the demo** (roughly 300–400 ms).
 
 ---
@@ -634,12 +634,12 @@ Wallets: wagmi/viem (EVM) and Solana wallet adapter.
 | Monorepo | pnpm workspaces + Turborepo; Node 22; TypeScript strict |
 | EVM contracts | Solidity 0.8.28, Foundry (forge/anvil/cast), OpenZeppelin v5; fuzz and invariant tests |
 | Solana programs | Anchor (Rust); `solana-test-validator` |
-| Arena, API, keeper, SDK | TypeScript: `@anthropic-ai/sdk`, `viem`, `@solana/web3.js`, Hono (API), `pg-boss`, Zod |
+| Arena, API, keeper, SDK | TypeScript: an OpenAI-compatible LLM client (OpenRouter by default), `viem`, `@solana/web3.js`, Hono (API), `pg-boss`, Zod |
 | Sentinel | Python 3.11: `laya` (pinned), `laya[serve]`; Kaggle fine-tuning notebook |
 | Frontend | Next.js (App Router), Tailwind + shadcn/ui, wagmi/viem, Solana wallet adapter |
 | TEE | Phala Cloud dstack (Docker compose) |
 | CI | GitHub Actions: forge test, anchor test, typecheck, lint, unit tests |
-| AI models | Claude `claude-opus-5` (attackers, grey judge, synthetic data, adjudicator); Laya (Sentinel); Jev optional |
+| AI models | Any LLM via OpenRouter, chosen per role (attackers, demo agents, grey judge, synthetic data, adjudicator), e.g. DeepSeek V4.1 Flash as the cheap default (ADR-006); Laya (Sentinel); Jev optional |
 
 ```
 bonded/
@@ -745,7 +745,7 @@ Day 1 = Sun Sep 27. Submission target = Day 15 (Sun Oct 11). Day 16 (Mon Oct 12)
 | 3 | Tue Sep 29 | `CoverPool`, `OperatorBond`, `CoverManager` (EIP-712 quotes, policy NFT, streaming, caps), `ClaimsEngine` (waterfall) | Integration test: rate → bind → breach → claim → bond slashed → pool pays → vault restored |
 | 4 | Wed Sep 30 | `BondedRegistry` (ERC-8004 compatible), `DisputeModule`, `BountyBoard`; deploy scripts; **deploy to Robinhood Chain testnet + Arbitrum Sepolia**; mock stock tokens + AMM pool if needed | Addresses in `contracts/evm/deployments/`, read through `@bonded/shared`; a smoke script passes on both testnets |
 | 5 | Thu Oct 1 | Arena core: fork sandbox, world simulator (news/social/DM/price/metadata/tool output), episode runner, **judge = vault breach log**; `vulnerable-agent` v0 | 1 attack class runs end to end on a fork with a correct verdict |
-| 6 | Fri Oct 2 | Attack library (10 classes, ~40 seeds); adaptive attacker (Claude); actuarial model + scoring; report; attestation signing; Sentinel dataset logging; `hardened-agent` v0 | Full rating run on both demo agents; scores differ in the expected direction; report renders |
+| 6 | Fri Oct 2 | Attack library (10 classes, ~40 seeds); adaptive attacker (LLM via OpenRouter); actuarial model + scoring; report; attestation signing; Sentinel dataset logging; `hardened-agent` v0 | Full rating run on both demo agents; scores differ in the expected direction; report renders |
 | 7 | Sat Oct 3 | API (REST + SSE) + keeper; testnet E2E: Arena → attestation → quote → buyCover → live breach → auto claim | **GATE 1: core loop live on Robinhood Chain testnet.** Founder review #1 |
 | 8 | Sun Oct 4 | Web app: Arena live feed, agent profile, vault, underwrite, claims pages; synthetic Sentinel data via the Batches API | Demo flow clickable in the browser against testnet |
 | 9 | Mon Oct 5 | **Founder runs the Laya fine-tune on Kaggle** (dataset and notebook provided); meanwhile Solana programs (vault, cover, registry) in Anchor | Fine-tuned checkpoint pushed (private); Anchor programs compile |
@@ -799,8 +799,8 @@ Day 1 = Sun Sep 27. Submission target = Day 15 (Sun Oct 11). Day 16 (Mon Oct 12)
 | Robinhood Chain testnet lacks stock tokens, USDC or oracles | Med | Med | Deploy mock stock tokens, mock USDC, an AMM pool and MockOracle ourselves (Day 4); Arbitrum Sepolia as fallback demo chain |
 | Network restrictions in the build environment (Hugging Face, RPCs, Phala) | High | Med | Founder allowlists domains (Section 24); CPU/mocked fallbacks; build and run steps documented for the founder's machine |
 | No GPU for Sentinel | Med | Low | Kaggle for training; CPU inference fallback (~300–400 ms) for the demo |
-| Laya fine-tune underperforms | Med | Med | Advisory-only anyway; report honest metrics; Claude fallback backend; the premium discount only applies where Arena re-runs show a measured improvement |
-| Claude API cost or rate limits during rating runs | Med | Med | Episode budgets; prompt caching; Batches API for synthetic data; cache attacker variants |
+| Laya fine-tune underperforms | Med | Med | Advisory-only anyway; report honest metrics; LLM fallback backend; the premium discount only applies where Arena re-runs show a measured improvement |
+| LLM cost or rate limits during rating runs | Low | Med | Cheap open models through OpenRouter (ADR-006); a spending cap per run; retries with backoff; cache attacker variants |
 | Solana CPI and compute limits for routes | Med | Low | Single-hop routes or a mock AMM on devnet; program-level allowlists |
 | TEE setup friction | Med | Low | TEE is additive; the demo works without it; documented as a measured discount |
 | Scope overload for a 2-member team in 16 days | High | High | Gate 1 core loop first; daily notes; features after Gate 1 are strictly additive and can be cut in reverse order: mainnet → leaderboard breadth → bounties → TEE → Solana |
@@ -814,7 +814,7 @@ Day 1 = Sun Sep 27. Submission target = Day 15 (Sun Oct 11). Day 16 (Mon Oct 12)
 | # | Item | Why | When |
 |---|---|---|---|
 | 1 | Rename the GitHub repo to **Bonded** | Brand | Now (existing remotes keep working through GitHub's redirect) |
-| 2 | Add an **Anthropic API key** as an environment secret | The Arena attackers, grey judge and synthetic data all call Claude | Before Day 5 |
+| 2 | Add an **OpenRouter API key** (`OPENROUTER_API_KEY`) as an environment variable, and allow `openrouter.ai` in the network settings | The Arena attackers, demo agents, grey judge and synthetic data call LLMs through OpenRouter (ADR-006) | Before Day 6 |
 | 3 | Allowlist network domains: `huggingface.co`, `cdn-lfs.huggingface.co`, `cas-bridge.xethub.hf.co` (Laya); the Robinhood Chain, Arbitrum Sepolia, Sepolia and Solana devnet RPC hosts; Phala Cloud; optionally `copilot.colosseum.com` (Colosseum Copilot) and `typesafe.ai` (Jev) | The build environment blocks these today | Before Day 4 |
 | 4 | Testnet deployer wallet + faucet funds (Robinhood Chain testnet, Arbitrum Sepolia, Sepolia, Solana devnet); provide the key as an environment secret (testnet only) | Deployments | Before Day 4 |
 | 5 | Free **Kaggle** account | Laya fine-tune on 2×T4 | Day 9 |
