@@ -10,7 +10,13 @@
 The plan assumed Claude for every language-model job: the attacker, the grey-area judge, synthetic training data and the demo agents' brains. Day 5 built the demo agent's brain on Anthropic's SDK, so it could only use Claude.
 
 Two things changed that:
-- **Cost.** A full rating is about 240 episodes, and the demo agent's multi-turn tool loop is the biggest cost. At Claude Opus 5's price ($5 / $25 per million tokens in/out) that's roughly $55 per rating. Capable open models on OpenRouter cost far less. In September 2026, DeepSeek V4.1 Flash is $0.035 / $0.29 and GLM 5.3 Flash is $0.045 / $0.14, which brings a rating under $1.
+- **Cost.** A full rating is about 240 episodes, and the demo agent's multi-turn tool loop is the biggest cost.
+  - **Assumptions:** about 10 turns per episode, 40k input and 5k output tokens per episode for the agent, and 3k in / 1k out per attack variant. That's roughly 10M input and 1.4M output tokens per rating.
+  - **Claude Opus 5** ($5 / $25 per million tokens in/out) comes to about $55 per rating.
+  - **Open models on OpenRouter** are far cheaper, but prices vary by provider.
+    - **DeepSeek V4.1 Flash:** the model page lists $0.035 / $0.29, and individual providers charge around $0.10 / $0.50 (OpenRouter provider list, September 2026). At the higher provider rate that's about $1.70 per rating.
+    - **GLM 5.3 Flash:** the model page lists $0.045 / $0.14, and providers charge up to about $0.14 / $0.47.
+  - These are estimates from list prices. The client reports each request's actual cost, and runs will be capped and reported from measured spend (Day 6), not from this table.
 - **Choice.** Which model is best for each job (attacking, playing a typical agent, labelling) is an empirical question, and the answer will change month to month. The code shouldn't pick for us.
 
 ## Decisions

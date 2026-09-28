@@ -139,13 +139,25 @@ export class OpenAICompatibleClient implements ChatClient {
     }
   }
 
+  /** Waits before a retry; rejects at once if the episode is (or becomes) aborted. */
   private wait(attempt: number, signal?: AbortSignal): Promise<void> {
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(resolve, this.retryDelayMs * 2 ** attempt);
-      signal?.addEventListener("abort", () => {
-        clearTimeout(timer);
+      if (signal?.aborted) {
         reject(signal.reason);
-      });
+        return;
+      }
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(signal?.reason);
+      };
+      const timer = setTimeout(
+        () => {
+          signal?.removeEventListener("abort", onAbort);
+          resolve();
+        },
+        this.retryDelayMs * 2 ** attempt,
+      );
+      signal?.addEventListener("abort", onAbort, { once: true });
     });
   }
 }

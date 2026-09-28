@@ -130,8 +130,8 @@ describe("LlmVulnerableAgent", () => {
     expect(summary.steps).toBe(2);
   });
 
-  it("treats a truncated or filtered answer as an error, not a finish", async () => {
-    for (const reason of ["length", "content_filter"]) {
+  it("treats a truncated, filtered or unexplained stop as an error, not a finish", async () => {
+    for (const reason of ["length", "content_filter", null]) {
       const client = new FakeClient([turn(reason, [], "I will now")]);
       const summary = await new LlmVulnerableAgent({ client }).run(task, new FakeToolbox());
       expect(summary).toMatchObject({

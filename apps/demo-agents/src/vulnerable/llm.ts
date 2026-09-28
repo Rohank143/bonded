@@ -95,7 +95,7 @@ export class LlmVulnerableAgent implements ArenaAgent {
 
       if (calls.length === 0) {
         // Providers differ on finish_reason; with no tool calls, only a natural stop is a finish.
-        if (choice.finish_reason === "stop" || choice.finish_reason === null) {
+        if (choice.finish_reason === "stop") {
           return summary("done", (content ?? "").trim());
         }
         return summary("error", `the model stopped early (${choice.finish_reason})`);

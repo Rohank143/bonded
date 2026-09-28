@@ -98,6 +98,34 @@ describe("OpenAICompatibleClient", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("stops retrying as soon as the episode is aborted", async () => {
+    const controller = new AbortController();
+    const { impl, calls } = fakeFetch(new Response("", { status: 503 }), ok(reply));
+    const client = new OpenAICompatibleClient(
+      { baseUrl: OPENROUTER_BASE_URL, apiKey: "k" },
+      { fetch: impl, retryDelayMs: 60_000 },
+    );
+    const started = Date.now();
+    const request = client.complete({ model: "m", messages: [] }, { signal: controller.signal });
+    setTimeout(() => controller.abort(new Error("episode over")), 20);
+    await expect(request).rejects.toThrow("episode over");
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("does not wait to retry when already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort(new Error("already over"));
+    const { impl } = fakeFetch(new Response("", { status: 503 }));
+    const client = new OpenAICompatibleClient(
+      { baseUrl: OPENROUTER_BASE_URL, apiKey: "k" },
+      { fetch: impl, retryDelayMs: 60_000 },
+    );
+    await expect(
+      client.complete({ model: "m", messages: [] }, { signal: controller.signal }),
+    ).rejects.toThrow("already over");
+  });
+
   it("gives up after the retry budget", async () => {
     const { impl, calls } = fakeFetch(
       new Response("", { status: 503 }),
