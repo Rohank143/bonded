@@ -81,13 +81,21 @@ export function createApi(options: {
     app.get(path, async (c) => {
       const id = z.uuid().parse(c.req.param("id"));
       const r = await db.pool.query(
-        "SELECT id,status,report,error,created_at FROM ratings WHERE id=$1",
+        "SELECT id,status,report,report_json,error,created_at FROM ratings WHERE id=$1",
         [id],
       );
       if (!r.rowCount) return c.json({ error: "run not found" }, 404);
       const row = r.rows[0];
       if (path.endsWith("/report"))
-        return row.report ? c.json(row.report) : c.json({ status: row.status }, 202);
+        return row.report_json
+          ? c.body(row.report_json, 200, { "Content-Type": "application/json; charset=utf-8" })
+          : c.json(
+              {
+                status: row.status,
+                error: row.report ? "original report bytes unavailable" : undefined,
+              },
+              202,
+            );
       return c.json(row);
     });
   app.get("/events", async (c) => {

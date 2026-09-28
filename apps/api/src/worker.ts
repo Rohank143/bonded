@@ -125,11 +125,15 @@ async function runLocked(
           },
         );
         await check();
-        await db.pool.query("UPDATE ratings SET report=$2,attestation=$3 WHERE id=$1", [
-          job.id,
-          json(result.report),
-          json(signed),
-        ]);
+        await db.pool.query(
+          "UPDATE ratings SET report=$2,attestation=$3,report_json=$4 WHERE id=$1",
+          [
+            job.id,
+            json(result.report),
+            json(signed),
+            `${JSON.stringify(result.report, null, 2)}\n`,
+          ],
+        );
       } finally {
         await sandbox.stop();
       }
