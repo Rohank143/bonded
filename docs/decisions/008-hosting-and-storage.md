@@ -50,7 +50,7 @@ A free host can restart or sleep the service. The keeper must lose nothing when 
 - Render: the free instance hours per month must cover one service running all month; free services can be restarted at any time.
 - Supabase: 500 MB database; a free project pauses after a week with no activity. The keeper's activity prevents that while it runs, but restart it (or unpause the project) if the service was down for a week.
 
-**Arena runs stay off the free host.** A rating run starts its own anvil chain, which doesn't fit comfortably in a free instance's memory. For the hackathon, ratings run on a developer machine (`pnpm arena ...`) and the results (report, attestation, dataset rows) are published to the live database. The live API serves stored reports, scores and quotes. `POST /arena/runs` answers "not available on this host" until the service moves to a paid machine (decision 7).
+**Arena runs stay off the free host.** A rating run starts its own anvil chain, which doesn't fit comfortably in a free instance's memory. For the hackathon, ratings run on a developer machine (`pnpm arena ...`) and the results (report, attestation, dataset rows) are published to the live database. The live API serves stored reports, scores and quotes. `POST /arena/runs` answers "not available on this host" on the free host.
 
 ### 4. One Docker image, two roles
 
@@ -73,16 +73,6 @@ Set in each host's own environment settings, never in the repo:
 - RPC URLs per chain.
 
 All keys are testnet-only. `.env.example` lists every variable as each one is added in code.
-
-### 7. Free until validated, then scale
-
-We don't spend on hosting before the product is validated. The free setup is enough for the hackathon demo. We move to paid hosting when any of these happens:
-- we win or raise funding;
-- real users or partners depend on the live service, so cold starts or outages matter;
-- we want live Arena runs from the web app (the free host can't run them);
-- a free-tier limit is actually hit.
-
-The first paid step is one small VPS (for example a DigitalOcean 4 GB Droplet, about $24 a month as of September 2026) running `docker compose` with Postgres, the image and Caddy for HTTPS. It needs no code changes (Consequences below).
 
 ## Consequences
 

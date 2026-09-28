@@ -655,7 +655,7 @@ Wallets: wagmi/viem (EVM) and Solana wallet adapter.
 | Postgres | Supabase, free project | No compute-hour cap (Neon's free cap would run out with an always-on keeper). Connect through the session pooler (IPv4), not the transaction pooler |
 | Frontend | Vercel, Hobby plan | From Day 12 |
 
-Locally, `docker compose` runs Postgres and the same image, so the one-command demo still works from a clean state. Moving to another host (paid Render, Fly.io, an Oracle Cloud Always Free VM) needs no code changes. Arena rating runs happen on a developer machine and are published to the live database; the free host serves stored results. We stay on free tiers until the product is validated (a win, funding, or real users), then move to one small VPS (ADR-008, decision 7).
+Locally, `docker compose` runs Postgres and the same image, so the one-command demo still works from a clean state. Moving to another host (paid Render, Fly.io, an Oracle Cloud Always Free VM) needs no code changes. Arena rating runs happen on a developer machine and are published to the live database; the free host serves stored results.
 
 **Optional "live on mainnet" moment (Day 14).** Deploy to Robinhood Chain mainnet with a strict TVL cap and a small funded pool. This needs founder-provided funds; see Section 24.
 
