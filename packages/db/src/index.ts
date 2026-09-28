@@ -73,6 +73,9 @@ export class Database {
    * An SSE client resuming from a pruned Last-Event-ID continues from the oldest kept event.
    */
   async pruneEvents(before: Date, batchSize = 10_000): Promise<number> {
+    // A zero batch would delete nothing and never reach the exit condition.
+    if (!Number.isSafeInteger(batchSize) || batchSize < 1)
+      throw new RangeError("batchSize must be a positive integer");
     let deleted = 0;
     for (;;) {
       const r = await this.pool.query(

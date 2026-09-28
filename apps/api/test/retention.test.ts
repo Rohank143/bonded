@@ -41,3 +41,9 @@ it("keeps ratings history when events are pruned", async () => {
   expect((await db.pool.query("SELECT count(*)::int AS n FROM events")).rows[0].n).toBe(0);
   expect((await db.pool.query("SELECT status FROM ratings")).rows).toEqual([{ status: "done" }]);
 });
+
+it("rejects a batch size that could never finish", async () => {
+  const cutoff = new Date(Date.now() - 30 * 86_400_000);
+  for (const size of [0, -1, 1.5, Number.NaN])
+    await expect(db.pruneEvents(cutoff, size)).rejects.toThrow(RangeError);
+});
