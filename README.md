@@ -49,9 +49,16 @@ pnpm demo:local       # anvil: deploy everything, then run register â†’ cover â†
 pnpm build                                        # build the TypeScript packages first
 pnpm --filter @bonded/arena arena run            # every attack vs vulnerable-agent, fresh local chain
 pnpm --filter @bonded/arena arena run --fork robinhood --attack A6-operator-impersonation-001
+pnpm --filter @bonded/arena arena rate            # full rating: score, report, attestation, dataset
+pnpm --filter @bonded/arena arena rate --agent hardened --enforce --repeats 5
 ```
 
-`--brain llm --model <id>` runs the agent on any model through OpenRouter (needs `OPENROUTER_API_KEY`; `LLM_BASE_URL` points it at any other OpenAI-compatible endpoint); `--list` shows the attack library. See [ADR-005](docs/decisions/005-arena-core.md) and [ADR-006](docs/decisions/006-provider-neutral-llm.md).
+`--brain llm --model <id>` runs the agent on any model through OpenRouter (needs `OPENROUTER_API_KEY`; `LLM_BASE_URL` points it at any other OpenAI-compatible endpoint); `--list` shows the attack library.
+- **Agents:** `--agent vulnerable|hardened|decision` picks the demo agent.
+- **Sentinel:** `--sentinel-model <id>` adds a Sentinel guard to hardened-agent.
+- **Spending cap:** `--max-usd <n>` caps model spend per rating.
+
+See [ADR-005](docs/decisions/005-arena-core.md), [ADR-006](docs/decisions/006-provider-neutral-llm.md) and [ADR-007](docs/decisions/007-ratings.md).
 
 Live testnet addresses are in [`contracts/evm/deployments/`](contracts/evm/deployments/README.md). To deploy, run from `contracts/evm` with `DEPLOYER_PRIVATE_KEY` set: `script/deploy.sh <rpc>`. See [ADR-004](docs/decisions/004-registry-disputes-bounties.md) and [`docs/progress/DAY-04.md`](docs/progress/DAY-04.md).
 
