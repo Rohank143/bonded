@@ -41,6 +41,8 @@ export interface SandboxOptions {
    * the protocol is deployed to it.
    */
   forkUrl?: string;
+  /** Explicit deployment for a fork, including ephemeral local chains. */
+  forkDeployment?: EvmDeployment;
   /** Port for anvil; a free one is picked by default. */
   port?: number;
   /** Progress messages (deploy output, etc.). */
@@ -108,7 +110,8 @@ export class Sandbox {
 
       let deployment: EvmDeployment;
       if (options.forkUrl) {
-        deployment = loadDeployment(chainId);
+        deployment = options.forkDeployment ?? loadDeployment(chainId);
+        if (deployment.chainId !== chainId) throw new Error("fork deployment chain mismatch");
         log(`Forked chain ${chainId}; attached to its committed deployment`);
       } else {
         log("Deploying the protocol to a fresh local chain");

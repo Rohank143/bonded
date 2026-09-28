@@ -1,0 +1,30 @@
+{
+  "network": "Robinhood Chain testnet",
+  "transactions": [
+    {
+      "step": "register",
+      "hash": "0xcef4e28931ab46b0fbddadfcba7e6d6cf9db0c0b8756d757e0f9b6e120bf351e"
+    },
+    {
+      "step": "createVault",
+      "hash": "0xf6457e933c9a63c709361be63589729404ff052e6f0f99718858409229952b9c"
+    },
+    {
+      "step": "faucet",
+      "hash": "0xf156bb45068224bed6033b5218bf036832f5f24d6d9d1287965425c6976242f1"
+    },
+    {
+      "step": "approve",
+      "hash": "0xf3b0742b1dcfab9164f632cbab29eeed4e7f3e7591f29eac5d6535d6e477f426"
+    },
+    {
+      "step": "deposit",
+      "hash": "0xaf5c737a447dbe11123d46a6a63b7a765509a9b433580fb61fc96bd3199852eb"
+    },
+    {
+      "step": "approve",
+      "hash": "0x94a5c30d7ab526bf287d4f6dcce6f6b19b3d147cce426d40849fdb9f15d82b2d"
+    }
+  ],
+  "startedAt": "2026-09-28T13:49:36.491Z"
+}

@@ -1,0 +1,12 @@
+CREATE TABLE agents (id text PRIMARY KEY, chain_id integer NOT NULL, agent_id numeric(78,0) NOT NULL, config jsonb NOT NULL, UNIQUE(chain_id, agent_id));
+CREATE TABLE ratings (id uuid PRIMARY KEY, agent_id text NOT NULL REFERENCES agents(id), status text NOT NULL DEFAULT 'queued', report jsonb, attestation jsonb, error text, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE attestations (id uuid PRIMARY KEY REFERENCES ratings(id), agent_id text NOT NULL REFERENCES agents(id), signed jsonb NOT NULL, tx_hash text NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE quotes (id uuid PRIMARY KEY, chain_id integer NOT NULL, agent_id text NOT NULL, signed jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE jobs (id uuid PRIMARY KEY REFERENCES ratings(id), status text NOT NULL DEFAULT 'queued', attempts integer NOT NULL DEFAULT 0, token uuid, lease_until timestamptz, available_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX jobs_available ON jobs(status, available_at);
+CREATE TABLE keeper_cursors (chain_id integer PRIMARY KEY, block_number numeric(78,0) NOT NULL, block_hash text NOT NULL);
+CREATE TABLE keeper_vaults (chain_id integer NOT NULL, address text NOT NULL, PRIMARY KEY(chain_id,address));
+CREATE TABLE keeper_policies (chain_id integer NOT NULL, policy_id numeric(78,0) NOT NULL, vault text NOT NULL, PRIMARY KEY(chain_id,policy_id));
+CREATE TABLE handled_events (id text PRIMARY KEY, chain_id integer NOT NULL, vault text NOT NULL, breach_id numeric(78,0) NOT NULL, status text NOT NULL DEFAULT 'pending', tx_hash text, error text);
+CREATE INDEX pending_breaches ON handled_events(chain_id,status);
+CREATE TABLE events (id bigserial PRIMARY KEY, topic text NOT NULL, payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());

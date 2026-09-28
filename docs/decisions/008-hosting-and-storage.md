@@ -11,7 +11,7 @@ Bonded has to be live, not just runnable on a laptop. From Day 7 there are three
 - **Keeper** (Section 14.2): polls every chain for breaches, files claims and accrues premiums. It never stops.
 - **Arena worker:** runs rating jobs queued through the API (`POST /arena/runs`), so anyone can start a rating from the web app and watch it live.
 
-The plan already said "Postgres, with jobs on `pg-boss`" (Section 14.1), but it named no host, no migration tool, no local database setup and no deploy flow.
+The plan originally said "Postgres, with jobs on pg-boss" (Section 14.1), but it named no host, no migration tool, no local database setup and no deploy flow.
 
 Serverless functions (Vercel-style) don't fit any of these: functions time out, so they can't hold SSE connections, run a polling loop or run a two-minute rating.
 
@@ -21,11 +21,11 @@ Serverless functions (Vercel-style) don't fit any of these: functions time out, 
 
 ### 1. Postgres everywhere, one connection string
 
-- **Local:** `docker compose up db` starts Postgres 16. The one-command demo starts it for you.
+- **Local:** `docker compose up db` starts Postgres 16. Integration tests use `embedded-postgres` (real Postgres 18 binaries), so Docker is optional.
 - **Live:** Railway Postgres (decision 3).
 - Code reads only `DATABASE_URL`. Nothing in the code knows which host it runs on.
 - **Schema and migrations:** Drizzle. Migrations are plain SQL files committed in the repo. They run as a pre-deploy step (`pnpm db:migrate`), so new code never runs against an old schema, and a failed migration stops the deploy.
-- **Jobs:** `pg-boss` on the same database: Arena rating runs, queued by the API and taken by the worker.
+- **Jobs:** a Postgres `FOR UPDATE SKIP LOCKED` queue on the same database: Arena rating runs, queued by the API and taken by the worker.
 
 What the database holds: agents, rating runs and reports, attestations, signed quotes (with their nonces), the keeper's per-chain block cursor, and the events it has seen and handled.
 
@@ -56,7 +56,7 @@ Why Railway:
 Settings:
 - **App sleeping stays off** for all three services. The keeper must keep polling.
 - **A usage limit is set** in the Railway dashboard, so a bug (for example a runaway worker) can't run up a large bill.
-- **The three services never call each other over the network.** They share Postgres: jobs go through `pg-boss`, and live events go through Postgres `LISTEN/NOTIFY`, which the API turns into SSE. There's no internal networking to set up.
+- **The three services never call each other over the network.** They share Postgres: jobs go through a Postgres `FOR UPDATE SKIP LOCKED` queue, and live events go through Postgres `LISTEN/NOTIFY`, which the API turns into SSE. There's no internal networking to set up.
 
 **Pricing (Railway's published rates, September 2026; check again when the account is created):** the Hobby plan is $5 a month and includes $5 of usage; usage beyond that is billed per second at $20 per vCPU-month and $10 per GB-month of RAM.
 
@@ -64,7 +64,7 @@ Settings:
 
 - `apps/api`, `apps/keeper` and `apps/arena` stay separate packages with their own tests.
 - One `Dockerfile` builds them all, with Foundry's `anvil` installed for the Arena. `ROLE` picks what a container runs: `api`, `keeper`, `arena-worker`, or `all` (all three in one process, for local development).
-- The Arena worker takes one job at a time from the `pg-boss` queue and streams each episode as an event, so the web app's live attack feed shows the run as it happens. A queued job waits if the worker is busy or restarting; it isn't lost.
+- The Arena worker takes one job at a time from the Postgres `FOR UPDATE SKIP LOCKED` queue and streams each episode as an event, so the web app's live attack feed shows the run as it happens. A queued job waits if the worker is busy or restarting; it isn't lost.
 
 ### 5. Deploys
 
@@ -89,3 +89,9 @@ All keys are testnet-only. `.env.example` lists every variable as each one is ad
 - **Moving hosts needs no code changes.** The same image runs on any Docker host (Render, Fly.io, a VPS with `docker compose`), one container per `ROLE`.
 - **What isn't covered:** there's no high availability. If Railway is down, the API and the live feed are down. Claims are still safe (decision 2), and queued ratings wait.
 - **To verify on the live service:** rating time and memory on Railway's hardware. The numbers in Context were measured on a Mac.
+
+## Day 7 queue details
+
+The Day 7 scope replaces pg-boss with a small SQL queue. Workers claim jobs using `FOR UPDATE SKIP LOCKED`, renew a 60-second lease every 15 seconds, and fence completion with a lease token. A per-chain advisory lock permits one rating worker at a time. Failed jobs retry after 30 seconds, up to three attempts. Completed reports and signed attestations persist before posting; retries recover an accepted transaction from its validation digest. Live events persist before `NOTIFY`, and SSE supports `Last-Event-ID` replay.
+
+Keeper log ingestion commits its cursor with discovered vaults, policies and breaches. Claim failures remain pending independently of the cursor. Historical policies remain available after cancellation or expiry. Five confirmation blocks are the default; a cursor hash mismatch stops ingestion for operator reconciliation. This detects deep reorgs but does not automatically roll them back.
