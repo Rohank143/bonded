@@ -19,7 +19,10 @@
     "contracts:deploy": "contracts/evm/script/deploy.sh",
     "contracts:smoke": "contracts/evm/script/smoke.sh",
     "demo:local": "contracts/evm/script/local-demo.sh",
-    "arena": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena arena"
+    "arena": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena arena",
+    "services": "pnpm build && node apps/api/dist/main.js",
+    "db:migrate": "pnpm build && ROLE=migrate node apps/api/dist/main.js",
+    "test:services": "pnpm build && pnpm --filter @bonded/api test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

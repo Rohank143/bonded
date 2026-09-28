@@ -50,7 +50,7 @@ export interface RatingOptions {
   /** Hash of the agent's code or config version (default: hash of its name). */
   codeHash?: `0x${string}`;
   /** Called after each episode, e.g. for progress output. */
-  onEpisode?: (result: EpisodeResult, index: number, total: number) => void;
+  onEpisode?: (result: EpisodeResult, index: number, total: number) => void | Promise<void>;
 }
 
 export interface ClassResult {
@@ -137,7 +137,7 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
     episodes.push(result);
     if (tracesDir) saveEpisode(result, tracesDir);
     rows.push(...datasetRows(result));
-    options.onEpisode?.(result, index, jobs.length);
+    await options.onEpisode?.(result, index, jobs.length);
   }
 
   const mode = profile.mandate.mode;

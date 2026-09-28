@@ -601,7 +601,7 @@ The payout lands in the (frozen) vault and restores the share price. Depositors 
 | `POST /bounties/:id/reveal` | Bounty reveal and validation |
 | `POST /sentinel/check` | Proxy to Sentinel (auth, logging, telemetry) |
 
-Storage is Postgres (Drizzle schema, SQL migrations that run on start); jobs run on `pg-boss` queues. The code reads only `DATABASE_URL`, so the same build runs against local Postgres (`docker compose`) and the live database. The attester key lives in an environment secret for the hackathon, with a KMS or threshold signer later. Hosting and deploys: Section 15 and ADR-008.
+Storage is Postgres (Drizzle schema, SQL migrations that run on start); jobs run on a Postgres `FOR UPDATE SKIP LOCKED` queue queues. The code reads only `DATABASE_URL`, so the same build runs against local Postgres (`docker compose`) and the live database. The attester key lives in an environment secret for the hackathon, with a KMS or threshold signer later. Hosting and deploys: Section 15 and ADR-008.
 
 ### 14.2 Keeper (`apps/keeper`)
 
@@ -653,7 +653,7 @@ Wallets: wagmi/viem (EVM) and Solana wallet adapter.
 |---|---|---|
 | API | Railway service (`ROLE=api`) | REST and SSE; public domain |
 | Keeper + Arena worker | Railway services (`ROLE=keeper`, `ROLE=arena-worker`) | Always on; the worker runs queued ratings one at a time and streams them live. All services use one Docker image and deploy on every merge to `main` |
-| Postgres | Railway Postgres, same project | Shared by all services through `DATABASE_URL`; jobs via `pg-boss`, live events via `LISTEN/NOTIFY` |
+| Postgres | Railway Postgres, same project | Shared by all services through `DATABASE_URL`; jobs via a Postgres `FOR UPDATE SKIP LOCKED` queue, live events via `LISTEN/NOTIFY` |
 | Frontend | Vercel, Hobby plan | From Day 12 |
 
 Locally, `docker compose` runs Postgres and the same image, so the one-command demo still works from a clean state. Moving to another Docker host needs no code changes.
@@ -669,10 +669,10 @@ Locally, `docker compose` runs Postgres and the same image, so the one-command d
 | Monorepo | pnpm workspaces + Turborepo; Node 22; TypeScript strict |
 | EVM contracts | Solidity 0.8.28, Foundry (forge/anvil/cast), OpenZeppelin v5; fuzz and invariant tests |
 | Solana programs | Anchor (Rust); `solana-test-validator` |
-| Arena, API, keeper, SDK | TypeScript: an OpenAI-compatible LLM client (OpenRouter by default), `viem`, `@solana/web3.js`, Hono (API), `pg-boss`, Zod |
+| Arena, API, keeper, SDK | TypeScript: an OpenAI-compatible LLM client (OpenRouter by default), `viem`, `@solana/web3.js`, Hono (API), a Postgres `FOR UPDATE SKIP LOCKED` queue, Zod |
 | Sentinel | Python 3.11: `laya` (pinned), `laya[serve]`; Kaggle fine-tuning notebook |
 | Frontend | Next.js (App Router), Tailwind + shadcn/ui, wagmi/viem, Solana wallet adapter |
-| Storage | Postgres 16 (Railway live, `docker compose` locally), Drizzle migrations, `pg-boss` jobs |
+| Storage | Postgres 16 (Railway live, `docker compose` locally), Drizzle migrations, a Postgres `FOR UPDATE SKIP LOCKED` queue jobs |
 | Hosting | Railway (API, keeper and Arena worker from one Docker image; Postgres), Vercel Hobby (web); ADR-008 |
 | TEE | Phala Cloud dstack (Docker compose) |
 | CI | GitHub Actions: forge test, anchor test, typecheck, lint, unit tests |
