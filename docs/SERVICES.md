@@ -4,7 +4,19 @@ Run `pnpm test:services` for real Postgres and Anvil integration tests without D
 
 For long-running services, set `DATABASE_URL`, `RPC_URL`, `DEPLOYMENT_FILE`, `ATTESTER_KEY`, `KEEPER_KEY` and `API_TOKEN` in `.env`. The API token must have at least 24 characters. Use separate attester and keeper accounts across deployed processes to avoid nonce contention. Both need testnet gas; only the attester must be registered with the registry. `ROLE` is `api`, `keeper`, `arena-worker` or `all`. Run `pnpm services`. Migrations run under a database lock before each role starts. `ROLE=migrate node apps/api/dist/main.js` runs migrations alone after building.
 
-`docker compose up --build` runs Postgres 16 and all roles. Docker must be running, the configured RPC must be reachable inside the container, and Foundry contract submodules must be populated. Railway uses the same Dockerfile: create one service per role plus Postgres, set variables, and keep sleeping disabled. The API health path is `/health`; configure its health check only on the API service. The worker and keeper have no HTTP listener. Deployment configuration is supplied, but no Railway deployment is implied.
+`docker compose up --build` runs Postgres 16 and all roles. Docker must be running and the configured RPC must be reachable inside the container. The image builds without git submodules: when `contracts/evm/lib` is empty (as in Railway's source snapshot), the Dockerfile fetches forge-std and OpenZeppelin at the commits the repository pins. If you update a submodule, update `FORGE_STD_COMMIT` or `OPENZEPPELIN_COMMIT` in the Dockerfile to match `git ls-tree HEAD contracts/evm/lib`.
+
+## Railway
+
+Railway detects the pnpm workspace and offers one service per package (`@bonded/arena`, `@bonded/api` and so on). Discard that suggestion: the packages are not separate services. Instead:
+
+1. Add PostgreSQL.
+2. Create three empty services, `api`, `keeper` and `arena-worker`. Connect each to this repository on `main` with the root directory left empty, so the root `Dockerfile` and `railway.json` are used.
+3. Set `ROLE` to the service name on each one. Set `DATABASE_URL` (`${{Postgres.DATABASE_URL}}`), `RPC_URL` and `DEPLOYMENT_FILE` on all three, `ATTESTER_KEY` on `api` and `arena-worker`, `API_TOKEN` on `api` and `KEEPER_KEY` on `keeper`.
+4. Only on `api`: generate a public domain and set the health check path to `/health`. The worker and keeper have no HTTP listener.
+5. Turn sleeping off on all three.
+
+Railway injects `PORT`; the API reads it. Every service runs migrations under a database lock before starting, so start order does not matter.
 
 Provision agents through `AGENTS_FILE`, a JSON array of `{ "kind": "hardened", "mandate": <full EVM mandate>, "codeHash": "0x…" }` records. `kind` is `hardened` or `vulnerable`, selecting the existing scripted demo adapter. Agent IDs must already exist on the configured chain; the mandate's chain and agent ID must match. Keep this file server-owned. On startup, a supplied file is the complete configured set for that chain: removed agents are disabled and their queued/running jobs are failed (active workers stop at their next lease check), while historical reports and attestations remain readable. An empty array disables the entire chain's configured set; omitting `AGENTS_FILE` leaves it unchanged. Already-broadcast transactions cannot be cancelled. Arbitrary submitted agent code and LLM configurations are outside this initial worker interface.
 
