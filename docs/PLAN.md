@@ -418,7 +418,7 @@ Each seed is a YAML spec: `id`, `class`, `surfaces`, `payload_template`, `succes
 - **`attestation.json`:** EIP-712 signed. In a fresh sandbox it is posted to the registry and read back; on a fork it is signed only.
 - **`sentinel-dataset.jsonl`** and every episode trace.
 
-Quote signing moves to Day 7 with `buyCover`.
+Quote signing landed on Day 7 with `buyCover`: quotes are priced from the attestation and the operator bond (ADR-009).
 
 ---
 
