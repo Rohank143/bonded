@@ -67,6 +67,22 @@ export class Database {
     ]);
     await c.query("SELECT pg_notify('bonded_events',$1)", [r.rows[0].id]);
   }
+  /**
+   * Delete live events created before `before`, oldest first, in bounded batches so a large
+   * backlog never holds one long transaction. Ratings, reports and attestations are kept.
+   * An SSE client resuming from a pruned Last-Event-ID continues from the oldest kept event.
+   */
+  async pruneEvents(before: Date, batchSize = 10_000): Promise<number> {
+    let deleted = 0;
+    for (;;) {
+      const r = await this.pool.query(
+        "DELETE FROM events WHERE id IN (SELECT id FROM events WHERE created_at < $1 ORDER BY id LIMIT $2)",
+        [before, batchSize],
+      );
+      deleted += r.rowCount ?? 0;
+      if ((r.rowCount ?? 0) < batchSize) return deleted;
+    }
+  }
   /** Replace one chain's runnable set without deleting rating or attestation history. */
   async reconcileAgents(chainId: number, agents: { agentId: string; config: unknown }[]) {
     await this.transaction(async (c) => {
