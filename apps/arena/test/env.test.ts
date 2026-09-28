@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { loadDotEnv } from "../src/index.js";
+import { loadDotEnv, usesLanguageModel } from "../src/index.js";
 
 const dir = mkdtempSync(join(tmpdir(), "bonded-env-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -33,5 +33,15 @@ describe("loadDotEnv", () => {
     const env = {};
     expect(loadDotEnv(join(dir, "missing.env"), env)).toEqual([]);
     expect(env).toEqual({});
+  });
+});
+
+describe("usesLanguageModel", () => {
+  it("is true only for runs that call a model, so local scripted runs never read .env", () => {
+    expect(usesLanguageModel({ brain: "scripted", agent: "vulnerable" })).toBe(false);
+    expect(usesLanguageModel({ brain: "scripted", agent: "hardened" })).toBe(false);
+    expect(usesLanguageModel({ brain: "llm" })).toBe(true);
+    expect(usesLanguageModel({ agent: "decision" })).toBe(true);
+    expect(usesLanguageModel({ agent: "hardened", "sentinel-model": "m" })).toBe(true);
   });
 });
