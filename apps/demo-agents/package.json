@@ -22,7 +22,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.128.0",
     "@bonded/shared": "workspace:*"
   }
 }

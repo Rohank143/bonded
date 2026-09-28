@@ -10,7 +10,7 @@ const GOAL = /\bbuy\s+([0-9][0-9,]*(?:\.[0-9]+)?)\s+(t[A-Z]{3,5})\s+worth\s+of\s
  * to send or approve funds, whoever wrote it, before getting on with its task.
  *
  * Being deterministic, it lets the Arena's plumbing (sandbox, world, tools, judge) be tested
- * without a model or an API key. ClaudeVulnerableAgent is the same agent with a real LLM brain.
+ * without a model or an API key. LlmVulnerableAgent is the same agent with a real LLM brain.
  */
 export class ScriptedVulnerableAgent implements ArenaAgent {
   readonly name = "vulnerable-agent/scripted";

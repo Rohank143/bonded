@@ -1,0 +1,176 @@
+import type { ChatClient, ChatRequest, ChatResponse, ToolCall } from "@bonded/shared";
+import { describe, expect, it } from "vitest";
+import { DEFAULT_AGENT_MODEL, LlmVulnerableAgent } from "../src/index.js";
+import { FakeToolbox, task } from "./fakes.js";
+
+const call = (id: string, name: string, args: unknown): ToolCall => ({
+  id,
+  type: "function",
+  function: { name, arguments: typeof args === "string" ? args : JSON.stringify(args) },
+});
+
+function turn(
+  finish_reason: string | null,
+  tool_calls: ToolCall[] = [],
+  content: string | null = null,
+  usage?: ChatResponse["usage"],
+): ChatResponse {
+  return {
+    choices: [
+      {
+        message: { role: "assistant", content, ...(tool_calls.length ? { tool_calls } : {}) },
+        finish_reason,
+      },
+    ],
+    ...(usage ? { usage } : {}),
+  };
+}
+
+/** Replays scripted responses and keeps a copy of each request. */
+class FakeClient implements ChatClient {
+  readonly requests: ChatRequest[] = [];
+  readonly signals: (AbortSignal | undefined)[] = [];
+  constructor(private readonly responses: ChatResponse[]) {}
+  async complete(request: ChatRequest, options?: { signal?: AbortSignal }) {
+    this.requests.push(structuredClone(request));
+    this.signals.push(options?.signal);
+    const next = this.responses.shift();
+    if (!next) throw new Error("no more scripted responses");
+    return next;
+  }
+}
+
+describe("LlmVulnerableAgent", () => {
+  it("runs a tool loop through the toolbox and stops on a natural finish", async () => {
+    const client = new FakeClient([
+      turn("tool_calls", [call("a", "read_inbox", {}), call("b", "get_prices", {})], null, {
+        prompt_tokens: 100,
+        completion_tokens: 20,
+        cost: 0.0001,
+      }),
+      turn(
+        "tool_calls",
+        [call("c", "swap", { tokenIn: "tUSDG", tokenOut: "tNVDA", amountIn: "2000" })],
+        null,
+        {
+          prompt_tokens: 200,
+          completion_tokens: 10,
+          cost: 0.0002,
+        },
+      ),
+      turn("stop", [], " Bought tNVDA. ", {
+        prompt_tokens: 300,
+        completion_tokens: 5,
+        cost: 0.0003,
+      }),
+    ]);
+    const tools = new FakeToolbox();
+    const summary = await new LlmVulnerableAgent({ client }).run(task, tools);
+
+    expect(tools.calls.map((c) => c.name)).toEqual(["read_inbox", "get_prices", "swap"]);
+    expect(summary).toMatchObject({
+      steps: 3,
+      stoppedBecause: "done",
+      finalMessage: "Bought tNVDA.",
+    });
+    expect(summary.usage).toEqual({
+      inputTokens: 600,
+      outputTokens: 35,
+      costUsd: expect.closeTo(0.0006, 9),
+    });
+
+    const first = client.requests[0]!;
+    expect(first.model).toBe(DEFAULT_AGENT_MODEL);
+    expect(first.messages[0]).toMatchObject({ role: "system" });
+    expect(first.tools?.map((t) => t.function.name)).toContain("transfer");
+    // Tool results go back as tool messages tied to their call ids, after the assistant turn.
+    const second = client.requests[1]!.messages;
+    expect(second.slice(-3).map((m) => m.role)).toEqual(["assistant", "tool", "tool"]);
+    expect(second.at(-1)).toMatchObject({ role: "tool", tool_call_id: "b" });
+  });
+
+  it("uses the model it's given and names itself after it", async () => {
+    const client = new FakeClient([turn("stop", [], "ok")]);
+    const agent = new LlmVulnerableAgent({ client, model: "z-ai/glm-5.3-flash" });
+    await agent.run(task, new FakeToolbox());
+    expect(agent.name).toBe("vulnerable-agent/z-ai/glm-5.3-flash");
+    expect(client.requests[0]?.model).toBe("z-ai/glm-5.3-flash");
+  });
+
+  it("executes tool calls even when a provider reports finish_reason stop", async () => {
+    const client = new FakeClient([
+      turn("stop", [call("a", "read_news", {})]),
+      turn("stop", [], "done"),
+    ]);
+    const tools = new FakeToolbox();
+    await new LlmVulnerableAgent({ client }).run(task, tools);
+    expect(tools.calls.map((c) => c.name)).toEqual(["read_news"]);
+  });
+
+  it("returns malformed arguments and tool failures to the model as errors", async () => {
+    const client = new FakeClient([
+      turn("tool_calls", [
+        call("a", "transfer", "{not json"),
+        call("b", "get_token_info", { symbol: "X" }),
+      ]),
+      turn("stop", [], "done"),
+    ]);
+    const tools = new FakeToolbox();
+    tools.call = async (name, args) => {
+      tools.calls.push({ name, args });
+      return { ok: false, error: "no token listed" };
+    };
+    const summary = await new LlmVulnerableAgent({ client }).run(task, tools);
+    const results = client.requests[1]!.messages.filter((m) => m.role === "tool");
+    expect(results).toEqual([
+      { role: "tool", tool_call_id: "a", content: '{"error":"arguments were not valid JSON"}' },
+      { role: "tool", tool_call_id: "b", content: '{"error":"no token listed"}' },
+    ]);
+    expect(tools.calls).toHaveLength(1);
+    expect(summary.steps).toBe(2);
+  });
+
+  it("treats a truncated or filtered answer as an error, not a finish", async () => {
+    for (const reason of ["length", "content_filter"]) {
+      const client = new FakeClient([turn(reason, [], "I will now")]);
+      const summary = await new LlmVulnerableAgent({ client }).run(task, new FakeToolbox());
+      expect(summary).toMatchObject({
+        stoppedBecause: "error",
+        finalMessage: `the model stopped early (${reason})`,
+      });
+    }
+  });
+
+  it("stops at the step limit", async () => {
+    const calls = Array.from({ length: 5 }, (_, i) => call(`t${i}`, "read_news", {}));
+    const client = new FakeClient([turn("tool_calls", calls)]);
+    const tools = new FakeToolbox();
+    const summary = await new LlmVulnerableAgent({ client }).run({ ...task, maxSteps: 3 }, tools);
+    expect(tools.calls).toHaveLength(3);
+    expect(summary).toMatchObject({ steps: 3, stoppedBecause: "max_steps" });
+  });
+
+  it("stops once the episode has ended and passes the signal to requests", async () => {
+    const aborted = new AbortController();
+    aborted.abort();
+    const client = new FakeClient([turn("stop", [], "ok")]);
+    const stopped = Object.assign(new FakeToolbox(), { signal: aborted.signal });
+    expect((await new LlmVulnerableAgent({ client }).run(task, stopped)).stoppedBecause).toBe(
+      "error",
+    );
+    expect(client.requests).toHaveLength(0);
+
+    const live = new AbortController();
+    const running = Object.assign(new FakeToolbox(), { signal: live.signal });
+    await new LlmVulnerableAgent({ client }).run(task, running);
+    expect(client.signals).toEqual([live.signal]);
+  });
+
+  it("omits cost when the endpoint doesn't report it", async () => {
+    const client = new FakeClient([
+      turn("stop", [], "ok", { prompt_tokens: 10, completion_tokens: 2 }),
+    ]);
+    const summary = await new LlmVulnerableAgent({ client }).run(task, new FakeToolbox());
+    expect(summary.usage).toEqual({ inputTokens: 10, outputTokens: 2 });
+  });
+});
