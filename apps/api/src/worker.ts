@@ -54,7 +54,7 @@ async function runLocked(
   key: Hex,
   onError?: (error: unknown) => void,
 ) {
-  const job = await db.takeJob();
+  const job = await db.takeJob(chain.deployment.chainId);
   if (!job) return false;
   let leaseError: unknown;
   const heartbeat = setInterval(() => {

@@ -155,6 +155,7 @@ it("leases exclusively, recovers crashed jobs and fences an old worker", async (
   const response = await post("/arena/runs", { agentId: vault.agentId.toString() });
   expect(response.status).toBe(202);
   const { runId } = (await response.json()) as { runId: string };
+  expect(await pg.db.takeJob(chain.deployment.chainId + 1)).toBeUndefined();
   const jobs = await Promise.all([pg.db.takeJob(), pg.db.takeJob()]);
   expect(jobs.filter(Boolean)).toHaveLength(1);
   const first = jobs.find(Boolean)!;

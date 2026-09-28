@@ -61,13 +61,14 @@ export class Database {
     });
     return id;
   }
-  async takeJob(): Promise<{ id: string; token: string } | undefined> {
+  async takeJob(chainId?: number): Promise<{ id: string; token: string } | undefined> {
     const token = randomUUID();
     const r = await this.pool.query(
       `UPDATE jobs SET status='running', token=$1, attempts=attempts+1, lease_until=now()+interval '60 seconds'
-      WHERE id=(SELECT id FROM jobs WHERE (status='queued' AND available_at<=now()) OR (status='running' AND lease_until<now())
-      ORDER BY available_at FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING id,token`,
-      [token],
+      WHERE id=(SELECT j.id FROM jobs j JOIN ratings r ON r.id=j.id JOIN agents a ON a.id=r.agent_id
+      WHERE ($2::integer IS NULL OR a.chain_id=$2) AND ((j.status='queued' AND j.available_at<=now()) OR (j.status='running' AND j.lease_until<now()))
+      ORDER BY j.available_at FOR UPDATE OF j SKIP LOCKED LIMIT 1) RETURNING id,token`,
+      [token, chainId ?? null],
     );
     return r.rows[0];
   }
