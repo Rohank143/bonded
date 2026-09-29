@@ -133,3 +133,14 @@ Design records: [ADR-004](docs/decisions/004-registry-disputes-bounties.md) (reg
 `pnpm gate:testnet` broadcasts the same demo on Robinhood Chain testnet using `DEPLOYER_PRIVATE_KEY` from `.env`. It spends test ETH and faucet tokens, creates a new demo agent and vault, and requires the existing deployment to have a zero waiting period. Review the command before running it. Results go to `artifacts/gate-1-testnet.json`; partial results are saved if a step fails.
 
 Long-running service setup and API requests: [docs/SERVICES.md](docs/SERVICES.md). Day 7 evidence and the Section 25 checklist: [docs/progress/DAY-07.md](docs/progress/DAY-07.md). The committed hosting configuration has not yet been deployed to Railway.
+
+## Synthetic Sentinel data
+
+`pnpm sentinel:synth` writes synthetic training rows for Sentinel (plan Section 10.3), seeded from the `sentinel-dataset.jsonl` a rating writes. Labels are chosen by the generator, never by the model. It needs `OPENROUTER_API_KEY` in `.env` and a spending cap:
+
+```bash
+pnpm sentinel:synth --seeds ratings/vulnerable-agent_scripted/sentinel-dataset.jsonl --count 300 --max-usd 0.5
+```
+
+Paths are relative to `apps/arena`. Output goes to `apps/arena/datasets/sentinel-synthetic.jsonl` (gitignored); rerun the same command to resume. `--exclude-classes A9,A10` keeps whole attack classes out so evaluation can hold them out. Results and limits of the first run: [docs/progress/DAY-08.md](docs/progress/DAY-08.md).
+

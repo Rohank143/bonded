@@ -61,4 +61,5 @@ Providers disagree on details, so the loop doesn't trust `finish_reason` alone:
 - **Tool-calling quality varies** by model and by the provider OpenRouter routes to. Every malformed call is visible in the trace, and provider routing can be pinned if one misbehaves.
 - **Some models refuse to write attack content.** The attacker's model is a setting, so a refusing model is swapped, not worked around.
 - **No batch discount is assumed** for synthetic data. At these prices it doesn't matter.
+- **Reasoning models need reasoning turned off for short structured output.** On Day 8, `deepseek/deepseek-v4.1-flash` spent its whole token budget on hidden reasoning for most synthetic-data requests, returning empty answers at eight times the cost. `ChatRequest.reasoning` passes OpenRouter's setting (`{ enabled: false }`); other endpoints never receive it.
 - **An end-to-end test** runs the LLM brain against a local OpenAI-compatible server inside a real Arena episode, so the whole path is covered without a paid key.
