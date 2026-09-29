@@ -47,6 +47,13 @@ export {
 export { SpendingCap, type SpendingCapOptions } from "./budget.js";
 export { datasetRows, type SentinelRow, writeDataset } from "./dataset.js";
 export {
+  generateSynthetic,
+  readSeedRows,
+  TARGETS as SYNTHETIC_TARGETS,
+  type GenerateSummary,
+  type SyntheticRow,
+} from "./synthetic.js";
+export {
   type ClassResult,
   type RatingOptions,
   type RatingReport,

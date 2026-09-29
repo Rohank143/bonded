@@ -33,6 +33,12 @@ export interface ChatRequest {
   tools?: ToolDefinition[];
   max_tokens?: number;
   temperature?: number;
+  /**
+   * OpenRouter's reasoning control for models that think before answering. Hidden reasoning
+   * counts against max_tokens, so short structured outputs can come back empty without
+   * `{ enabled: false }`. Sent to OpenRouter only; other endpoints get the request without it.
+   */
+  reasoning?: { enabled?: boolean; effort?: "low" | "medium" | "high" };
 }
 
 export interface ChatResponse {
@@ -115,7 +121,10 @@ export class OpenAICompatibleClient implements ChatClient {
     options: { signal?: AbortSignal } = {},
   ): Promise<ChatResponse> {
     // OpenRouter reports each request's cost when asked; other endpoints may reject the field.
-    const body = this.isOpenRouter ? { ...request, usage: { include: true } } : request;
+    const { reasoning, ...plain } = request;
+    const body = this.isOpenRouter
+      ? { ...plain, ...(reasoning ? { reasoning } : {}), usage: { include: true } }
+      : plain;
     for (let attempt = 0; ; attempt++) {
       let response: Response;
       try {

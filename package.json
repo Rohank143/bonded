@@ -24,7 +24,8 @@
     "db:migrate": "pnpm build && ROLE=migrate node apps/api/dist/main.js",
     "test:services": "pnpm build && pnpm --filter @bonded/api test",
     "gate:local": "pnpm build && node apps/api/scripts/gate-1.mjs --local",
-    "gate:testnet": "pnpm build && node apps/api/scripts/gate-1.mjs --broadcast"
+    "gate:testnet": "pnpm build && node apps/api/scripts/gate-1.mjs --broadcast",
+    "sentinel:synth": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena synth"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
