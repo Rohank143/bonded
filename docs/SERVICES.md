@@ -32,6 +32,8 @@ The hosted services load `config/agents.46630.json` (agent 2, the scripted harde
 
 POST endpoints require `Authorization: Bearer <API_TOKEN>`. GET endpoints are public.
 
+Browsers can call the API only from origins listed in `WEB_ORIGINS` (comma-separated, for example `http://localhost:5173,https://bonded.vercel.app`). Other origins get no CORS headers. The hosted `api` service sets it in `.railway/railway.ts`.
+
 | Request | Body / result |
 |---|---|
 | `GET /health` | Database availability and configured chain ID |

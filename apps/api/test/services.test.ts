@@ -205,7 +205,10 @@ it("runs a queued rating, persists episodes and report, posts the attestation", 
       )
     ).rowCount,
   ).toBe(42);
-  expect((await app.request(`/agents/${vault.agentId}/score`)).status).toBe(200);
+  const score = await app.request(`/agents/${vault.agentId}/score`);
+  expect(score.status).toBe(200);
+  // The web app links the profile to its report through this run ID.
+  expect(((await score.json()) as { runId: string }).runId).toBe(run);
   expect((await app.request(`/arena/runs/${run}/report`)).status).toBe(200);
   const reportBody = await (await app.request(`/arena/runs/${run}/report`)).text();
   expect(keccak256(stringToBytes(reportBody))).toBe(result.attestation.attestation.reportHash);

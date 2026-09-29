@@ -45,7 +45,7 @@ Any host restarts services (deploys, crashes, maintenance). The keeper must lose
 | Keeper | Railway service (`ROLE=keeper`) | No public domain |
 | Arena worker | Railway service (`ROLE=arena-worker`) | No public domain; runs one rating at a time |
 | Postgres | Railway Postgres, same project | `DATABASE_URL` is shared with the three services as a reference variable |
-| Frontend (`apps/web`, from Day 12) | Vercel, Hobby plan | Next.js; calls the API |
+| Frontend (`apps/web`, from Day 12) | Vercel, Hobby plan | Vite + React static build (ADR-010); calls the API, which allows its origin through `WEB_ORIGINS` |
 
 Why Railway:
 - One project holds all three services and the database, with no cross-provider connection setup.

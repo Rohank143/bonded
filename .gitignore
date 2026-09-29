@@ -28,5 +28,9 @@ ratings/
 
 # Local Gate 1 evidence; reviewed testnet evidence is copied to docs/progress/evidence.
 artifacts/
-# Synthetic Sentinel training data (docs/SERVICES.md, Sentinel data)
+
+# Local preview launch settings (may hold local-only test values)
+.claude/launch.json
+
+# Synthetic Sentinel training data (pnpm sentinel:synth; see README)
 datasets/

@@ -1,0 +1,33 @@
+import { describe, expect, it } from "vitest";
+import { bps, parseUsd, short, tierOf, usd } from "./format";
+
+describe("usd", () => {
+  it("formats 6-decimal amounts with grouping", () => {
+    expect(usd(1_234_567_890n)).toBe("1,234.56");
+    expect(usd(899_999_311n)).toBe("899.99");
+    expect(usd(20_000_000_000n, 0)).toBe("20,000");
+    expect(usd(0n)).toBe("0.00");
+  });
+  it("truncates rather than rounding up, so a balance is never overstated", () => {
+    expect(usd(999_999n)).toBe("0.99");
+  });
+});
+
+describe("parseUsd", () => {
+  it("accepts plain and grouped amounts up to 6 decimals", () => {
+    expect(parseUsd("1000")).toBe(1_000_000_000n);
+    expect(parseUsd("1,000.5")).toBe(1_000_500_000n);
+    expect(parseUsd(" 0.000001 ")).toBe(1n);
+  });
+  it("rejects zero, negatives, junk and too many decimals", () => {
+    for (const bad of ["", "0", "-5", "1e3", "abc", "1.0000001", "0x10"])
+      expect(parseUsd(bad)).toBeNull();
+  });
+});
+
+it("formats basis points, short hex and tiers", () => {
+  expect(bps(434)).toBe("4.34%");
+  expect(short("0x0B2B5b9e914C949C14b41ADC002338877f0AA623")).toBe("0x0B2B…A623");
+  expect(tierOf(56, 1n)).toBe("BB");
+  expect(tierOf(0, 0n)).toBe("unrated");
+});

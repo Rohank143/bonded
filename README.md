@@ -39,7 +39,7 @@ Everything below runs on your own machine. Steps 1–3 need no keys, accounts or
 
 | Tool | Version | Install |
 |---|---|---|
-| Node.js | 22 or newer | [nodejs.org](https://nodejs.org) |
+| Node.js | 22.12 or newer | [nodejs.org](https://nodejs.org) |
 | pnpm | 10 | `corepack enable` (ships with Node) |
 | Foundry (`forge`, `anvil`, `cast`) | latest | `curl -L https://foundry.paradigm.xyz \| bash`, then `foundryup` |
 
@@ -134,6 +134,16 @@ Design records: [ADR-004](docs/decisions/004-registry-disputes-bounties.md) (reg
 
 Long-running service setup and API requests: [docs/SERVICES.md](docs/SERVICES.md). Day 7 evidence and the Section 25 checklist: [docs/progress/DAY-07.md](docs/progress/DAY-07.md). The committed hosting configuration has not yet been deployed to Railway.
 
+## Day 8 web app
+
+`apps/web` is a Vite + React app for the demo flow on Robinhood Chain testnet: the live Arena feed, agent profiles, vaults (deposit, withdraw, buy cover), underwriting (pool deposit, withdrawal, test tUSDG) and the claims feed ([ADR-010](docs/decisions/010-web-app.md)).
+
+```bash
+pnpm --filter @bonded/web dev
+```
+
+It reads the chain directly and talks to the hosted API by default. Point it at a local API with `VITE_API_URL` (see `apps/web/.env.example`), and add the app's origin to the API's `WEB_ORIGINS`. Wallet actions need a browser wallet such as MetaMask on Robinhood Chain testnet. Starting a rating or getting a quote needs the operator token, which the page keeps in memory only.
+
 ## Synthetic Sentinel data
 
 `pnpm sentinel:synth` writes synthetic training rows for Sentinel (plan Section 10.3), seeded from the `sentinel-dataset.jsonl` a rating writes. Labels are chosen by the generator, never by the model. It needs `OPENROUTER_API_KEY` in `.env` and a spending cap:
@@ -143,4 +153,3 @@ pnpm sentinel:synth --seeds ratings/vulnerable-agent_scripted/sentinel-dataset.j
 ```
 
 Paths are relative to `apps/arena`. Output goes to `apps/arena/datasets/sentinel-synthetic.jsonl` (gitignored); rerun the same command to resume. `--exclude-classes A9,A10` keeps whole attack classes out so evaluation can hold them out. Results and limits of the first run: [docs/progress/DAY-08.md](docs/progress/DAY-08.md).
-
