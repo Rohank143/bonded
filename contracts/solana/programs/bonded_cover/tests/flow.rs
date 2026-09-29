@@ -23,6 +23,15 @@ const TOKEN: Pubkey = anchor_spl::token::ID;
 const SYSTEM: Pubkey = anchor_lang::system_program::ID;
 const INSTRUCTIONS: Pubkey = bonded_ed25519::INSTRUCTIONS_SYSVAR_ID;
 
+/// A built program, read when the tests run so building the IDL doesn't need the binaries.
+fn program_bytes(name: &str) -> Vec<u8> {
+    let path = format!(
+        "{}/../../target/deploy/{name}.so",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}; run `anchor build` first"))
+}
+
 fn pda(seeds: &[&[u8]], program: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(seeds, program).0
 }
@@ -105,21 +114,13 @@ struct World {
 impl World {
     fn new() -> Self {
         let mut svm = LiteSVM::new();
-        svm.add_program(
-            bonded_registry::ID,
-            include_bytes!("../../../target/deploy/bonded_registry.so"),
-        )
-        .unwrap();
-        svm.add_program(
-            bonded_vault::ID,
-            include_bytes!("../../../target/deploy/bonded_vault.so"),
-        )
-        .unwrap();
-        svm.add_program(
-            bonded_cover::ID,
-            include_bytes!("../../../target/deploy/bonded_cover.so"),
-        )
-        .unwrap();
+        for (id, name) in [
+            (bonded_registry::ID, "bonded_registry"),
+            (bonded_vault::ID, "bonded_vault"),
+            (bonded_cover::ID, "bonded_cover"),
+        ] {
+            svm.add_program(id, &program_bytes(name)).unwrap();
+        }
         let mut clock: anchor_lang::prelude::Clock = svm.get_sysvar();
         clock.unix_timestamp = NOW;
         svm.set_sysvar(&clock);
