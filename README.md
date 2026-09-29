@@ -154,6 +154,8 @@ pnpm sentinel:synth --seeds ratings/vulnerable-agent_scripted/sentinel-dataset.j
 
 Paths are relative to `apps/arena`. Output goes to `apps/arena/datasets/sentinel-synthetic.jsonl` (gitignored); rerun the same command to resume. By default it keeps the held-out attack classes, A7 and A10 (`SENTINEL_HELD_OUT_CLASSES`), out of the data, so Day 10's evaluation tests classes Sentinel never trained on; `--exclude-classes none` turns that off. Results and limits of the first run: [docs/progress/DAY-08.md](docs/progress/DAY-08.md).
 
+Fine-tuning Laya on it: `pnpm sentinel:dataset` turns real and synthetic rows into Laya's typed-decision format, with a held-out test split, and [services/sentinel/kaggle/README.md](services/sentinel/kaggle/README.md) walks through running Laya's own Kaggle notebook on it.
+
 ## Solana programs
 
 `contracts/solana` is an Anchor workspace with the Solana versions of the registry, mandate vault and cover (plan Section 7, [ADR-011](docs/decisions/011-solana-programs.md)). It needs Rust, the Solana CLI 3.x and Anchor 1.x.
@@ -163,4 +165,3 @@ pnpm solana:test
 ```
 
 This builds the three programs and their IDLs, then runs the LiteSVM tests against them: signed scores, the vault's breach checks, and the cover flow from bond to paid claim.
-
