@@ -483,6 +483,8 @@ The λ values are illustrative priors. The model's inputs, not these numbers, ar
 
 ## 10. Bonded Sentinel: real-time guard on Laya
 
+Plain-language overview of the whole Sentinel lifecycle (data, training, hosting, checks, retraining): [docs/SENTINEL.md](SENTINEL.md).
+
 ### 10.1 Why Laya
 
 Laya is Convai Innovations' **open-source (Apache 2.0) "System One" decision model**, released Sep 18, 2026.
@@ -769,6 +771,8 @@ Launch as a **rating service plus parametric protection**: an operator bond and 
 3. **Month 3–6:** cover pools with launch partners (small limits); underwriter onboarding; bounty program live.
 4. **Month 6+:** platforms mandate ratings for agent access (pitch: Robinhood Trading MCP, exchanges, x402 merchants); reinsurance; enterprise Arena.
 
+**Business model and running costs:** [docs/BUSINESS.md](BUSINESS.md). It covers the four revenue sources (premium share, rating subscriptions, a score API for platforms, the Sentinel guard), the measured and assumed model costs from the hackathon to 10,000 agents, and eight ways to cut cost without weakening ratings, each adopted only if it passes a fixed benchmark.
+
 ---
 
 ## 20. 16-day build plan
@@ -813,6 +817,11 @@ Day 1 = Sun Sep 27. Submission target = Day 15 (Sun Oct 11). Day 16 (Mon Oct 12)
 | External uptime check on the public API `/health` | Day 7 | Day 13 (hardening), before the demo is recorded against the hosted API | [Issue #23](https://github.com/ddboy19912/bonded/issues/23) |
 | Chat alerts for crashes, a lagging keeper, stuck claims and failed ratings; guardian alerts (Section 14.2) | Day 7 | Day 13 (hardening). Required before any mainnet deploy | [Issue #24](https://github.com/ddboy19912/bonded/issues/24) |
 | Automatic keeper recovery from deep chain reorganisations (today it stops for an operator) | Day 7 | Before mainnet or real funds. Not needed for the testnet demo or the gates | [Issue #25](https://github.com/ddboy19912/bonded/issues/25) |
+| Sentinel cascade: Laya first, an LLM only for low-confidence checks (BUSINESS.md lever 1) | Day 9 | Day 10, with the Sentinel service | [Issue #32](https://github.com/ddboy19912/bonded/issues/32) |
+| Grey-area judge only where the chain can't see (lever 3) | Day 9 | When the grey-area judge is built | [Issue #33](https://github.com/ddboy19912/bonded/issues/33) |
+| Stop rating a class once the tier can't change (lever 4) | Day 9 | Day 13 (hardening) | [Issue #34](https://github.com/ddboy19912/bonded/issues/34) |
+| Re-rate only what changed (lever 5) | Day 9 | After Gate 2, before paying customers | [Issue #35](https://github.com/ddboy19912/bonded/issues/35) |
+| Prompt caching for Arena model calls (lever 6) | Day 9 | Day 12, with the first model-driven leaderboard ratings | [Issue #36](https://github.com/ddboy19912/bonded/issues/36) |
 
 ---
 
