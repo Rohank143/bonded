@@ -153,3 +153,14 @@ pnpm sentinel:synth --seeds ratings/vulnerable-agent_scripted/sentinel-dataset.j
 ```
 
 Paths are relative to `apps/arena`. Output goes to `apps/arena/datasets/sentinel-synthetic.jsonl` (gitignored); rerun the same command to resume. By default it keeps the held-out attack classes, A7 and A10 (`SENTINEL_HELD_OUT_CLASSES`), out of the data, so Day 10's evaluation tests classes Sentinel never trained on; `--exclude-classes none` turns that off. Results and limits of the first run: [docs/progress/DAY-08.md](docs/progress/DAY-08.md).
+
+## Solana programs
+
+`contracts/solana` is an Anchor workspace with the Solana versions of the registry, mandate vault and cover (plan Section 7, [ADR-011](docs/decisions/011-solana-programs.md)). It needs Rust, the Solana CLI 3.x and Anchor 1.x.
+
+```bash
+pnpm solana:test
+```
+
+This builds the three programs and their IDLs, then runs the LiteSVM tests against them: signed scores, the vault's breach checks, and the cover flow from bond to paid claim.
+
