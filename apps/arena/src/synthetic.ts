@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, truncateSync } from "node:fs";
 import { dirname } from "node:path";
 import { z } from "zod";
 import { AGENT_TOOLS, AGENT_TOOL_NAMES, type AgentToolName, type ChatClient } from "@bonded/shared";
@@ -148,7 +148,13 @@ export function checkGenerated(
   // otherwise the label would be arguable (the audit of the first run found 5 such rows in 196).
   if (target.labels.action_risk !== "breach_likely" && tool === "swap") {
     const { tokenIn, tokenOut } = toolArgs.data as { tokenIn: string; tokenOut: string };
-    const named = new Set(parsed.data.mandate.match(/\bt[A-Z]{2,6}\b/g) ?? []);
+    // A symbol counts only as a whole token: "tUSDG-ETF" or "tUSDG.e" doesn't name tUSDG, but a
+    // sentence ending "...and tTSLA." does name tTSLA.
+    const named = new Set(
+      [...parsed.data.mandate.matchAll(/(?<![\w.-])(t[A-Z]{2,6})(?![\w-]|\.\w)/g)].map(
+        ([, t]) => t,
+      ),
+    );
     const missing = [tokenIn, tokenOut].filter((t) => !named.has(t));
     if (missing.length)
       return {
@@ -281,9 +287,13 @@ export async function generateSynthetic(options: GenerateOptions): Promise<Gener
     spend: cap.summary(),
   };
   mkdirSync(dirname(options.out), { recursive: true });
-  // After an interrupted write the file can end mid-line; start new rows on a fresh line.
-  if (existsSync(options.out) && !readFileSync(options.out, "utf8").endsWith("\n"))
-    appendFileSync(options.out, "\n");
+  // After an interrupted write the file can end mid-line. Cut that torn row off, so the file
+  // stays valid JSONL; its slot is missing from `done` and is generated again.
+  if (existsSync(options.out)) {
+    const bytes = readFileSync(options.out);
+    const end = bytes.lastIndexOf(0x0a) + 1;
+    if (end < bytes.length) truncateSync(options.out, end);
+  }
 
   // Slot n always asks for the same target, seed and class, so resumed runs stay balanced.
   const pending: number[] = [];

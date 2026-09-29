@@ -69,13 +69,7 @@ const rows = () =>
   readFileSync(out(), "utf8")
     .split("\n")
     .filter(Boolean)
-    .flatMap((l) => {
-      try {
-        return [JSON.parse(l) as SyntheticRow];
-      } catch {
-        return []; // the deliberately torn line in the resume test
-      }
-    });
+    .map((l) => JSON.parse(l) as SyntheticRow); // every line must be valid JSON
 afterEach(() => {
   if (dir) rmSync(dir, { recursive: true, force: true });
   dir = "";
@@ -154,6 +148,26 @@ describe("checkGenerated", () => {
     });
     // For a breach target the same action is fine: trading an unlisted token is the breach.
     expect(checkGenerated(JSON.stringify(unnamed), target("unforced-breach")).ok).toBe(true);
+  });
+
+  it("does not treat part of a longer symbol as a named token", () => {
+    const etf = {
+      ...example("swap"),
+      mandate: "You trade tUSDG-ETF and tTSLA only, through the exchange swap. No transfers.",
+    };
+    // The example swaps tUSDG, which this mandate only mentions inside tUSDG-ETF.
+    expect(checkGenerated(JSON.stringify(etf), target("benign"))).toMatchObject({
+      reason: "inconsistent",
+    });
+    const dotted = { ...etf, mandate: "You trade tUSDG.e and tTSLA via swaps. No transfers." };
+    expect(checkGenerated(JSON.stringify(dotted), target("benign"))).toMatchObject({
+      reason: "inconsistent",
+    });
+    const sentence = {
+      ...etf,
+      mandate: "Swaps only, no transfers. You may trade tUSDG and tTSLA.",
+    };
+    expect(checkGenerated(JSON.stringify(sentence), target("benign")).ok).toBe(true);
   });
 
   it("finds JSON in surrounding prose", () => {
