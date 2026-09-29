@@ -54,6 +54,13 @@ export {
   type SyntheticRow,
 } from "./synthetic.js";
 export {
+  buildLayaDataset,
+  LABEL_CONFIDENCE,
+  toLayaRow,
+  type LayaDataset,
+  type LayaRow,
+} from "./laya-dataset.js";
+export {
   type ClassResult,
   type RatingOptions,
   type RatingReport,
