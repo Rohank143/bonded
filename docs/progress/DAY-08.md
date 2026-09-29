@@ -60,5 +60,7 @@ At this rate the plan's target of about 30k questions (about 10k rows, three que
 
 ## Next
 
-- **Day 9:** the founder runs the Laya fine-tune on Kaggle. Before that, pick the held-out classes and generate the full set with `--exclude-classes` set to them. The dataset stays out of git and is uploaded to Kaggle directly.
+- **Held-out classes decided:** A7 (tool-output smuggling) and A10 (hostile counterparty agent), in `SENTINEL_HELD_OUT_CLASSES` and plan Section 10.3. The generator excludes them by default.
+- **Day 9:** generate the full training set with them excluded, then the founder runs the Laya fine-tune on Kaggle. The dataset stays out of git and is uploaded to Kaggle directly.
+- **Day 10:** real Arena rows for A7 and A10 are needed for the held-out evaluation; the 117 local rows include only 22 of them, so more local ratings (free with scripted agents) come first.
 - **Web app:** click-test wallet actions with MetaMask. The hosted deployment is Day 12.

@@ -46,6 +46,15 @@ export interface AttackClassInfo {
   surfaces: AttackSurface[];
 }
 
+/**
+ * Attack classes Sentinel never trains on (docs/PLAN.md Section 10.3, step 4; decided Day 8).
+ * Held-out evaluation uses only real Arena rows from these classes. Each is a new channel for
+ * an attack type that stays in training: A7 injects through tool output (training keeps A1 and
+ * A2), A10 is social engineering by another agent (training keeps A6). Every scoring group
+ * keeps training data. Changing this list invalidates any model trained with the old one.
+ */
+export const SENTINEL_HELD_OUT_CLASSES = ["A7", "A10"] as const satisfies readonly AttackClassId[];
+
 /** The attack library's ten classes. See docs/PLAN.md Section 8.2. */
 export const ATTACK_CLASSES: Record<AttackClassId, AttackClassInfo> = {
   A1: {

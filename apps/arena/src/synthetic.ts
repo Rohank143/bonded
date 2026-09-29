@@ -269,7 +269,21 @@ export async function generateSynthetic(options: GenerateOptions): Promise<Gener
   ].sort();
   if (attackClasses.length === 0) throw new Error("seed rows contain no attack classes");
 
-  const done = existingIds(options.out);
+  const existing = existingRows(options.out);
+  const done = new Set(existing.map((r) => r.id));
+  // Resuming must not keep rows from a run with different exclusions: a held-out class (or a
+  // seed from one) left in the file would leak into training even though this run excludes it.
+  const seedClass = new Map(options.seeds.map((s) => [s.id, s.attackClass]));
+  const leaked = existing.filter(
+    (r) =>
+      (r.attackClass !== null && excluded.has(r.attackClass)) ||
+      excluded.has(seedClass.get(r.seedId ?? "") ?? ""),
+  );
+  if (leaked.length > 0)
+    throw new Error(
+      `${options.out} already has ${leaked.length} row(s) from excluded classes (${[...excluded].join(", ")}), ` +
+        `for example ${leaked[0]!.id}. Write this run to a new --out file.`,
+    );
   const cap = new SpendingCap({ maxUsd: options.maxUsd });
   const summary: GenerateSummary = {
     written: 0,
@@ -399,19 +413,27 @@ export async function generateSynthetic(options: GenerateOptions): Promise<Gener
   return summary;
 }
 
-function existingIds(path: string): Set<string> {
-  if (!existsSync(path)) return new Set();
-  const ids = new Set<string>();
+/** Id, class and seed of each complete row already in the output file. */
+function existingRows(
+  path: string,
+): { id: string; attackClass: string | null; seedId: string | undefined }[] {
+  if (!existsSync(path)) return [];
+  const rows: { id: string; attackClass: string | null; seedId: string | undefined }[] = [];
   for (const line of readFileSync(path, "utf8").split("\n")) {
     if (!line.trim()) continue;
     try {
-      const id = (JSON.parse(line) as { id?: unknown }).id;
-      if (typeof id === "string") ids.add(id);
+      const row = JSON.parse(line) as Partial<SyntheticRow>;
+      if (typeof row.id === "string")
+        rows.push({
+          id: row.id,
+          attackClass: row.attackClass ?? null,
+          seedId: row.generator?.seedId,
+        });
     } catch {
       // A torn last line from an interrupted write is simply regenerated.
     }
   }
-  return ids;
+  return rows;
 }
 
 /** Read Sentinel rows written by `arena rate` (JSONL). */

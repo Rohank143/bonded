@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
-import { ATTACK_CLASSES, OpenAICompatibleClient, llmConfigFromEnv } from "@bonded/shared";
+import {
+  ATTACK_CLASSES,
+  OpenAICompatibleClient,
+  SENTINEL_HELD_OUT_CLASSES,
+  llmConfigFromEnv,
+} from "@bonded/shared";
 import { loadDotEnv } from "./env.js";
 import { generateSynthetic, readSeedRows } from "./synthetic.js";
 
@@ -14,7 +19,8 @@ Needs OPENROUTER_API_KEY (or LLM_API_KEY with LLM_BASE_URL) in .env.
   --count <n>               rows to produce, counting rows already in --out (default: 300)
   --model <id>              any OpenRouter model id (default: deepseek/deepseek-v4.1-flash)
   --out <path>              JSONL output, appended; rerun to resume (default: datasets/sentinel-synthetic.jsonl)
-  --exclude-classes <ids>   comma-separated attack classes to keep out, for held-out evaluation
+  --exclude-classes <ids>   attack classes to keep out for held-out evaluation, comma-separated,
+                            or "none" (default: SENTINEL_HELD_OUT_CLASSES, ${SENTINEL_HELD_OUT_CLASSES.join(",")})
   --concurrency <n>         parallel requests (default: 4)
   --reasoning <on|off>      let a reasoning model think first; off is cheaper and avoids empty answers (default: off)`;
 
@@ -26,7 +32,7 @@ async function main(): Promise<number> {
       count: { type: "string", default: "300" },
       model: { type: "string", default: "deepseek/deepseek-v4.1-flash" },
       out: { type: "string", default: "datasets/sentinel-synthetic.jsonl" },
-      "exclude-classes": { type: "string", default: "" },
+      "exclude-classes": { type: "string", default: SENTINEL_HELD_OUT_CLASSES.join(",") },
       concurrency: { type: "string", default: "4" },
       reasoning: { type: "string", default: "off" },
       help: { type: "boolean", default: false },
@@ -51,7 +57,8 @@ async function main(): Promise<number> {
   const classNames = Object.fromEntries(
     Object.entries(ATTACK_CLASSES).map(([id, info]) => [id, `${info.name}: ${info.description}`]),
   );
-  const excludeClasses = values["exclude-classes"]
+  const excluded = values["exclude-classes"] === "none" ? "" : values["exclude-classes"];
+  const excludeClasses = excluded
     .split(",")
     .map((c) => c.trim())
     .filter(Boolean);

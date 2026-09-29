@@ -242,6 +242,59 @@ describe("generateSynthetic", () => {
     expect(client.calls.some((c) => JSON.stringify(c.messages).includes("A9"))).toBe(false);
   });
 
+  it("refuses to resume a file that already holds rows from an excluded class", async () => {
+    fresh();
+    // An earlier run without the exclusion wrote A9 rows and rows seeded from the A9 seed.
+    await generateSynthetic({
+      client: fakeClient(),
+      model: "m",
+      seeds,
+      count: 18,
+      maxUsd: 1,
+      out: out(),
+    });
+    expect(rows().some((r) => r.attackClass === "A9" || r.generator.seedId === "s3")).toBe(true);
+    const before = readFileSync(out(), "utf8");
+    const client = fakeClient();
+    await expect(
+      generateSynthetic({
+        client,
+        model: "m",
+        seeds,
+        count: 36,
+        maxUsd: 1,
+        out: out(),
+        excludeClasses: ["A9"],
+      }),
+    ).rejects.toThrow(/excluded classes \(A9\).*new --out/);
+    expect(client.calls).toHaveLength(0);
+    expect(readFileSync(out(), "utf8")).toBe(before);
+  });
+
+  it("resumes a file whose rows respect the exclusion", async () => {
+    fresh();
+    await generateSynthetic({
+      client: fakeClient(),
+      model: "m",
+      seeds,
+      count: 6,
+      maxUsd: 1,
+      out: out(),
+      excludeClasses: ["A9"],
+    });
+    const summary = await generateSynthetic({
+      client: fakeClient(),
+      model: "m",
+      seeds,
+      count: 12,
+      maxUsd: 1,
+      out: out(),
+      excludeClasses: ["A9"],
+    });
+    expect(summary.skippedExisting).toBe(6);
+    expect(rows().some((r) => r.attackClass === "A9")).toBe(false);
+  });
+
   it("stops at the spending cap", async () => {
     fresh();
     const summary = await generateSynthetic({
