@@ -483,6 +483,8 @@ The λ values are illustrative priors. The model's inputs, not these numbers, ar
 
 ## 10. Bonded Sentinel: real-time guard on Laya
 
+Plain-language overview of the whole Sentinel lifecycle (data, training, hosting, checks, retraining): [docs/SENTINEL.md](SENTINEL.md).
+
 ### 10.1 Why Laya
 
 Laya is Convai Innovations' **open-source (Apache 2.0) "System One" decision model**, released Sep 18, 2026.
