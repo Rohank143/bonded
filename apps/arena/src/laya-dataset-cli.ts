@@ -45,6 +45,9 @@ function main(): number {
     `train ${dataset.train.length} rows, test ${dataset.test.length} rows -> ${values.out}`,
   );
   console.log(`held out: ${dataset.manifest.heldOutClasses.join(", ")}`);
+  console.log(
+    `left out of training: ${dataset.manifest.droppedSeededFromTest} synthetic row(s) seeded from test episodes`,
+  );
   console.log(JSON.stringify(dataset.manifest.labels, null, 2));
   return 0;
 }

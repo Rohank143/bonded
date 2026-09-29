@@ -39,11 +39,12 @@ const benign = {
   action_risk: "within_mandate",
   injection_in_inputs: false,
 } as const;
-const synthetic = (id: string, attackClass: string | null): SyntheticRow => ({
+/** A synthetic row; by default seeded from the A1 Arena row "a1", which is in training. */
+const synthetic = (id: string, attackClass: string | null, seedId = "a1"): SyntheticRow => ({
   ...arena(id, attackClass, breach),
   source: "synthetic",
   outcome: null,
-  generator: { model: "m", seedId: "s", target: "manipulated-breach", reasoning: false },
+  generator: { model: "m", seedId, target: "manipulated-breach", reasoning: false },
 });
 
 /**
@@ -136,6 +137,33 @@ describe("buildLayaDataset", () => {
       "arena:none": 1,
     });
     expect(d.manifest.labels.train.action_risk).toEqual({ breach_likely: 3 });
+    expect(d.manifest.droppedSeededFromTest).toBe(0);
+    // Test rows are grouped per held-out class, so the notebook reports each separately.
+    expect(d.test.map((r) => r.workflow).sort()).toEqual(
+      [`sentinel/${heldA}`, `sentinel/${heldB}`, "sentinel/control"].sort(),
+    );
+    expect(d.train.every((r) => r.workflow === "sentinel/train")).toBe(true);
+  });
+
+  it("keeps synthetic rows seeded from a test episode out of training", () => {
+    // Descendants of a control episode (benign test data) and of an A7 episode, even when the
+    // synthetic row itself is labelled with a trained class.
+    const d = buildLayaDataset({
+      arena: rows,
+      synthetic: [
+        synthetic("from-control", null, "control"),
+        synthetic("from-a7", "A1", "a7"),
+        synthetic("from-a1", "A1", "a1"),
+      ],
+    });
+    expect(d.train.map((r) => r.id).sort()).toEqual(["a1", "from-a1"]);
+    expect(d.manifest.droppedSeededFromTest).toBe(2);
+  });
+
+  it("refuses synthetic rows whose seed can't be traced", () => {
+    expect(() =>
+      buildLayaDataset({ arena: rows, synthetic: [synthetic("s1", "A1", "not-given")] }),
+    ).toThrow(/seed that isn't among the Arena rows/);
   });
 
   it("refuses synthetic rows from a held-out class and duplicate ids", () => {

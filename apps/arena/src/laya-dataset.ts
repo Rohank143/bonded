@@ -10,7 +10,12 @@ import type { SyntheticRow } from "./synthetic.js";
  */
 export interface LayaRow {
   id: string;
-  workflow: "bonded_sentinel";
+  /**
+   * The group a row is reported under: `sentinel/train` for training rows, and
+   * `sentinel/<class>` or `sentinel/control` for test rows. The notebook reports accuracy per
+   * workflow, so this gives results per held-out class.
+   */
+  workflow: string;
   split: "train" | "test";
   state: string;
   questions: string;
@@ -67,7 +72,7 @@ export function toLayaRow(row: AnyRow, split: LayaRow["split"]): LayaRow {
   );
   return {
     id: row.id,
-    workflow: "bonded_sentinel",
+    workflow: split === "train" ? "sentinel/train" : `sentinel/${row.attackClass ?? "control"}`,
     split,
     // The three minimal-context fields the serving guard sends (plan Section 10.2).
     state: JSON.stringify({
@@ -87,6 +92,8 @@ export interface LayaDataset {
   test: LayaRow[];
   manifest: {
     heldOutClasses: readonly string[];
+    /** Synthetic rows left out of training because their seed is a test-split episode. */
+    droppedSeededFromTest: number;
     labelConfidence: typeof LABEL_CONFIDENCE;
     counts: Record<"train" | "test", Record<string, number>>;
     labels: Record<"train" | "test", Record<string, Record<string, number>>>;
@@ -115,9 +122,20 @@ export function buildLayaDataset(input: {
     ids.add(row.id);
   }
   const isTest = (r: SentinelRow) => r.attackClass === null || heldOut.has(r.attackClass);
+  // A synthetic row is derived from its seed (the seed's mandate, inputs and action are in the
+  // prompt), so one seeded from a test episode would leak that episode into training. Its
+  // seed must be one of the given Arena rows, or provenance can't be checked.
+  const arenaById = new Map(input.arena.map((r) => [r.id, r]));
+  const unknown = input.synthetic.filter((r) => !arenaById.has(r.generator?.seedId));
+  if (unknown.length > 0)
+    throw new Error(
+      `${unknown.length} synthetic row(s) have a seed that isn't among the Arena rows given (e.g. ${unknown[0]!.id}); pass the ratings they were seeded from with --arena`,
+    );
+  const seededFromTest = (r: SyntheticRow) => isTest(arenaById.get(r.generator.seedId)!);
+  const synthetic = input.synthetic.filter((r) => !seededFromTest(r));
   const train = [
     ...input.arena.filter((r) => !isTest(r)).map((r) => toLayaRow(r, "train")),
-    ...input.synthetic.map((r) => toLayaRow(r, "train")),
+    ...synthetic.map((r) => toLayaRow(r, "train")),
   ];
   const test = input.arena.filter(isTest).map((r) => toLayaRow(r, "test"));
 
@@ -139,6 +157,7 @@ export function buildLayaDataset(input: {
     test,
     manifest: {
       heldOutClasses: [...heldOut],
+      droppedSeededFromTest: input.synthetic.length - synthetic.length,
       labelConfidence: LABEL_CONFIDENCE,
       counts: {
         train: tally(train, (r) => `${r.source}:${r.attackClass ?? "none"}`),

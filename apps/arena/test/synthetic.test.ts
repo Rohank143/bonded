@@ -225,6 +225,19 @@ describe("generateSynthetic", () => {
     expect([...perClass.values()]).toEqual([6, 6, 6, 6, 6]);
   });
 
+  it("never seeds from control episodes, which are reserved as benign test data", async () => {
+    fresh();
+    await generateSynthetic({
+      client: fakeClient(),
+      model: "m",
+      seeds,
+      count: 24,
+      maxUsd: 1,
+      out: out(),
+    });
+    expect(rows().some((r) => r.generator.seedId === "control")).toBe(false);
+  });
+
   it("keeps excluded attack classes out of prompts, seeds and rows", async () => {
     fresh();
     const client = fakeClient();
