@@ -1,0 +1,10 @@
+[package]
+name = "bonded_ed25519"
+version = "0.1.0"
+edition = "2021"
+description = "Checks that a transaction carries an Ed25519 signature by an expected key over expected bytes"
+
+[dependencies]
+anchor-lang = { workspace = true }
+solana-instructions-sysvar = { workspace = true }
+solana-sdk-ids = { workspace = true }

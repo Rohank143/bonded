@@ -1,0 +1,18 @@
+[toolchain]
+package_manager = "pnpm"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+bonded_registry = "7hfPMrd4A264TfgTivV1QLmps9N5ZCf4r64csh8hfuYy"
+bonded_vault = "8hNVDFF7aU2BJa4avnv2X7ziYEmguCaCHTZYBKo2CzFx"
+bonded_cover = "Dcrwfd272QQxXS4oEmHPSQdGWRZ2BMRSMb3Vi7jj6Y1X"
+
+[provider]
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "cargo test"
