@@ -23,14 +23,21 @@ The data stays out of git.
 
 ## 2. Upload it to Kaggle
 
-Kaggle → **Datasets → New Dataset**. Upload the three files, name it `bonded-sentinel`, and keep it **private**. Its files then appear at `/kaggle/input/bonded-sentinel/`. If Kaggle gives it a different slug, use that path below.
+Kaggle → **Create → New Dataset**. Upload the three files, name it `bonded-sentinel`, and keep it **private**.
+
+**Find its exact path.** Once it's attached to the notebook (step 3), click the copy icon next to it in the notebook's **Input** panel. Newer accounts mount datasets at `/kaggle/input/datasets/<your-kaggle-username>/bonded-sentinel/`; older ones at `/kaggle/input/bonded-sentinel/`. The code below uses the short form: wherever it says `/kaggle/input/bonded-sentinel/`, use the path you copied.
 
 ## 3. Open Laya's notebook in Kaggle
 
+Before you start:
+- **Kaggle:** verify your phone number (Settings), or the GPU and Internet options stay unavailable.
+- **Hugging Face:** create an account if needed. Your username is in your profile address (`huggingface.co/<username>`). Then **Settings → Access Tokens → Create new token**, type **Write**, and copy it at once, because it's shown only once.
+
+Then:
 1. Kaggle → **Code → New Notebook → File → Import Notebook**, and paste the pinned GitHub URL above.
-2. **Settings:** Accelerator **GPU T4 ×2**, Internet **on** (it installs packages and downloads the base model).
-3. **Add Input:** your `bonded-sentinel` dataset.
-4. **Add-ons → Secrets:** add `HF_TOKEN`, a Hugging Face token with write access.
+2. **Settings** (right-hand panel, Session options): Accelerator **GPU T4 ×2**, Internet **on** (it installs packages and downloads the base model). Leave Environment on "Pin to original environment".
+3. **Input** (top of the right-hand panel): **+ Add Input** → your `bonded-sentinel` dataset. Copy its path from the copy icon (step 2).
+4. **Add-ons → Secrets → + Add Secret:** label `HF_TOKEN`, value the write token, and tick the notebook's checkbox. Only the upload cell reads it; a warning about "unauthenticated requests" while the public base model downloads is harmless.
 
 ## 4. Make six edits
 
@@ -148,7 +155,21 @@ Never push to `convaiinnovations/...`.
 
 With these, the report has one entry per test group (`sentinel/A7`, `sentinel/A10`, `sentinel/control`) and the correct decision count.
 
-## 5. Run all cells
+## 5. Run it as a saved version
+
+Run it with **Save Version → Save & Run All (Commit)**, not Run All in the editor:
+- **Version name:** for example `sentinel-v1`.
+- **Advanced Settings:** check it runs with the GPU.
+- Then stop the idle editor session with the power icon, so it doesn't use GPU quota.
+
+A committed version runs in the background for up to 12 hours, and you can close the browser. The editor's **Draft Session** is interactive: when the connection dropped during the first attempt, Kaggle ended it after about two and a half epochs and the training was lost.
+
+Things seen on the first run:
+- **Saving edits:** Kaggle saves edits automatically. Cmd+S opens the browser's own "Save page" dialog instead; cancel it. To make Kaggle save, type a space in a cell and delete it, then wait for "Draft saved".
+- **"ConcurrencyViolation … Sequence number must match Draft record":** the editor is behind Kaggle's saved copy, for example after a dropped connection or with the notebook open in two tabs. Back up with **File → Download notebook**, close other tabs, reload, check the edits are still there (re-import the download if not), and save the version again.
+- **Checking it loaded our data:** the training output reports about 27,000 train items (three per case, less 400 kept for calibration). The original dataset would show about 6,000.
+- **Harmless messages:** cell 6 prints "Downloading LocalLLaMA/typed-decisions" before loading whatever the next line loads. The `OMP_NUM_THREADS`, `find_unused_parameters` and `lr_scheduler.step()` warnings come from the upstream code.
+- **Time:** at about 27,000 items, training runs roughly 1,690 steps per epoch on each GPU, 4 epochs.
 
 When it finishes, check that the model card on your Hugging Face repo describes Sentinel (edit e) and that the report's `n_decisions` is three times `n_cases` (edit f). Then download `benchmark_report.json` (cell 18 writes it to the output folder) and add it to the repository under `docs/progress/evidence/`. Note the Hugging Face repo name and commit.
 
@@ -156,4 +177,4 @@ When it finishes, check that the model card on your Hugging Face repo describes 
 
 - The notebook's report on our `test.jsonl` is the first held-out number: real episodes from attack classes Sentinel never trained on. It is small (22 held-out rows from one scripted agent today, plus controls), so treat it as a smoke test.
 - The proper evaluation is Day 10: more real held-out episodes, TPR at 1% FPR, calibration and latency (Section 10.3, step 4).
-- Not verified here: this guide was written from the notebook's source and the reference dataset's schema, and a test mirrors the notebook's target computation. The notebook itself hasn't been run on our data. If a cell fails, send its error.
+- How this guide was checked: it was written from the notebook's source and the reference dataset's schema, and a test mirrors the notebook's target computation. The first run on our data (September 29) loaded it and trained into the third epoch before that session was lost; the committed rerun's results go under `docs/progress/evidence/` when it finishes. If a cell fails, send its error.
