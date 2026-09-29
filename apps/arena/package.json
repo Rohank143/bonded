@@ -20,7 +20,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src test",
     "test": "vitest run",
-    "arena": "node dist/cli.js"
+    "arena": "node dist/cli.js",
+    "synth": "node dist/synth-cli.js"
   },
   "dependencies": {
     "@bonded/demo-agents": "workspace:*",

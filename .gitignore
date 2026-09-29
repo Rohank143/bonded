@@ -28,3 +28,5 @@ ratings/
 
 # Local Gate 1 evidence; reviewed testnet evidence is copied to docs/progress/evidence.
 artifacts/
+# Synthetic Sentinel training data (docs/SERVICES.md, Sentinel data)
+datasets/
