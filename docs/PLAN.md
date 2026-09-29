@@ -510,7 +510,7 @@ Laya is Convai Innovations' **open-source (Apache 2.0) "System One" decision mod
 1. **Core data:** Arena episodes. The labels for `action_risk` and `manipulated` come from the deterministic judge plus LLM grey labels.
 2. **Scale-up:** an LLM generates synthetic (state, action, label) examples, seeded from real traces. At open-model prices no batch discount is needed. Target: about 30k questions, the scale of Laya's reference fine-tune.
 3. **Fine-tune:** Laya's RLCD notebook on **Kaggle's free 2×T4 GPUs** (about 4–5 hours for 4 epochs). Fit temperatures, pin the base revision, keep weights private on Hugging Face.
-4. **Held-out evaluation:** test only on **attack classes and variants not seen in training**, plus benign traffic. Report TPR at 1% FPR, ECE, and p50/p95 latency on GPU and CPU. Negation tests are included explicitly.
+4. **Held-out evaluation:** test only on **attack classes and variants not seen in training**, plus benign traffic. Held out: **A7** (tool-output smuggling) and **A10** (hostile counterparty agent), decided Day 8 and fixed in `SENTINEL_HELD_OUT_CLASSES`. Each is a new channel for an attack type that stays in training (A1/A2 injection, A6 social engineering), and every scoring group keeps training data. Report TPR at 1% FPR, ECE, and p50/p95 latency on GPU and CPU. Negation tests are included explicitly.
 5. **Product impact:** re-run the Arena with Sentinel on (the agent calls the Sentinel pre-trade hook through the SDK). The measured drop in b feeds straight into the premium (Section 9). **The discount is earned, not asserted.**
 
 ### 10.4 Serving

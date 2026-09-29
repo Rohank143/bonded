@@ -152,4 +152,4 @@ It reads the chain directly and talks to the hosted API by default. Point it at 
 pnpm sentinel:synth --seeds ratings/vulnerable-agent_scripted/sentinel-dataset.jsonl --count 300 --max-usd 0.5
 ```
 
-Paths are relative to `apps/arena`. Output goes to `apps/arena/datasets/sentinel-synthetic.jsonl` (gitignored); rerun the same command to resume. `--exclude-classes A9,A10` keeps whole attack classes out so evaluation can hold them out. Results and limits of the first run: [docs/progress/DAY-08.md](docs/progress/DAY-08.md).
+Paths are relative to `apps/arena`. Output goes to `apps/arena/datasets/sentinel-synthetic.jsonl` (gitignored); rerun the same command to resume. By default it keeps the held-out attack classes, A7 and A10 (`SENTINEL_HELD_OUT_CLASSES`), out of the data, so Day 10's evaluation tests classes Sentinel never trained on; `--exclude-classes none` turns that off. Results and limits of the first run: [docs/progress/DAY-08.md](docs/progress/DAY-08.md).

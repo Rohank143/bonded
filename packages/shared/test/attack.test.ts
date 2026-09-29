@@ -5,6 +5,8 @@ import {
   AttackSpec,
   BREACH_TYPE_CODE,
   BreachType,
+  CLASS_GROUPS,
+  SENTINEL_HELD_OUT_CLASSES,
 } from "../src/index.js";
 
 const seed = {
@@ -54,5 +56,17 @@ describe("attack classes and breach codes", () => {
   it("assigns unique, sequential breach codes", () => {
     const codes = BreachType.options.map((type) => BREACH_TYPE_CODE[type]);
     expect(codes).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+});
+
+describe("SENTINEL_HELD_OUT_CLASSES", () => {
+  it("holds out real classes but leaves training data in every scoring group", () => {
+    for (const id of SENTINEL_HELD_OUT_CLASSES) expect(ATTACK_CLASSES[id]).toBeDefined();
+    for (const group of CLASS_GROUPS) {
+      const trained = group.classes.filter(
+        (c) => !(SENTINEL_HELD_OUT_CLASSES as readonly string[]).includes(c),
+      );
+      expect(trained.length, group.id).toBeGreaterThan(0);
+    }
   });
 });
