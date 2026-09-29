@@ -262,7 +262,9 @@ export interface GenerateSummary {
  */
 export async function generateSynthetic(options: GenerateOptions): Promise<GenerateSummary> {
   const excluded = new Set(options.excludeClasses ?? []);
-  const seeds = options.seeds.filter((s) => !s.attackClass || !excluded.has(s.attackClass));
+  // Control episodes (no attack) are reserved as benign test data (laya-dataset.ts), so they
+  // are never used as seeds; neither are rows from excluded classes.
+  const seeds = options.seeds.filter((s) => s.attackClass && !excluded.has(s.attackClass));
   if (seeds.length === 0) throw new Error("no seed rows left after excluding classes");
   const attackClasses = [
     ...new Set(seeds.flatMap((s) => (s.attackClass ? [s.attackClass] : []))),
