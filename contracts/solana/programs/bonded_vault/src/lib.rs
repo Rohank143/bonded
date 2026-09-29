@@ -8,7 +8,8 @@
 //! - T1 target: the called program must be on the vault's allowlist.
 //! - T1 transfer: an SPL `Transfer`/`TransferChecked` must go to a token account the vault owns.
 //! - T1 approval: `Approve`, `ApproveChecked` and `SetAuthority` are never allowed.
-//! - T2 limit: the base-asset outflow of one call must not exceed the per-call limit.
+//! - T2 limit: the net base-asset outflow of one call (moves between the vault's own accounts
+//!   do not count) must not exceed the per-call limit.
 //!
 //! T3 (asset) needs an on-chain price and is not implemented on Solana yet.
 
@@ -173,7 +174,8 @@ pub mod bonded_vault {
             }
         }
 
-        let before = ctx.accounts.base_account.amount;
+        let base_info = ctx.accounts.base_account.to_account_info();
+        let before = base_holdings(&vault_key, &base_info, accounts);
         let metas = accounts
             .iter()
             .map(|a| AccountMeta {
@@ -195,8 +197,7 @@ pub mod bonded_vault {
             &infos,
             &[&seeds[..]],
         )?;
-        ctx.accounts.base_account.reload()?;
-        let after = ctx.accounts.base_account.amount;
+        let after = base_holdings(&vault_key, &base_info, accounts);
         let outflow = before.saturating_sub(after);
 
         let breach = pre.or_else(|| {
@@ -262,6 +263,39 @@ pub fn classify(
         Some(account) if owned_by_vault(account, target, vault) => None,
         _ => Some(BreachType::UnauthorizedTransfer),
     }
+}
+
+/// Total base asset in the base account and every other base-asset token account the vault owns
+/// among the call's accounts. Outflow is measured on this total, so moving funds between the
+/// vault's own accounts is not a loss.
+fn base_holdings(vault: &Pubkey, base: &AccountInfo, accounts: &[AccountInfo]) -> u64 {
+    let mut seen = vec![base.key()];
+    let mut total = token_amount(base).unwrap_or(0);
+    for account in accounts {
+        if seen.contains(account.key) {
+            continue;
+        }
+        seen.push(account.key());
+        if account.owner != base.owner {
+            continue;
+        }
+        let Ok(data) = account.try_borrow_data() else {
+            continue;
+        };
+        let Ok(base_data) = base.try_borrow_data() else {
+            continue;
+        };
+        // Same mint (bytes 0..32) and owned by the vault (bytes 32..64) as the base account.
+        if data.len() >= 72 && data[..32] == base_data[..32] && data[32..64] == vault.to_bytes() {
+            total = total.saturating_add(u64::from_le_bytes(data[64..72].try_into().unwrap()));
+        }
+    }
+    total
+}
+
+fn token_amount(account: &AccountInfo) -> Option<u64> {
+    let data = account.try_borrow_data().ok()?;
+    (data.len() >= 72).then(|| u64::from_le_bytes(data[64..72].try_into().unwrap()))
 }
 
 /// A token account of `token_program` whose owner field is the vault.
@@ -396,6 +430,11 @@ pub struct Initialize<'info> {
     pub config: Account<'info, Config>,
     #[account(mut)]
     pub admin: Signer<'info>,
+    /// This program, so its upgrade authority can be checked: only the deployer may configure it.
+    #[account(constraint = program.programdata_address()? == Some(program_data.key()))]
+    pub program: Program<'info, crate::program::BondedVault>,
+    #[account(constraint = program_data.upgrade_authority_address == Some(admin.key()) @ VaultError::NotDeployer)]
+    pub program_data: Account<'info, ProgramData>,
     pub system_program: Program<'info, System>,
 }
 
@@ -525,6 +564,8 @@ pub struct AgentRotated {
 pub enum VaultError {
     #[msg("the vault is frozen")]
     Frozen,
+    #[msg("only the program's upgrade authority can initialize it")]
+    NotDeployer,
     #[msg("only the vault's agent can execute")]
     NotAgent,
     #[msg("the breach log is full")]

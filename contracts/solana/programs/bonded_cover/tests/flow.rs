@@ -32,6 +32,27 @@ fn program_bytes(name: &str) -> Vec<u8> {
     std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}; run `anchor build` first"))
 }
 
+/// Make `authority` the upgrade authority of a program loaded by `add_program` (which leaves it
+/// unset), the way a real deployment has one.
+fn set_upgrade_authority(svm: &mut LiteSVM, program: &Pubkey, authority: &Pubkey) {
+    let programdata = pda(
+        &[program.as_ref()],
+        &anchor_lang::solana_program::bpf_loader_upgradeable::ID,
+    );
+    let mut acct = svm.get_account(&programdata).expect("programdata account");
+    // ProgramData: 4-byte tag, 8-byte slot, then Option<Pubkey> (1-byte flag + 32 bytes).
+    acct.data[12] = 1;
+    acct.data[13..45].copy_from_slice(authority.as_ref());
+    svm.set_account(programdata, acct).unwrap();
+}
+
+fn programdata_of(program: &Pubkey) -> Pubkey {
+    pda(
+        &[program.as_ref()],
+        &anchor_lang::solana_program::bpf_loader_upgradeable::ID,
+    )
+}
+
 fn pda(seeds: &[&[u8]], program: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(seeds, program).0
 }
@@ -131,6 +152,9 @@ impl World {
             Keypair::new(),
             Keypair::new(),
         );
+        for id in [bonded_registry::ID, bonded_vault::ID, bonded_cover::ID] {
+            set_upgrade_authority(&mut svm, &id, &admin.pubkey());
+        }
         for k in [&admin, &operator, &agent, &underwriter] {
             svm.airdrop(&k.pubkey(), 10_000_000_000).unwrap();
         }
@@ -187,6 +211,8 @@ impl World {
                 bonded_registry::accounts::Initialize {
                     config: registry_config,
                     admin: admin.pubkey(),
+                    program: bonded_registry::ID,
+                    program_data: programdata_of(&bonded_registry::ID),
                     system_program: SYSTEM,
                 }
                 .to_account_metas(None),
@@ -200,6 +226,8 @@ impl World {
                 bonded_vault::accounts::Initialize {
                     config: vault_config,
                     admin: admin.pubkey(),
+                    program: bonded_vault::ID,
+                    program_data: programdata_of(&bonded_vault::ID),
                     system_program: SYSTEM,
                 }
                 .to_account_metas(None),
@@ -213,6 +241,8 @@ impl World {
                     share_mint: pda(&[b"shares"], &bonded_cover::ID),
                     base_mint: self.mint,
                     admin: admin.pubkey(),
+                    program: bonded_cover::ID,
+                    program_data: programdata_of(&bonded_cover::ID),
                     token_program: TOKEN,
                     system_program: SYSTEM,
                 }
@@ -652,8 +682,8 @@ fn programs_off_the_allowlist_and_oversized_calls_are_breaches() {
         BreachType::UnauthorizedTarget
     );
 
-    // Moving 6,000 into another account the vault owns is allowed as a destination, but it is
-    // over the 5,000 per-call limit.
+    // Moving funds between the vault's own accounts is allowed and is not a loss, however large:
+    // otherwise it could be claimed and then moved back.
     let (vault, base) = w.create_vault(false, vec![TOKEN], 4);
     let admin = w.admin.insecure_clone();
     let second = CreateAccount::new(&mut w.svm, &admin, &w.mint)
@@ -670,6 +700,99 @@ fn programs_off_the_allowlist_and_oversized_calls_are_breaches() {
     let big = w.transfer_out(vault, base, second, 6_000 * USD);
     w.execute(vault, base, big).unwrap();
     let state: bonded_vault::Vault = account(&w.svm, &vault);
+    assert!(
+        state.breaches.is_empty() && !state.frozen,
+        "a move between its own accounts is not a loss"
+    );
+
+    // Value that really leaves the vault is: burning 6,000 is over the 5,000 per-call limit.
+    let burn = spl_token_interface::instruction::burn_checked(
+        &TOKEN,
+        &base,
+        &w.mint,
+        &vault,
+        &[],
+        6_000 * USD,
+        6,
+    )
+    .unwrap();
+    w.execute(vault, base, burn).unwrap();
+    let state: bonded_vault::Vault = account(&w.svm, &vault);
     assert_eq!(state.breaches[0].breach_type, BreachType::Limit);
+    assert_eq!(state.breaches[0].loss, 6_000 * USD);
     assert!(state.frozen);
+}
+
+#[test]
+fn only_the_upgrade_authority_can_initialize_a_program() {
+    let mut svm = LiteSVM::new();
+    svm.add_program(bonded_registry::ID, &program_bytes("bonded_registry"))
+        .unwrap();
+    let deployer = Keypair::new();
+    let front_runner = Keypair::new();
+    for k in [&deployer, &front_runner] {
+        svm.airdrop(&k.pubkey(), 10_000_000_000).unwrap();
+    }
+    set_upgrade_authority(&mut svm, &bonded_registry::ID, &deployer.pubkey());
+    let init = |admin: &Keypair, attester: Pubkey| {
+        Instruction::new_with_bytes(
+            bonded_registry::ID,
+            &bonded_registry::instruction::Initialize { attester }.data(),
+            bonded_registry::accounts::Initialize {
+                config: pda(&[b"config"], &bonded_registry::ID),
+                admin: admin.pubkey(),
+                program: bonded_registry::ID,
+                program_data: programdata_of(&bonded_registry::ID),
+                system_program: SYSTEM,
+            }
+            .to_account_metas(None),
+        )
+    };
+    let evil = Pubkey::new_unique();
+    expect_err(
+        send(&mut svm, &[init(&front_runner, evil)], &front_runner, &[]),
+        "NotDeployer",
+    );
+    send(
+        &mut svm,
+        &[init(&deployer, Pubkey::new_unique())],
+        &deployer,
+        &[],
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_deposit_into_an_emptied_pool_with_shares_outstanding_is_refused() {
+    let mut w = World::new();
+    // Simulate claims having drained the pool while the underwriter's shares remain.
+    let pool = pda(&[b"pool_vault"], &bonded_cover::ID);
+    let mut acct = w.svm.get_account(&pool).unwrap();
+    acct.data[64..72].copy_from_slice(&0u64.to_le_bytes());
+    w.svm.set_account(pool, acct).unwrap();
+
+    let shares = pda(&[b"shares"], &bonded_cover::ID);
+    let admin = w.admin.insecure_clone();
+    let newcomer = Keypair::new();
+    let shares_to = CreateAccount::new(&mut w.svm, &admin, &shares)
+        .owner(&newcomer.pubkey())
+        .send()
+        .unwrap();
+    let deposit = Instruction::new_with_bytes(
+        bonded_cover::ID,
+        &bonded_cover::instruction::Deposit { amount: 100 * USD }.data(),
+        bonded_cover::accounts::PoolDeposit {
+            config: pda(&[b"config"], &bonded_cover::ID),
+            pool_vault: pool,
+            share_mint: shares,
+            base_mint: w.mint,
+            from: w.operator_usd,
+            shares_to,
+            owner: w.operator.pubkey(),
+            token_program: TOKEN,
+        }
+        .to_account_metas(None),
+    );
+    let operator = w.operator.insecure_clone();
+    expect_err(send(&mut w.svm, &[deposit], &operator, &[]), "PoolShort");
 }

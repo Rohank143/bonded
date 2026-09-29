@@ -50,9 +50,12 @@ pub mod bonded_cover {
         require!(amount > 0, CoverError::ZeroAmount);
         let assets = ctx.accounts.pool_vault.amount;
         let supply = ctx.accounts.share_mint.supply;
-        let shares = if supply == 0 || assets == 0 {
+        let shares = if supply == 0 {
             amount
         } else {
+            // Claims can empty the pool while shares are still out; a deposit at 1:1 would hand
+            // part of it to the old, worthless shares.
+            require!(assets > 0, CoverError::PoolShort);
             mul_div(amount, supply, assets)?
         };
         require!(shares > 0, CoverError::ZeroAmount);
@@ -522,6 +525,11 @@ pub struct Initialize<'info> {
     pub base_mint: Account<'info, Mint>,
     #[account(mut)]
     pub admin: Signer<'info>,
+    /// This program, so its upgrade authority can be checked: only the deployer may configure it.
+    #[account(constraint = program.programdata_address()? == Some(program_data.key()))]
+    pub program: Program<'info, crate::program::BondedCover>,
+    #[account(constraint = program_data.upgrade_authority_address == Some(admin.key()) @ CoverError::NotDeployer)]
+    pub program_data: Account<'info, ProgramData>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
@@ -712,6 +720,8 @@ pub struct ClaimPaid {
 pub enum CoverError {
     #[msg("amount must be more than zero")]
     ZeroAmount,
+    #[msg("only the program's upgrade authority can initialize it")]
+    NotDeployer,
     #[msg("arithmetic overflow")]
     Overflow,
     #[msg("withdrawal would take capital that backs active cover")]

@@ -147,6 +147,11 @@ pub struct Initialize<'info> {
     pub config: Account<'info, Config>,
     #[account(mut)]
     pub admin: Signer<'info>,
+    /// This program, so its upgrade authority can be checked: only the deployer may configure it.
+    #[account(constraint = program.programdata_address()? == Some(program_data.key()))]
+    pub program: Program<'info, crate::program::BondedRegistry>,
+    #[account(constraint = program_data.upgrade_authority_address == Some(admin.key()) @ RegistryError::NotDeployer)]
+    pub program_data: Account<'info, ProgramData>,
     pub system_program: Program<'info, System>,
 }
 
@@ -208,6 +213,8 @@ pub struct AttesterSet {
 pub enum RegistryError {
     #[msg("agent URI is too long")]
     UriTooLong,
+    #[msg("only the program's upgrade authority can initialize it")]
+    NotDeployer,
     #[msg("the attestation is for a different agent")]
     WrongAgent,
     #[msg("score must be 0 to 100")]
