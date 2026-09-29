@@ -65,7 +65,7 @@ These don't change who gets paid or how much for a covered breach. Each is liste
 
 ### 6. Program ids
 
-The ids in `declare_id!` and `Anchor.toml` come from keypairs generated locally in `contracts/solana/target/deploy/`. Those stay out of git like every other key. A fresh clone builds and tests with the committed ids. Deploying under those ids needs the keypairs; otherwise run `anchor keys sync` on new ones before deploying (Day 10).
+The ids in `declare_id!` and `Anchor.toml` come from keypairs generated locally in `contracts/solana/target/deploy/`. Those stay out of git like every other key. A fresh clone has no keypairs, so `anchor build` would generate new ones and refuse to build on the mismatch. The build and test scripts pass `--ignore-keys`, which is safe because tests load the programs under the committed ids. Deploying must not use it: deploy with the matching keypairs, or run `anchor keys sync` on new ones first (Day 10).
 
 ## Consequences
 
