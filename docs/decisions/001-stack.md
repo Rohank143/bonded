@@ -20,7 +20,7 @@ Bonded spans EVM contracts, Solana programs, an AI red-team service, an API, a k
 | Lint and format | ESLint 10 + typescript-eslint, Prettier (code only; Markdown excluded), forge fmt | Consistent style without reflowing docs tables |
 | CI | GitHub Actions: TypeScript job + contracts job | Every PR runs format, typecheck, lint, tests, forge build and forge test |
 
-Later days add Anchor (Solana), Next.js (web), Hono (API) and a Python service for Laya. Each gets its own ADR if the choice isn't already in docs/PLAN.md Section 16.
+Later days add Anchor (Solana), a Vite + React web app (ADR-010; the plan first said Next.js), Hono (API) and a Python service for Laya. Each gets its own ADR if the choice isn't already in docs/PLAN.md Section 16.
 
 ## Cross-language contract
 

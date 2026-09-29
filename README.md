@@ -39,7 +39,7 @@ Everything below runs on your own machine. Steps 1–3 need no keys, accounts or
 
 | Tool | Version | Install |
 |---|---|---|
-| Node.js | 22 or newer | [nodejs.org](https://nodejs.org) |
+| Node.js | 22.12 or newer | [nodejs.org](https://nodejs.org) |
 | pnpm | 10 | `corepack enable` (ships with Node) |
 | Foundry (`forge`, `anvil`, `cast`) | latest | `curl -L https://foundry.paradigm.xyz \| bash`, then `foundryup` |
 
@@ -133,3 +133,13 @@ Design records: [ADR-004](docs/decisions/004-registry-disputes-bounties.md) (reg
 `pnpm gate:testnet` broadcasts the same demo on Robinhood Chain testnet using `DEPLOYER_PRIVATE_KEY` from `.env`. It spends test ETH and faucet tokens, creates a new demo agent and vault, and requires the existing deployment to have a zero waiting period. Review the command before running it. Results go to `artifacts/gate-1-testnet.json`; partial results are saved if a step fails.
 
 Long-running service setup and API requests: [docs/SERVICES.md](docs/SERVICES.md). Day 7 evidence and the Section 25 checklist: [docs/progress/DAY-07.md](docs/progress/DAY-07.md). The committed hosting configuration has not yet been deployed to Railway.
+
+## Day 8 web app
+
+`apps/web` is a Vite + React app for the demo flow on Robinhood Chain testnet: the live Arena feed, agent profiles, vaults (deposit, withdraw, buy cover), underwriting (pool deposit, withdrawal, test tUSDG) and the claims feed ([ADR-010](docs/decisions/010-web-app.md)).
+
+```bash
+pnpm --filter @bonded/web dev
+```
+
+It reads the chain directly and talks to the hosted API by default. Point it at a local API with `VITE_API_URL` (see `apps/web/.env.example`), and add the app's origin to the API's `WEB_ORIGINS`. Wallet actions need a browser wallet such as MetaMask on Robinhood Chain testnet. Starting a rating or getting a quote needs the operator token, which the page keeps in memory only.

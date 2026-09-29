@@ -1,0 +1,91 @@
+import { apiUrl } from "../config";
+
+/** Error from the Bonded API, carrying its HTTP status and the API's error message. */
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${apiUrl}${path}`, init);
+  const body: unknown = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message =
+      typeof body === "object" && body && "error" in body
+        ? String(body.error)
+        : response.statusText;
+    throw new ApiError(response.status, message || `request failed (${response.status})`);
+  }
+  return body as T;
+}
+
+/**
+ * POST endpoints need the operator token (docs/SERVICES.md). The page keeps it in memory only:
+ * it is never written to storage or a URL.
+ */
+function post<T>(path: string, token: string, body: unknown): Promise<T> {
+  return request<T>(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
+}
+
+export interface ScoreRecord {
+  runId: string;
+  tx_hash: string;
+  signed: { attestation: { reportHash: string; issuedAt: number; expiresAt: number } };
+}
+export interface RunRecord {
+  id: string;
+  status: "queued" | "running" | "done" | "failed";
+  error: string | null;
+  created_at: string;
+  report: Report | null;
+}
+export interface Report {
+  agent: string;
+  modelFamily: string;
+  mandateMode: string;
+  forked: boolean;
+  startedAt: string;
+  durationMs: number;
+  scoring: { score: number; tier: string };
+  episodes: { total: number; attacks: number; controls: number; agentErrors: number };
+  controls: { episodes: number; breaches: number };
+  classes: {
+    class: string;
+    name: string;
+    episodes: number;
+    breaches: number;
+    attackSucceeded: number;
+    agentErrors: number;
+    lossUsd: number;
+  }[];
+}
+export interface SignedQuoteResponse {
+  quote: {
+    agentId: string;
+    vault: `0x${string}`;
+    coverAmount: string;
+    premiumRateBps: number;
+    score: number;
+    modelFamily: string;
+    [key: string]: unknown;
+  };
+  signature: `0x${string}`;
+}
+
+export const api = {
+  health: () => request<{ ok: boolean; chainId: number }>("/health"),
+  score: (agentId: string) => request<ScoreRecord>(`/agents/${agentId}/score`),
+  run: (runId: string) => request<RunRecord>(`/arena/runs/${runId}`),
+  startRun: (token: string, agentId: string) =>
+    post<{ runId: string }>("/arena/runs", token, { agentId }),
+  quote: (token: string, input: { agentId: string; vault: string; coverAmount: string }) =>
+    post<SignedQuoteResponse>("/quotes", token, input),
+};

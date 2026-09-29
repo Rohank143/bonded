@@ -263,3 +263,49 @@ it("keeps transaction failures pending so eligible claims can retry", async () =
     (await pg.db.pool.query("SELECT status FROM handled_events WHERE id='breach'")).rows[0].status,
   ).toBe("claimed");
 });
+
+it("answers browsers only from allowed web origins", async () => {
+  const app = createApi({
+    db: pg.db,
+    chain,
+    attesterKey: ANVIL_KEYS.deployer,
+    apiToken: token,
+    webOrigins: ["https://bonded.example"],
+  });
+  apps.push(app);
+  const preflight = (origin: string) =>
+    app.request("/quotes", {
+      method: "OPTIONS",
+      headers: {
+        Origin: origin,
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "authorization,content-type",
+      },
+    });
+  const allowed = await preflight("https://bonded.example");
+  expect(allowed.headers.get("Access-Control-Allow-Origin")).toBe("https://bonded.example");
+  expect(allowed.headers.get("Access-Control-Allow-Headers")?.toLowerCase()).toContain(
+    "authorization",
+  );
+  expect(
+    (await preflight("https://evil.example")).headers.get("Access-Control-Allow-Origin"),
+  ).toBeNull();
+
+  const health = await app.request("/health", { headers: { Origin: "https://bonded.example" } });
+  expect(health.headers.get("Access-Control-Allow-Origin")).toBe("https://bonded.example");
+  // A rejected POST still carries the header, so the page can show "unauthorized".
+  const rejected = await app.request("/arena/runs", {
+    method: "POST",
+    headers: { Origin: "https://bonded.example", "Content-Type": "application/json" },
+    body: "{}",
+  });
+  expect(rejected.status).toBe(401);
+  expect(rejected.headers.get("Access-Control-Allow-Origin")).toBe("https://bonded.example");
+});
+
+it("sends no CORS headers when no web origin is configured", async () => {
+  const response = await api().request("/health", {
+    headers: { Origin: "https://bonded.example" },
+  });
+  expect(response.headers.get("Access-Control-Allow-Origin")).toBeNull();
+});

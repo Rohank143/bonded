@@ -23,7 +23,7 @@ RUN fetch() { \
     }; \
     fetch contracts/evm/lib/forge-std https://github.com/foundry-rs/forge-std "$FORGE_STD_COMMIT" && \
     fetch contracts/evm/lib/openzeppelin-contracts https://github.com/OpenZeppelin/openzeppelin-contracts "$OPENZEPPELIN_COMMIT"
-RUN pnpm install --frozen-lockfile && pnpm build && pnpm contracts:build
+RUN pnpm install --frozen-lockfile && pnpm exec turbo run build --filter="!@bonded/web" && pnpm contracts:build
 ENV ROLE=api PORT=3000
 EXPOSE 3000
 CMD ["node", "apps/api/dist/main.js"]

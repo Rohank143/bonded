@@ -36,7 +36,14 @@ export default defineRailway(() => {
 
   const api = service("api", {
     ...role({ healthcheckPath: "/health", healthcheckTimeout: 120 }),
-    env: { ...shared, ROLE: "api", API_TOKEN: preserve(), ATTESTER_KEY: preserve() },
+    env: {
+      ...shared,
+      ROLE: "api",
+      // Browser origins allowed by CORS (comma-separated). Add the hosted web app's URL here.
+      WEB_ORIGINS: "http://localhost:5173",
+      API_TOKEN: preserve(),
+      ATTESTER_KEY: preserve(),
+    },
   });
   // The keeper and worker have no HTTP listener, so no health check.
   const keeper = service("keeper", {

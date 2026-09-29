@@ -1,0 +1,179 @@
+import { useParams } from "react-router";
+import { useQuery } from "@tanstack/react-query";
+import { useReadContracts } from "wagmi";
+import { bondedRegistryAbi, operatorBondAbi, tierForScore } from "@bonded/shared";
+import { apiUrl, deployment } from "../config";
+import { ApiError, api } from "../lib/api";
+import { bps, usd, when } from "../lib/format";
+import {
+  AddressLink,
+  Badge,
+  Card,
+  ErrorText,
+  Grid,
+  Loading,
+  Page,
+  Stat,
+  TxLink,
+} from "../components/ui";
+
+export function Agent() {
+  const id = useParams().id ?? "";
+  const valid = /^\d+$/.test(id);
+  const agentId = valid ? BigInt(id) : 0n;
+  const reads = useReadContracts({
+    contracts: [
+      {
+        address: deployment.registry,
+        abi: bondedRegistryAbi,
+        functionName: "scoreOf",
+        args: [agentId],
+      },
+      {
+        address: deployment.registry,
+        abi: bondedRegistryAbi,
+        functionName: "agentOwner",
+        args: [agentId],
+      },
+      { address: deployment.bond, abi: operatorBondAbi, functionName: "bondOf", args: [agentId] },
+      {
+        address: deployment.registry,
+        abi: bondedRegistryAbi,
+        functionName: "hasValidScore",
+        args: [agentId],
+      },
+    ],
+    query: { enabled: valid },
+  });
+  const score = useQuery({
+    queryKey: ["score", id],
+    queryFn: () => api.score(id),
+    enabled: valid,
+    retry: (n, e) => !(e instanceof ApiError && e.status === 404) && n < 2,
+  });
+  const run = useQuery({
+    queryKey: ["run", score.data?.runId],
+    queryFn: () => api.run(score.data!.runId),
+    enabled: Boolean(score.data?.runId),
+  });
+
+  if (!valid) return <Page title="Agent">Agent IDs are whole numbers.</Page>;
+  if (reads.isLoading) return <Loading what={`agent ${id}`} />;
+  const [onchain, owner, bond, fresh] = reads.data ?? [];
+  if (owner?.error)
+    return <Page title={`Agent ${id}`}>This agent is not registered on this chain.</Page>;
+  const a = onchain?.result;
+  const rated = a && a.issuedAt > 0n;
+  const report = run.data?.report;
+  return (
+    <Page
+      title={`Agent ${id}`}
+      intro="The score is the latest attestation in BondedRegistry. Cover is priced from it."
+    >
+      <Card title="Bonded Score">
+        {rated ? (
+          <Grid>
+            <Stat label="Score" value={a.score} hint={`tier ${tierForScore(a.score).tier}`} />
+            <Stat label="Expected loss" value={bps(a.expectedLossBps)} hint="per year, of cover" />
+            <Stat
+              label="Operator bond"
+              value={bond?.result !== undefined ? `$${usd(bond.result, 0)}` : "…"}
+              hint="pays first on a claim"
+            />
+            <Stat
+              label="Status"
+              value={
+                fresh?.result ? (
+                  <Badge tone="safe">valid</Badge>
+                ) : (
+                  <Badge tone="breach">expired</Badge>
+                )
+              }
+              hint={`expires ${when(a.expiresAt)}`}
+            />
+          </Grid>
+        ) : (
+          <p className="text-sm text-muted">Not rated yet.</p>
+        )}
+        <dl className="mt-4 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[10rem_1fr]">
+          <dt className="text-muted">Owner</dt>
+          <dd>{owner?.result ? <AddressLink address={owner.result} /> : "…"}</dd>
+          {rated && (
+            <>
+              <dt className="text-muted">Issued</dt>
+              <dd>{when(a.issuedAt)}</dd>
+              <dt className="text-muted">Report hash</dt>
+              <dd className="break-all font-mono text-xs">{a.reportHash}</dd>
+              <dt className="text-muted">Mandate hash</dt>
+              <dd className="break-all font-mono text-xs">{a.mandateHash}</dd>
+            </>
+          )}
+          {score.data && (
+            <>
+              <dt className="text-muted">Posted in</dt>
+              <dd>
+                <TxLink hash={score.data.tx_hash} />
+              </dd>
+              <dt className="text-muted">Full report</dt>
+              <dd>
+                <a
+                  className="text-accent hover:underline"
+                  href={`${apiUrl}/arena/runs/${score.data.runId}/report`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  JSON (hashes to the report hash above)
+                </a>
+              </dd>
+            </>
+          )}
+        </dl>
+        {score.error && !(score.error instanceof ApiError && score.error.status === 404) && (
+          <ErrorText error={score.error} />
+        )}
+      </Card>
+
+      {report && (
+        <Card title="Attack classes">
+          <p className="mb-3 text-sm text-muted">
+            {report.episodes.attacks} attacks and {report.episodes.controls} controls,{" "}
+            {report.mandateMode} mode,{" "}
+            {report.forked ? "on a fork of the live chain" : "on a local chain"}. Fixed seeds: an
+            in-library result, not a held-out evaluation.
+          </p>
+          <table className="w-full text-sm">
+            <thead className="text-left text-muted">
+              <tr>
+                <th className="py-1 font-normal">Class</th>
+                <th className="font-normal">Episodes</th>
+                <th className="font-normal">Breaches</th>
+                <th className="w-1/3 font-normal">Held</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.classes.map((c) => {
+                const held = c.episodes ? (c.episodes - c.breaches) / c.episodes : 1;
+                return (
+                  <tr key={c.class} className="border-t border-line">
+                    <td className="py-1.5">
+                      <span className="font-mono">{c.class}</span> {c.name}
+                    </td>
+                    <td className="tabular-nums">{c.episodes}</td>
+                    <td className={c.breaches ? "tabular-nums text-breach" : "tabular-nums"}>
+                      {c.breaches}
+                    </td>
+                    <td>
+                      <div className="h-2 rounded bg-breach/30">
+                        <div className="h-2 rounded bg-safe" style={{ width: `${held * 100}%` }} />
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </Card>
+      )}
+    </Page>
+  );
+}
