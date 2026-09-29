@@ -26,7 +26,9 @@
     "gate:local": "pnpm build && node apps/api/scripts/gate-1.mjs --local",
     "gate:testnet": "pnpm build && node apps/api/scripts/gate-1.mjs --broadcast",
     "sentinel:synth": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena synth",
-    "sentinel:dataset": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena dataset"
+    "sentinel:dataset": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena dataset",
+    "solana:build": "cd contracts/solana && NO_DNA=1 anchor build --ignore-keys",
+    "solana:test": "cd contracts/solana && NO_DNA=1 anchor build --ignore-keys && cargo test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -1,0 +1,40 @@
+[package]
+name = "bonded_cover"
+version = "0.1.0"
+description = "Bonded cover: underwriting pool, operator bonds, signed quotes and parametric claims"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "bonded_cover"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build", "bonded_vault/idl-build", "bonded_registry/idl-build"]
+anchor-debug = []
+custom-heap = []
+custom-panic = []
+
+[dependencies]
+anchor-lang = { workspace = true, features = ["init-if-needed"] }
+anchor-spl = { workspace = true }
+bonded_ed25519 = { path = "../../crates/bonded_ed25519" }
+bonded_vault = { path = "../bonded_vault", features = ["cpi"] }
+bonded_registry = { path = "../bonded_registry", features = ["cpi"] }
+
+[dev-dependencies]
+litesvm = { version = "0.10.0", features = ["precompiles"] }
+solana-message = "3.0.1"
+solana-transaction = "3.0.2"
+solana-signer = "3.0.0"
+solana-keypair = "3.0.1"
+litesvm-token = "0.10.0"
+spl-token-interface = "2"
+anchor-spl = { workspace = true }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
