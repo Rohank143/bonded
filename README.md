@@ -39,7 +39,7 @@ Everything below runs on your own machine. Steps 1–3 need no keys, accounts or
 
 | Tool | Version | Install |
 |---|---|---|
-| Node.js | 22 or newer | [nodejs.org](https://nodejs.org) |
+| Node.js | 22.12 or newer | [nodejs.org](https://nodejs.org) |
 | pnpm | 10 | `corepack enable` (ships with Node) |
 | Foundry (`forge`, `anvil`, `cast`) | latest | `curl -L https://foundry.paradigm.xyz \| bash`, then `foundryup` |
 

@@ -197,7 +197,11 @@ function Cover({ activeId, history }: { activeId?: bigint; history?: bigint[] })
           <Grid>
             <Stat
               label={`Policy ${activeId}`}
-              value={<Badge tone="safe">{POLICY_STATUS[p.status]}</Badge>}
+              value={
+                <Badge tone={p.status === 1 ? "safe" : "breach"}>
+                  {POLICY_STATUS[p.status] ?? p.status}
+                </Badge>
+              }
             />
             <Stat
               label="Cover left"
