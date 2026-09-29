@@ -72,6 +72,29 @@ describe("OpenAICompatibleClient", () => {
     expect(JSON.parse(String(calls[0]?.init.body))).not.toHaveProperty("usage");
   });
 
+  it("passes a reasoning setting to OpenRouter and leaves it out for other endpoints", async () => {
+    const request = {
+      model: "m",
+      messages: [{ role: "user" as const, content: "hi" }],
+      reasoning: { enabled: false },
+    };
+    const openRouter = fakeFetch(ok(reply));
+    await new OpenAICompatibleClient(
+      { baseUrl: OPENROUTER_BASE_URL, apiKey: "k" },
+      { fetch: openRouter.impl },
+    ).complete(request);
+    expect(JSON.parse(String(openRouter.calls[0]!.init.body)).reasoning).toEqual({
+      enabled: false,
+    });
+
+    const local = fakeFetch(ok(reply));
+    await new OpenAICompatibleClient(
+      { baseUrl: "http://localhost:11434/v1", apiKey: "k" },
+      { fetch: local.impl },
+    ).complete(request);
+    expect(JSON.parse(String(local.calls[0]!.init.body))).not.toHaveProperty("reasoning");
+  });
+
   it("retries rate limits, server errors and dropped connections", async () => {
     const { impl, calls } = fakeFetch(
       new Response("slow down", { status: 429 }),
