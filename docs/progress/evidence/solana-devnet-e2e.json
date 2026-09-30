@@ -1,0 +1,62 @@
+{
+  "agentId": 1,
+  "checks": {
+    "breachLossUsd": 1000,
+    "claimPaidUsd": 900,
+    "fromBondUsd": 500,
+    "fromPoolUsd": 400,
+    "remainingCoverUsd": 19100,
+    "vaultFrozen": true
+  },
+  "cluster": "devnet",
+  "policyId": 1,
+  "ranAt": 1790777436,
+  "steps": [
+    {
+      "explorer": "https://explorer.solana.com/tx/2WYSJQPkDdidtY6wKLEVygR6Hw5zezdgZHECArBGNWCcf8aum29tTuow6GbxbyJ9okvh96mvBatMqaNzi17WesEx?cluster=devnet",
+      "signature": "2WYSJQPkDdidtY6wKLEVygR6Hw5zezdgZHECArBGNWCcf8aum29tTuow6GbxbyJ9okvh96mvBatMqaNzi17WesEx",
+      "step": "mint test USD to operator"
+    },
+    {
+      "explorer": "https://explorer.solana.com/tx/FfdhRXWRMfKDiziyn63nXaFjhzfY2ANiRmevgk2RXPetMzEMM3UwUMiBZHtVzUHfp2Js4Qncvj8fziNUsjMnoEW?cluster=devnet",
+      "signature": "FfdhRXWRMfKDiziyn63nXaFjhzfY2ANiRmevgk2RXPetMzEMM3UwUMiBZHtVzUHfp2Js4Qncvj8fziNUsjMnoEW",
+      "step": "register agent"
+    },
+    {
+      "explorer": "https://explorer.solana.com/tx/4Ahy8jk5SJMshJR56eV2UdTT7MGM4gTX7UbW2zuvjni9r6W22YJvE92KccKymstABPEQRsbvJDmkmRJdQZFpu7uH?cluster=devnet",
+      "signature": "4Ahy8jk5SJMshJR56eV2UdTT7MGM4gTX7UbW2zuvjni9r6W22YJvE92KccKymstABPEQRsbvJDmkmRJdQZFpu7uH",
+      "step": "post signed score"
+    },
+    {
+      "explorer": "https://explorer.solana.com/tx/3rVAedutGC1gcWBMa9HUdzLbaBWZKx9S8MRppuDSqnwFrUm6vrfF6LEmrQNmbG2NL5npJpSCJMY3dWPTCjwjTYdE?cluster=devnet",
+      "signature": "3rVAedutGC1gcWBMa9HUdzLbaBWZKx9S8MRppuDSqnwFrUm6vrfF6LEmrQNmbG2NL5npJpSCJMY3dWPTCjwjTYdE",
+      "step": "create vault, deposit 50,000"
+    },
+    {
+      "explorer": "https://explorer.solana.com/tx/4YNVp3nBp44fqPSSqzb6Pr6Gq9bx3MRxx4ScDRwftU1QgfdQQT1jEqubdNSvaSdDbTgQQKXwaeVetNV98VqyVXeJ?cluster=devnet",
+      "signature": "4YNVp3nBp44fqPSSqzb6Pr6Gq9bx3MRxx4ScDRwftU1QgfdQQT1jEqubdNSvaSdDbTgQQKXwaeVetNV98VqyVXeJ",
+      "step": "operator bonds 500"
+    },
+    {
+      "explorer": "https://explorer.solana.com/tx/4Ksk9Rqobn9PZE3iZU6TuRZjmFUz9uVD8qL9FvMGT13cqjfriiTa8Hxpfq7Po68R1Je5iFqawUv1wUius5fpxuG4?cluster=devnet",
+      "signature": "4Ksk9Rqobn9PZE3iZU6TuRZjmFUz9uVD8qL9FvMGT13cqjfriiTa8Hxpfq7Po68R1Je5iFqawUv1wUius5fpxuG4",
+      "step": "buy cover with signed quote"
+    },
+    {
+      "explorer": "https://explorer.solana.com/tx/2d6Hz7CvypN2vuJ9s1uAsBzN8s5J8VgNihY7riFnVxhC87HA13EJ2ygAac26QGsriyYwgv2AB7W7s352pnzMG6Ux?cluster=devnet",
+      "signature": "2d6Hz7CvypN2vuJ9s1uAsBzN8s5J8VgNihY7riFnVxhC87HA13EJ2ygAac26QGsriyYwgv2AB7W7s352pnzMG6Ux",
+      "step": "outsider token account"
+    },
+    {
+      "explorer": "https://explorer.solana.com/tx/5AQPtZwXMje1Nu6VfgjGqmALdWAUiHRhA7Vg1SjWpa8kfnFMwk7zFz7kvyVdggdMeyK8xQZ7L1DbAcxNVJ1nFYLX?cluster=devnet",
+      "signature": "5AQPtZwXMje1Nu6VfgjGqmALdWAUiHRhA7Vg1SjWpa8kfnFMwk7zFz7kvyVdggdMeyK8xQZ7L1DbAcxNVJ1nFYLX",
+      "step": "agent sends 1,000 out (breach)"
+    },
+    {
+      "explorer": "https://explorer.solana.com/tx/3JX6jxFoZVN2NUbaj9dLRjF9NH6LUEuqrRHQE5h2hxX6dbTr3V2ZRyy6KHfdBsWadXtxDZSsJZ5jMzC2mBxtV6py?cluster=devnet",
+      "signature": "3JX6jxFoZVN2NUbaj9dLRjF9NH6LUEuqrRHQE5h2hxX6dbTr3V2ZRyy6KHfdBsWadXtxDZSsJZ5jMzC2mBxtV6py",
+      "step": "file claim"
+    }
+  ],
+  "vault": "DU2Nn3uXSVMnivmF4PgzGUGN9y4vWzVXrvgZTYKKC56r"
+}

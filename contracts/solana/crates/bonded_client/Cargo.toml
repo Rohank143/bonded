@@ -1,0 +1,21 @@
+[package]
+name = "bonded_client"
+version = "0.1.0"
+edition = "2021"
+description = "Addresses and instruction builders for the Bonded Solana programs, shared by the tests, the devnet runner and the keeper"
+
+[dependencies]
+anchor-lang = { workspace = true }
+bonded_registry = { path = "../../programs/bonded_registry", features = ["cpi"] }
+bonded_vault = { path = "../../programs/bonded_vault", features = ["cpi"] }
+bonded_cover = { path = "../../programs/bonded_cover", features = ["cpi"] }
+bonded_ed25519 = { path = "../bonded_ed25519" }
+
+[dev-dependencies]
+litesvm = { version = "0.10.0", features = ["precompiles"] }
+litesvm-token = "0.10.0"
+solana-message = "3.0.1"
+solana-transaction = "3.0.2"
+solana-signer = "3.0.0"
+solana-keypair = "3.0.1"
+spl-token-interface = "2"
