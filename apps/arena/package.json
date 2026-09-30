@@ -24,7 +24,8 @@
     "synth": "node dist/synth-cli.js",
     "dataset": "node dist/laya-dataset-cli.js",
     "sentinel-eval": "node dist/sentinel-eval-cli.js",
-    "sentinel-stress": "node dist/stress-cli.js"
+    "sentinel-stress": "node dist/stress-cli.js",
+    "sentinel-contrast": "node dist/llm-contrast-cli.js"
   },
   "dependencies": {
     "@bonded/demo-agents": "workspace:*",

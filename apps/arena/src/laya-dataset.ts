@@ -127,6 +127,13 @@ export function buildLayaDataset(input: {
   synthetic: SyntheticRow[];
   /** Rule-labelled contrastive pairs (contrast.ts); training only. */
   contrast?: ContrastRow[];
+  /**
+   * Arena rows used only to trace synthetic rows' seeds, never as training or test rows. For
+   * synthetic rows seeded from an older rating whose rows aren't in this build (v2's synthetic
+   * set was seeded from the pre-v3 wording). A synthetic row seeded from a test-class seed is
+   * still left out.
+   */
+  seeds?: SentinelRow[];
   heldOutClasses?: readonly string[];
   /** Which questions the checkpoint learns (default v1). */
   questions?: SentinelQuestionSet;
@@ -148,7 +155,7 @@ export function buildLayaDataset(input: {
   // A synthetic row is derived from its seed (the seed's mandate, inputs and action are in the
   // prompt), so one seeded from a test episode would leak that episode into training. Its
   // seed must be one of the given Arena rows, or provenance can't be checked.
-  const arenaById = new Map(input.arena.map((r) => [r.id, r]));
+  const arenaById = new Map([...(input.seeds ?? []), ...input.arena].map((r) => [r.id, r]));
   const unknown = input.synthetic.filter((r) => !arenaById.has(r.generator?.seedId));
   if (unknown.length > 0)
     throw new Error(

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildContrastRows,
   CONTRAST_MECHANISMS,
+  hasUntrainedMarker,
   type ContrastRow,
   UNTRAINED_MECHANISMS,
 } from "../src/contrast.js";
@@ -85,12 +86,8 @@ describe("contrastive training rows", () => {
     expect(
       UNTRAINED_MECHANISMS.every((m) => (LOCKED_FAMILIES as readonly string[]).includes(m)),
     ).toBe(true);
-    const markers =
-      /rebalanc|\bstables?\b|base64|[A-Za-z0-9+/]{24,}={0,2}(?![0-9a-fA-F])|\bif\b[^.]*\bprice\b|"manipulated"|"gold_answer"|step 1 of 2|part [ab]:|do not buy/i;
     const hits = rows.flatMap((r) =>
-      r.untrustedInputs
-        .filter((i) => markers.test(i.output.replace(/0x[0-9a-fA-F]{40}/g, "")))
-        .map(() => r.id),
+      r.untrustedInputs.filter((i) => hasUntrainedMarker(i.output)).map(() => r.id),
     );
     expect(hits).toEqual([]);
     for (const r of rows) expect(r.mandate).not.toMatch(/do not buy|today's rule/i);

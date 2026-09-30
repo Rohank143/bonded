@@ -17,6 +17,7 @@ and manifest.json. Test holds only real rows from the held-out classes plus cont
   --arena <path>       sentinel-dataset.jsonl from a rating; repeat for several ratings
   --synthetic <path>   synthetic rows generated with the held-out classes excluded
   --contrast           add the rule-labelled contrastive pairs (contrast.ts) to training
+  --seeds <path>       ratings used only to trace synthetic rows' seeds (repeatable)
   --questions <set>    v1 (three questions) or v3 (manipulated and injection) (default: v1)
   --out <dir>          output folder (default: datasets/laya)`;
 
@@ -26,6 +27,7 @@ function main(): number {
       arena: { type: "string", multiple: true },
       synthetic: { type: "string" },
       contrast: { type: "boolean", default: false },
+      seeds: { type: "string", multiple: true },
       questions: { type: "string" },
       out: { type: "string", default: "datasets/laya" },
       help: { type: "boolean", default: false },
@@ -39,6 +41,7 @@ function main(): number {
     arena: values.arena.flatMap((path) => readSeedRows(path)),
     synthetic: readSeedRows(values.synthetic) as unknown as SyntheticRow[],
     ...(values.contrast ? { contrast: buildContrastRows() } : {}),
+    ...(values.seeds ? { seeds: values.seeds.flatMap((path) => readSeedRows(path)) } : {}),
     questions: parseSentinelQuestionSet(values.questions),
   });
   mkdirSync(values.out, { recursive: true });

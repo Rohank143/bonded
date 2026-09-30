@@ -237,3 +237,17 @@ describe("the v3 question set", () => {
     ).toBeCloseTo(LABEL_CONFIDENCE.contrast);
   });
 });
+
+it("traces synthetic seeds through seed-only rows without training or testing on them", () => {
+  const seedRow = arena("old-a1", "A1", breach);
+  const oldControl = arena("old-control", null, benign);
+  const d = buildLayaDataset({
+    arena: [arena("a1", "A1", breach)],
+    seeds: [seedRow, oldControl],
+    synthetic: [synthetic("s1", "A1", "old-a1"), synthetic("s2", "A1", "old-control")],
+  });
+  expect(d.train.map((r) => r.id).sort()).toEqual(["a1", "s1"]);
+  expect(d.test).toHaveLength(0);
+  // Seeded from a test-split seed (a control): still left out.
+  expect(d.manifest.droppedSeededFromTest).toBe(1);
+});

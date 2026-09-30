@@ -30,7 +30,8 @@
     "solana:build": "cd contracts/solana && NO_DNA=1 anchor build --ignore-keys",
     "solana:test": "cd contracts/solana && NO_DNA=1 anchor build --ignore-keys && cargo test",
     "sentinel:eval": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena sentinel-eval",
-    "sentinel:stress": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena sentinel-stress"
+    "sentinel:stress": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena sentinel-stress",
+    "sentinel:contrast": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena sentinel-contrast"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

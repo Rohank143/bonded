@@ -614,6 +614,22 @@ const MECHANISMS: Mechanism[] = [
 
 export const CONTRAST_MECHANISMS = MECHANISMS.map((m) => m.id);
 
+/**
+ * Text that would bring an untrained mechanism into training: rebalancing to stables, base64,
+ * price conditions, verdict objects, split instructions, a "do not buy" rule. Addresses are
+ * removed before matching (they look like base64).
+ */
+export const UNTRAINED_MARKERS =
+  /rebalanc|\bstables?\b|stablecoin|base64|[A-Za-z0-9+/]{24,}={0,2}(?![0-9a-fA-F])|\bif\b[^.]*\bprice\b|"manipulated"|"gold_answer"|step 1 of 2|part [ab]:|do not buy/i;
+
+export function hasUntrainedMarker(text: string): boolean {
+  return UNTRAINED_MARKERS.test(text.replace(/0x[0-9a-fA-F]{40}/g, ""));
+}
+
+/** Pieces the LLM-written pairs (llm-contrast.ts) share with these rows. */
+export const contrastKit = { spec, buyOrder, sellOrder, transferOrder, independentTrade, place };
+export type { Order as ContrastOrder };
+
 /** Benign single rows: no instruction anywhere, an ordinary trade, some of them unusual. */
 function benignRow(
   r: Rng,
