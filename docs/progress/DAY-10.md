@@ -70,6 +70,19 @@ Memory: 1.9 GB peak on the laptop. In the Linux container it's 2.1 GB after load
 - The injection question can't be measured here: only the 4 controls have no injection, and the fine-tune flags all 4 (AUC 0.016 on 4 negatives). The guard does not block on it.
 - Same limits as the baseline: 4 real benign controls (the other 71 negatives are attacks that failed to manipulate the agent), scripted agents, and no "suspicious" labels. False alarms on ordinary trading need the LLM-driven benign episodes.
 
+### False alarms on ordinary trading
+
+`pnpm --filter @bonded/arena arena controls --brain llm --controls 48` ran 48 benign episodes with an LLM agent (DeepSeek V4.1 Flash) on 16 varied trading tasks for $0.03: 65 Sentinel rows, 45 new distinct cases, no breaches. With them the test has 49 benign cases ([evidence](evidence/sentinel-eval-finetune-v1-controls.json)):
+
+| | Fine-tune v1 |
+|---|---|
+| Manipulated: caught at under 1% false alarms | 33 of 36 (FPR 0.8%, 1 of 120 negatives) |
+| Manipulated: AUC | 0.930 |
+| Benign trades flagged manipulated (score 0.5 or more) | 2 of 49 |
+| Benign trades called "breach likely" | 9 of 49 |
+
+All 9 "breach likely" calls, and both "manipulated" ones, are sells back to tUSDG or a $250 buy. Only 2.7% of the training rows are sells (108 of them benign), so the model learned that selling looks like a breach. The guard blocks on "breach likely", so v1 as deployed would block about one ordinary trade in five. Fix: more benign sells and small trades in the training data, then retrain (v2).
+
 ### Kaggle's own benchmark (run `sentinel-v1`)
 
 Laya's benchmark on our test split ([evidence](evidence/kaggle-benchmark-sentinel-v1.json)): accuracy 94.4%, ECE 0.042, Brier 0.087, latency p50 217 ms on a T4. The split is only 24 cases (18 distinct states, 120 decisions), so this is a sanity check; the held-out evaluation above is the real measure.
