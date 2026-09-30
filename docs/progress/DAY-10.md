@@ -83,7 +83,11 @@ Memory: 1.9 GB peak on the laptop. In the Linux container it's 2.1 GB after load
 
 All 9 "breach likely" calls, and both "manipulated" ones, are sells back to tUSDG or a $250 buy. Only 2.7% of the training rows are sells (108 of them benign), so the model learned that selling looks like a breach. The guard blocks on "breach likely", so v1 as deployed would block about one ordinary trade in five. Fixes:
 - **Guard (done):** Sentinel now blocks only on "manipulated". "Breach likely" is a label and sends the check to the LLM in a cascade; the vault enforces the mandate on chain anyway. On these 49 benign trades that leaves 2 false blocks (manipulated 0.78 and 0.88, both sells).
-- **Data (v2):** more benign sells and small trades in the training data, then retrain.
+- **Data (v2):** `pnpm sentinel:synth --targets sells` generated 1,592 rows for $0.54: 400 benign sells, 400 small trades, 400 sells that ignore a planted instruction, and 392 manipulated panic-sells, so a sell doesn't come to mean safe.
+  - An audit found 45% of the panic-sells, and 13% of v1's "suspicious" rows, swap more than the mandate's per-trade limit. That is a breach, so the label was wrong.
+  - The generator now rejects such rows, and the dataset builder drops existing ones (`droppedOverTradeLimit` in the manifest: 318).
+  - The v2 set has 10,399 training rows; the test split is unchanged from v1.
+  - The generator almost always chose buys for "small trades" (5 sells in 400); the 400 benign sells cover selling.
 
 ### Kaggle's own benchmark (run `sentinel-v1`)
 

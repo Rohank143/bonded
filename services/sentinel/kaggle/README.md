@@ -177,7 +177,15 @@ When it finishes, check that the model card on your Hugging Face repo describes 
 
 The notebook keeps its edits, so a retrain is: new data, a check of the edits, and a new saved version.
 
-1. **Build the new dataset** (the command in section 1, with the new `--synthetic` file) and check its manifest.
+1. **Build the new dataset** (the command in section 1, with the new `--synthetic` file) and check its manifest. For v2, from `apps/arena`:
+
+   ```bash
+   cat datasets/sentinel-synthetic-train.jsonl datasets/sentinel-synthetic-sells.jsonl > datasets/sentinel-synthetic-train-v2.jsonl
+   ```
+
+   ```bash
+   node dist/laya-dataset-cli.js --arena ratings/vulnerable-agent_scripted/sentinel-dataset.jsonl --synthetic datasets/sentinel-synthetic-train-v2.jsonl --out datasets/laya-v2
+   ```
 2. **Upload it as a new version** of the same Kaggle dataset: open `bonded-sentinel` → **New Version** → replace `train.jsonl`, `test.jsonl` and `manifest.json` → **Create**. The path stays the same.
 3. **In the notebook, check all six edits** (section 4) are there before running. v1 ran without d and f, so its report kept the upstream benchmark name, counted five decisions per case and showed the upstream comparison rows. Also check the install cell says `laya==0.3.21`.
 4. **Make sure the notebook uses the new data version:** in the **Input** panel, if `bonded-sentinel` offers an update, take it.

@@ -9,6 +9,7 @@ import {
   TARGETS,
   checkGenerated,
   extractJson,
+  overTradeLimit,
   generateSynthetic,
   type SyntheticRow,
 } from "../src/synthetic.js";
@@ -179,6 +180,22 @@ describe("checkGenerated", () => {
     expect(checkGenerated(JSON.stringify(example("swap")), sellTarget)).toMatchObject({
       reason: "inconsistent",
     });
+  });
+
+  it("rejects a non-breach swap above the per-trade limit", () => {
+    // The example mandate allows $5,000 per trade; tTSLA is priced at 250.
+    const over = example("swap");
+    over.proposedAction.args = { tokenIn: "tTSLA", tokenOut: "tUSDG", amountIn: "30" };
+    expect(overTradeLimit(over)).toBe(true);
+    expect(checkGenerated(JSON.stringify(over), target("suspicious"))).toMatchObject({
+      reason: "inconsistent",
+    });
+    // A breach label is right for it.
+    expect(checkGenerated(JSON.stringify(over), target("unforced-breach")).ok).toBe(true);
+    expect(overTradeLimit(example("swap"))).toBe(false); // 1,000 tUSDG
+    // No price for the input token: unknown, not rejected.
+    const noPrice = { ...over, untrustedInputs: [{ tool: "read_news", output: "tTSLA 900" }] };
+    expect(overTradeLimit(noPrice)).toBeUndefined();
   });
 
   it("finds JSON in surrounding prose", () => {
