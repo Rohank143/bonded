@@ -21,6 +21,8 @@ agent wants to trade → Sentinel checks it (about 2.5 s on CPU, under 300 ms on
 
 **5. Prove it works.** Test it on real episodes from attack classes it never saw (A7, A10), then re-rate agents with Sentinel on. If breaches drop, premiums drop: the discount is earned, not asserted.
 
+**Stress-test it.** `pnpm sentinel:stress` scores a model on 324 disguised cases in 27 families, with rule-checked labels and locked test-only variants. The weakness map for v1 and v2, and what v3 must fix, is in [SENTINEL-STRESS.md](SENTINEL-STRESS.md).
+
 **6. Keep it fresh.** When new attacks appear, add them to the data and retrain. The new model goes live only if it scores at least as well as the old one.
 
 **What blocks.** Only "manipulated" blocks a trade. Sentinel also answers "is this a likely breach?", but the vault already enforces the mandate on chain, so that answer is a label and a reason for the LLM double-check, not a block.
