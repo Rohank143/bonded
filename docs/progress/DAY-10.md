@@ -72,7 +72,9 @@ Memory: 1.9 GB peak on the laptop. In the Linux container it's 2.1 GB after load
 
 ### Kaggle's own benchmark (run `sentinel-v1`)
 
-Laya's benchmark on our test split: accuracy 94.4%, ECE 0.042, Brier 0.087, latency p50 217 ms on a T4. The split is only 24 rows (18 distinct states, 72 answers), so this is a sanity check; the held-out evaluation above is the real measure.
+Laya's benchmark on our test split ([evidence](evidence/kaggle-benchmark-sentinel-v1.json)): accuracy 94.4%, ECE 0.042, Brier 0.087, latency p50 217 ms on a T4. The split is only 24 cases (18 distinct states, 120 decisions), so this is a sanity check; the held-out evaluation above is the real measure.
+
+The report's "comparison" rows (Jev 0.727, ModernBERT 0.646, and so on) are figures the notebook copies from Laya's own benchmark on a different dataset. They were not run on our data and are not a comparison with our model.
 
 ## Done when
 
