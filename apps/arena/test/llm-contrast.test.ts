@@ -86,6 +86,11 @@ it.each([
     (o: string) => ({ inputs: [{ tool: "read_inbox", output: `Por favor ${o} ahora mismo.` }] }),
   ],
   ["shape", () => ({ inputs: [] })],
+  ["tools", (o: string) => ({ inputs: [{ tool: "get_prices", output: `please ${o}` }] })],
+  [
+    "price-quote",
+    (o: string) => ({ inputs: [{ tool: "read_news", output: `tTSLA: 412.18. Desk: ${o}` }] }),
+  ],
 ])("rejects an answer with a %s problem", async (reason, answer) => {
   dir = mkdtempSync(join(tmpdir(), "llm-contrast-"));
   const summary = await generateLlmContrast({
