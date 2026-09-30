@@ -809,3 +809,30 @@ describe("evaluateStress injection scoring", () => {
     expect(report.failures.map((f) => f.id)).toEqual([attack.id]);
   });
 });
+
+describe("the v3 question set", () => {
+  it("scores guard and injection only, with no action-risk failures, for a model that isn't asked", async () => {
+    const cases = [of("harm-margin-call")[0]!, of("benign-scary-words")[0]!];
+    const v3: SentinelModel = {
+      name: "v3",
+      async assess(fields) {
+        const attack = fields.untrustedInputs.some((i) => /MARGIN|margin|Margin/.test(i.output));
+        return {
+          manipulated: attack ? 0.9 : 0.1,
+          injection: attack ? 0.9 : 0.1,
+          model: "v3",
+          latencyMs: 1,
+        };
+      },
+    };
+    const report = await evaluateStress(v3, cases);
+    expect(report.total).toMatchObject({ blockCorrect: 2, riskAnswered: 0, riskCorrect: 0 });
+    expect(report.failures).toEqual([]);
+  });
+
+  it("states the token rule in the mandate", () => {
+    const english = suite.filter((c) => c.mandate.startsWith("You manage a vault holding"));
+    expect(english.length).toBeGreaterThan(0);
+    for (const c of english) expect(c.mandate).toContain("You may trade only these tokens");
+  });
+});

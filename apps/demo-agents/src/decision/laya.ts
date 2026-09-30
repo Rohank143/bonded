@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   SENTINEL_QUESTIONS,
   type SentinelInput,
+  type SentinelQuestionSet,
   sentinelQuestions,
   sentinelState,
 } from "@bonded/shared";
@@ -32,7 +33,11 @@ export interface SentinelFields {
 export interface SentinelAssessment {
   /** Probability the action is driven by untrusted content rather than the mandate. */
   manipulated: number;
-  actionRisk: { answer: ActionRisk; probabilities: Record<ActionRisk, number> };
+  /**
+   * The model's own action-risk answer. Absent for a v3 checkpoint, which isn't asked: the guard
+   * computes within-mandate or breach in code instead (SentinelQuestionSet).
+   */
+  actionRisk?: { answer: ActionRisk; probabilities: Record<ActionRisk, number> };
   /**
    * Probability the untrusted inputs carry instructions aimed at the agent. Laya answers it in
    * the same pass for free; the LLM path skips it, since the guard doesn't block on it.
@@ -66,11 +71,21 @@ const ChoiceAnswer = z.object({
 const LayaResponse = z.object({
   answers: z.object({
     manipulated: NoulAnswer,
-    action_risk: ChoiceAnswer,
+    action_risk: ChoiceAnswer.optional(),
     injection_in_inputs: NoulAnswer,
   }),
   usage: z.object({ input_tokens: z.number() }).partial().optional(),
 });
+
+function parseActionRisk(raw: z.infer<typeof ChoiceAnswer>) {
+  const probabilities = Object.fromEntries(
+    ACTION_RISKS.map((k) => [k, raw.probabilities[k] ?? 0]),
+  ) as Record<ActionRisk, number>;
+  const answer = raw.choice as ActionRisk;
+  if (!ACTION_RISKS.includes(answer))
+    throw new Error(`Laya answered action_risk "${answer}", not one of ${ACTION_RISKS.join(", ")}`);
+  return { answer, probabilities };
+}
 
 export interface LayaOptions {
   /** Base URL of a Laya server (`laya-serve`, or services/sentinel), without a trailing slash. */
@@ -79,6 +94,8 @@ export interface LayaOptions {
   apiKey?: string;
   /** Checkpoint name the server routes to (services/sentinel serves the fine-tune here). */
   model?: string;
+  /** The questions the checkpoint was trained on (default v1: all three). */
+  questions?: SentinelQuestionSet;
   timeoutMs?: number;
   fetch?: typeof fetch;
 }
@@ -131,7 +148,7 @@ export class LayaSentinel implements SentinelModel {
       this.options,
       {
         state: sentinelState(fields),
-        questions: sentinelQuestions(),
+        questions: sentinelQuestions(this.options.questions),
         model: this.options.model ?? "typed-decisions",
       },
       signal,
@@ -140,17 +157,11 @@ export class LayaSentinel implements SentinelModel {
     if (!parsed.success) throw new Error(`Laya response not understood: ${parsed.error.message}`);
     const { answers, usage } = parsed.data;
     this.inputTokens += usage?.input_tokens ?? 0;
-    const probabilities = Object.fromEntries(
-      ACTION_RISKS.map((k) => [k, answers.action_risk.probabilities[k] ?? 0]),
-    ) as Record<ActionRisk, number>;
-    const answer = answers.action_risk.choice as ActionRisk;
-    if (!ACTION_RISKS.includes(answer))
-      throw new Error(
-        `Laya answered action_risk "${answer}", not one of ${ACTION_RISKS.join(", ")}`,
-      );
+    const asked = (this.options.questions ?? "v1") === "v1";
+    if (asked && !answers.action_risk) throw new Error("Laya response has no action_risk answer");
     return {
       manipulated: answers.manipulated.noul,
-      actionRisk: { answer, probabilities },
+      ...(asked ? { actionRisk: parseActionRisk(answers.action_risk!) } : {}),
       injection: answers.injection_in_inputs.noul,
       model: this.name,
       latencyMs: performance.now() - started,
@@ -267,12 +278,11 @@ export class CascadeSentinel implements SentinelModel {
 
   unsure(a: SentinelAssessment): boolean {
     const [low, high] = this.band;
+    if (a.manipulated > low && a.manipulated < high) return true;
+    // A v3 model gives no action-risk answer; only its manipulated score can make it unsure.
+    if (!a.actionRisk) return false;
     const topRisk = Math.max(...Object.values(a.actionRisk.probabilities));
-    return (
-      (a.manipulated > low && a.manipulated < high) ||
-      topRisk < this.minRiskConfidence ||
-      a.actionRisk.answer === "breach_likely"
-    );
+    return topRisk < this.minRiskConfidence || a.actionRisk.answer === "breach_likely";
   }
 
   async assess(

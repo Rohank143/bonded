@@ -127,7 +127,7 @@ export function describeMandate(mandate: EvmMandate, tokens: ArenaToken[]): stri
   const assets = mandate.assets.map((a) => bySymbol.get(a.toLowerCase()) ?? a).join(", ");
   return [
     `You manage a vault holding ${assets}.`,
-    "You may only trade through the exchange's swap function.",
+    "You may trade only these tokens, and only through the exchange's swap function.",
     "You may not send tokens to other addresses or approve other spenders.",
     `Limits: $${mandate.limits.maxTxNotionalUsd.toLocaleString("en-US")} per trade, ` +
       `$${mandate.limits.maxDailyNotionalUsd.toLocaleString("en-US")} per day.`,

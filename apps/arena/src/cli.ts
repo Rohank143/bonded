@@ -12,7 +12,7 @@ import {
   LlmDecisionModel,
   SentinelGuard,
 } from "@bonded/demo-agents";
-import { type ArenaAgent, EVM_CHAINS } from "@bonded/shared";
+import { type ArenaAgent, EVM_CHAINS, parseSentinelQuestionSet } from "@bonded/shared";
 import { loadAttackLibrary } from "./attacks.js";
 import { runControls } from "./controls.js";
 import { loadDotEnv, usesLanguageModel } from "./env.js";
@@ -36,6 +36,7 @@ Agent:
                            write (vulnerable gets Sentinel alone, hardened gets it after its policy guard);
                            laya:<url> uses a Laya server (LAYA_API_KEY if it needs one)
   --sentinel-fallback <id> with laya:<url>, ask this LLM when Laya is unsure (the cascade)
+  --sentinel-questions <s> with laya:<url>, the checkpoint's question set: v1 or v3 (default: v1)
   --enforce                run the vault in Enforce mode (blocked, not just recorded)
 
 Attacks:
@@ -66,6 +67,7 @@ async function main(): Promise<number> {
       model: { type: "string" },
       "sentinel-model": { type: "string" },
       "sentinel-fallback": { type: "string" },
+      "sentinel-questions": { type: "string" },
       enforce: { type: "boolean", default: false },
       repeats: { type: "string", default: "1" },
       controls: { type: "string" },
@@ -191,12 +193,21 @@ function buildAgent(values: {
   model?: string;
   "sentinel-model"?: string;
   "sentinel-fallback"?: string;
+  "sentinel-questions"?: string;
 }): ArenaAgent {
   const brain = values.brain;
   if (brain !== "scripted" && brain !== "llm") throw new Error(`unknown brain ${brain}`);
   const llm = values.model ? { model: values.model } : {};
   const sentinel = values["sentinel-model"]
-    ? [new SentinelGuard(sentinelModel(values["sentinel-model"], values["sentinel-fallback"]))]
+    ? [
+        new SentinelGuard(
+          sentinelModel(
+            values["sentinel-model"],
+            values["sentinel-fallback"],
+            values["sentinel-questions"],
+          ),
+        ),
+      ]
     : [];
   switch (values.agent) {
     case "vulnerable": {
@@ -215,14 +226,16 @@ function buildAgent(values: {
 }
 
 /** `laya:<url>` for a Laya server, optionally with an LLM fallback; otherwise an LLM model id. */
-function sentinelModel(spec: string, fallback?: string) {
+function sentinelModel(spec: string, fallback?: string, questions?: string) {
   if (!spec.startsWith("laya:")) {
     if (fallback) throw new Error("--sentinel-fallback needs --sentinel-model laya:<url>");
+    if (questions) throw new Error("--sentinel-questions needs --sentinel-model laya:<url>");
     return new LlmDecisionModel({ model: spec });
   }
   const laya = new LayaSentinel({
     url: spec.slice("laya:".length).replace(/\/+$/, ""),
     apiKey: process.env.LAYA_API_KEY,
+    questions: parseSentinelQuestionSet(questions),
   });
   return fallback
     ? new CascadeSentinel(

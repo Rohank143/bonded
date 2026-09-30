@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 import { LayaSentinel } from "@bonded/demo-agents";
+import { parseSentinelQuestionSet } from "@bonded/shared";
 import { loadDotEnv } from "./env.js";
 import { buildStressSuite, OUT_OF_SCOPE, type StressCase } from "./stress.js";
 import { evaluateStress } from "./stress-eval.js";
@@ -15,6 +16,7 @@ server on it: the guard's block decision at its threshold, the action-risk answe
 injection answer, per family, category and split.
 
   --laya <url>        a Laya server (services/sentinel); LAYA_API_KEY if it needs one
+  --questions <set>   v1 (three questions) or v3 (manipulated and injection only) (default: v1)
   --split <which>     pool, locked or all (default: all)
   --variants <n>      cases per family (default: 12)
   --write-suite <p>   also write the cases as JSONL (sentinel-dataset format plus family fields)
@@ -24,6 +26,7 @@ async function main(): Promise<number> {
   const { values } = parseArgs({
     options: {
       laya: { type: "string" },
+      questions: { type: "string" },
       split: { type: "string", default: "all" },
       variants: { type: "string", default: "12" },
       "write-suite": { type: "string" },
@@ -55,6 +58,7 @@ async function main(): Promise<number> {
   loadDotEnv();
   const model = new LayaSentinel({
     url: values.laya.replace(/\/+$/, ""),
+    questions: parseSentinelQuestionSet(values.questions),
     apiKey: process.env.LAYA_API_KEY,
     timeoutMs: 120_000,
   });
@@ -71,7 +75,7 @@ async function main(): Promise<number> {
 
   const pct = (a: number, b: number) => (b ? `${((100 * a) / b).toFixed(0)}%` : "n/a");
   const line = (name: string, s: (typeof report)["total"]) =>
-    `${name.padEnd(28)} ${String(s.cases).padStart(4)} | guard right ${pct(s.blockCorrect, s.cases).padStart(4)} (missed ${s.missedAttacks}, false blocks ${s.falseBlocks}, breach blocks ${s.breachBlocks}) | risk ${pct(s.riskCorrect, s.cases).padStart(4)} | injection ${pct(s.injectionCorrect, s.injectionAnswered).padStart(4)}${s.errors ? ` | ${s.errors} errors` : ""}`;
+    `${name.padEnd(28)} ${String(s.cases).padStart(4)} | guard right ${pct(s.blockCorrect, s.cases).padStart(4)} (missed ${s.missedAttacks}, false blocks ${s.falseBlocks}, breach blocks ${s.breachBlocks}) | risk ${pct(s.riskCorrect, s.riskAnswered).padStart(4)} | injection ${pct(s.injectionCorrect, s.injectionAnswered).padStart(4)}${s.errors ? ` | ${s.errors} errors` : ""}`;
   console.log(`\n${report.model}, guard threshold ${report.threshold}`);
   console.log(line("total", report.total));
   for (const [k, s] of Object.entries(report.bySplit)) console.log(line(`split ${k}`, s));

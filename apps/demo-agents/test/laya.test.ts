@@ -88,6 +88,34 @@ describe("LayaSentinel", () => {
   });
 });
 
+describe("LayaSentinel with the v3 question set", () => {
+  /** A v3 checkpoint's response: no action_risk answer. */
+  const v3Answer = (manipulated: number, injection = 0.5) => {
+    const full = layaAnswer(manipulated, { within_mandate: 1 }, injection);
+    const { action_risk: _dropped, ...answers } = full.answers;
+    return { ...full, answers };
+  };
+
+  it("asks only manipulated and injection, and returns no action-risk answer", async () => {
+    const f = fakeFetch(() => ({ json: v3Answer(0.8, 0.9) }));
+    const a = await new LayaSentinel({ url: "u", fetch: f.impl, questions: "v3" }).assess(fields);
+    expect(Object.keys(f.requests[0]!.body.questions as object)).toEqual([
+      "manipulated",
+      "injection_in_inputs",
+    ]);
+    expect(f.requests[0]!.body.questions).toEqual(sentinelQuestions("v3"));
+    expect(a).toMatchObject({ manipulated: 0.8, injection: 0.9 });
+    expect(a.actionRisk).toBeUndefined();
+  });
+
+  it("still requires the action-risk answer from a v1 checkpoint", async () => {
+    const f = fakeFetch(() => ({ json: v3Answer(0.8) }));
+    await expect(new LayaSentinel({ url: "u", fetch: f.impl }).assess(fields)).rejects.toThrow(
+      /no action_risk/,
+    );
+  });
+});
+
 class Fixed implements SentinelModel {
   calls = 0;
   constructor(
@@ -226,8 +254,8 @@ describe("DecisionModelSentinel", () => {
       }),
     ).assess(fields);
     expect(a.manipulated).toBeCloseTo(0.7);
-    expect(a.actionRisk.probabilities.breach_likely).toBeCloseTo(0.6);
-    expect(a.actionRisk.probabilities.within_mandate).toBeCloseTo(0.2);
+    expect(a.actionRisk!.probabilities.breach_likely).toBeCloseTo(0.6);
+    expect(a.actionRisk!.probabilities.within_mandate).toBeCloseTo(0.2);
     expect(a.injection).toBeUndefined();
   });
 
@@ -293,4 +321,74 @@ describe("LayaDecisionModel", () => {
       }),
     ).rejects.toThrow(/answered "hold"/);
   });
+});
+
+describe("SentinelGuard with a v3 model", () => {
+  const context = {
+    task,
+    untrustedInputs: [],
+    untrustedCalls: [],
+    tradedUsd: 0,
+    priceUsd: async () => 1,
+  };
+  /** A v3 answer: manipulated and injection only. */
+  const v3 = (manipulated: number): SentinelModel => ({
+    name: "laya-v3",
+    async assess() {
+      return { manipulated, injection: 0.5, model: "laya-v3", latencyMs: 1 };
+    },
+  });
+  const swap = (amountIn: string) => ({ tokenIn: "tUSDG", tokenOut: "tNVDA", amountIn });
+
+  it.each([
+    ["an ordered in-rules swap", "swap", swap("100"), 0.8, false, "suspicious"],
+    ["an ordinary in-rules swap", "swap", swap("100"), 0.1, true, "within_mandate"],
+    ["an unprompted over-limit swap", "swap", swap("9000"), 0.1, true, "breach_likely"],
+    [
+      "an unprompted transfer outside the allowlist",
+      "transfer",
+      { token: "tUSDG", to: "0x7E268df5e6d4Da4E9f0076Ff05eFC1Be162d9dCf", amount: "5" },
+      0.1,
+      true,
+      "breach_likely",
+    ],
+  ] as const)(
+    "computes action risk in code for %s",
+    async (_name, tool, args, manipulated, allow, risk) => {
+      const verdict = await new SentinelGuard(v3(manipulated)).check(tool, { ...args }, context);
+      // Blocking still depends only on manipulated; the risk label comes from the policy check.
+      expect(verdict.allow).toBe(allow);
+      expect(verdict.labels).toMatchObject({ action_risk: risk, action_risk_source: "code" });
+    },
+  );
+
+  it("keeps a v1 model's own action-risk answer", async () => {
+    const v1: SentinelModel = {
+      name: "laya-v1",
+      async assess() {
+        return {
+          manipulated: 0.1,
+          actionRisk: risk("breach_likely", 0.9),
+          model: "laya-v1",
+          latencyMs: 1,
+        };
+      },
+    };
+    const verdict = await new SentinelGuard(v1).check("swap", swap("100"), context);
+    expect(verdict.labels).toMatchObject({
+      action_risk: "breach_likely",
+      action_risk_source: "model",
+    });
+  });
+});
+
+it("a cascade over a v3 model escalates only on an unsure manipulated score", () => {
+  const cascade = new CascadeSentinel(
+    new Fixed("laya", { manipulated: 0 }),
+    new Fixed("llm", { manipulated: 0 }),
+  );
+  const at = (manipulated: number) => ({ manipulated, model: "laya", latencyMs: 1 });
+  expect(cascade.unsure(at(0.05))).toBe(false);
+  expect(cascade.unsure(at(0.5))).toBe(true);
+  expect(cascade.unsure(at(0.95))).toBe(false);
 });

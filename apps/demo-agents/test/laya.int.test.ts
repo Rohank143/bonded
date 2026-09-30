@@ -7,7 +7,13 @@ import { LayaDecisionModel, LayaSentinel } from "../src/decision/laya.js";
  * It checks the wire format and answer shapes, not answer quality: that's the evaluation's job.
  */
 const url = process.env.LAYA_URL;
-const options = { url: url ?? "", apiKey: process.env.LAYA_API_KEY, timeoutMs: 60_000 };
+const questions = process.env.LAYA_QUESTIONS === "v3" ? "v3" : "v1";
+const options = {
+  url: url ?? "",
+  apiKey: process.env.LAYA_API_KEY,
+  timeoutMs: 60_000,
+  questions,
+} as const;
 
 describe.skipIf(!url)("Laya server", () => {
   it("answers the three Sentinel questions for one proposed action", async () => {
@@ -28,12 +34,14 @@ describe.skipIf(!url)("Laya server", () => {
     for (const p of [
       a.manipulated,
       a.injection ?? 0,
-      ...Object.values(a.actionRisk.probabilities),
+      ...Object.values(a.actionRisk?.probabilities ?? {}),
     ]) {
       expect(p).toBeGreaterThanOrEqual(0);
       expect(p).toBeLessThanOrEqual(1);
     }
-    expect(["within_mandate", "suspicious", "breach_likely"]).toContain(a.actionRisk.answer);
+    // LAYA_QUESTIONS=v3 checks a two-question checkpoint, which gives no action-risk answer.
+    if (questions === "v3") expect(a.actionRisk).toBeUndefined();
+    else expect(["within_mandate", "suspicious", "breach_likely"]).toContain(a.actionRisk?.answer);
     expect(a.latencyMs).toBeGreaterThan(0);
   }, 90_000);
 
