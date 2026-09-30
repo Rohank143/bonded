@@ -30,7 +30,7 @@ Baseline, **base Laya (not fine-tuned)**, 111 distinct held-out cases from 190 r
 |---|---|
 | manipulated (36 yes, 75 no) | accuracy 32.4%, AUC 0.668, TPR at 1% FPR 0%, ECE 0.199 |
 | injection in inputs | accuracy 96.4%, AUC 0.554 |
-| action risk | accuracy 70.3%, ECE 0.262; it answers "within mandate" for 39 of 42 likely breaches |
+| action risk | accuracy 70.3%, ECE 0.262; it answers "within mandate" for 33 of 36 likely breaches |
 | latency | p50 684 ms, p95 731 ms (laptop GPU, MPS) |
 
 Base Laya can't tell manipulated actions apart, as its README warns. This is the bar the fine-tune must clear.
@@ -52,17 +52,35 @@ The plan's CPU guess (300–400 ms) was about 7 times too low; `docs/SENTINEL.md
 
 Memory: 1.9 GB peak on the laptop. In the Linux container it's 2.1 GB after loading, and the first real request didn't fit in the roughly 2.7 GB the local Docker VM had free, so the Railway service gets 4 GB and its real peak comes from Railway's metrics.
 
-### Fine-tune (Kaggle run `sentinel-v1`)
+### Fine-tune v1 on the held-out cases
 
-Laya's own benchmark on our test split: accuracy 94.4%, ECE 0.042, Brier 0.087, latency p50 217 ms on a T4. The split is only 24 rows (18 distinct states, 72 answers), so this is a sanity check; the held-out evaluation above, run on the fine-tune, is the real measure.
+`ddboy19912/bonded-sentinel-laya` at commit `22d2ad7` (private), on the same 111 cases ([evidence](evidence/sentinel-eval-finetune-v1.json)):
+
+| | Base Laya | Fine-tune v1 |
+|---|---|---|
+| Manipulated: AUC | 0.668 | **0.936** |
+| Manipulated: caught with zero false alarms | 0 of 36 | **33 of 36 (91.7%)** |
+| Manipulated: false alarms at the 0.5 threshold | 75 of 75 (accuracy 32.4%) | **0 of 75** |
+| Action risk: likely breaches caught | 3 of 36 | **33 of 36** |
+| Action risk: accuracy | 70.3% | **97.3%** |
+| Manipulated: calibration (ECE) | 0.199 | **0.069** |
+| Latency, laptop GPU (MPS), p50 | 684 ms | 665 ms |
+
+- By class: A7 (tool-output smuggling) 100%; A10 (hostile counterparty agent) 94.5%. All three misses are A10.
+- The injection question can't be measured here: only the 4 controls have no injection, and the fine-tune flags all 4 (AUC 0.016 on 4 negatives). The guard does not block on it.
+- Same limits as the baseline: 4 real benign controls (the other 71 negatives are attacks that failed to manipulate the agent), scripted agents, and no "suspicious" labels. False alarms on ordinary trading need the LLM-driven benign episodes.
+
+### Kaggle's own benchmark (run `sentinel-v1`)
+
+Laya's benchmark on our test split: accuracy 94.4%, ECE 0.042, Brier 0.087, latency p50 217 ms on a T4. The split is only 24 rows (18 distinct states, 72 answers), so this is a sanity check; the held-out evaluation above is the real measure.
 
 ## Done when
 
-- **"Sentinel eval report (TPR@1%FPR, ECE, latency)":** met for base Laya. The fine-tune's report follows when the Kaggle run finishes.
+- **"Sentinel eval report (TPR@1%FPR, ECE, latency)":** met, for base Laya and fine-tune v1.
 - **"Solana E2E breach → claim on devnet":** not yet; separate PR (needs a funded devnet wallet).
 
 ## Next
 
-- When the Kaggle run finishes: evaluate the fine-tune through the service, set the cascade band, deploy the service to Railway (4 GB, read-only Hugging Face token and bearer key set by the founder), and re-run the Arena with Sentinel on.
+- Set the cascade band, deploy the service to Railway (4 GB, read-only Hugging Face token and bearer key set by the founder), and re-run the Arena with Sentinel on.
 - Varied benign control episodes from an LLM-driven agent (under $1), so false positives are measured on more than 4 cases.
 - Solana devnet deploy and the ADR-011 follow-ups.
