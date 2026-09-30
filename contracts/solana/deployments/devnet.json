@@ -1,0 +1,12 @@
+{
+  "attester": "4pykkW1ZGmRLv9z2gSEbwEfcp4piB2Wb8Zpg1neE499n",
+  "cluster": "devnet",
+  "pool": "FcwwaDGsJ69uoodN7ekx4WDpoYxF2SHpy6VUuaU45XpU",
+  "programs": {
+    "bonded_cover": "Dcrwfd272QQxXS4oEmHPSQdGWRZ2BMRSMb3Vi7jj6Y1X",
+    "bonded_registry": "7hfPMrd4A264TfgTivV1QLmps9N5ZCf4r64csh8hfuYy",
+    "bonded_vault": "8hNVDFF7aU2BJa4avnv2X7ziYEmguCaCHTZYBKo2CzFx"
+  },
+  "testUsdMint": "942E1ji9CQYaqPiR59LNXi3cnxXbKFgiDvRU6oXf5XFi",
+  "upgradeAuthority": "5cJyCHkC6qQByjHXXv8oCNbhxEHsRePGR1DuKzVbNqfn"
+}
