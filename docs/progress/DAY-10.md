@@ -89,7 +89,7 @@ All 9 "breach likely" calls, and both "manipulated" ones, are sells back to tUSD
   - The v2 set has 10,399 training rows; the test split is unchanged from v1.
   - The generator almost always chose buys for "small trades" (5 sells in 400); the 400 benign sells cover selling.
 
-### Fine-tune v2: chosen for production
+### Fine-tune v2: candidate, production gates pending
 
 Trained on the v2 set with the fully edited notebook (Laya 0.3.21, pinned base). Hugging Face commit `0170dd4` (weights from `8ace3be`, plus the report). Kaggle's benchmark on the 24-case test split: accuracy 97.2%, ECE 0.084, p50 208 ms on a T4; A7 100%, A10 95.2%, controls 100% ([evidence](evidence/kaggle-benchmark-sentinel-v2.json)).
 
@@ -98,20 +98,28 @@ On the same 156 cases as v1: 107 held-out attack cases plus the 49 benign trades
 | | v1 | v2 |
 |---|---|---|
 | Manipulated: AUC | 0.930 | **0.975** |
-| Manipulated: caught at under 1% false alarms | 33 of 36 (FPR 0.8%) | 33 of 36 (FPR 0.8%) |
-| Benign trades flagged manipulated (the guard's block) | 2 of 49 | **0 of 49** |
+| Manipulated: TPR at an independently selected ROC threshold | 33 of 36 (FPR 0.8%) | 33 of 36 (FPR 0.8%) |
+| Benign trades classified manipulated (score at least 0.5) | 2 of 49 | **0 of 49** |
 | Benign trades called "breach likely" (a label) | 9 of 49 | **3 of 49** |
 | Injection question: AUC | 0.862 | **1.000** |
 | Manipulated: calibration (ECE) | 0.079 | 0.091 |
 
-The 49 benign trades revealed the sell problem that v2's data targets, so they're no longer an independent test. A fresh batch of 48 LLM-driven benign episodes ($0.04; 46 distinct cases, no breaches) was run after training ([v1](evidence/sentinel-eval-v1-fresh-controls.json), [v2](evidence/sentinel-eval-v2-fresh-controls.json)):
+The 49 benign trades revealed the sell problem that v2's data targets, so they're no longer an independent test. Another batch of 48 LLM-driven benign episodes ($0.04; 46 distinct cases, no breaches) was run after training ([v1](evidence/sentinel-eval-v1-fresh-controls.json), [v2](evidence/sentinel-eval-v2-fresh-controls.json)). New episodes do not mean independent cases: 20 of these 46 exactly repeat the previous 49 controls by the evaluator's key (mandate, action, untrusted inputs and labels), leaving 26 novel cases ([overlap audit](evidence/sentinel-controls-overlap.json)). The reports below cover all 46; performance on the 26 novel cases has not been measured separately.
 
-| Fresh 46 benign cases | v1 | v2 |
+| Later batch: 46 benign cases, 20 repeated | v1 | v2 |
 |---|---|---|
-| Flagged manipulated (would be blocked) | 1 | **0** |
+| Classified manipulated (score at least 0.5) | 1 | **0** |
 | Called "breach likely" | 6 | **2** |
 
-v2 is equal or better on everything that decides a block, with slightly worse calibration (ECE 0.091 against 0.079). Production switches to v2. Limits unchanged: scripted attack agents, benign tasks from a fixed list of 16, no "suspicious" labels, and 36 manipulated cases, so one miss moves the catch rate by about 3 points.
+These reports support better classification and ranking, with slightly worse calibration (ECE 0.091 against 0.079). They do not establish equal detection by the deployed guard: accuracy uses 0.5, the ROC threshold is selected separately for each model, and `SentinelGuard` blocks at 0.7. Zero benign scores at or above 0.5 proves zero blocks at 0.7 for those cases, but the attack catch rate at 0.7 is unavailable from the aggregate reports. The evaluator now reports `blocking` counts at the shared guard threshold, overall and per group; older reports have no such field. Local GPU latency in these reports is not a Railway CPU measurement.
+
+**Production stays on v1.** v2 remains pinned as a candidate at `0170dd4d4000a0021d90813d9d7f795fb5bcbb97`. Before changing `.railway/railway.ts`:
+
+1. Serve each pinned revision and rerun `pnpm sentinel:eval` on the same held-out attacks and controls. Compare the `blocking` counts at 0.7, report errors, and score the 26 novel controls separately. Retain the revision and input hashes with the reports.
+2. Rerun the Arena with the v2 service guarding actions (`--agent hardened --sentinel-model laya:<v2-url>`), and record the resulting breach rates and premiums. Evaluating saved cases and running Arena integration tests do not meet this gate (Kaggle guide, Retraining step 7).
+3. Only after those checks pass, change the production revision, run `railway config plan`, and verify its only change is Sentinel's model revision before applying it. Keep v1 as the rollback.
+
+Other limits: scripted attack agents, benign tasks from a fixed list of 16, no "suspicious" labels, and 36 manipulated cases, so one miss moves the catch rate by about 3 points.
 
 ### Kaggle's own benchmark (run `sentinel-v1`)
 
@@ -132,5 +140,5 @@ The metrics themselves are computed on our test file.
 
 ## Next
 
-- The Sentinel service is live on Railway (on v1 until this change is applied). Next: set the cascade band, and re-run the Arena with Sentinel on through the Railway service.
+- The Sentinel service stays on v1 on Railway. Complete v2's guard-threshold evaluation and guarded Arena rerun before promotion; set the cascade band from evaluation, then check the promoted service through Railway.
 - Solana keeper and TypeScript client, then the ADR-011 follow-ups.

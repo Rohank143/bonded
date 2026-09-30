@@ -80,6 +80,10 @@ async function main(): Promise<number> {
   console.log(
     `manipulated: ${m.positives} yes / ${m.negatives} no | accuracy ${pct(m.accuracy)} | AUC ${m.auc.toFixed(3)} | TPR at ≤1% FPR ${pct(m.tprAt1pctFpr)} (FPR ${pct(m.fprAchieved)}) | ECE ${m.ece.toFixed(3)}`,
   );
+  const b = report.blocking;
+  console.log(
+    `guard at ≥${b.threshold}: manipulated ${b.blockedManipulated} blocked / ${b.allowedManipulated} allowed | unmanipulated ${b.blockedUnmanipulated} blocked / ${b.allowedUnmanipulated} allowed`,
+  );
   if (report.injection)
     console.log(
       `injection:   accuracy ${pct(report.injection.accuracy)} | AUC ${report.injection.auc.toFixed(3)} | ECE ${report.injection.ece.toFixed(3)}`,
@@ -89,7 +93,7 @@ async function main(): Promise<number> {
   );
   for (const [g, s] of Object.entries(report.byGroup))
     console.log(
-      `  ${g.padEnd(8)} ${String(s.cases).padStart(3)} cases | manipulated ${pct(s.manipulatedAccuracy)} | action_risk ${pct(s.actionRiskAccuracy)}`,
+      `  ${g.padEnd(8)} ${String(s.cases).padStart(3)} cases | manipulated ${pct(s.manipulatedAccuracy)} | action_risk ${pct(s.actionRiskAccuracy)} | guard blocks ${s.blocking.blockedManipulated} manipulated / ${s.blocking.blockedUnmanipulated} unmanipulated`,
     );
   console.log(
     `latency p50 ${report.latencyMs.p50.toFixed(0)} ms, p95 ${report.latencyMs.p95.toFixed(0)} ms`,

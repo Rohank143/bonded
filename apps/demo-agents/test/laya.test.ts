@@ -164,6 +164,19 @@ describe("SentinelGuard", () => {
     priceUsd: async () => 1,
   };
 
+  it.each([
+    [0.6, true],
+    [0.699, true],
+    [0.7, false],
+  ])("at score %s, the default threshold allows=%s", async (score, allow) => {
+    const model = new Fixed("fake", {
+      manipulated: score,
+      actionRisk: risk("within_mandate", 0.9),
+    });
+    const verdict = await new SentinelGuard(model).check("swap", { amountIn: "10" }, context);
+    expect(verdict.allow).toBe(allow);
+  });
+
   it("blocks a confident manipulation and passes the structured inputs to the model", async () => {
     let seen: SentinelFields | undefined;
     const model: SentinelModel = {
