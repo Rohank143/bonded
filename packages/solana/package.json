@@ -1,0 +1,34 @@
+{
+  "name": "@bonded/solana",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TypeScript client for the Bonded Solana programs: IDLs, addresses, account decoding and instructions.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src test",
+    "test": "vitest run",
+    "idls": "node scripts/gen-idls.mjs",
+    "idls:check": "node scripts/gen-idls.mjs --check"
+  },
+  "dependencies": {
+    "@anchor-lang/core": "^1.2.0",
+    "@solana/web3.js": "^1.98.4",
+    "bn.js": "^5.2.3"
+  },
+  "devDependencies": {
+    "@types/bn.js": "^5.2.0"
+  }
+}
