@@ -8,12 +8,12 @@ Sentinel is Bonded's real-time guard: a fine-tuned Laya model that checks each t
 
 **2. Train (on Kaggle, free).** Upload the files, run Laya's own notebook for about 4 to 5 hours on Kaggle's free GPUs, and save the result to a private Hugging Face repo.
 
-**3. Host it on Railway.** It runs as one more small service next to the API, keeper and worker. On startup it downloads the private model with a Hugging Face read token stored in Railway. It answers over Railway's private network, so agent data never leaves our infrastructure. It starts on CPU; plan Section 10.4 says CPU is fine for the demo.
+**3. Host it on Railway.** It runs as one more small service next to the API, keeper and worker. On startup it downloads the private model with a Hugging Face read token stored in Railway. It answers over Railway's private network, so agent data never leaves our infrastructure. Railway has no GPUs, so it runs on CPU: about 2.5 s per check (see [Speed](#speed)). That's fine for the demo; a GPU host is a URL change later.
 
 **4. Check every trade.** Before an agent's trade goes through:
 
 ```
-agent wants to trade → Sentinel checks it (about 0.3 s on CPU, to be measured)
+agent wants to trade → Sentinel checks it (about 2.5 s on CPU, well under 1 s on a GPU)
    ├─ looks fine        → trade goes ahead
    ├─ looks manipulated → trade blocked, vault owner alerted
    └─ unsure            → a cheap LLM double-checks (issue #32)
@@ -45,14 +45,32 @@ Every retrain must:
 
 When a held-out class has to join training, choose new held-out classes first (issue #11), or the evaluation stops being honest.
 
+## Speed
+
+One check is one forward pass over the mandate, the proposed action and the untrusted inputs (about 500 to 700 tokens on Arena episodes). Measured on Day 10 with base Laya, which has the same size and speed as the fine-tune:
+
+| Where | Conditions | Per check | Source |
+|---|---|---|---|
+| CPU | Apple M-series laptop, PyTorch, 2 threads, real held-out states | 2.3–2.9 s (p50 about 2.6 s); 4 or 8 threads are no faster | Measured, Day 10 |
+| CPU | Railway service, 2 vCPUs | Expect about the same; confirm from the service's own logs after deploy | Not yet measured |
+| GPU | Apple M-series laptop GPU (MPS), 111 held-out cases | p50 684 ms, p95 731 ms | Measured, Day 10 |
+| GPU | NVIDIA T4 (Kaggle) | `latency_p50_ms` in the Kaggle `benchmark_report.json` | Waiting for the training run |
+| GPU | NVIDIA T4, the author's benchmark | about 33 ms per forward pass | Laya's README, not ours |
+
+So "about 2.5 s" is the CPU figure and "under a second" is the GPU figure until the T4 number from our own run replaces the author's. Plan Section 10.4 had guessed 300–400 ms on CPU; the measurement is about 7 times slower.
+
+What this means: 2.5 s is acceptable for the demo and for agents that trade minutes apart, since the check runs once before each trade. It is too slow for high-frequency agents. The cascade (issue #32) adds an LLM call only for unsure cases.
+
+Memory: the model needs about 1.9 GB on a laptop and a little over 2 GB in the Linux container before the first request. Give the Railway service 4 GB and read its real peak from Railway's metrics. Railway bills for memory used, not the limit.
+
 ## Where to host it
 
 | Option | Per month, always on | Verdict |
 |---|---|---|
-| Railway, CPU | roughly $5–15 at demo traffic, $50–150 for two replicas later (estimates) | **Now.** Same private network and bill as the other services |
+| Railway, CPU | about $20–30 for about 2–3 GB of memory always on, at Railway's $10 per GB-month, plus CPU while checking; $50–150 for two replicas later (estimates) | **Now.** Same private network and bill as the other services. Railway has no GPUs |
 | Hugging Face endpoint, CPU | from about $22 (1 vCPU / 2 GB, likely too small for a 421M-parameter model) | Similar cost; agent data goes to a third party |
 | Hugging Face endpoint, T4 GPU | about $365 | Only when latency or volume need it; keep one replica always on |
 | Scale to zero | $0 idle | Not for the live guard: after idling, a replica needs time to start and returns errors meanwhile. Fine for batch evaluation. |
 | LLM for every check (no Laya) | about $3,700 at 1,000 agents | What Laya replaces |
 
-Prices are from Hugging Face's pricing page on September 29, 2026. Laya's CPU latency on these sizes hasn't been measured yet; Day 10 measures it before hosting is final.
+Prices are from Hugging Face's pricing page on September 29, 2026. Latency is in [Speed](#speed): CPU is about 2.5 s per check.
