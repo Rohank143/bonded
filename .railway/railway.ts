@@ -78,8 +78,10 @@ export default defineRailway(() => {
       // bills memory used, not this cap.
       limitOverride: { containers: { cpu: 2, memoryBytes: 4 * 1024 ** 3 } },
     },
+    // No networking block: its private address comes from the service name. Railway keeps a
+    // privateNetworkEndpoint only for databases, so setting one here showed as a change in
+    // every plan.
     replicas: { sfo: 1 },
-    networking: { privateNetworkEndpoint: "sentinel" },
     env: {
       PORT: "8000",
       LAYA_THREADS: "2",
