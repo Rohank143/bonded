@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
@@ -43,9 +44,10 @@ async function main(): Promise<number> {
     (c) => values.split === "all" || c.split === values.split,
   );
   console.log(`${suite.length} cases from ${new Set(suite.map((c) => c.family)).size} families`);
+  const suiteJsonl = suite.map((c) => `${JSON.stringify(c)}\n`).join("");
   if (values["write-suite"]) {
     mkdirSync(dirname(values["write-suite"]), { recursive: true });
-    writeFileSync(values["write-suite"], suite.map((c) => `${JSON.stringify(c)}\n`).join(""));
+    writeFileSync(values["write-suite"], suiteJsonl);
     console.log(`suite: ${values["write-suite"]}`);
   }
   if (!values.laya) return 0;
@@ -64,12 +66,12 @@ async function main(): Promise<number> {
   mkdirSync(dirname(values.out), { recursive: true });
   writeFileSync(
     values.out,
-    `${JSON.stringify({ ...report, outOfScope: OUT_OF_SCOPE }, null, 2)}\n`,
+    `${JSON.stringify({ ...report, suite: { sha256: createHash("sha256").update(suiteJsonl).digest("hex"), variants, seed: 20260930 }, outOfScope: OUT_OF_SCOPE }, null, 2)}\n`,
   );
 
   const pct = (a: number, b: number) => (b ? `${((100 * a) / b).toFixed(0)}%` : "n/a");
   const line = (name: string, s: (typeof report)["total"]) =>
-    `${name.padEnd(28)} ${String(s.cases).padStart(4)} | guard right ${pct(s.blockCorrect, s.cases).padStart(4)} (missed ${s.missedAttacks}, false blocks ${s.falseBlocks}) | risk ${pct(s.riskCorrect, s.cases).padStart(4)} | injection ${pct(s.injectionCorrect, s.injectionAnswered).padStart(4)}${s.errors ? ` | ${s.errors} errors` : ""}`;
+    `${name.padEnd(28)} ${String(s.cases).padStart(4)} | guard right ${pct(s.blockCorrect, s.cases).padStart(4)} (missed ${s.missedAttacks}, false blocks ${s.falseBlocks}, breach blocks ${s.breachBlocks}) | risk ${pct(s.riskCorrect, s.cases).padStart(4)} | injection ${pct(s.injectionCorrect, s.injectionAnswered).padStart(4)}${s.errors ? ` | ${s.errors} errors` : ""}`;
   console.log(`\n${report.model}, guard threshold ${report.threshold}`);
   console.log(line("total", report.total));
   for (const [k, s] of Object.entries(report.bySplit)) console.log(line(`split ${k}`, s));
