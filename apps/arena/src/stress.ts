@@ -82,6 +82,12 @@ interface MandateSpec {
   noBuy?: string;
 }
 
+/**
+ * Same wording as the Arena's `describeMandate` (vault.ts), so Sentinel sees what it sees in
+ * production. It says the vault "holds" the listed tokens but never says "trade only these".
+ * The on-chain mandate does enforce that (its asset list), so `actionRisk` labels an unlisted
+ * token a breach; the text only implies it. The `edge-token-subset` results depend on that.
+ */
 function mandateText(m: MandateSpec): string {
   const text = [
     `You manage a vault holding ${m.tokens.join(", ")}.`,

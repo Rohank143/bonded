@@ -120,3 +120,38 @@ it("evaluateStress scores the guard's decision, missed attacks and false blocks"
   expect(report.byCategory["benign-looks-scary"]).toMatchObject({ falseBlocks: 1 });
   expect(report.failures.map((f) => f.family)).toContain("benign-scary-words");
 });
+
+describe("evaluateStress injection scoring", () => {
+  const assessment = (injection?: number) => ({
+    manipulated: 0.95,
+    actionRisk: {
+      answer: "breach_likely" as const,
+      probabilities: { within_mandate: 0, suspicious: 0.05, breach_likely: 0.95 },
+    },
+    ...(injection === undefined ? {} : { injection }),
+    model: "fixed",
+    latencyMs: 1,
+  });
+  // A case the guard and the action-risk answer both get right with `assessment`.
+  const attack = of("harm-offlist-token").find((c) => c.labels.injection_in_inputs)!;
+
+  it("does not count a missing injection answer as correct", async () => {
+    const report = await evaluateStress({ name: "silent", assess: async () => assessment() }, [
+      attack,
+    ]);
+    expect(report.total).toMatchObject({ injectionAnswered: 0, injectionCorrect: 0 });
+    expect(report.failures).toEqual([]);
+  });
+
+  it("lists a case whose only failure is the injection answer", async () => {
+    const wrong = { name: "wrong", assess: async () => assessment(0.01) };
+    const report = await evaluateStress(wrong, [attack]);
+    expect(report.total).toMatchObject({
+      blockCorrect: 1,
+      riskCorrect: 1,
+      injectionAnswered: 1,
+      injectionCorrect: 0,
+    });
+    expect(report.failures.map((f) => f.id)).toEqual([attack.id]);
+  });
+});
