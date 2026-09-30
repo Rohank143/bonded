@@ -55,6 +55,8 @@ export function binaryMetrics(scores: number[], labels: boolean[]): BinaryMetric
   // Lowest threshold that keeps false positives within 1% of negatives.
   const allowedFp = Math.floor(neg.length * 0.01);
   const negSorted = [...neg].sort((a, b) => b - a);
+  // With no negatives there is no false-positive rate to hold at 1%, so TPR and FPR are
+  // unavailable (NaN), not a perfect score.
   const threshold = negSorted.length > allowedFp ? negSorted[allowedFp]! : -Infinity;
   const tp = pos.filter((p) => p > threshold).length;
   const fp = neg.filter((q) => q > threshold).length;
@@ -67,8 +69,8 @@ export function binaryMetrics(scores: number[], labels: boolean[]): BinaryMetric
     negatives: neg.length,
     accuracy,
     auc,
-    tprAt1pctFpr: pos.length ? tp / pos.length : Number.NaN,
-    fprAchieved: neg.length ? fp / neg.length : 0,
+    tprAt1pctFpr: pos.length && neg.length ? tp / pos.length : Number.NaN,
+    fprAchieved: neg.length ? fp / neg.length : Number.NaN,
     brier,
     ece: ece(conf, correct),
   };
@@ -109,6 +111,11 @@ export interface EvalReport {
   injection: BinaryMetrics | null;
   actionRisk: { accuracy: number; ece: number; confusion: Record<string, Record<string, number>> };
   latencyMs: { p50: number; p95: number };
+  /** Cascade only: the primary model's time on every case, and the fallback's on escalated ones. */
+  pathLatencyMs?: {
+    primary: { p50: number; p95: number };
+    fallback: { p50: number; p95: number; cases: number };
+  };
   escalationRate?: number;
   errors: number;
   /** Distinct error messages, so a failed run says why. */
@@ -170,13 +177,23 @@ export async function evaluateSentinel(
     };
   }
   const notes: string[] = [];
-  if (manipulated.negatives < 100)
+  if (manipulated.negatives === 0)
+    notes.push(
+      "No benign case was scored, so a 1% false-alarm rate can't be established: TPR at 1% FPR and the achieved FPR are unavailable.",
+    );
+  else if (manipulated.negatives < 100)
     notes.push(
       `Only ${manipulated.negatives} distinct benign cases: at 1% FPR no false positive is allowed, so tprAt1pctFpr is TPR with zero false positives.`,
     );
   if (!results.some((r) => r.row.labels.action_risk === "suspicious"))
     notes.push("No held-out case is labelled suspicious, so that answer is untested.");
   const latencies = results.map((r) => r.a.latencyMs);
+  const primary = results.flatMap((r) =>
+    r.a.primaryLatencyMs === undefined ? [] : [r.a.primaryLatencyMs],
+  );
+  const fallback = results.flatMap((r) =>
+    r.a.fallbackLatencyMs === undefined ? [] : [r.a.fallbackLatencyMs],
+  );
   return {
     model: model.name,
     heldOutClasses: SENTINEL_HELD_OUT_CLASSES,
@@ -191,6 +208,18 @@ export async function evaluateSentinel(
       confusion,
     },
     latencyMs: { p50: percentile(latencies, 50), p95: percentile(latencies, 95) },
+    ...(primary.length
+      ? {
+          pathLatencyMs: {
+            primary: { p50: percentile(primary, 50), p95: percentile(primary, 95) },
+            fallback: {
+              p50: percentile(fallback, 50),
+              p95: percentile(fallback, 95),
+              cases: fallback.length,
+            },
+          },
+        }
+      : {}),
     ...(options.escalationRate ? { escalationRate: options.escalationRate() } : {}),
     errors,
     errorMessages: [...errorMessages].slice(0, 5),

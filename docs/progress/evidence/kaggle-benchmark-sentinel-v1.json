@@ -26,7 +26,8 @@
       "Score MAE": 0.391,
       "Within 1 Level": "0.952",
       "ms/case": 710,
-      "Cost/Case": "$0.0004 (API)"
+      "Cost/Case": "$0.0004 (API)",
+      "comparable": false
     },
     {
       "Model": "Laya (Fine-Tuned 2xT4)",
@@ -38,7 +39,8 @@
       "Score MAE": 0.0,
       "Within 1 Level": "0.000",
       "ms/case": 216.9,
-      "Cost/Case": "$0.00 (Self-Hosted)"
+      "Cost/Case": "$0.00 (Self-Hosted)",
+      "comparable": true
     },
     {
       "Model": "ModernBERT-base (149M)",
@@ -50,7 +52,8 @@
       "Score MAE": 0.444,
       "Within 1 Level": "0.931",
       "ms/case": 349,
-      "Cost/Case": "$0.00"
+      "Cost/Case": "$0.00",
+      "comparable": false
     },
     {
       "Model": "Teacher Self-Agreement",
@@ -62,8 +65,17 @@
       "Score MAE": "-",
       "Within 1 Level": "-",
       "ms/case": "-",
-      "Cost/Case": "-"
+      "Cost/Case": "-",
+      "comparable": false
     }
   ],
-  "per_workflow": {}
+  "per_workflow": {},
+  "correction": {
+    "note": "The fields above are the notebook's original export, kept as it wrote them. The notebook v1 ran was missing edits (see services/sentinel/kaggle/README.md, Retraining, step 3). This block corrects what they got wrong; no measured metric has changed.",
+    "benchmark": "bonded-sentinel held-out test split (not LocalLLaMA/typed-decisions)",
+    "n_cases": 24,
+    "questions_per_case": 3,
+    "n_decisions": 72,
+    "comparison_rows": "Rows other than the fine-tune's own are upstream measurements on LocalLLaMA/typed-decisions, a different dataset with five decisions per case. They are not comparable to these metrics."
+  }
 }

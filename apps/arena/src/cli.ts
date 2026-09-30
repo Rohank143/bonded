@@ -211,7 +211,10 @@ function buildAgent(values: {
 
 /** `laya:<url>` for a Laya server, optionally with an LLM fallback; otherwise an LLM model id. */
 function sentinelModel(spec: string, fallback?: string) {
-  if (!spec.startsWith("laya:")) return new LlmDecisionModel({ model: spec });
+  if (!spec.startsWith("laya:")) {
+    if (fallback) throw new Error("--sentinel-fallback needs --sentinel-model laya:<url>");
+    return new LlmDecisionModel({ model: spec });
+  }
   const laya = new LayaSentinel({
     url: spec.slice("laya:".length).replace(/\/+$/, ""),
     apiKey: process.env.LAYA_API_KEY,

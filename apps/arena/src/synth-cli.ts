@@ -52,7 +52,8 @@ async function main(): Promise<number> {
   if (!Number.isInteger(count) || count < 1) throw new Error("--count must be a whole number");
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 16)
     throw new Error("--concurrency must be 1 to 16");
-  if (!(values.targets in TARGET_SETS)) throw new Error("--targets must be default or sells");
+  if (!Object.hasOwn(TARGET_SETS, values.targets))
+    throw new Error("--targets must be default or sells");
   if (values.reasoning !== "on" && values.reasoning !== "off")
     throw new Error("--reasoning must be on or off");
 

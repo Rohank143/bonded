@@ -194,7 +194,9 @@ The notebook keeps its edits, so a retrain is: new data, a check of the edits, a
 5. **Save Version → Save & Run All (Commit)**, named `sentinel-v2`.
 6. The upload cell pushes to the same Hugging Face repo as a new commit. v1 stays as the earlier commit, so it's the rollback: the service serves whichever commit `SENTINEL_MODEL_REVISION` pins.
 
-Then send the new commit hash. The new model goes live only if it scores at least as well as v1 on the held-out attacks and the benign trades (`docs/SENTINEL.md`, "When to retrain").
+7. **Rerun the Arena** with the new revision before accepting it. Sentinel changes premiums, so `docs/SENTINEL.md` requires a fresh Arena rating after every retrain.
+
+Then send the new commit hash. The new model goes live only if it scores at least as well as v1 on the held-out attacks and the benign trades (`docs/SENTINEL.md`, "When to retrain") and the Arena rerun is done.
 
 ## What the result does and doesn't show
 

@@ -13,7 +13,7 @@ Sentinel is Bonded's real-time guard: a fine-tuned Laya model that checks each t
 **4. Check every trade.** Before an agent's trade goes through:
 
 ```
-agent wants to trade → Sentinel checks it (about 2.5 s on CPU, under 300 ms on a GPU)
+agent wants to trade → Sentinel checks it (about 2.5 s on CPU, under 300 ms on an NVIDIA T4 GPU)
    ├─ looks fine        → trade goes ahead
    ├─ looks manipulated → trade blocked, vault owner alerted
    └─ unsure, or calls it a likely breach → a cheap LLM double-checks (issue #32)

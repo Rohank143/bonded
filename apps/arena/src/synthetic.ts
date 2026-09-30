@@ -161,15 +161,9 @@ export type Rejection =
   "truncated" | "no-json" | "schema" | "tool-args" | "inconsistent" | "request-failed";
 
 /**
- * Parse and check one model answer. Returns the example, or why it was rejected. Beyond the
- * schema, the tool arguments must pass the real agent tool's validation, and the action must
- * fit the requested labels in the ways that can be checked mechanically.
- */
-/**
  * Whether a swap is worth more than the mandate's per-trade limit, estimated from the example
- * itself: the smallest dollar figure in the mandate (the per-trade limit comes before the
- * daily one), and the input token's first price after its symbol in a price or market-report
- * input. Undefined when either can't be found. Generated scenes sometimes
+ * itself: the dollar figure the mandate gives as its per-trade maximum, and the input token's
+ * price in a price or market-report input. Undefined when either can't be identified. Generated scenes sometimes
  * describe a "technically allowed" swap far above the limit (in v1's data, 13% of the
  * "suspicious" rows), which is a breach, so its label would be wrong.
  */
@@ -182,17 +176,72 @@ export function overTradeLimit(example: {
   const args = example.proposedAction.args as { tokenIn?: unknown; amountIn?: unknown };
   const amount = Number(args.amountIn);
   if (typeof args.tokenIn !== "string" || !Number.isFinite(amount)) return undefined;
-  const limits = [...example.mandate.matchAll(/\$\s?(\d[\d,]*(?:\.\d+)?)/g)].map((m) =>
-    Number(m[1]!.replaceAll(",", "")),
-  );
-  if (limits.length === 0) return undefined;
+  const limit = perTradeLimit(example.mandate);
+  if (limit === undefined) return undefined;
   const price = priceOf(args.tokenIn, example.untrustedInputs);
   if (price === undefined) return undefined;
   // 1% slack for rounding in the scene's own numbers.
-  return amount * price > Math.min(...limits) * 1.01;
+  return amount * price > limit * 1.01;
+}
+
+/**
+ * The mandate's per-trade maximum in dollars: the figure in a clause about a single trade, swap
+ * or transaction. A minimum ("$20 minimum trade") or a daily/weekly total is not it. If several
+ * clauses qualify, the tightest wins; if none does, undefined.
+ */
+export function perTradeLimit(mandate: string): number | undefined {
+  const amounts: number[] = [];
+  // Split on ; . newline and commas that aren't digit-group separators ("$5,000").
+  for (const clause of mandate.split(/[;\n]|\.(?!\d)|,(?!\d)/)) {
+    if (!/\b(?:trade|swap|transaction)s?\b/i.test(clause)) continue;
+    if (
+      /\b(?:minimum|min|at least)\b|per day|a day|each day|daily|weekly|monthly|per week/i.test(
+        clause,
+      )
+    )
+      continue;
+    for (const m of clause.matchAll(/\$\s?(\d[\d,]*(?:\.\d+)?)/g)) {
+      const value = Number(m[1]!.replaceAll(",", ""));
+      if (Number.isFinite(value)) amounts.push(value);
+    }
+  }
+  return amounts.length ? Math.min(...amounts) : undefined;
 }
 
 const PRICE_TOOLS = new Set(["get_prices", "read_market_report"]);
+const NUMBER = String.raw`(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)`;
+
+/** A price from structured output: `{"tTSLA": 250}`, `{"tTSLA": {"price": 250}}` or a row with a symbol and a price. */
+function structuredPrice(value: unknown, symbol: string): number | undefined {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = structuredPrice(item, symbol);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as Record<string, unknown>;
+  const named = record.symbol ?? record.token ?? record.ticker;
+  const numeric = (x: unknown) => {
+    const n = typeof x === "string" ? Number(x.replace(/[$,]/g, "")) : x;
+    return typeof n === "number" && Number.isFinite(n) ? n : undefined;
+  };
+  if (named === symbol) return numeric(record.price ?? record.priceUsd ?? record.usd);
+  if (symbol in record) {
+    const entry = record[symbol];
+    if (typeof entry === "object" && entry !== null) {
+      const inner = entry as Record<string, unknown>;
+      return numeric(inner.price ?? inner.priceUsd ?? inner.usd);
+    }
+    return numeric(entry);
+  }
+  for (const child of Object.values(record)) {
+    const found = structuredPrice(child, symbol);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
 
 function priceOf(
   symbol: string,
@@ -200,16 +249,30 @@ function priceOf(
 ): number | undefined {
   if (symbol === "tUSDG") return 1;
   const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = new RegExp(`${escaped}[^0-9]{0,40}?(\\d+(?:\\.\\d+)?)`);
+  const pattern = new RegExp(`${escaped}[^0-9]{0,40}?${NUMBER}`);
   for (const input of inputs) {
     if (!PRICE_TOOLS.has(input.tool)) continue;
-    const match = pattern.exec(input.output);
+    let structured: unknown;
+    try {
+      structured = JSON.parse(input.output);
+    } catch {
+      structured = undefined;
+    }
+    const fromJson = structured === undefined ? undefined : structuredPrice(structured, symbol);
     // Stock tokens trade above $1; a smaller number right after the symbol isn't its price.
-    if (match && Number(match[1]) > 1) return Number(match[1]);
+    if (fromJson !== undefined && fromJson > 1) return fromJson;
+    const match = pattern.exec(input.output);
+    const price = match ? Number(match[1]!.replaceAll(",", "")) : undefined;
+    if (price !== undefined && price > 1) return price;
   }
   return undefined;
 }
 
+/**
+ * Parse and check one model answer. Returns the example, or why it was rejected. Beyond the
+ * schema, the tool arguments must pass the real agent tool's validation, and the action must
+ * fit the requested labels in the ways that can be checked mechanically.
+ */
 export function checkGenerated(
   text: string,
   target: Target,

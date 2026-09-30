@@ -43,6 +43,10 @@ export interface SentinelAssessment {
   latencyMs: number;
   /** Set by `CascadeSentinel` when the primary model was unsure and the fallback answered. */
   escalated?: boolean;
+  /** Set by `CascadeSentinel`: the primary model's own time, kept when the fallback answers. */
+  primaryLatencyMs?: number;
+  /** Set by `CascadeSentinel` on escalation: the fallback's own time. `latencyMs` is the sum. */
+  fallbackLatencyMs?: number;
 }
 
 export interface SentinelModel {
@@ -207,6 +211,8 @@ export class DecisionModelSentinel implements SentinelModel {
       },
       options,
     );
+    if (!ACTION_RISKS.includes(risk.answer as ActionRisk))
+      throw new Error(`${this.name} answered action_risk "${risk.answer}"`);
     const answer = risk.answer as ActionRisk;
     const rest = (1 - risk.confidence) / (ACTION_RISKS.length - 1);
     return {
@@ -275,10 +281,16 @@ export class CascadeSentinel implements SentinelModel {
   ): Promise<SentinelAssessment> {
     this.checks++;
     const first = await this.primary.assess(fields, options);
-    if (!this.unsure(first)) return first;
+    if (!this.unsure(first)) return { ...first, primaryLatencyMs: first.latencyMs };
     this.escalations++;
     const second = await this.fallback.assess(fields, options);
-    return { ...second, latencyMs: first.latencyMs + second.latencyMs, escalated: true };
+    return {
+      ...second,
+      latencyMs: first.latencyMs + second.latencyMs,
+      primaryLatencyMs: first.latencyMs,
+      fallbackLatencyMs: second.latencyMs,
+      escalated: true,
+    };
   }
 }
 
@@ -329,10 +341,10 @@ export class LayaDecisionModel implements DecisionModel {
     } else {
       const parsed = ChoiceAnswer.safeParse(answer);
       if (!parsed.success) throw new Error(`Laya gave no choice for ${question.key}`);
-      decision = {
-        answer: parsed.data.choice,
-        confidence: parsed.data.probabilities[parsed.data.choice] ?? 0,
-      };
+      const confidence = parsed.data.probabilities[parsed.data.choice];
+      if (confidence === undefined)
+        throw new Error(`Laya gave no probability for "${parsed.data.choice}" on ${question.key}`);
+      decision = { answer: parsed.data.choice, confidence };
     }
     // An answer outside the allowed ones is an error, never a guess (as `parseDecision`).
     this.latenciesMs.push(performance.now() - started);

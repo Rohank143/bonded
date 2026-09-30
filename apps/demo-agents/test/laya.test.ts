@@ -124,6 +124,9 @@ describe("CascadeSentinel", () => {
     );
     const a = await unsure.assess(fields);
     expect(a).toMatchObject({ model: "llm", escalated: true });
+    // Each path's own time is kept next to the total (issue #32).
+    expect(a).toMatchObject({ primaryLatencyMs: 1, fallbackLatencyMs: 1, latencyMs: 2 });
+    expect((await sure.assess(fields)).fallbackLatencyMs).toBeUndefined();
     expect(unsure.escalations / unsure.checks).toBe(1);
 
     // A spread-out action-risk answer is unsure too, even with a clear manipulated answer.
@@ -214,6 +217,17 @@ describe("DecisionModelSentinel", () => {
     expect(a.actionRisk.probabilities.within_mandate).toBeCloseTo(0.2);
     expect(a.injection).toBeUndefined();
   });
+
+  it("rejects an action-risk answer that isn't one of the risks", async () => {
+    await expect(
+      new DecisionModelSentinel(
+        new ScriptedDecisions({
+          manipulated: { answer: "no", confidence: 0.9 },
+          action_risk: { answer: "fine", confidence: 0.9 },
+        }),
+      ).assess(fields),
+    ).rejects.toThrow(/answered action_risk "fine"/);
+  });
 });
 
 describe("LayaDecisionModel", () => {
@@ -235,6 +249,21 @@ describe("LayaDecisionModel", () => {
     expect(d).toEqual({ answer: "no", confidence: 0.8 });
     expect(model.latenciesMs).toHaveLength(1);
     expect(model.usage.inputTokens).toBe(50);
+  });
+
+  it("rejects a choice whose own probability is missing", async () => {
+    const f = fakeFetch(() => ({
+      json: { answers: { pick: { type: "choice", choice: "buy", probabilities: {} } } },
+    }));
+    await expect(
+      new LayaDecisionModel({ url: "u", fetch: f.impl }).decide({
+        type: "choice",
+        key: "pick",
+        instruction: "Pick one.",
+        options: ["buy", "sell"],
+        context: {},
+      }),
+    ).rejects.toThrow(/no probability for "buy"/);
   });
 
   it("rejects a choice that isn't one of the options", async () => {

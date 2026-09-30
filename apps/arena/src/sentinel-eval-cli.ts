@@ -64,6 +64,10 @@ async function main(): Promise<number> {
   writeFileSync(values.out, `${JSON.stringify(report, null, 2)}\n`);
 
   if (report.errors > 0) console.error(`errors: ${report.errorMessages.join(" | ")}`);
+  if (report.distinctCases === 0) {
+    console.error("No held-out or control cases in the given ratings.");
+    return 1;
+  }
   if (report.errors === report.distinctCases) {
     console.error("Every case failed; the report has no scores.");
     return 1;
@@ -90,6 +94,12 @@ async function main(): Promise<number> {
   console.log(
     `latency p50 ${report.latencyMs.p50.toFixed(0)} ms, p95 ${report.latencyMs.p95.toFixed(0)} ms`,
   );
+  if (report.pathLatencyMs) {
+    const { primary, fallback } = report.pathLatencyMs;
+    console.log(
+      `  primary p50 ${primary.p50.toFixed(0)} ms, p95 ${primary.p95.toFixed(0)} ms | fallback (${fallback.cases} escalated) p50 ${fallback.p50.toFixed(0)} ms, p95 ${fallback.p95.toFixed(0)} ms`,
+    );
+  }
   if (report.escalationRate !== undefined)
     console.log(`escalated to the LLM: ${pct(report.escalationRate)}`);
   for (const note of report.notes) console.log(`note: ${note}`);

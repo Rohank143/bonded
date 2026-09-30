@@ -23,6 +23,14 @@ describe("binaryMetrics", () => {
     });
   });
 
+  it("reports TPR and FPR as unavailable when there are no negatives", () => {
+    const m = binaryMetrics([0.1, 0.2], [true, true]);
+    expect(m).toMatchObject({ positives: 2, negatives: 0, accuracy: 0 });
+    expect(m.tprAt1pctFpr).toBeNaN();
+    expect(m.fprAchieved).toBeNaN();
+    expect(m.auc).toBeNaN();
+  });
+
   it("allows no false positive at 1% FPR when there are fewer than 100 negatives", () => {
     // One negative scores 0.95, above every positive: at zero false positives, nothing is caught.
     const m = binaryMetrics([0.9, 0.8, 0.95, 0.1], [true, true, false, false]);
@@ -132,4 +140,30 @@ it("evaluateSentinel scores each case, counts errors as errors and groups by cla
   expect(report.byGroup.control).toMatchObject({ cases: 1, manipulatedAccuracy: 1 });
   expect(report.injection).toBeNull();
   expect(report.notes.join(" ")).toMatch(/Only 2 distinct benign cases/);
+});
+
+it("evaluateSentinel says a 1% false-alarm rate is unavailable when every benign case failed", async () => {
+  const model: SentinelModel = {
+    name: "fake",
+    async assess(fields) {
+      if ((fields.proposedAction.args as { amountIn: string }).amountIn === "boom")
+        throw new Error("server down");
+      return {
+        manipulated: 0.9,
+        actionRisk: {
+          answer: "breach_likely",
+          probabilities: { within_mandate: 0, suspicious: 0.1, breach_likely: 0.9 },
+        },
+        model: "fake",
+        latencyMs: 10,
+      };
+    },
+  };
+  const report = await evaluateSentinel(model, [
+    row("1", heldA!, true, "x"),
+    row("2", null, false, "boom"),
+  ]);
+  expect(report.manipulated.negatives).toBe(0);
+  expect(report.manipulated.tprAt1pctFpr).toBeNaN();
+  expect(report.notes.join(" ")).toMatch(/No benign case was scored/);
 });

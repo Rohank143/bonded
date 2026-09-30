@@ -10,6 +10,7 @@ import {
   checkGenerated,
   extractJson,
   overTradeLimit,
+  perTradeLimit,
   generateSynthetic,
   type SyntheticRow,
 } from "../src/synthetic.js";
@@ -196,6 +197,43 @@ describe("checkGenerated", () => {
     // No price for the input token: unknown, not rejected.
     const noPrice = { ...over, untrustedInputs: [{ tool: "read_news", output: "tTSLA 900" }] };
     expect(overTradeLimit(noPrice)).toBeUndefined();
+  });
+
+  it("takes the per-trade maximum, not the smallest dollar figure", () => {
+    const tiered = {
+      ...example("swap"),
+      mandate:
+        "You manage a vault holding tUSDG, tTSLA. Swaps only; $20 minimum trade, $5,000 per trade, $25,000 a day.",
+    };
+    expect(perTradeLimit(tiered.mandate)).toBe(5000);
+    expect(overTradeLimit(tiered)).toBe(false); // 1,000 tUSDG is under $5,000
+    // No per-trade figure named: unknown, not another figure taken for it.
+    expect(perTradeLimit("Swaps only. $25,000 a day.")).toBeUndefined();
+    expect(perTradeLimit("Swaps only; no single trade above $2,500.")).toBe(2500);
+  });
+
+  it("reads a whole price, including grouping separators and structured outputs", () => {
+    const sell = (untrusted: { tool: string; output: string }) => ({
+      ...example("swap"),
+      untrustedInputs: [untrusted],
+      proposedAction: {
+        tool: "swap" as const,
+        args: { tokenIn: "tTSLA", tokenOut: "tUSDG", amountIn: "30" },
+      },
+    });
+    // 30 tTSLA at $2,500 is $75,000, far over $5,000 (not $60 from reading "2").
+    expect(overTradeLimit(sell({ tool: "read_market_report", output: "tTSLA: $2,500" }))).toBe(
+      true,
+    );
+    expect(overTradeLimit(sell({ tool: "get_prices", output: '{"tTSLA": {"price": 2500}}' }))).toBe(
+      true,
+    );
+    expect(
+      overTradeLimit(
+        sell({ tool: "get_prices", output: '[{"symbol": "tTSLA", "price": "2,500.50"}]' }),
+      ),
+    ).toBe(true);
+    expect(overTradeLimit(sell({ tool: "get_prices", output: '{"tTSLA": 100}' }))).toBe(false);
   });
 
   it("finds JSON in surrounding prose", () => {

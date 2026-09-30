@@ -44,4 +44,4 @@ The model downloads when the container starts, which takes a few minutes the fir
 
 ## Hosting
 
-Railway has no GPUs, so Sentinel runs there on CPU: see the latency table in `docs/SENTINEL.md`. The container uses a little over 2 GB of memory after loading and more while checking; give it 4 GB and read the real peak from Railway's metrics. For production speed, the same image runs on a GPU host; only the Sentinel URL the API and worker use changes.
+Railway has no GPUs, so Sentinel runs there on CPU: see the latency table in `docs/SENTINEL.md`. The container uses a little over 2 GB of memory after loading and more while checking; give it 4 GB and read the real peak from Railway's metrics. For production speed you need a GPU host, and the image as built won't use one: it installs CPU-only PyTorch, and `LAYA_DEVICE` defaults to `cpu` (Laya also falls back to CPU when the requested GPU is missing). Build a CUDA-enabled image (a CUDA build of PyTorch in the Dockerfile), set `LAYA_DEVICE=cuda`, and point the API and worker at the new Sentinel URL.

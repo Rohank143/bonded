@@ -55,6 +55,12 @@ export class SentinelGuard implements ActionGuard {
       model: assessment.model,
       latencyMs: Math.round(assessment.latencyMs),
       ...(assessment.escalated ? { escalated: true } : {}),
+      ...(assessment.primaryLatencyMs === undefined
+        ? {}
+        : { primaryLatencyMs: Math.round(assessment.primaryLatencyMs) }),
+      ...(assessment.fallbackLatencyMs === undefined
+        ? {}
+        : { fallbackLatencyMs: Math.round(assessment.fallbackLatencyMs) }),
     };
     if (assessment.manipulated >= this.threshold) {
       return { allow: false, reason: "judged manipulated by untrusted content", labels };
