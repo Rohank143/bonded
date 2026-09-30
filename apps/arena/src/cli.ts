@@ -6,6 +6,7 @@ import {
   createVulnerableAgent,
   CascadeSentinel,
   DecisionModelAgent,
+  GuardedAgent,
   DecisionModelSentinel,
   LayaSentinel,
   LlmDecisionModel,
@@ -31,7 +32,8 @@ Agent:
   --brain <scripted|llm>   scripted needs nothing; llm needs OPENROUTER_API_KEY (default: scripted)
   --model <id>             model for an llm brain or the decision agent, any OpenRouter model id
                            (LLM_BASE_URL switches to another OpenAI-compatible endpoint)
-  --sentinel-model <id>    hardened only: add a Sentinel guard that asks this model about each write;
+  --sentinel-model <id>    vulnerable or hardened: add a Sentinel guard that asks this model about each
+                           write (vulnerable gets Sentinel alone, hardened gets it after its policy guard);
                            laya:<url> uses a Laya server (LAYA_API_KEY if it needs one)
   --sentinel-fallback <id> with laya:<url>, ask this LLM when Laya is unsure (the cascade)
   --enforce                run the vault in Enforce mode (blocked, not just recorded)
@@ -193,16 +195,19 @@ function buildAgent(values: {
   const brain = values.brain;
   if (brain !== "scripted" && brain !== "llm") throw new Error(`unknown brain ${brain}`);
   const llm = values.model ? { model: values.model } : {};
+  const sentinel = values["sentinel-model"]
+    ? [new SentinelGuard(sentinelModel(values["sentinel-model"], values["sentinel-fallback"]))]
+    : [];
   switch (values.agent) {
-    case "vulnerable":
-      return createVulnerableAgent(brain as Brain, llm);
-    case "hardened": {
-      const sentinel = values["sentinel-model"]
-        ? [new SentinelGuard(sentinelModel(values["sentinel-model"], values["sentinel-fallback"]))]
-        : [];
-      return createHardenedAgent(brain as Brain, llm, sentinel);
+    case "vulnerable": {
+      const agent = createVulnerableAgent(brain as Brain, llm);
+      // Sentinel alone in front of an agent that does get manipulated: what Sentinel adds.
+      return sentinel.length ? new GuardedAgent(agent, sentinel, "sentinel") : agent;
     }
+    case "hardened":
+      return createHardenedAgent(brain as Brain, llm, sentinel);
     case "decision":
+      if (sentinel.length) throw new Error("--sentinel-model works with vulnerable or hardened");
       return new DecisionModelAgent(new LlmDecisionModel(llm));
     default:
       throw new Error(`unknown agent ${values.agent} (vulnerable, hardened or decision)`);
