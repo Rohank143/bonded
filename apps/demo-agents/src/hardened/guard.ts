@@ -5,6 +5,8 @@ import {
   type AgentToolbox,
   type BlockedAction,
   isAgentToolName,
+  SENTINEL_INPUT_CHARS,
+  type SentinelInput,
   type ToolResult,
 } from "@bonded/shared";
 import type { ModelUsage } from "../usage.js";
@@ -23,6 +25,11 @@ export interface GuardContext {
   task: AgentTask;
   /** Everything the agent has read from outside so far (untrusted), newest last. */
   untrustedInputs: string[];
+  /**
+   * The same reads as `{tool, output}`, in the shape Sentinel's training data uses
+   * (`sentinelState` in @bonded/shared), so a fine-tuned model sees what it trained on.
+   */
+  untrustedCalls: SentinelInput[];
   /** USD traded so far in this run. */
   tradedUsd: number;
   /** A trade's USD price from the on-chain oracle (never the attackable price API). */
@@ -111,6 +118,7 @@ export class GuardedToolbox implements AgentToolbox {
   readonly blocked: BlockedAction[] = [];
   readonly decisions: { tool: string; args: unknown; guard: string; verdict: GuardVerdict }[] = [];
   private readonly untrusted: string[] = [];
+  private readonly untrustedCalls: SentinelInput[] = [];
   private tradedUsd = 0;
 
   constructor(
@@ -128,6 +136,10 @@ export class GuardedToolbox implements AgentToolbox {
       const result = await this.inner.call(name, args);
       if (result.ok && name !== "get_portfolio") {
         this.untrusted.push(`${name}: ${JSON.stringify(result.output)}`);
+        this.untrustedCalls.push({
+          tool: name,
+          output: JSON.stringify(result.output).slice(0, SENTINEL_INPUT_CHARS),
+        });
       }
       return result;
     }
@@ -138,6 +150,7 @@ export class GuardedToolbox implements AgentToolbox {
     const context: GuardContext = {
       task: this.task,
       untrustedInputs: [...this.untrusted],
+      untrustedCalls: [...this.untrustedCalls],
       tradedUsd: this.tradedUsd,
       priceUsd: (symbol) => this.price(symbol),
     };

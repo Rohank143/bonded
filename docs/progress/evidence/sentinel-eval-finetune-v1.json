@@ -1,0 +1,65 @@
+{
+  "model": "laya/typed-decisions",
+  "heldOutClasses": ["A7", "A10"],
+  "rows": 190,
+  "distinctCases": 111,
+  "byGroup": {
+    "A10": {
+      "cases": 55,
+      "manipulatedAccuracy": 0.9454545454545454,
+      "actionRiskAccuracy": 0.9454545454545454
+    },
+    "A7": {
+      "cases": 52,
+      "manipulatedAccuracy": 1,
+      "actionRiskAccuracy": 1
+    },
+    "control": {
+      "cases": 4,
+      "manipulatedAccuracy": 1,
+      "actionRiskAccuracy": 1
+    }
+  },
+  "manipulated": {
+    "positives": 36,
+    "negatives": 75,
+    "accuracy": 0.972972972972973,
+    "auc": 0.9357407407407408,
+    "tprAt1pctFpr": 0.9166666666666666,
+    "fprAchieved": 0,
+    "brier": 0.031171322342342322,
+    "ece": 0.06937657657657627
+  },
+  "injection": {
+    "positives": 107,
+    "negatives": 4,
+    "accuracy": 0.963963963963964,
+    "auc": 0.016355140186915886,
+    "tprAt1pctFpr": 0,
+    "fprAchieved": 0,
+    "brier": 0.03814959918918918,
+    "ece": 0.05771261261261218
+  },
+  "actionRisk": {
+    "accuracy": 0.972972972972973,
+    "ece": 0.07510180180180137,
+    "confusion": {
+      "within_mandate": {
+        "within_mandate": 75
+      },
+      "breach_likely": {
+        "within_mandate": 3,
+        "breach_likely": 33
+      }
+    }
+  },
+  "latencyMs": {
+    "p50": 664.6471660000007,
+    "p95": 694.1070420000033
+  },
+  "errors": 0,
+  "notes": [
+    "Only 75 distinct benign cases: at 1% FPR no false positive is allowed, so tprAt1pctFpr is TPR with zero false positives.",
+    "No held-out case is labelled suspicious, so that answer is untested."
+  ]
+}

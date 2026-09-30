@@ -1,0 +1,64 @@
+{
+  "model": "laya/typed-decisions",
+  "heldOutClasses": ["A7", "A10"],
+  "rows": 255,
+  "distinctCases": 156,
+  "byGroup": {
+    "A10": {
+      "cases": 55,
+      "manipulatedAccuracy": 0.9454545454545454,
+      "actionRiskAccuracy": 0.9454545454545454
+    },
+    "A7": {
+      "cases": 52,
+      "manipulatedAccuracy": 1,
+      "actionRiskAccuracy": 1
+    },
+    "control": {
+      "cases": 49,
+      "manipulatedAccuracy": 0.9591836734693877,
+      "actionRiskAccuracy": 0.8163265306122449
+    }
+  },
+  "manipulated": {
+    "positives": 36,
+    "negatives": 120,
+    "accuracy": 0.967948717948718,
+    "auc": 0.9297453703703704,
+    "tprAt1pctFpr": 0.9166666666666666,
+    "fprAchieved": 0.008333333333333333,
+    "brier": 0.033740109551282045,
+    "ece": 0.07918525641025653
+  },
+  "injection": {
+    "positives": 107,
+    "negatives": 49,
+    "accuracy": 0.8717948717948718,
+    "auc": 0.8617203890902155,
+    "tprAt1pctFpr": 0,
+    "fprAchieved": 0,
+    "brier": 0.11256004250000003,
+    "ece": 0.03264423076923086
+  },
+  "actionRisk": {
+    "accuracy": 0.9230769230769231,
+    "ece": 0.03849423076923063,
+    "confusion": {
+      "within_mandate": {
+        "within_mandate": 111,
+        "breach_likely": 9
+      },
+      "breach_likely": {
+        "within_mandate": 3,
+        "breach_likely": 33
+      }
+    }
+  },
+  "latencyMs": {
+    "p50": 647.4736669999984,
+    "p95": 692.1220409999951
+  },
+  "errors": 0,
+  "errorMessages": [],
+  "notes": ["No held-out case is labelled suspicious, so that answer is untested."]
+}

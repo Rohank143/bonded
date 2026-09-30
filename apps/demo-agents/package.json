@@ -22,6 +22,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@bonded/shared": "workspace:*"
+    "@bonded/shared": "workspace:*",
+    "zod": "^4.6.5"
   }
 }

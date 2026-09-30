@@ -1,0 +1,81 @@
+{
+  "benchmark": "LocalLLaMA/typed-decisions",
+  "model": "Laya (Fine-Tuned 2xT4)",
+  "n_cases": 24,
+  "n_decisions": 120,
+  "metrics": {
+    "accuracy": 0.9444,
+    "soft_accuracy": 0.8202,
+    "brier_score": 0.0868,
+    "ece": 0.0418,
+    "score_mae": 0.0,
+    "within_1_level": 0.0,
+    "latency_p50_ms": 216.9,
+    "latency_p95_ms": 228.4,
+    "kl_divergence": 0.1373,
+    "total_variation": 0.093
+  },
+  "comparison": [
+    {
+      "Model": "TypeSafe Jev 1.13.0",
+      "Kind": "general",
+      "Accuracy": 0.727,
+      "Soft Acc": 0.58,
+      "Brier": 0.148,
+      "ECE": 0.144,
+      "Score MAE": 0.391,
+      "Within 1 Level": "0.952",
+      "ms/case": 710,
+      "Cost/Case": "$0.0004 (API)",
+      "comparable": false
+    },
+    {
+      "Model": "Laya (Fine-Tuned 2xT4)",
+      "Kind": "fine-tuned",
+      "Accuracy": 0.944,
+      "Soft Acc": 0.82,
+      "Brier": 0.087,
+      "ECE": 0.042,
+      "Score MAE": 0.0,
+      "Within 1 Level": "0.000",
+      "ms/case": 216.9,
+      "Cost/Case": "$0.00 (Self-Hosted)",
+      "comparable": true
+    },
+    {
+      "Model": "ModernBERT-base (149M)",
+      "Kind": "specialist",
+      "Accuracy": 0.646,
+      "Soft Acc": 0.542,
+      "Brier": 0.119,
+      "ECE": 0.179,
+      "Score MAE": 0.444,
+      "Within 1 Level": "0.931",
+      "ms/case": 349,
+      "Cost/Case": "$0.00",
+      "comparable": false
+    },
+    {
+      "Model": "Teacher Self-Agreement",
+      "Kind": "ceiling",
+      "Accuracy": 0.735,
+      "Soft Acc": "-",
+      "Brier": "-",
+      "ECE": "-",
+      "Score MAE": "-",
+      "Within 1 Level": "-",
+      "ms/case": "-",
+      "Cost/Case": "-",
+      "comparable": false
+    }
+  ],
+  "per_workflow": {},
+  "correction": {
+    "note": "The fields above are the notebook's original export, kept as it wrote them. The notebook v1 ran was missing edits (see services/sentinel/kaggle/README.md, Retraining, step 3). This block corrects what they got wrong; no measured metric has changed.",
+    "benchmark": "bonded-sentinel held-out test split (not LocalLLaMA/typed-decisions)",
+    "n_cases": 24,
+    "questions_per_case": 3,
+    "n_decisions": 72,
+    "comparison_rows": "Rows other than the fine-tune's own are upstream measurements on LocalLLaMA/typed-decisions, a different dataset with five decisions per case. They are not comparable to these metrics."
+  }
+}

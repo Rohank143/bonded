@@ -59,7 +59,7 @@ AI agents now hold and move real money. Robinhood opened its Trading MCP to thir
 2. **The Bonded Score and actuarial pricing.** Red-team results become an expected-loss estimate, which becomes a premium. Every discount is earned in the Arena, not asserted.
 3. **Mandate Vaults.** Agents trade from a smart account that knows their mandate. The vault either blocks breaches or records them on-chain.
 4. **Cover.** Depositors in agent-run vaults are protected. When the agent breaches its mandate, the operator's bond is slashed first, then the underwriting pool pays. The payout is automatic and takes **minutes, not months**.
-5. **Bonded Sentinel.** A 33 ms guard built on **Laya**, an open-source "System One" decision model, fine-tuned on Arena data. Agents that use it earn a premium discount.
+5. **Bonded Sentinel.** A fast guard (about 33 ms per check on a T4 GPU by the author's benchmark; about 2.5 s on CPU, measured) built on **Laya**, an open-source "System One" decision model, fine-tuned on Arena data. Agents that use it earn a premium discount.
 
 **Why it wins:**
 - It is AI-native twice over: the insured customers are AIs, and so is the underwriter.
@@ -104,7 +104,7 @@ This is a fidelity (crime) policy for AI agents, the same established insurance 
 | **The Arena** | AI red-team. Attacker agents run adversarial episodes against the target agent in a forked-chain sandbox | Off-chain service |
 | **Bonded Score** | 0–100 rating plus an expected-loss estimate, signed by the Arena and posted on-chain (ERC-8004 compatible) | Arena (off-chain) → registries (on-chain) |
 | **Cover** | Operator bond (first loss) + underwriting pool + parametric claims + dispute module | On-chain |
-| **Bonded Sentinel** | 33 ms per-action guard on a fine-tuned Laya model. Advisory only; earns a premium discount | Off-chain service (GPU or CPU) |
+| **Bonded Sentinel** | Per-action guard (T4 GPU: about 220 ms; CPU: about 2.5 s) on a fine-tuned Laya model. Advisory only; earns a premium discount | Off-chain service (GPU or CPU) |
 
 Supporting parts: TEE key custody, community attack bounties, public leaderboard, `@bonded/sdk`.
 
@@ -183,7 +183,7 @@ Supporting parts: TEE key custody, community attack bounties, public leaderboard
 │   ┌───────────────── ARENA ─────────────────┐     ┌──── SENTINEL (Laya) ────┐    │
 │   │ attacker agents (LLM via OpenRouter)    │     │ fine-tuned Laya, served │    │
 │   │ world simulator (news/social/DM/price/  │     │ over a Jev-compatible   │    │
-│   │   token metadata/tool output)           │     │ HTTP API; ~33 ms/action │    │
+│   │   token metadata/tool output)           │     │ HTTP API; 1 call/trade  │    │
 │   │ sandbox: anvil fork / solana-test-      │◄───►│ trained on Arena data   │    │
 │   │   validator + real Bonded contracts     │     └─────────────────────────┘    │
 │   │ target adapters (SDK, black-box,        │                                    │
@@ -489,7 +489,7 @@ Plain-language overview of the whole Sentinel lifecycle (data, training, hosting
 
 Laya is Convai Innovations' **open-source (Apache 2.0) "System One" decision model**, released Sep 18, 2026.
 - 421M parameters; typed answers (`noul` yes/no, `choice`, `score`) with calibrated confidence.
-- A single forward pass takes about **33 ms on a T4 GPU**, versus 236–276 ms p50 for TypeSafe's closed Jev.
+- A single forward pass takes about **33 ms on a T4 GPU** (author's benchmark; our own full check measures 217 ms p50 on a T4, see `docs/SENTINEL.md`), versus 236–276 ms p50 for TypeSafe's closed Jev.
 - Self-hosted at $0. It ships a **Jev-compatible HTTP server** and a TypeScript/ONNX runtime.
 - In the author's benchmarks, fine-tuned Laya beats Jev (0.766 vs 0.727 accuracy on typed decisions) with better calibration.
 
@@ -519,7 +519,7 @@ Laya is Convai Innovations' **open-source (Apache 2.0) "System One" decision mod
 
 - A `services/sentinel` Python service running `laya[serve]` (pinned version and revision), behind our `Classifier` interface.
 - **Backends:** `laya` (default), `llm` (fallback and teacher, any model via ADR-006), `jev` (optional; only if waitlist access arrives).
-- GPU in production. **CPU fallback is fine for the demo** (roughly 300–400 ms).
+- GPU in production. **CPU is fine for the demo.** Measured on Day 10: about 2.5 s per check on CPU, 0.68 s on a laptop GPU and 217 ms p50 on a T4 (Kaggle); conditions in `docs/SENTINEL.md`. Railway has no GPUs.
 
 ---
 
@@ -835,7 +835,7 @@ Day 1 = Sun Sep 27. Submission target = Day 15 (Sun Oct 11). Day 16 (Mon Oct 12)
 | 1:25 | **Bond and insure on Robinhood Chain:** operator bond staked, depositor vault covered | Policy NFT minted; explorer link |
 | 1:45 | **Break it:** plant poisoned token metadata. Agent A sends funds to the attacker; the vault records the breach and freezes the agent | Live tx; breach event |
 | 2:05 | **Get paid:** keeper files the claim, bond slashed, pool pays, vault share price restored, all within about a minute | Claims feed with the waterfall; before/after share price |
-| 2:25 | **Frontier tech:** Laya-Sentinel (33 ms, trained on Arena data) catches the same attack for Agent B; the score is posted on Robinhood Chain, Arbitrum, Ethereum and Solana | Sentinel verdict; four registry links |
+| 2:25 | **Frontier tech:** Laya-Sentinel (trained on Arena data) catches the same attack for Agent B; the score is posted on Robinhood Chain, Arbitrum, Ethereum and Solana | Sentinel verdict; four registry links |
 | 2:45 | **Close:** leaderboard stat plus "AIUC for on-chain money. Don't cage your agent. Bond it." | Leaderboard; logo |
 
 ---
@@ -858,7 +858,7 @@ Day 1 = Sun Sep 27. Submission target = Day 15 (Sun Oct 11). Day 16 (Mon Oct 12)
 |---|---|---|---|
 | Robinhood Chain testnet lacks stock tokens, USDC or oracles | Med | Med | Deploy mock stock tokens, mock USDC, an AMM pool and MockOracle ourselves (Day 4); Arbitrum Sepolia as fallback demo chain |
 | Network restrictions in the build environment (Hugging Face, RPCs, Phala) | High | Med | Founder allowlists domains (Section 24); CPU/mocked fallbacks; build and run steps documented for the founder's machine |
-| No GPU for Sentinel | Med | Low | Kaggle for training; CPU inference fallback (~300–400 ms) for the demo |
+| No GPU for Sentinel | Med | Low | Kaggle for training; CPU inference for the demo (about 2.5 s per check, measured Day 10) |
 | Laya fine-tune underperforms | Med | Med | Advisory-only anyway; report honest metrics; LLM fallback backend; the premium discount only applies where Arena re-runs show a measured improvement |
 | LLM cost or rate limits during rating runs | Low | Med | Cheap open models through OpenRouter (ADR-006); a spending cap per run; retries with backoff; cache attacker variants |
 | Solana CPI and compute limits for routes | Med | Low | Single-hop routes or a mock AMM on devnet; program-level allowlists |

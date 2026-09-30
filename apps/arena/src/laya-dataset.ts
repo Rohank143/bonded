@@ -1,6 +1,11 @@
-import { SENTINEL_HELD_OUT_CLASSES, SENTINEL_QUESTIONS } from "@bonded/shared";
+import {
+  SENTINEL_HELD_OUT_CLASSES,
+  SENTINEL_QUESTIONS,
+  sentinelQuestions,
+  sentinelState,
+} from "@bonded/shared";
 import type { SentinelRow } from "./dataset.js";
-import type { SyntheticRow } from "./synthetic.js";
+import { overTradeLimit, type SyntheticRow } from "./synthetic.js";
 
 /**
  * Sentinel training data in Laya's typed-decision format (docs/PLAN.md Section 10.3), the
@@ -49,12 +54,7 @@ export function toLayaRow(row: AnyRow, split: LayaRow["split"]): LayaRow {
   const source = isSynthetic(row) ? "synthetic" : "arena";
   const confidence = LABEL_CONFIDENCE[source];
   const { manipulated, action_risk, injection_in_inputs } = row.labels;
-  const questions = Object.fromEntries(
-    Object.entries(SENTINEL_QUESTIONS).map(([key, q]) => [
-      key,
-      { type: q.type, instructions: q.instructions, criteria: q.criteria },
-    ]),
-  );
+  const questions = sentinelQuestions();
   const answers = {
     manipulated: gold(["false", "true"], String(manipulated), confidence),
     action_risk: gold(
@@ -75,11 +75,13 @@ export function toLayaRow(row: AnyRow, split: LayaRow["split"]): LayaRow {
     workflow: split === "train" ? "sentinel/train" : `sentinel/${row.attackClass ?? "control"}`,
     split,
     // The three minimal-context fields the serving guard sends (plan Section 10.2).
-    state: JSON.stringify({
-      mandate: row.mandate,
-      proposed_action: row.proposedAction,
-      untrusted_inputs: row.untrustedInputs,
-    }),
+    state: JSON.stringify(
+      sentinelState({
+        mandate: row.mandate,
+        proposedAction: row.proposedAction,
+        untrustedInputs: row.untrustedInputs,
+      }),
+    ),
     questions: JSON.stringify(questions),
     gold: JSON.stringify(golds),
     source,
@@ -94,6 +96,8 @@ export interface LayaDataset {
     heldOutClasses: readonly string[];
     /** Synthetic rows left out of training because their seed is a test-split episode. */
     droppedSeededFromTest: number;
+    /** Synthetic rows not labelled a breach whose swap exceeds the per-trade limit. */
+    droppedOverTradeLimit: number;
     labelConfidence: typeof LABEL_CONFIDENCE;
     counts: Record<"train" | "test", Record<string, number>>;
     labels: Record<"train" | "test", Record<string, Record<string, number>>>;
@@ -132,7 +136,12 @@ export function buildLayaDataset(input: {
       `${unknown.length} synthetic row(s) have a seed that isn't among the Arena rows given (e.g. ${unknown[0]!.id}); pass the ratings they were seeded from with --arena`,
     );
   const seededFromTest = (r: SyntheticRow) => isTest(arenaById.get(r.generator.seedId)!);
-  const synthetic = input.synthetic.filter((r) => !seededFromTest(r));
+  const notFromTest = input.synthetic.filter((r) => !seededFromTest(r));
+  // A swap above the per-trade limit is a breach whatever the scene says, so a row labelled
+  // otherwise is mislabelled (overTradeLimit). Rows generated before that check get it here.
+  const synthetic = notFromTest.filter(
+    (r) => r.labels.action_risk === "breach_likely" || !overTradeLimit(r),
+  );
   const train = [
     ...input.arena.filter((r) => !isTest(r)).map((r) => toLayaRow(r, "train")),
     ...synthetic.map((r) => toLayaRow(r, "train")),
@@ -157,7 +166,8 @@ export function buildLayaDataset(input: {
     test,
     manifest: {
       heldOutClasses: [...heldOut],
-      droppedSeededFromTest: input.synthetic.length - synthetic.length,
+      droppedSeededFromTest: input.synthetic.length - notFromTest.length,
+      droppedOverTradeLimit: notFromTest.length - synthetic.length,
       labelConfidence: LABEL_CONFIDENCE,
       counts: {
         train: tally(train, (r) => `${r.source}:${r.attackClass ?? "none"}`),

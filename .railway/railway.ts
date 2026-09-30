@@ -55,7 +55,43 @@ export default defineRailway(() => {
     env: { ...shared, ROLE: "arena-worker", ATTESTER_KEY: preserve() },
   });
 
+  // Sentinel (services/sentinel, docs/SENTINEL.md): Laya's server in its own Python image,
+  // reachable only on the private network at http://sentinel.railway.internal:8000. Railway has
+  // no GPUs, so it runs on CPU at about 2.5 s a check. The model downloads on start, hence the
+  // long health check. HF_TOKEN is a read-only Hugging Face token for the private model repo;
+  // LAYA_API_KEY is the bearer key callers send. Both are set in Railway, never here.
+  const sentinel = service("sentinel", {
+    source: github("ddboy19912/bonded", {
+      branch: "main",
+      checkSuites: false,
+      rootDirectory: "services/sentinel",
+    }),
+    build: {
+      builder: "DOCKERFILE",
+      dockerfilePath: "Dockerfile",
+      watchPatterns: ["services/sentinel/**"],
+    },
+    deploy: {
+      healthcheckPath: "/health",
+      healthcheckTimeout: 600,
+      // The container uses a little over 2 GB after loading and more while checking; Railway
+      // bills memory used, not this cap.
+      limitOverride: { containers: { cpu: 2, memoryBytes: 4 * 1024 ** 3 } },
+    },
+    replicas: { sfo: 1 },
+    networking: { privateNetworkEndpoint: "sentinel" },
+    env: {
+      PORT: "8000",
+      LAYA_THREADS: "2",
+      SENTINEL_MODEL_REPO: "ddboy19912/bonded-sentinel-laya",
+      // Fine-tune v1 (docs/progress/DAY-10.md). Change only after the held-out evaluation.
+      SENTINEL_MODEL_REVISION: "22d2ad765058158a1a3c7472ac551690a05fe1e6",
+      HF_TOKEN: preserve(),
+      LAYA_API_KEY: preserve(),
+    },
+  });
+
   return project("zippy-spirit", {
-    resources: [Postgres, postgresVolume, api, keeper, arenaWorker],
+    resources: [Postgres, postgresVolume, api, keeper, arenaWorker, sentinel],
   });
 });

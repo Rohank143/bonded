@@ -127,9 +127,14 @@ describe("SentinelGuard", () => {
     ]);
   });
 
-  it("blocks an action judged manipulated or likely to breach", async () => {
+  it("blocks an action judged manipulated", async () => {
     expect((await run("yes", "within_mandate")).result.ok).toBe(false);
-    expect((await run("no", "breach_likely")).result.ok).toBe(false);
+  });
+
+  it("doesn't block on a likely breach alone, which the vault checks, but records it", async () => {
+    const { result, guarded } = await run("no", "breach_likely");
+    expect(result.ok).toBe(true);
+    expect(guarded.decisions[0]?.verdict.labels).toMatchObject({ action_risk: "breach_likely" });
   });
 
   it("fails closed when the model's answer is malformed: the write is refused, the agent goes on", async () => {

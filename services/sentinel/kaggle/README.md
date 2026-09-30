@@ -41,6 +41,8 @@ Then:
 
 ## 4. Make six edits
 
+**Shortcut:** [`bonded-sentinel.ipynb`](bonded-sentinel.ipynb) is Laya's notebook with all six edits already made (plus an upload of the report at the end of cell 18), for the founder's Kaggle dataset path and Hugging Face repo. Import it with **File → Import Notebook** and skip to section 5; change the path in cells 6, 12 and 16 and `NEW_REPO` in cell 16 if yours differ. The edits it contains:
+
 Cell numbers count from 0, as in the notebook file.
 
 **a. Pin the package** in the install cell (cell 4). Replace `"laya>=0.1.6"` with:
@@ -172,6 +174,29 @@ Things seen on the first run:
 - **Time:** at about 27,000 items, training runs roughly 1,690 steps per epoch on each GPU, 4 epochs.
 
 When it finishes, check that the model card on your Hugging Face repo describes Sentinel (edit e) and that the report's `n_decisions` is three times `n_cases` (edit f). Then download `benchmark_report.json` (cell 18 writes it to the output folder) and add it to the repository under `docs/progress/evidence/`. Note the Hugging Face repo name and commit.
+
+## Retraining (v2 and later)
+
+The notebook keeps its edits, so a retrain is: new data, a check of the edits, and a new saved version.
+
+1. **Build the new dataset** (the command in section 1, with the new `--synthetic` file) and check its manifest. For v2, from `apps/arena`:
+
+   ```bash
+   cat datasets/sentinel-synthetic-train.jsonl datasets/sentinel-synthetic-sells.jsonl > datasets/sentinel-synthetic-train-v2.jsonl
+   ```
+
+   ```bash
+   node dist/laya-dataset-cli.js --arena ratings/vulnerable-agent_scripted/sentinel-dataset.jsonl --synthetic datasets/sentinel-synthetic-train-v2.jsonl --out datasets/laya-v2
+   ```
+2. **Upload it as a new version** of the same Kaggle dataset: open `bonded-sentinel` → **New Version** → replace `train.jsonl`, `test.jsonl` and `manifest.json` → **Create**. The path stays the same.
+3. **Import [`bonded-sentinel.ipynb`](bonded-sentinel.ipynb)** into the notebook (**File → Import Notebook**), so all six edits are in. v1's saved version was missing edits a, b, d and f: it installed the latest Laya (0.3.22) with an unpinned base model, and its report kept the upstream benchmark name, counted five decisions per case and showed the upstream comparison rows.
+4. **Make sure the notebook uses the new data version:** in the **Input** panel, if `bonded-sentinel` offers an update, take it.
+5. **Save Version → Save & Run All (Commit)**, named `sentinel-v2`.
+6. The upload cell pushes to the same Hugging Face repo as a new commit. v1 stays as the earlier commit, so it's the rollback: the service serves whichever commit `SENTINEL_MODEL_REVISION` pins.
+
+7. **Rerun the Arena** with the new revision before accepting it. Sentinel changes premiums, so `docs/SENTINEL.md` requires a fresh Arena rating after every retrain.
+
+Then send the new commit hash. The new model goes live only if it scores at least as well as v1 on the held-out attacks and the benign trades (`docs/SENTINEL.md`, "When to retrain") and the Arena rerun is done.
 
 ## What the result does and doesn't show
 
