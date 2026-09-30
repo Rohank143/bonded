@@ -3,7 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { serve } from "@hono/node-server";
 import { loadDotEnv } from "@bonded/arena";
 import { Database } from "@bonded/db";
-import { Keeper, connectChain } from "@bonded/keeper";
+import { Keeper, SolanaKeeper, connectChain, connectSolana, parseSolanaKey } from "@bonded/keeper";
 import { parseEvmDeployment } from "@bonded/shared";
 import { z } from "zod";
 import { createApi } from "./index.js";
@@ -94,6 +94,13 @@ if (role === "migrate") {
       .parse(process.env.KEEPER_CONFIRMATIONS ?? 5);
     const keeper = new Keeper(db, chain, BigInt(confirmations));
     tasks.push(loop(() => keeper.tick(), 5000));
+    // Solana claims (ADR-011), only when a Solana RPC and a fee-paying key are configured.
+    const solanaRpc = process.env.SOLANA_RPC_URL;
+    const solanaKey = process.env.SOLANA_KEEPER_KEY;
+    if (solanaRpc && solanaKey) {
+      const solana = new SolanaKeeper(db, connectSolana(solanaRpc, parseSolanaKey(solanaKey)));
+      tasks.push(loop(() => solana.tick(), 15_000));
+    }
     // The keeper role is always deployed once, so it owns event retention.
     const retentionDays = z.coerce
       .number()
