@@ -53,8 +53,8 @@ describe("committed deployment files", () => {
     (name) => /^\d+\.json$/.test(name) && name !== "31337.json",
   );
 
-  it("includes Robinhood Chain testnet and Arbitrum Sepolia", () => {
-    expect(files).toEqual(expect.arrayContaining(["46630.json", "421614.json"]));
+  it("includes Robinhood Chain testnet, Arbitrum Sepolia and Ethereum Sepolia", () => {
+    expect(files).toEqual(expect.arrayContaining(["46630.json", "421614.json", "11155111.json"]));
   });
 
   it.each(files)("%s parses and matches its chain id", (name) => {

@@ -6,7 +6,8 @@
     },
     "links": {
       "arbitrumSepolia": "1",
-      "solanaDevnet": "2"
+      "solanaDevnet": "2",
+      "sepolia": "1"
     }
   }
 ]

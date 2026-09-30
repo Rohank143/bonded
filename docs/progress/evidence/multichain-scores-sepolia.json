@@ -1,0 +1,14 @@
+{
+  "home": { "chain": "robinhoodTestnet", "agentId": "2" },
+  "score": 56,
+  "issuedAt": "2026-09-28T13:56:36.000Z",
+  "results": [
+    {
+      "chain": "sepolia",
+      "agentId": "1",
+      "status": "posted",
+      "registeredNow": true,
+      "tx": "0x868b849f6ee3b6feed6b6bcc12814fcb93766d5ce412a59413e54949cef480d7"
+    }
+  ]
+}

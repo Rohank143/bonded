@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { EVM_CHAINS, type EvmChainKey, SOLANA_DEVNET } from "@bonded/shared";
 import { Keypair } from "@solana/web3.js";
@@ -20,7 +20,7 @@ import { loadDotEnv } from "./env.js";
 
 const USAGE = `Usage:
   pnpm scores crosspost --agent <id> [options]   post the home chain's score to the other chains
-  pnpm scores read --agent <id>                  show the agent's score on every chain
+  pnpm scores read --agent <id> [--evidence <path>]  show the agent's score on every chain
 
   --agent <id>          the agent's id on its home chain
   --home <chain>        home chain (default: robinhoodTestnet)
@@ -36,6 +36,9 @@ const USAGE = `Usage:
                         rehearsal on a local validator
 
 Agent ids per chain are kept in config/agent-links.json and updated when an agent is registered.`;
+
+/** pnpm runs the script from apps/arena; resolve paths against the caller's directory. */
+const fromCaller = (path: string) => resolve(process.env.INIT_CWD ?? process.cwd(), path);
 
 const DEFAULT_TARGETS: ScoreChain[] = ["arbitrumSepolia", "sepolia", "solanaDevnet"];
 
@@ -73,7 +76,9 @@ async function main(): Promise<number> {
   }
   const home = values.home as EvmChainKey;
   if (!(home in EVM_CHAINS)) throw new Error(`unknown home chain ${home}`);
-  const links = readLinks(values.links);
+  const linksFile = fromCaller(values.links);
+  const evidence = values.evidence ? fromCaller(values.evidence) : undefined;
+  const links = readLinks(linksFile);
   let link = links.find((l) => l.home.chain === home && l.home.agentId === values.agent);
   if (!link) {
     link = { home: { chain: home, agentId: values.agent }, links: {} };
@@ -83,7 +88,7 @@ async function main(): Promise<number> {
   for (const t of targets)
     if (t !== "solanaDevnet" && !(t in EVM_CHAINS)) throw new Error(`unknown chain ${t}`);
 
-  if (command === "read") return read(link, targets, values["solana-rpc"]);
+  if (command === "read") return read(link, targets, values["solana-rpc"], evidence);
 
   loadDotEnv();
   const homeScore = await readEvmScore(home, values.agent);
@@ -119,22 +124,27 @@ async function main(): Promise<number> {
           });
     link.links[chain] = result.agentId;
     // Record a new registration at once, so a later failure can't lose it.
-    if (result.registeredNow) writeLinks(links, values.links);
+    if (result.registeredNow) writeLinks(links, linksFile);
     results.push(result);
     console.log(
       `  ${chain.padEnd(16)} agent ${result.agentId.padEnd(4)} ${result.status}${result.registeredNow ? " (registered now)" : ""}${result.tx ? ` ${result.tx}` : ""}`,
     );
   }
-  writeLinks(links, values.links);
-  if (values.evidence)
+  writeLinks(links, linksFile);
+  if (evidence)
     writeFileSync(
-      values.evidence,
+      evidence,
       `${JSON.stringify({ home: link.home, score: homeScore, results }, null, 2)}\n`,
     );
   return 0;
 }
 
-async function read(link: AgentLink, targets: ScoreChain[], solanaRpc: string): Promise<number> {
+async function read(
+  link: AgentLink,
+  targets: ScoreChain[],
+  solanaRpc: string,
+  evidence?: string,
+): Promise<number> {
   const rows: [
     string,
     string,
@@ -170,6 +180,25 @@ async function read(link: AgentLink, targets: ScoreChain[], solanaRpc: string): 
       `${chain.padEnd(18)} agent ${id.padEnd(4)} ${s ? `score ${s.score}, issued ${new Date(s.issuedAt * 1000).toISOString()}, expires ${new Date(s.expiresAt * 1000).toISOString()}` : "no score"}`,
     );
   }
+  if (evidence)
+    writeFileSync(
+      evidence,
+      `${JSON.stringify(
+        {
+          readAt: new Date().toISOString(),
+          home: link.home,
+          chains: rows.map(([chain, agentId, s]) => ({
+            chain,
+            agentId,
+            score: s?.score ?? null,
+            issuedAt: s ? new Date(s.issuedAt * 1000).toISOString() : null,
+            expiresAt: s ? new Date(s.expiresAt * 1000).toISOString() : null,
+          })),
+        },
+        null,
+        2,
+      )}\n`,
+    );
   return missing ? 1 : 0;
 }
 
