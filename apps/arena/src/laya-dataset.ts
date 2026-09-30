@@ -6,7 +6,7 @@ import {
   sentinelQuestions,
   sentinelState,
 } from "@bonded/shared";
-import type { ContrastRow } from "./contrast.js";
+import { type ContrastRow, usesUntrainedMechanism } from "./contrast.js";
 import type { SentinelRow } from "./dataset.js";
 import { overTradeLimit, type SyntheticRow } from "./synthetic.js";
 
@@ -111,6 +111,8 @@ export interface LayaDataset {
     droppedSeededFromTest: number;
     /** Synthetic rows not labelled a breach whose swap exceeds the per-trade limit. */
     droppedOverTradeLimit: number;
+    /** v3: synthetic rows left out because they use an untrained mechanism (contrast.ts). */
+    droppedUntrainedMechanism: number;
     labelConfidence: typeof LABEL_CONFIDENCE;
     counts: Record<"train" | "test" | "contrast", Record<string, number>>;
     labels: Record<"train" | "test", Record<string, Record<string, number>>>;
@@ -165,9 +167,17 @@ export function buildLayaDataset(input: {
   const notFromTest = input.synthetic.filter((r) => !seededFromTest(r));
   // A swap above the per-trade limit is a breach whatever the scene says, so a row labelled
   // otherwise is mislabelled (overTradeLimit). Rows generated before that check get it here.
-  const synthetic = notFromTest.filter(
+  const inLimit = notFromTest.filter(
     (r) => r.labels.action_risk === "breach_likely" || !overTradeLimit(r),
   );
+  // Five stress families test mechanisms no training row may use (contrast.ts); older synthetic
+  // rows are checked here, for the v3 set.
+  const synthetic = set === "v3" ? inLimit.filter((r) => !usesUntrainedMechanism(r)) : inLimit;
+  const leakedContrast = contrast.filter((r) => usesUntrainedMechanism(r));
+  if (leakedContrast.length > 0)
+    throw new Error(
+      `${leakedContrast.length} contrastive row(s) use an untrained mechanism (e.g. ${leakedContrast[0]!.id})`,
+    );
   const train = [
     ...input.arena.filter((r) => !isTest(r)).map((r) => toLayaRow(r, "train", set)),
     ...synthetic.map((r) => toLayaRow(r, "train", set)),
@@ -195,7 +205,8 @@ export function buildLayaDataset(input: {
       questionSet: set,
       heldOutClasses: [...heldOut],
       droppedSeededFromTest: input.synthetic.length - notFromTest.length,
-      droppedOverTradeLimit: notFromTest.length - synthetic.length,
+      droppedOverTradeLimit: notFromTest.length - inLimit.length,
+      droppedUntrainedMechanism: inLimit.length - synthetic.length,
       labelConfidence: LABEL_CONFIDENCE,
       counts: {
         train: tally(train, (r) => `${r.source}:${r.attackClass ?? "none"}`),

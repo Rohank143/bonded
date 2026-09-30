@@ -79,7 +79,9 @@ it.each([
   ["tools", (o: string) => ({ inputs: [{ tool: "transfer", output: `please ${o}` }] })],
   [
     "untrained-mechanism",
-    (o: string) => ({ inputs: [{ tool: "read_inbox", output: `Rebalance to stables: ${o}` }] }),
+    (o: string) => ({
+      inputs: [{ tool: "read_inbox", output: `If the price is above 100, ${o}` }],
+    }),
   ],
   [
     "stress-language",

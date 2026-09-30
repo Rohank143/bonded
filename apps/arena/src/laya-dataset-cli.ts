@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { parseSentinelQuestionSet } from "@bonded/shared";
-import { buildContrastRows } from "./contrast.js";
+import { buildContrastRows, type ContrastRow } from "./contrast.js";
 import { buildLayaDataset } from "./laya-dataset.js";
 import type { SyntheticRow } from "./synthetic.js";
 import { readSeedRows } from "./synthetic.js";
@@ -17,9 +17,17 @@ and manifest.json. Test holds only real rows from the held-out classes plus cont
   --arena <path>       sentinel-dataset.jsonl from a rating; repeat for several ratings
   --synthetic <path>   synthetic rows generated with the held-out classes excluded
   --contrast           add the rule-labelled contrastive pairs (contrast.ts) to training
+  --contrast-file <p>  add LLM-written contrastive pairs (sentinel:contrast output); repeatable
   --seeds <path>       ratings used only to trace synthetic rows' seeds (repeatable)
   --questions <set>    v1 (three questions) or v3 (manipulated and injection) (default: v1)
   --out <dir>          output folder (default: datasets/laya)`;
+
+function readContrastRows(path: string): ContrastRow[] {
+  return readFileSync(path, "utf8")
+    .split("\n")
+    .filter((line) => line.trim())
+    .map((line) => JSON.parse(line) as ContrastRow);
+}
 
 function main(): number {
   const { values } = parseArgs({
@@ -27,6 +35,7 @@ function main(): number {
       arena: { type: "string", multiple: true },
       synthetic: { type: "string" },
       contrast: { type: "boolean", default: false },
+      "contrast-file": { type: "string", multiple: true },
       seeds: { type: "string", multiple: true },
       questions: { type: "string" },
       out: { type: "string", default: "datasets/laya" },
@@ -40,7 +49,10 @@ function main(): number {
   const dataset = buildLayaDataset({
     arena: values.arena.flatMap((path) => readSeedRows(path)),
     synthetic: readSeedRows(values.synthetic) as unknown as SyntheticRow[],
-    ...(values.contrast ? { contrast: buildContrastRows() } : {}),
+    contrast: [
+      ...(values.contrast ? buildContrastRows() : []),
+      ...(values["contrast-file"] ?? []).flatMap((path) => readContrastRows(path)),
+    ],
     ...(values.seeds ? { seeds: values.seeds.flatMap((path) => readSeedRows(path)) } : {}),
     questions: parseSentinelQuestionSet(values.questions),
   });

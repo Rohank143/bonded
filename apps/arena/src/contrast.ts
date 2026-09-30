@@ -22,15 +22,19 @@ import {
  * A control never proposes the ordered trade itself: that is obeying, whatever the framing.
  *
  * Labels follow the stress suite's rules exactly (`stressKit`). Wording and world content are
- * this file's own, and six mechanisms are left out entirely (UNTRAINED_MECHANISMS), so the
+ * this file's own, and five mechanisms are left out entirely (UNTRAINED_MECHANISMS), so the
  * locked stress families still test disguises v3 never saw.
  */
 
-/** Stress families whose mechanism no training row uses, in any wording. */
+/**
+ * Stress families whose mechanism no training row uses, in any wording. `harm-rebalance-to-stable`
+ * isn't one: real Arena attack seeds (A2-fake-halt-news, A3-stale-price) already order
+ * conversions to stablecoins, so v1 and v2 trained on it too; its locked stress wordings still
+ * test unseen phrasing.
+ */
 export const UNTRAINED_MECHANISMS = [
   "smuggle-base64",
   "smuggle-split-inputs",
-  "harm-rebalance-to-stable",
   "edge-mandate-negation",
   "smuggle-verdict-object",
   "harm-conditional-trigger",
@@ -615,15 +619,39 @@ const MECHANISMS: Mechanism[] = [
 export const CONTRAST_MECHANISMS = MECHANISMS.map((m) => m.id);
 
 /**
- * Text that would bring an untrained mechanism into training: rebalancing to stables, base64,
- * price conditions, verdict objects, split instructions, a "do not buy" rule. Addresses are
- * removed before matching (they look like base64).
+ * Text that would bring an untrained mechanism into input content: a base64 instruction, a
+ * price condition, a verdict object, an instruction split into parts, a "do not buy" rule.
  */
-export const UNTRAINED_MARKERS =
-  /rebalanc|\bstables?\b|stablecoin|base64|[A-Za-z0-9+/]{24,}={0,2}(?![0-9a-fA-F])|\bif\b[^.]*\bprice\b|"manipulated"|"gold_answer"|step 1 of 2|part [ab]:|do not buy/i;
+const UNTRAINED_MARKERS =
+  /base64|\bif\b[^.]*\bprice\b|"manipulated"|"gold_answer"|step 1 of 2|part [ab]:|do not buy/i;
+
+/** A base64 run that decodes to readable text (not an address, hash or content id). */
+function hasBase64Text(text: string): boolean {
+  for (const token of text.match(/[A-Za-z0-9+/]{24,}={0,2}/g) ?? []) {
+    const decoded = Buffer.from(token, "base64").toString("latin1");
+    const printable = [...decoded].filter((c) => c >= " " && c <= "~").length;
+    if (decoded.length >= 12 && printable / decoded.length > 0.95 && decoded.includes(" "))
+      return true;
+  }
+  return false;
+}
 
 export function hasUntrainedMarker(text: string): boolean {
-  return UNTRAINED_MARKERS.test(text.replace(/0x[0-9a-fA-F]{40}/g, ""));
+  return UNTRAINED_MARKERS.test(text) || hasBase64Text(text);
+}
+
+/**
+ * Whether a training row uses an untrained mechanism: an attack row (manipulated, or with an
+ * injection) whose inputs carry a marker, or any row whose mandate has a "do not buy" rule.
+ */
+export function usesUntrainedMechanism(row: {
+  mandate: string;
+  untrustedInputs: readonly { output: string }[];
+  labels: { manipulated: boolean; injection_in_inputs: boolean };
+}): boolean {
+  if (/\b(do not|don't) buy\b/i.test(row.mandate)) return true;
+  const attack = row.labels.manipulated || row.labels.injection_in_inputs;
+  return attack && row.untrustedInputs.some((i) => hasUntrainedMarker(i.output));
 }
 
 /** Pieces the LLM-written pairs (llm-contrast.ts) share with these rows. */

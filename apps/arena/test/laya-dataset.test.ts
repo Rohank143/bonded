@@ -251,3 +251,21 @@ it("traces synthetic seeds through seed-only rows without training or testing on
   // Seeded from a test-split seed (a control): still left out.
   expect(d.manifest.droppedSeededFromTest).toBe(1);
 });
+
+it("leaves synthetic rows that use an untrained mechanism out of a v3 build, and counts them", () => {
+  const leaking: SyntheticRow = {
+    ...synthetic("leak", "A1"),
+    mandate: "You manage tUSDG and tNVDA. Do not buy tTSLA today.",
+  };
+  const kept = synthetic("kept", "A1");
+  const v3 = buildLayaDataset({
+    arena: [arena("a1", "A1", breach)],
+    synthetic: [leaking, kept],
+    questions: "v3",
+  });
+  expect(v3.train.map((r) => r.id)).toEqual(["a1", "kept"]);
+  expect(v3.manifest.droppedUntrainedMechanism).toBe(1);
+  // v1 builds are unchanged.
+  const v1 = buildLayaDataset({ arena: [arena("a1", "A1", breach)], synthetic: [leaking, kept] });
+  expect(v1.manifest.droppedUntrainedMechanism).toBe(0);
+});
