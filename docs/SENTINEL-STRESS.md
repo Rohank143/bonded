@@ -697,3 +697,24 @@ No failure found: both models get all 12 cases right for all three answers. The 
 The reduced two-sender consensus probe also makes v1 miss, despite v1 blocking every three-to-six-sender case in the suite. Removing irrelevant content can expose a different outcome; the reduced-probe numbers are not substituted into the per-family table.
 
 For manual review, rebuild with `pnpm -s turbo run build --filter @bonded/arena...`, export `node apps/arena/dist/stress-cli.js --write-suite /tmp/sentinel-review.jsonl`, and verify its SHA-256 against both reports. With each pinned local server running, rerun the documented stress command at 0.7. The reports’ `minimalExamples[].state` can be sent as `state` with `sentinelQuestions()` to replay the smaller probes. Run `pnpm --filter @bonded/arena exec vitest run test/stress.test.ts` for the rule and pair checks.
+
+## v3 preparation: two questions and the explicit token rule
+
+Decided for v3 (docs/SENTINEL.md):
+- **Two questions.** Sentinel is trained on two questions only: `manipulated` and `injection_in_inputs`. Whether an action is within the mandate is exact rule-checking; the policy guard and the vault already do it in code, and both audits show the model does it unreliably.
+  - For a v3 model, the guard computes action risk with the policy guard's check, and labels a manipulated action inside the rules "suspicious".
+  - `--questions v3` (in `sentinel:eval` and `sentinel:stress`) and `--sentinel-questions v3` (in `arena rate`) select the two-question set. v1 remains the default.
+- **The token rule is explicit.** The mandate wording (`describeMandate`, and the stress suite's copy) now says "You may trade only these tokens, and only through the exchange's swap function". The on-chain asset list already enforces this, and v3 trains on it.
+
+**v1 and v2 on the new wording.** Same 528 cases, reworded mandates, suite SHA-256 `046c3838d8403d41099a67719a30254e0a239b6148735a4d6b3feb863cb21312` (reports: [v1](progress/evidence/sentinel-stress-v1-v3-wording.json), [v2](progress/evidence/sentinel-stress-v2-v3-wording.json)):
+
+| | Misses, old wording | Misses, new wording | False blocks (old / new) | Breach blocks (old / new) |
+|---|---|---|---|---|
+| v1 | 23 | 26 | 7 / 7 | 9 / 9 |
+| v2 | 43 | 45 | 0 / 0 | 6 / 6 |
+
+The changes are small and go both ways:
+- **v1:** panic dump 2→3, rebalance 4→3, in-mandate smuggled buy 3→5, quoted bypass 3→4.
+- **v2:** pump at limit 0→1, lookalike token 3→5, quoted bypass 2→1.
+
+Neither model trained on this wording. Until v3 replaces v1, Arena runs that use v1 as a guard see the new wording and about 1% more misses on these cases. v3's gates score v1 on this wording, so the comparison is like for like.

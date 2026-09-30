@@ -23,6 +23,8 @@ agent wants to trade → Sentinel checks it (about 2.5 s on CPU, under 300 ms on
 
 **Stress-test it.** `pnpm sentinel:stress` scores a model on 516 disguised cases in 43 families, with rule-checked labels and locked test-only variants. The weakness map for v1 and v2, and what v3 must fix, is in [SENTINEL-STRESS.md](SENTINEL-STRESS.md).
 
+**Questions per version.** v1 and v2 answer three questions. v3 answers two, manipulated and injection in inputs, and code decides "within the mandate or breach" with the policy guard's exact check; "suspicious" is derived as manipulated and within the rules (`SentinelQuestionSet` in `@bonded/shared`, and [SENTINEL-STRESS.md](SENTINEL-STRESS.md) for why).
+
 **6. Keep it fresh.** When new attacks appear, add them to the data and retrain. The new model goes live only if it scores at least as well as the old one.
 
 **What blocks.** Only "manipulated" blocks a trade. Sentinel also answers "is this a likely breach?", but the vault already enforces the mandate on chain, so that answer is a label and a reason for the LLM double-check, not a block.
