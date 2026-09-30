@@ -37,6 +37,7 @@ export {
   type GuardVerdict,
   PolicyGuard,
 } from "./hardened/guard.js";
+export { GuardedAgent } from "./guarded.js";
 export { LlmHardenedAgent, type LlmHardenedAgentOptions } from "./hardened/llm.js";
 export { ScriptedHardenedAgent } from "./hardened/scripted.js";
 export { runToolLoop, type ToolLoopOptions } from "./llm-loop.js";
