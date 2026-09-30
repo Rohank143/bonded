@@ -28,7 +28,8 @@
     "sentinel:synth": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena synth",
     "sentinel:dataset": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena dataset",
     "solana:build": "cd contracts/solana && NO_DNA=1 anchor build --ignore-keys",
-    "solana:test": "cd contracts/solana && NO_DNA=1 anchor build --ignore-keys && cargo test"
+    "solana:test": "cd contracts/solana && NO_DNA=1 anchor build --ignore-keys && cargo test",
+    "sentinel:eval": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena sentinel-eval"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
