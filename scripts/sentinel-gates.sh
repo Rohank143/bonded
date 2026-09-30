@@ -31,13 +31,15 @@ HELDOUT_ARGS=()
 for dir in "$@"; do HELDOUT_ARGS+=(--arena "$(cd "$dir" && pwd)/sentinel-dataset.jsonl"); done
 
 PIDS=()
+# `exec` below makes each server the background process itself, so this stops the servers,
+# not just the subshells that started them.
 cleanup() { for pid in "${PIDS[@]:-}"; do kill "$pid" 2>/dev/null || true; done; }
 trap cleanup EXIT
 
 serve() { # role port revision
   (cd "$ROOT/services/sentinel" && SENTINEL_MODEL_REPO=ddboy19912/bonded-sentinel-laya \
     SENTINEL_MODEL_REVISION="$3" PORT="$2" LAYA_DEVICE="${LAYA_DEVICE:-mps}" LAYA_API_KEY="$KEY" \
-    "$PYTHON" server.py >"$OUT/server-$1.log" 2>&1) &
+    exec "$PYTHON" server.py >"$OUT/server-$1.log" 2>&1) &
   PIDS+=($!)
 }
 wait_healthy() { # port revision
