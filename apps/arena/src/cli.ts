@@ -13,6 +13,7 @@ import {
 } from "@bonded/demo-agents";
 import { type ArenaAgent, EVM_CHAINS } from "@bonded/shared";
 import { loadAttackLibrary } from "./attacks.js";
+import { runControls } from "./controls.js";
 import { loadDotEnv, usesLanguageModel } from "./env.js";
 import { type EpisodeResult, runEpisode, saveEpisode } from "./episode.js";
 import { rateAgent } from "./rate.js";
@@ -22,6 +23,8 @@ import { Sandbox } from "./sandbox.js";
 const USAGE = `Usage:
   pnpm --filter @bonded/arena arena run [options]    run episodes and print each verdict
   pnpm --filter @bonded/arena arena rate [options]   full rating: score, report, attestation
+  pnpm --filter @bonded/arena arena controls [options]  benign episodes only, for Sentinel's
+                                                       false-alarm test (no score)
 
 Agent:
   --agent <vulnerable|hardened|decision>  demo agent to test (default: vulnerable)
@@ -36,14 +39,15 @@ Agent:
 Attacks:
   --attack <id|all|none>   run only: seed to plant (default: all; none = control episode)
   --repeats <n>            rate only: runs of each seed, each with a different goal (default: 1)
-  --controls <n>           rate only: episodes with no attack (default: 2)
+  --controls <n>           rate: episodes with no attack (default: 2); controls: how many (default: 24)
   --list                   list the attack library and exit
 
 Run:
-  --max-usd <n>            rate only: stop starting episodes once model spend reaches this
+  --max-usd <n>            rate and controls: stop starting episodes once model spend reaches this
   --fork <robinhood|arbitrum|url>  fork a live testnet instead of a fresh local chain
   --traces <dir>           run only: where to write episode records (default: traces)
-  --out <dir>              rate only: report, attestation, dataset and traces (default: ratings/<agent>)`;
+  --out <dir>              rate and controls: output directory (default: ratings/<agent>, or
+                           ratings/controls-<agent> for controls)`;
 
 const FORKS: Record<string, string> = {
   robinhood: EVM_CHAINS.robinhoodTestnet.rpcUrl,
@@ -62,7 +66,7 @@ async function main(): Promise<number> {
       "sentinel-fallback": { type: "string" },
       enforce: { type: "boolean", default: false },
       repeats: { type: "string", default: "1" },
-      controls: { type: "string", default: "2" },
+      controls: { type: "string" },
       "max-usd": { type: "string" },
       fork: { type: "string" },
       traces: { type: "string", default: "traces" },
@@ -72,7 +76,10 @@ async function main(): Promise<number> {
     },
   });
   const command = positionals[0];
-  if (values.help || (command !== "run" && command !== "rate" && !values.list)) {
+  if (
+    values.help ||
+    (command !== "run" && command !== "rate" && command !== "controls" && !values.list)
+  ) {
     console.log(USAGE);
     return values.help ? 0 : 1;
   }
@@ -93,13 +100,33 @@ async function main(): Promise<number> {
   console.log(forkUrl ? `Forking ${forkUrl}` : "Starting a fresh local chain");
   const sandbox = await Sandbox.start({ forkUrl, log: (m) => m && console.log(m) });
   try {
+    if (command === "controls") {
+      const outDir = values.out ?? `ratings/controls-${agent.name.replaceAll("/", "_")}`;
+      const result = await runControls(sandbox, {
+        agent,
+        episodes: positiveInt(values.controls ?? "24", "--controls"),
+        ...(vault ? { vault } : {}),
+        ...(values["max-usd"] ? { maxUsd: Number(values["max-usd"]) } : {}),
+        outDir,
+        onEpisode: (r, i, total) =>
+          console.log(`[${i + 1}/${total}] control ${describeOutcome(r)}`),
+      });
+      console.log(
+        `\n${result.episodes.length} control episodes, ${result.rows.length} Sentinel rows, ${result.breaches} breaches`,
+      );
+      console.log(`  spend $${result.spend.spentUsd.toFixed(4)}`);
+      if (result.stoppedEarly) console.log(`  stopped early: ${result.stoppedEarly}`);
+      for (const [name, path] of Object.entries(result.files))
+        console.log(`  ${name.padEnd(12)}${path}`);
+      return 0;
+    }
     if (command === "rate") {
       const outDir = values.out ?? `ratings/${agent.name.replaceAll("/", "_")}`;
       const result = await rateAgent(sandbox, {
         agent,
         attacks: library,
         repeats: positiveInt(values.repeats, "--repeats"),
-        controls: positiveInt(values.controls, "--controls", true),
+        controls: positiveInt(values.controls ?? "2", "--controls", true),
         ...(vault ? { vault } : {}),
         ...(values["max-usd"] ? { maxUsd: Number(values["max-usd"]) } : {}),
         outDir,

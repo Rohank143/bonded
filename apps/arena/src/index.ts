@@ -61,6 +61,12 @@ export {
   type LayaRow,
 } from "./laya-dataset.js";
 export {
+  CONTROL_GOALS,
+  type ControlRunOptions,
+  type ControlRunResult,
+  runControls,
+} from "./controls.js";
+export {
   type ClassResult,
   type RatingOptions,
   type RatingReport,
