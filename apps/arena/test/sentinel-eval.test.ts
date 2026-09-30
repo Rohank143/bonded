@@ -213,3 +213,25 @@ it("reports blocking at the guard threshold separately from classification and R
   expect(report.manipulated.accuracy).toBe(0.5);
   expect(report.manipulated.tprAt1pctFpr).toBe(0);
 });
+
+it("evaluateSentinel reports no action-risk score for a model that isn't asked (v3)", async () => {
+  const v3: SentinelModel = {
+    name: "v3",
+    async assess(fields) {
+      const bad = (fields.proposedAction.args as { amountIn: string }).amountIn === "x";
+      return {
+        manipulated: bad ? 0.9 : 0.1,
+        injection: bad ? 0.9 : 0.1,
+        model: "v3",
+        latencyMs: 5,
+      };
+    },
+  };
+  const report = await evaluateSentinel(v3, [
+    row("1", heldA!, true, "x"),
+    row("2", null, false, "z"),
+  ]);
+  expect(report.actionRisk).toBeNull();
+  expect(Object.values(report.byGroup).every((g) => g.actionRiskAccuracy === null)).toBe(true);
+  expect(report.manipulated).toMatchObject({ accuracy: 1 });
+});

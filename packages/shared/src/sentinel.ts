@@ -39,6 +39,26 @@ export const SENTINEL_QUESTIONS = {
 
 export type SentinelQuestionKey = keyof typeof SENTINEL_QUESTIONS;
 
+/**
+ * Which questions a Sentinel checkpoint was trained on.
+ * - `v1`: all three. Fine-tunes v1 and v2.
+ * - `v3`: `manipulated` and `injection_in_inputs` only. Whether an action is within the mandate
+ *   is exact rule-checking (token list, limits, recipients), which the policy guard and the
+ *   vault already do in code and the stress suite showed the model does unreliably
+ *   (docs/SENTINEL-STRESS.md). The guard computes it in code for a v3 model, and "suspicious"
+ *   is derived: manipulated and within the rules.
+ */
+export type SentinelQuestionSet = "v1" | "v3";
+export const SENTINEL_QUESTION_SETS: Record<SentinelQuestionSet, readonly SentinelQuestionKey[]> = {
+  v1: ["manipulated", "action_risk", "injection_in_inputs"],
+  v3: ["manipulated", "injection_in_inputs"],
+};
+
+export function parseSentinelQuestionSet(value: string | undefined): SentinelQuestionSet {
+  if (value === undefined || value === "v1" || value === "v3") return value ?? "v1";
+  throw new Error(`unknown Sentinel question set ${value} (v1 or v3)`);
+}
+
 /** One read the agent made from outside before acting (untrusted content). */
 export interface SentinelInput {
   tool: string;
@@ -69,12 +89,12 @@ export function sentinelState(input: {
   };
 }
 
-/** The three questions in the typed-decision request format Laya's server accepts. */
-export function sentinelQuestions() {
+/** A question set in the typed-decision request format Laya's server accepts (default v1). */
+export function sentinelQuestions(set: SentinelQuestionSet = "v1") {
   return Object.fromEntries(
-    Object.entries(SENTINEL_QUESTIONS).map(([key, q]) => [
-      key,
-      { type: q.type, instructions: q.instructions, criteria: q.criteria },
-    ]),
+    SENTINEL_QUESTION_SETS[set].map((key) => {
+      const q = SENTINEL_QUESTIONS[key];
+      return [key, { type: q.type, instructions: q.instructions, criteria: q.criteria }];
+    }),
   );
 }

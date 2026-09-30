@@ -9,6 +9,7 @@ import {
   LlmDecisionModel,
   type SentinelModel,
 } from "@bonded/demo-agents";
+import { parseSentinelQuestionSet } from "@bonded/shared";
 import { loadDotEnv } from "./env.js";
 import { evaluateSentinel } from "./sentinel-eval.js";
 import { readSeedRows } from "./synthetic.js";
@@ -20,6 +21,8 @@ SENTINEL_HELD_OUT_CLASSES plus control episodes, each distinct case once.
 
   --arena <path>     sentinel-dataset.jsonl from \`arena rate\`; repeat for several ratings
   --laya <url>       a Laya server (services/sentinel or laya-serve); LAYA_API_KEY if it needs one
+  --questions <set>  v1 (three questions, fine-tunes v1 and v2) or v3 (manipulated and injection
+                     only; action risk isn't scored) (default: v1)
   --llm <model>      an OpenRouter model id, through the LLM decision model
                      (with --laya too, runs the cascade: Laya first, the LLM only when unsure)
   --out <path>       report JSON (default: datasets/sentinel-eval.json)`;
@@ -29,6 +32,7 @@ async function main(): Promise<number> {
     options: {
       arena: { type: "string", multiple: true },
       laya: { type: "string" },
+      questions: { type: "string" },
       llm: { type: "string" },
       out: { type: "string", default: "datasets/sentinel-eval.json" },
       help: { type: "boolean", default: false },
@@ -42,6 +46,7 @@ async function main(): Promise<number> {
   const laya = values.laya
     ? new LayaSentinel({
         url: values.laya.replace(/\/+$/, ""),
+        questions: parseSentinelQuestionSet(values.questions),
         apiKey: process.env.LAYA_API_KEY,
         timeoutMs: 120_000,
       })
@@ -88,12 +93,14 @@ async function main(): Promise<number> {
     console.log(
       `injection:   accuracy ${pct(report.injection.accuracy)} | AUC ${report.injection.auc.toFixed(3)} | ECE ${report.injection.ece.toFixed(3)}`,
     );
-  console.log(
-    `action_risk: accuracy ${pct(report.actionRisk.accuracy)} | ECE ${report.actionRisk.ece.toFixed(3)}`,
-  );
+  if (report.actionRisk)
+    console.log(
+      `action_risk: accuracy ${pct(report.actionRisk.accuracy)} | ECE ${report.actionRisk.ece.toFixed(3)}`,
+    );
+  else console.log("action_risk: not asked (v3 question set)");
   for (const [g, s] of Object.entries(report.byGroup))
     console.log(
-      `  ${g.padEnd(8)} ${String(s.cases).padStart(3)} cases | manipulated ${pct(s.manipulatedAccuracy)} | action_risk ${pct(s.actionRiskAccuracy)} | guard blocks ${s.blocking.blockedManipulated} manipulated / ${s.blocking.blockedUnmanipulated} unmanipulated`,
+      `  ${g.padEnd(8)} ${String(s.cases).padStart(3)} cases | manipulated ${pct(s.manipulatedAccuracy)} | action_risk ${s.actionRiskAccuracy === null ? "n/a" : pct(s.actionRiskAccuracy)} | guard blocks ${s.blocking.blockedManipulated} manipulated / ${s.blocking.blockedUnmanipulated} unmanipulated`,
     );
   console.log(
     `latency p50 ${report.latencyMs.p50.toFixed(0)} ms, p95 ${report.latencyMs.p95.toFixed(0)} ms`,
