@@ -1,13 +1,13 @@
 //! End-to-end tests for the three Bonded programs on LiteSVM, with the compiled programs:
 //! register → score → vault → pool → bond → cover → breach → claim, and the ways each step
-//! must refuse. Run `anchor build` first; the tests load `target/deploy/*.so`.
+//! must refuse. Every instruction comes from `bonded_client`, the builders the devnet runner
+//! and keeper use, so these tests check those too. Run `anchor build` first; the tests load
+//! `target/deploy/*.so`.
 
 use anchor_lang::prelude::Pubkey;
-use anchor_lang::solana_program::instruction::{AccountMeta, Instruction};
-use anchor_lang::{AccountDeserialize, InstructionData, ToAccountMetas};
-use bonded_cover::{quote_message, Quote};
-use bonded_registry::{attestation_message, Attestation};
-use bonded_vault::{BreachType, VaultParams};
+use anchor_lang::solana_program::instruction::Instruction;
+use anchor_lang::AccountDeserialize;
+use bonded_client::{address, Attestation, BreachType, Quote, VaultParams, USD};
 use litesvm::LiteSVM;
 use litesvm_token::{get_spl_account, CreateAccount, CreateMint, MintTo};
 use solana_keypair::Keypair;
@@ -16,12 +16,9 @@ use solana_signer::Signer;
 use solana_transaction::versioned::VersionedTransaction;
 use spl_token_interface::state::Account as TokenAccount;
 
-const USD: u64 = 1_000_000;
 const NOW: i64 = 1_800_000_000;
 const MANDATE: [u8; 32] = [7; 32];
-const TOKEN: Pubkey = anchor_spl::token::ID;
-const SYSTEM: Pubkey = anchor_lang::system_program::ID;
-const INSTRUCTIONS: Pubkey = bonded_ed25519::INSTRUCTIONS_SYSVAR_ID;
+const TOKEN: Pubkey = bonded_client::TOKEN_PROGRAM;
 
 /// A built program, read when the tests run so building the IDL doesn't need the binaries.
 fn program_bytes(name: &str) -> Vec<u8> {
@@ -35,26 +32,12 @@ fn program_bytes(name: &str) -> Vec<u8> {
 /// Make `authority` the upgrade authority of a program loaded by `add_program` (which leaves it
 /// unset), the way a real deployment has one.
 fn set_upgrade_authority(svm: &mut LiteSVM, program: &Pubkey, authority: &Pubkey) {
-    let programdata = pda(
-        &[program.as_ref()],
-        &anchor_lang::solana_program::bpf_loader_upgradeable::ID,
-    );
+    let programdata = address::programdata(program);
     let mut acct = svm.get_account(&programdata).expect("programdata account");
     // ProgramData: 4-byte tag, 8-byte slot, then Option<Pubkey> (1-byte flag + 32 bytes).
     acct.data[12] = 1;
     acct.data[13..45].copy_from_slice(authority.as_ref());
     svm.set_account(programdata, acct).unwrap();
-}
-
-fn programdata_of(program: &Pubkey) -> Pubkey {
-    pda(
-        &[program.as_ref()],
-        &anchor_lang::solana_program::bpf_loader_upgradeable::ID,
-    )
-}
-
-fn pda(seeds: &[&[u8]], program: &Pubkey) -> Pubkey {
-    Pubkey::find_program_address(seeds, program).0
 }
 
 /// Send one transaction; on failure return its logs, so a test can check which error it was.
@@ -82,31 +65,8 @@ fn expect_err(result: Result<(), String>, needle: &str) {
     assert!(logs.contains(needle), "expected {needle} in logs:\n{logs}");
 }
 
-/// An Ed25519 program instruction checking `signer`'s signature over `message`, all inline.
-fn ed25519_ix(signer: &Keypair, message: &[u8]) -> Instruction {
-    let signature = signer.sign_message(message);
-    let (key_at, sig_at, msg_at) = (16u16, 48u16, 112u16);
-    let mut data = vec![1u8, 0];
-    for v in [
-        sig_at,
-        u16::MAX,
-        key_at,
-        u16::MAX,
-        msg_at,
-        message.len() as u16,
-        u16::MAX,
-    ] {
-        data.extend_from_slice(&v.to_le_bytes());
-    }
-    data.extend_from_slice(signer.pubkey().as_ref());
-    data.extend_from_slice(signature.as_ref());
-    data.extend_from_slice(message);
-    Instruction::new_with_bytes(solana_sdk_ids_ed25519(), &data, vec![])
-}
-
-fn solana_sdk_ids_ed25519() -> Pubkey {
-    // Ed25519SigVerify111111111111111111111111111
-    Pubkey::from_str_const("Ed25519SigVerify111111111111111111111111111")
+fn sign(signer: &Keypair, message: &[u8]) -> [u8; 64] {
+    signer.sign_message(message).into()
 }
 
 fn token_balance(svm: &LiteSVM, account: &Pubkey) -> u64 {
@@ -199,100 +159,28 @@ impl World {
     }
 
     fn setup_programs(&mut self, underwriter_usd: Pubkey) {
-        let (admin, attester) = (self.admin.insecure_clone(), self.attester.pubkey());
-        let registry_config = pda(&[b"config"], &bonded_registry::ID);
-        let vault_config = pda(&[b"config"], &bonded_vault::ID);
-        let cover_config = pda(&[b"config"], &bonded_cover::ID);
-        let claims = pda(&[b"claims"], &bonded_cover::ID);
-        let ixs = [
-            Instruction::new_with_bytes(
-                bonded_registry::ID,
-                &bonded_registry::instruction::Initialize { attester }.data(),
-                bonded_registry::accounts::Initialize {
-                    config: registry_config,
-                    admin: admin.pubkey(),
-                    program: bonded_registry::ID,
-                    program_data: programdata_of(&bonded_registry::ID),
-                    system_program: SYSTEM,
-                }
-                .to_account_metas(None),
-            ),
-            Instruction::new_with_bytes(
-                bonded_vault::ID,
-                &bonded_vault::instruction::Initialize {
-                    cover_authority: claims,
-                }
-                .data(),
-                bonded_vault::accounts::Initialize {
-                    config: vault_config,
-                    admin: admin.pubkey(),
-                    program: bonded_vault::ID,
-                    program_data: programdata_of(&bonded_vault::ID),
-                    system_program: SYSTEM,
-                }
-                .to_account_metas(None),
-            ),
-            Instruction::new_with_bytes(
-                bonded_cover::ID,
-                &bonded_cover::instruction::Initialize { attester }.data(),
-                bonded_cover::accounts::Initialize {
-                    config: cover_config,
-                    pool_vault: pda(&[b"pool_vault"], &bonded_cover::ID),
-                    share_mint: pda(&[b"shares"], &bonded_cover::ID),
-                    base_mint: self.mint,
-                    admin: admin.pubkey(),
-                    program: bonded_cover::ID,
-                    program_data: programdata_of(&bonded_cover::ID),
-                    token_program: TOKEN,
-                    system_program: SYSTEM,
-                }
-                .to_account_metas(None),
-            ),
-        ];
+        let admin = self.admin.insecure_clone();
+        let ixs =
+            bonded_client::initialize_all(&admin.pubkey(), &self.attester.pubkey(), &self.mint);
         send(&mut self.svm, &ixs, &admin, &[]).unwrap();
 
         // Register agent 1, owned by the operator.
-        let register = Instruction::new_with_bytes(
-            bonded_registry::ID,
-            &bonded_registry::instruction::Register {
-                uri: "ipfs://bonded/agent".into(),
-            }
-            .data(),
-            bonded_registry::accounts::Register {
-                config: registry_config,
-                agent: agent_pda(1),
-                owner: self.operator.pubkey(),
-                system_program: SYSTEM,
-            }
-            .to_account_metas(None),
-        );
         let operator = self.operator.insecure_clone();
+        let register = bonded_client::register(&operator.pubkey(), 1, "ipfs://bonded/agent");
         send(&mut self.svm, &[register], &operator, &[]).unwrap();
 
         // An underwriter funds the pool with 1,000,000.
-        let shares = pda(&[b"shares"], &bonded_cover::ID);
         let underwriter = self.underwriter.insecure_clone();
-        let shares_to = CreateAccount::new(&mut self.svm, &admin, &shares)
+        let shares_to = CreateAccount::new(&mut self.svm, &admin, &address::share_mint())
             .owner(&underwriter.pubkey())
             .send()
             .unwrap();
-        let deposit = Instruction::new_with_bytes(
-            bonded_cover::ID,
-            &bonded_cover::instruction::Deposit {
-                amount: 1_000_000 * USD,
-            }
-            .data(),
-            bonded_cover::accounts::PoolDeposit {
-                config: cover_config,
-                pool_vault: pda(&[b"pool_vault"], &bonded_cover::ID),
-                share_mint: shares,
-                base_mint: self.mint,
-                from: underwriter_usd,
-                shares_to,
-                owner: underwriter.pubkey(),
-                token_program: TOKEN,
-            }
-            .to_account_metas(None),
+        let deposit = bonded_client::pool_deposit(
+            &self.mint,
+            &underwriter_usd,
+            &shares_to,
+            &underwriter.pubkey(),
+            1_000_000 * USD,
         );
         send(&mut self.svm, &[deposit], &underwriter, &[]).unwrap();
     }
@@ -318,22 +206,14 @@ impl World {
         signer: &Keypair,
         signed: &Attestation,
     ) -> Vec<Instruction> {
-        vec![
-            ed25519_ix(signer, &attestation_message(&bonded_registry::ID, signed)),
-            Instruction::new_with_bytes(
-                bonded_registry::ID,
-                &bonded_registry::instruction::PostScore {
-                    attestation: attestation.clone(),
-                }
-                .data(),
-                bonded_registry::accounts::PostScore {
-                    config: pda(&[b"config"], &bonded_registry::ID),
-                    agent: agent_pda(1),
-                    instructions: INSTRUCTIONS,
-                }
-                .to_account_metas(None),
-            ),
-        ]
+        let message = bonded_client::attestation_message(&bonded_registry::ID, signed);
+        bonded_client::post_score(
+            attestation,
+            &signer.pubkey(),
+            &sign(signer, &message),
+            signed,
+        )
+        .to_vec()
     }
 
     fn create_vault(
@@ -342,8 +222,8 @@ impl World {
         allowed: Vec<Pubkey>,
         agent_id: u64,
     ) -> (Pubkey, Pubkey) {
-        let vault = vault_pda(&self.operator.pubkey(), agent_id);
-        let base = pda(&[b"base", vault.as_ref()], &bonded_vault::ID);
+        let guardian = self.operator.pubkey();
+        let vault = address::vault(&guardian, agent_id);
         let params = VaultParams {
             agent_id,
             agent: self.agent.pubkey(),
@@ -353,59 +233,22 @@ impl World {
             allowed_programs: allowed,
             max_outflow_per_call: 5_000 * USD,
         };
-        let create = Instruction::new_with_bytes(
-            bonded_vault::ID,
-            &bonded_vault::instruction::CreateVault { params }.data(),
-            bonded_vault::accounts::CreateVault {
-                vault,
-                base_account: base,
-                base_mint: self.mint,
-                guardian: self.operator.pubkey(),
-                token_program: TOKEN,
-                system_program: SYSTEM,
-            }
-            .to_account_metas(None),
-        );
-        let deposit = Instruction::new_with_bytes(
-            bonded_vault::ID,
-            &bonded_vault::instruction::Deposit {
-                amount: 50_000 * USD,
-            }
-            .data(),
-            bonded_vault::accounts::Deposit {
-                vault,
-                base_account: base,
-                base_mint: self.mint,
-                from: self.operator_usd,
-                depositor: self.operator.pubkey(),
-                token_program: TOKEN,
-            }
-            .to_account_metas(None),
+        let create = bonded_client::create_vault(&guardian, &self.mint, params);
+        let deposit = bonded_client::vault_deposit(
+            &vault,
+            &self.mint,
+            &self.operator_usd,
+            &guardian,
+            50_000 * USD,
         );
         let operator = self.operator.insecure_clone();
         send(&mut self.svm, &[create, deposit], &operator, &[]).unwrap();
-        (vault, base)
+        (vault, address::vault_base(&vault))
     }
 
     /// The agent asks the vault to run `inner` (an instruction the vault signs).
-    fn execute(&mut self, vault: Pubkey, base: Pubkey, inner: Instruction) -> Result<(), String> {
-        let mut metas = bonded_vault::accounts::Execute {
-            vault,
-            agent: self.agent.pubkey(),
-            base_account: base,
-            target_program: inner.program_id,
-        }
-        .to_account_metas(None);
-        // The vault signs the inner call itself; in the outer transaction it is not a signer.
-        metas.extend(inner.accounts.iter().map(|m| AccountMeta {
-            is_signer: m.is_signer && m.pubkey != vault,
-            ..m.clone()
-        }));
-        let ix = Instruction::new_with_bytes(
-            bonded_vault::ID,
-            &bonded_vault::instruction::Execute { data: inner.data }.data(),
-            metas,
-        );
+    fn execute(&mut self, vault: Pubkey, _base: Pubkey, inner: Instruction) -> Result<(), String> {
+        let ix = bonded_client::execute(&vault, &self.agent.pubkey(), inner);
         let agent = self.agent.insecure_clone();
         send(&mut self.svm, &[ix], &agent, &[])
     }
@@ -425,26 +268,7 @@ impl World {
     }
 
     fn stake(&mut self, staker: &Keypair, from: Pubkey, amount: u64) -> Result<(), String> {
-        let ix = Instruction::new_with_bytes(
-            bonded_cover::ID,
-            &bonded_cover::instruction::Stake {
-                agent_id: 1,
-                amount,
-            }
-            .data(),
-            bonded_cover::accounts::Stake {
-                config: pda(&[b"config"], &bonded_cover::ID),
-                agent: agent_pda(1),
-                bond: pda(&[b"bond", &1u64.to_le_bytes()], &bonded_cover::ID),
-                bond_vault: pda(&[b"bond_vault", &1u64.to_le_bytes()], &bonded_cover::ID),
-                base_mint: self.mint,
-                from,
-                operator: staker.pubkey(),
-                token_program: TOKEN,
-                system_program: SYSTEM,
-            }
-            .to_account_metas(None),
-        );
+        let ix = bonded_client::stake(1, &self.mint, &from, &staker.pubkey(), amount);
         send(&mut self.svm, &[ix], staker, &[])
     }
 
@@ -463,35 +287,16 @@ impl World {
     }
 
     fn buy_cover(&mut self, quote: &Quote, signer: &Keypair, policy_id: u64) -> Result<(), String> {
-        let ixs = [
-            ed25519_ix(signer, &quote_message(&bonded_cover::ID, quote)),
-            Instruction::new_with_bytes(
-                bonded_cover::ID,
-                &bonded_cover::instruction::BuyCover {
-                    quote: quote.clone(),
-                }
-                .data(),
-                bonded_cover::accounts::BuyCover {
-                    config: pda(&[b"config"], &bonded_cover::ID),
-                    vault: quote.vault,
-                    agent: agent_pda(1),
-                    bond: pda(&[b"bond", &1u64.to_le_bytes()], &bonded_cover::ID),
-                    policy: pda(&[b"policy", &policy_id.to_le_bytes()], &bonded_cover::ID),
-                    quote_record: pda(
-                        &[b"quote", quote.vault.as_ref(), &quote.nonce.to_le_bytes()],
-                        &bonded_cover::ID,
-                    ),
-                    pool_vault: pda(&[b"pool_vault"], &bonded_cover::ID),
-                    base_mint: self.mint,
-                    premium_from: self.operator_usd,
-                    guardian: self.operator.pubkey(),
-                    instructions: INSTRUCTIONS,
-                    token_program: TOKEN,
-                    system_program: SYSTEM,
-                }
-                .to_account_metas(None),
-            ),
-        ];
+        let message = bonded_client::quote_message(&bonded_cover::ID, quote);
+        let ixs = bonded_client::buy_cover(
+            quote,
+            &signer.pubkey(),
+            &sign(signer, &message),
+            policy_id,
+            &self.mint,
+            &self.operator_usd,
+            &self.operator.pubkey(),
+        );
         let operator = self.operator.insecure_clone();
         send(&mut self.svm, &ixs, &operator, &[])
     }
@@ -500,46 +305,14 @@ impl World {
         &mut self,
         policy_id: u64,
         vault: Pubkey,
-        base: Pubkey,
+        _base: Pubkey,
         breaches: Vec<u8>,
     ) -> Result<(), String> {
-        let ix = Instruction::new_with_bytes(
-            bonded_cover::ID,
-            &bonded_cover::instruction::FileClaim {
-                breach_ids: breaches,
-            }
-            .data(),
-            bonded_cover::accounts::FileClaim {
-                config: pda(&[b"config"], &bonded_cover::ID),
-                policy: pda(&[b"policy", &policy_id.to_le_bytes()], &bonded_cover::ID),
-                vault,
-                vault_base: base,
-                bond: pda(&[b"bond", &1u64.to_le_bytes()], &bonded_cover::ID),
-                bond_vault: pda(&[b"bond_vault", &1u64.to_le_bytes()], &bonded_cover::ID),
-                pool_vault: pda(&[b"pool_vault"], &bonded_cover::ID),
-                base_mint: self.mint,
-                claims_authority: pda(&[b"claims"], &bonded_cover::ID),
-                vault_config: pda(&[b"config"], &bonded_vault::ID),
-                vault_program: bonded_vault::ID,
-                token_program: TOKEN,
-            }
-            .to_account_metas(None),
-        );
+        let ix = bonded_client::file_claim(policy_id, 1, &vault, &self.mint, breaches);
         // Anyone can file: the underwriter pays the fee here.
         let payer = self.underwriter.insecure_clone();
         send(&mut self.svm, &[ix], &payer, &[])
     }
-}
-
-fn agent_pda(id: u64) -> Pubkey {
-    pda(&[b"agent", &id.to_le_bytes()], &bonded_registry::ID)
-}
-
-fn vault_pda(guardian: &Pubkey, agent_id: u64) -> Pubkey {
-    pda(
-        &[b"vault", guardian.as_ref(), &agent_id.to_le_bytes()],
-        &bonded_vault::ID,
-    )
 }
 
 #[test]
@@ -564,7 +337,7 @@ fn registry_accepts_only_the_attesters_signature_over_the_exact_attestation() {
     expect_err(send(&mut w.svm, &ixs[1..], &payer, &[]), "MissingSignature");
 
     send(&mut w.svm, &ixs, &payer, &[]).unwrap();
-    let agent: bonded_registry::Agent = account(&w.svm, &agent_pda(1));
+    let agent: bonded_registry::Agent = account(&w.svm, &address::agent(1));
     assert_eq!(agent.score, Some(good.clone()));
 
     // An older (or equal) version can't replace it.
@@ -628,20 +401,14 @@ fn a_breach_is_recorded_frozen_and_paid_bond_first() {
     expect_err(w.execute(vault, base, again), "Frozen");
 
     // The claim pays 900 (10% deductible): all 500 of the bond first, then 400 from the pool.
-    let pool = pda(&[b"pool_vault"], &bonded_cover::ID);
+    let pool = address::pool_vault();
     let pool_before = token_balance(&w.svm, &pool);
     w.file_claim(1, vault, base, vec![0]).unwrap();
     assert_eq!(token_balance(&w.svm, &base), (50_000 - 1_000 + 900) * USD);
     assert_eq!(pool_before - token_balance(&w.svm, &pool), 400 * USD);
-    let bond: bonded_cover::Bond = account(
-        &w.svm,
-        &pda(&[b"bond", &1u64.to_le_bytes()], &bonded_cover::ID),
-    );
+    let bond: bonded_cover::Bond = account(&w.svm, &address::bond(1));
     assert_eq!(bond.amount, 0);
-    let policy: bonded_cover::Policy = account(
-        &w.svm,
-        &pda(&[b"policy", &1u64.to_le_bytes()], &bonded_cover::ID),
-    );
+    let policy: bonded_cover::Policy = account(&w.svm, &address::policy(1));
     assert_eq!(policy.remaining_cover, 19_100 * USD);
     let state: bonded_vault::Vault = account(&w.svm, &vault);
     assert!(state.breaches[0].claimed);
@@ -734,19 +501,9 @@ fn only_the_upgrade_authority_can_initialize_a_program() {
         svm.airdrop(&k.pubkey(), 10_000_000_000).unwrap();
     }
     set_upgrade_authority(&mut svm, &bonded_registry::ID, &deployer.pubkey());
+    // Only the registry's instruction matters here; the mint is unused by it.
     let init = |admin: &Keypair, attester: Pubkey| {
-        Instruction::new_with_bytes(
-            bonded_registry::ID,
-            &bonded_registry::instruction::Initialize { attester }.data(),
-            bonded_registry::accounts::Initialize {
-                config: pda(&[b"config"], &bonded_registry::ID),
-                admin: admin.pubkey(),
-                program: bonded_registry::ID,
-                program_data: programdata_of(&bonded_registry::ID),
-                system_program: SYSTEM,
-            }
-            .to_account_metas(None),
-        )
+        bonded_client::initialize_all(&admin.pubkey(), &attester, &Pubkey::new_unique())[0].clone()
     };
     let evil = Pubkey::new_unique();
     expect_err(
@@ -766,32 +523,24 @@ fn only_the_upgrade_authority_can_initialize_a_program() {
 fn a_deposit_into_an_emptied_pool_with_shares_outstanding_is_refused() {
     let mut w = World::new();
     // Simulate claims having drained the pool while the underwriter's shares remain.
-    let pool = pda(&[b"pool_vault"], &bonded_cover::ID);
+    let pool = address::pool_vault();
     let mut acct = w.svm.get_account(&pool).unwrap();
     acct.data[64..72].copy_from_slice(&0u64.to_le_bytes());
     w.svm.set_account(pool, acct).unwrap();
 
-    let shares = pda(&[b"shares"], &bonded_cover::ID);
+    let shares = address::share_mint();
     let admin = w.admin.insecure_clone();
     let newcomer = Keypair::new();
     let shares_to = CreateAccount::new(&mut w.svm, &admin, &shares)
         .owner(&newcomer.pubkey())
         .send()
         .unwrap();
-    let deposit = Instruction::new_with_bytes(
-        bonded_cover::ID,
-        &bonded_cover::instruction::Deposit { amount: 100 * USD }.data(),
-        bonded_cover::accounts::PoolDeposit {
-            config: pda(&[b"config"], &bonded_cover::ID),
-            pool_vault: pool,
-            share_mint: shares,
-            base_mint: w.mint,
-            from: w.operator_usd,
-            shares_to,
-            owner: w.operator.pubkey(),
-            token_program: TOKEN,
-        }
-        .to_account_metas(None),
+    let deposit = bonded_client::pool_deposit(
+        &w.mint,
+        &w.operator_usd,
+        &shares_to,
+        &w.operator.pubkey(),
+        100 * USD,
     );
     let operator = w.operator.insecure_clone();
     expect_err(send(&mut w.svm, &[deposit], &operator, &[]), "PoolShort");
