@@ -92,7 +92,8 @@ describe("LayaSentinel with the v3 question set", () => {
   /** A v3 checkpoint's response: no action_risk answer. */
   const v3Answer = (manipulated: number, injection = 0.5) => {
     const full = layaAnswer(manipulated, { within_mandate: 1 }, injection);
-    const { action_risk: _dropped, ...answers } = full.answers;
+    const answers: Partial<typeof full.answers> = { ...full.answers };
+    delete answers.action_risk;
     return { ...full, answers };
   };
 
