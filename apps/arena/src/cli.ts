@@ -4,7 +4,10 @@ import {
   type Brain,
   createHardenedAgent,
   createVulnerableAgent,
+  CascadeSentinel,
   DecisionModelAgent,
+  DecisionModelSentinel,
+  LayaSentinel,
   LlmDecisionModel,
   SentinelGuard,
 } from "@bonded/demo-agents";
@@ -25,7 +28,9 @@ Agent:
   --brain <scripted|llm>   scripted needs nothing; llm needs OPENROUTER_API_KEY (default: scripted)
   --model <id>             model for an llm brain or the decision agent, any OpenRouter model id
                            (LLM_BASE_URL switches to another OpenAI-compatible endpoint)
-  --sentinel-model <id>    hardened only: add a Sentinel guard that asks this model about each write
+  --sentinel-model <id>    hardened only: add a Sentinel guard that asks this model about each write;
+                           laya:<url> uses a Laya server (LAYA_API_KEY if it needs one)
+  --sentinel-fallback <id> with laya:<url>, ask this LLM when Laya is unsure (the cascade)
   --enforce                run the vault in Enforce mode (blocked, not just recorded)
 
 Attacks:
@@ -54,6 +59,7 @@ async function main(): Promise<number> {
       brain: { type: "string", default: "scripted" },
       model: { type: "string" },
       "sentinel-model": { type: "string" },
+      "sentinel-fallback": { type: "string" },
       enforce: { type: "boolean", default: false },
       repeats: { type: "string", default: "1" },
       controls: { type: "string", default: "2" },
@@ -155,6 +161,7 @@ function buildAgent(values: {
   brain?: string;
   model?: string;
   "sentinel-model"?: string;
+  "sentinel-fallback"?: string;
 }): ArenaAgent {
   const brain = values.brain;
   if (brain !== "scripted" && brain !== "llm") throw new Error(`unknown brain ${brain}`);
@@ -164,7 +171,7 @@ function buildAgent(values: {
       return createVulnerableAgent(brain as Brain, llm);
     case "hardened": {
       const sentinel = values["sentinel-model"]
-        ? [new SentinelGuard(new LlmDecisionModel({ model: values["sentinel-model"] }))]
+        ? [new SentinelGuard(sentinelModel(values["sentinel-model"], values["sentinel-fallback"]))]
         : [];
       return createHardenedAgent(brain as Brain, llm, sentinel);
     }
@@ -173,6 +180,21 @@ function buildAgent(values: {
     default:
       throw new Error(`unknown agent ${values.agent} (vulnerable, hardened or decision)`);
   }
+}
+
+/** `laya:<url>` for a Laya server, optionally with an LLM fallback; otherwise an LLM model id. */
+function sentinelModel(spec: string, fallback?: string) {
+  if (!spec.startsWith("laya:")) return new LlmDecisionModel({ model: spec });
+  const laya = new LayaSentinel({
+    url: spec.slice("laya:".length).replace(/\/+$/, ""),
+    apiKey: process.env.LAYA_API_KEY,
+  });
+  return fallback
+    ? new CascadeSentinel(
+        laya,
+        new DecisionModelSentinel(new LlmDecisionModel({ model: fallback })),
+      )
+    : laya;
 }
 
 function positiveInt(text: string | undefined, flag: string, allowZero = false): number {

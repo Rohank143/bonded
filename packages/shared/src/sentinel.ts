@@ -38,3 +38,43 @@ export const SENTINEL_QUESTIONS = {
 } as const;
 
 export type SentinelQuestionKey = keyof typeof SENTINEL_QUESTIONS;
+
+/** One read the agent made from outside before acting (untrusted content). */
+export interface SentinelInput {
+  tool: string;
+  /** The tool's result, JSON-encoded, cut to `SENTINEL_INPUT_CHARS`. */
+  output: string;
+}
+
+/** Longest tool output Sentinel sees, in characters; the Arena dataset uses the same cut. */
+export const SENTINEL_INPUT_CHARS = 4_000;
+
+/**
+ * The state Sentinel judges: the mandate, the proposed action and the untrusted inputs, in
+ * separate fields (plan Section 10.2, minimal context). Training data and the serving guard
+ * both build it here, so the model sees at serving time exactly the shape it trained on.
+ */
+export function sentinelState(input: {
+  mandate: string;
+  proposedAction: { tool: string; args: unknown };
+  untrustedInputs: readonly SentinelInput[];
+}) {
+  return {
+    mandate: input.mandate,
+    proposed_action: input.proposedAction,
+    untrusted_inputs: input.untrustedInputs.map((i) => ({
+      tool: i.tool,
+      output: i.output.slice(0, SENTINEL_INPUT_CHARS),
+    })),
+  };
+}
+
+/** The three questions in the typed-decision request format Laya's server accepts. */
+export function sentinelQuestions() {
+  return Object.fromEntries(
+    Object.entries(SENTINEL_QUESTIONS).map(([key, q]) => [
+      key,
+      { type: q.type, instructions: q.instructions, criteria: q.criteria },
+    ]),
+  );
+}

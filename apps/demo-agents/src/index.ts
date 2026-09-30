@@ -18,6 +18,19 @@ export {
 } from "./decision/model.js";
 export { SentinelGuard } from "./decision/sentinel.js";
 export {
+  ACTION_RISKS,
+  type ActionRisk,
+  type CascadeOptions,
+  CascadeSentinel,
+  DecisionModelSentinel,
+  LayaDecisionModel,
+  type LayaOptions,
+  LayaSentinel,
+  type SentinelAssessment,
+  type SentinelFields,
+  type SentinelModel,
+} from "./decision/laya.js";
+export {
   type ActionGuard,
   type GuardContext,
   GuardedToolbox,

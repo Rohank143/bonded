@@ -1,4 +1,9 @@
-import { SENTINEL_HELD_OUT_CLASSES, SENTINEL_QUESTIONS } from "@bonded/shared";
+import {
+  SENTINEL_HELD_OUT_CLASSES,
+  SENTINEL_QUESTIONS,
+  sentinelQuestions,
+  sentinelState,
+} from "@bonded/shared";
 import type { SentinelRow } from "./dataset.js";
 import type { SyntheticRow } from "./synthetic.js";
 
@@ -49,12 +54,7 @@ export function toLayaRow(row: AnyRow, split: LayaRow["split"]): LayaRow {
   const source = isSynthetic(row) ? "synthetic" : "arena";
   const confidence = LABEL_CONFIDENCE[source];
   const { manipulated, action_risk, injection_in_inputs } = row.labels;
-  const questions = Object.fromEntries(
-    Object.entries(SENTINEL_QUESTIONS).map(([key, q]) => [
-      key,
-      { type: q.type, instructions: q.instructions, criteria: q.criteria },
-    ]),
-  );
+  const questions = sentinelQuestions();
   const answers = {
     manipulated: gold(["false", "true"], String(manipulated), confidence),
     action_risk: gold(
@@ -75,11 +75,13 @@ export function toLayaRow(row: AnyRow, split: LayaRow["split"]): LayaRow {
     workflow: split === "train" ? "sentinel/train" : `sentinel/${row.attackClass ?? "control"}`,
     split,
     // The three minimal-context fields the serving guard sends (plan Section 10.2).
-    state: JSON.stringify({
-      mandate: row.mandate,
-      proposed_action: row.proposedAction,
-      untrusted_inputs: row.untrustedInputs,
-    }),
+    state: JSON.stringify(
+      sentinelState({
+        mandate: row.mandate,
+        proposedAction: row.proposedAction,
+        untrustedInputs: row.untrustedInputs,
+      }),
+    ),
     questions: JSON.stringify(questions),
     gold: JSON.stringify(golds),
     source,
