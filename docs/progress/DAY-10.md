@@ -46,11 +46,15 @@ Assumptions and limits:
 |---|---|
 | CPU, laptop, 2 threads, real held-out states | 2.3–2.9 s (4 and 8 threads no faster) |
 | GPU, laptop (MPS) | p50 684 ms |
-| GPU, T4 | from the Kaggle report when the run finishes (the author claims 33 ms) |
+| GPU, T4 (Kaggle, fine-tune) | p50 217 ms, p95 228 ms |
 
 The plan's CPU guess (300–400 ms) was about 7 times too low; `docs/SENTINEL.md` and `docs/PLAN.md` now carry measured numbers with their conditions. Railway has no GPUs, so the demo runs on CPU at about 2.5 s per check.
 
 Memory: 1.9 GB peak on the laptop. In the Linux container it's 2.1 GB after loading, and the first real request didn't fit in the roughly 2.7 GB the local Docker VM had free, so the Railway service gets 4 GB and its real peak comes from Railway's metrics.
+
+### Fine-tune (Kaggle run `sentinel-v1`)
+
+Laya's own benchmark on our test split: accuracy 94.4%, ECE 0.042, Brier 0.087, latency p50 217 ms on a T4. The split is only 24 rows (18 distinct states, 72 answers), so this is a sanity check; the held-out evaluation above, run on the fine-tune, is the real measure.
 
 ## Done when
 

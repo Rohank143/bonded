@@ -13,7 +13,7 @@ Sentinel is Bonded's real-time guard: a fine-tuned Laya model that checks each t
 **4. Check every trade.** Before an agent's trade goes through:
 
 ```
-agent wants to trade → Sentinel checks it (about 2.5 s on CPU, well under 1 s on a GPU)
+agent wants to trade → Sentinel checks it (about 2.5 s on CPU, under 300 ms on a GPU)
    ├─ looks fine        → trade goes ahead
    ├─ looks manipulated → trade blocked, vault owner alerted
    └─ unsure            → a cheap LLM double-checks (issue #32)
@@ -54,10 +54,10 @@ One check is one forward pass over the mandate, the proposed action and the untr
 | CPU | Apple M-series laptop, PyTorch, 2 threads, real held-out states | 2.3–2.9 s (p50 about 2.6 s); 4 or 8 threads are no faster | Measured, Day 10 |
 | CPU | Railway service, 2 vCPUs | Expect about the same; confirm from the service's own logs after deploy | Not yet measured |
 | GPU | Apple M-series laptop GPU (MPS), 111 held-out cases | p50 684 ms, p95 731 ms | Measured, Day 10 |
-| GPU | NVIDIA T4 (Kaggle) | `latency_p50_ms` in the Kaggle `benchmark_report.json` | Waiting for the training run |
+| GPU | NVIDIA T4 (Kaggle), fine-tuned model, our 24 test rows | p50 217 ms, p95 228 ms | Measured, Kaggle run `sentinel-v1` |
 | GPU | NVIDIA T4, the author's benchmark | about 33 ms per forward pass | Laya's README, not ours |
 
-So "about 2.5 s" is the CPU figure and "under a second" is the GPU figure until the T4 number from our own run replaces the author's. Plan Section 10.4 had guessed 300–400 ms on CPU; the measurement is about 7 times slower.
+So Sentinel takes **under 300 ms per check on a T4 GPU** and **about 2.5 s on CPU**. The author's 33 ms is one forward pass on a short input; our check answers three questions about a 500 to 700 token state. Plan Section 10.4 had guessed 300–400 ms on CPU; the measurement is about 7 times slower.
 
 What this means: 2.5 s is acceptable for the demo and for agents that trade minutes apart, since the check runs once before each trade. It is too slow for high-frequency agents. The cascade (issue #32) adds an LLM call only for unsure cases.
 

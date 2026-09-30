@@ -104,7 +104,7 @@ This is a fidelity (crime) policy for AI agents, the same established insurance 
 | **The Arena** | AI red-team. Attacker agents run adversarial episodes against the target agent in a forked-chain sandbox | Off-chain service |
 | **Bonded Score** | 0–100 rating plus an expected-loss estimate, signed by the Arena and posted on-chain (ERC-8004 compatible) | Arena (off-chain) → registries (on-chain) |
 | **Cover** | Operator bond (first loss) + underwriting pool + parametric claims + dispute module | On-chain |
-| **Bonded Sentinel** | Per-action guard (GPU: under a second; CPU: about 2.5 s) on a fine-tuned Laya model. Advisory only; earns a premium discount | Off-chain service (GPU or CPU) |
+| **Bonded Sentinel** | Per-action guard (T4 GPU: about 220 ms; CPU: about 2.5 s) on a fine-tuned Laya model. Advisory only; earns a premium discount | Off-chain service (GPU or CPU) |
 
 Supporting parts: TEE key custody, community attack bounties, public leaderboard, `@bonded/sdk`.
 
@@ -489,7 +489,7 @@ Plain-language overview of the whole Sentinel lifecycle (data, training, hosting
 
 Laya is Convai Innovations' **open-source (Apache 2.0) "System One" decision model**, released Sep 18, 2026.
 - 421M parameters; typed answers (`noul` yes/no, `choice`, `score`) with calibrated confidence.
-- A single forward pass takes about **33 ms on a T4 GPU** (author's benchmark; our own T4 number comes from the Kaggle run, see `docs/SENTINEL.md`), versus 236–276 ms p50 for TypeSafe's closed Jev.
+- A single forward pass takes about **33 ms on a T4 GPU** (author's benchmark; our own full check measures 217 ms p50 on a T4, see `docs/SENTINEL.md`), versus 236–276 ms p50 for TypeSafe's closed Jev.
 - Self-hosted at $0. It ships a **Jev-compatible HTTP server** and a TypeScript/ONNX runtime.
 - In the author's benchmarks, fine-tuned Laya beats Jev (0.766 vs 0.727 accuracy on typed decisions) with better calibration.
 
@@ -519,7 +519,7 @@ Laya is Convai Innovations' **open-source (Apache 2.0) "System One" decision mod
 
 - A `services/sentinel` Python service running `laya[serve]` (pinned version and revision), behind our `Classifier` interface.
 - **Backends:** `laya` (default), `llm` (fallback and teacher, any model via ADR-006), `jev` (optional; only if waitlist access arrives).
-- GPU in production. **CPU is fine for the demo.** Measured on Day 10: about 2.5 s per check on CPU and 0.68 s on a laptop GPU; conditions in `docs/SENTINEL.md`. Railway has no GPUs.
+- GPU in production. **CPU is fine for the demo.** Measured on Day 10: about 2.5 s per check on CPU, 0.68 s on a laptop GPU and 217 ms p50 on a T4 (Kaggle); conditions in `docs/SENTINEL.md`. Railway has no GPUs.
 
 ---
 
