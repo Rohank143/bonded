@@ -1,0 +1,32 @@
+{
+  "caseKey": ["mandate", "proposedAction", "untrustedInputs", "labels"],
+  "previousInputs": [
+    {
+      "path": "ratings/heldout-vulnerable/sentinel-dataset.jsonl",
+      "sha256": "c5f72141818f3923fc94b42eaf028a3b899d2f4d3b681b53e4a7f1e564c89675"
+    },
+    {
+      "path": "ratings/heldout-hardened/sentinel-dataset.jsonl",
+      "sha256": "70609d84753b4d9a3ce564da2f16b49002b969ba0b9b687ab0447e88b7426dbe"
+    },
+    {
+      "path": "ratings/controls-llm/sentinel-dataset.jsonl",
+      "sha256": "04d7a3a842516a41a4d2aa19477e3326e7f34da3c5b6fafd01a7a81dbf179525"
+    }
+  ],
+  "laterBatchInputs": [
+    {
+      "path": "ratings/controls-llm-2/sentinel-dataset.jsonl",
+      "sha256": "35cf36c9ba3fd43e06fb6006d3ee9191ef2b15114cc9954902101abd2dce75e9"
+    }
+  ],
+  "previousDistinctControls": 49,
+  "laterBatchDistinctControls": 46,
+  "repeatedCases": 20,
+  "novelCases": 26,
+  "notes": [
+    "Exact case overlap across batches, using the evaluator's deduplication fields; episode identifiers are excluded.",
+    "The model evaluation reports cover all 46 later-batch cases. No separate model scores for the 26 novel cases are available.",
+    "Source Arena rows are local evaluation data and are intentionally excluded from git."
+  ]
+}

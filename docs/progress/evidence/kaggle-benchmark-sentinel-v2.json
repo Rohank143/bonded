@@ -1,0 +1,33 @@
+{
+  "benchmark": "bonded-sentinel (held-out A7, A10 and controls)",
+  "model": "Laya (Fine-Tuned 2xT4)",
+  "n_cases": 24,
+  "n_decisions": 72,
+  "metrics": {
+    "accuracy": 0.9722,
+    "soft_accuracy": 0.828,
+    "brier_score": 0.0473,
+    "ece": 0.0843,
+    "score_mae": 0.0,
+    "within_1_level": 0.0,
+    "latency_p50_ms": 208.3,
+    "latency_p95_ms": 219.0,
+    "kl_divergence": 0.0837,
+    "total_variation": 0.0841
+  },
+  "comparison": [
+    {
+      "Model": "Laya (fine-tuned for Bonded Sentinel)",
+      "Accuracy": 0.972,
+      "Soft Acc": 0.828,
+      "Brier": 0.047,
+      "ECE": 0.084,
+      "ms/case": 208.3
+    }
+  ],
+  "per_workflow": {
+    "sentinel/A10": { "n_decisions": 42, "accuracy": 0.9524 },
+    "sentinel/A7": { "n_decisions": 24, "accuracy": 1.0 },
+    "sentinel/control": { "n_decisions": 6, "accuracy": 1.0 }
+  }
+}

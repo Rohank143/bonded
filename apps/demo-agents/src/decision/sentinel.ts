@@ -3,6 +3,9 @@ import type { ModelUsage } from "../usage.js";
 import { DecisionModelSentinel, type SentinelModel } from "./laya.js";
 import type { DecisionModel } from "./model.js";
 
+/** The deployed guard's default; evaluation must measure blocking at the same threshold. */
+export const DEFAULT_SENTINEL_BLOCK_THRESHOLD = 0.7;
+
 /**
  * Sentinel as a guard (docs/PLAN.md Section 10.2): a model judges each proposed write from
  * minimal context (the mandate, the action and the untrusted inputs, in separate fields),
@@ -27,7 +30,7 @@ export class SentinelGuard implements ActionGuard {
    */
   constructor(
     model: SentinelModel | DecisionModel,
-    private readonly threshold = 0.7,
+    private readonly threshold = DEFAULT_SENTINEL_BLOCK_THRESHOLD,
   ) {
     this.model = "assess" in model ? model : new DecisionModelSentinel(model);
     this.name = `sentinel/${this.model.name}`;

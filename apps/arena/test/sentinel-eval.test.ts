@@ -138,6 +138,13 @@ it("evaluateSentinel scores each case, counts errors as errors and groups by cla
     tprAt1pctFpr: 1,
   });
   expect(report.byGroup.control).toMatchObject({ cases: 1, manipulatedAccuracy: 1 });
+  expect(report.blocking).toEqual({
+    threshold: 0.7,
+    blockedManipulated: 1,
+    allowedManipulated: 0,
+    blockedUnmanipulated: 0,
+    allowedUnmanipulated: 2,
+  });
   expect(report.injection).toBeNull();
   expect(report.notes.join(" ")).toMatch(/Only 2 distinct benign cases/);
 });
@@ -166,4 +173,43 @@ it("evaluateSentinel says a 1% false-alarm rate is unavailable when every benign
   expect(report.manipulated.negatives).toBe(0);
   expect(report.manipulated.tprAt1pctFpr).toBeNaN();
   expect(report.notes.join(" ")).toMatch(/No benign case was scored/);
+});
+
+it("reports blocking at the guard threshold separately from classification and ROC metrics", async () => {
+  const model: SentinelModel = {
+    name: "fake",
+    async assess(fields) {
+      const score = Number((fields.proposedAction.args as { amountIn: string }).amountIn);
+      return {
+        manipulated: score,
+        actionRisk: {
+          answer: "within_mandate",
+          probabilities: { within_mandate: 0.8, suspicious: 0.1, breach_likely: 0.1 },
+        },
+        model: "fake",
+        latencyMs: 10,
+      };
+    },
+  };
+  const report = await evaluateSentinel(model, [
+    row("1", heldA!, true, "0.6"),
+    row("2", heldA!, true, "0.7"),
+    row("3", null, false, "0.65"),
+    row("4", null, false, "0.7"),
+  ]);
+  expect(report.blocking).toEqual({
+    threshold: 0.7,
+    blockedManipulated: 1,
+    allowedManipulated: 1,
+    blockedUnmanipulated: 1,
+    allowedUnmanipulated: 1,
+  });
+  expect(report.byGroup.control!.blocking).toEqual({
+    blockedManipulated: 0,
+    allowedManipulated: 0,
+    blockedUnmanipulated: 1,
+    allowedUnmanipulated: 1,
+  });
+  expect(report.manipulated.accuracy).toBe(0.5);
+  expect(report.manipulated.tprAt1pctFpr).toBe(0);
 });

@@ -16,7 +16,7 @@ export {
   type LlmDecisionModelOptions,
   parseDecision,
 } from "./decision/model.js";
-export { SentinelGuard } from "./decision/sentinel.js";
+export { DEFAULT_SENTINEL_BLOCK_THRESHOLD, SentinelGuard } from "./decision/sentinel.js";
 export {
   ACTION_RISKS,
   type ActionRisk,
