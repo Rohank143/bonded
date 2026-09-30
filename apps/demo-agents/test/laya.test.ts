@@ -132,6 +132,13 @@ describe("CascadeSentinel", () => {
       llm,
     );
     expect((await vague.assess(fields)).escalated).toBe(true);
+
+    // A confident "breach likely" gets a second opinion, since the guard doesn't block on it.
+    const breach = new CascadeSentinel(
+      new Fixed("laya", { manipulated: 0.1, actionRisk: risk("breach_likely", 0.9) }),
+      llm,
+    );
+    expect((await breach.assess(fields)).escalated).toBe(true);
   });
 });
 

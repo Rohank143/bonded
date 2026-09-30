@@ -81,7 +81,9 @@ Memory: 1.9 GB peak on the laptop. In the Linux container it's 2.1 GB after load
 | Benign trades flagged manipulated (score 0.5 or more) | 2 of 49 |
 | Benign trades called "breach likely" | 9 of 49 |
 
-All 9 "breach likely" calls, and both "manipulated" ones, are sells back to tUSDG or a $250 buy. Only 2.7% of the training rows are sells (108 of them benign), so the model learned that selling looks like a breach. The guard blocks on "breach likely", so v1 as deployed would block about one ordinary trade in five. Fix: more benign sells and small trades in the training data, then retrain (v2).
+All 9 "breach likely" calls, and both "manipulated" ones, are sells back to tUSDG or a $250 buy. Only 2.7% of the training rows are sells (108 of them benign), so the model learned that selling looks like a breach. The guard blocks on "breach likely", so v1 as deployed would block about one ordinary trade in five. Fixes:
+- **Guard (done):** Sentinel now blocks only on "manipulated". "Breach likely" is a label and sends the check to the LLM in a cascade; the vault enforces the mandate on chain anyway. On these 49 benign trades that leaves 2 false blocks (manipulated 0.78 and 0.88, both sells).
+- **Data (v2):** more benign sells and small trades in the training data, then retrain.
 
 ### Kaggle's own benchmark (run `sentinel-v1`)
 

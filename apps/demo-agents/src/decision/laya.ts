@@ -226,7 +226,8 @@ export class DecisionModelSentinel implements SentinelModel {
 export interface CascadeOptions {
   /**
    * The primary model is "unsure" when its manipulated probability is inside this band, or its
-   * top action-risk probability is below `minRiskConfidence`. Set these from the held-out
+   * top action-risk probability is below `minRiskConfidence`, or it calls the action a likely
+   * breach (the guard doesn't block on that answer, so it gets a second opinion instead). Set these from the held-out
    * evaluation (issue #32); the defaults are a starting point, not a measured choice.
    */
   unsureBand?: [number, number];
@@ -261,7 +262,11 @@ export class CascadeSentinel implements SentinelModel {
   unsure(a: SentinelAssessment): boolean {
     const [low, high] = this.band;
     const topRisk = Math.max(...Object.values(a.actionRisk.probabilities));
-    return (a.manipulated > low && a.manipulated < high) || topRisk < this.minRiskConfidence;
+    return (
+      (a.manipulated > low && a.manipulated < high) ||
+      topRisk < this.minRiskConfidence ||
+      a.actionRisk.answer === "breach_likely"
+    );
   }
 
   async assess(

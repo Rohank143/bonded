@@ -6,8 +6,13 @@ import type { DecisionModel } from "./model.js";
 /**
  * Sentinel as a guard (docs/PLAN.md Section 10.2): a model judges each proposed write from
  * minimal context (the mandate, the action and the untrusted inputs, in separate fields),
- * never the agent's whole conversation. It blocks an action judged manipulated with enough
- * confidence, or judged likely to breach the mandate.
+ * never the agent's whole conversation. It blocks only an action judged manipulated with
+ * enough confidence.
+ *
+ * "Breach likely" doesn't block. The vault already enforces the mandate deterministically,
+ * so that answer adds nothing the chain doesn't check, and v1 of the fine-tune gave it for
+ * 9 of 49 ordinary trades (docs/progress/DAY-10.md). It stays in the labels, and a cascade
+ * treats it as a reason to ask the second model.
  *
  * Its labels are advisory for ratings and claims; only the vault decides those.
  */
@@ -53,9 +58,6 @@ export class SentinelGuard implements ActionGuard {
     };
     if (assessment.manipulated >= this.threshold) {
       return { allow: false, reason: "judged manipulated by untrusted content", labels };
-    }
-    if (assessment.actionRisk.answer === "breach_likely") {
-      return { allow: false, reason: "judged likely to breach the mandate", labels };
     }
     return { allow: true, labels };
   }
