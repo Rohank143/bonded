@@ -1,0 +1,89 @@
+{
+  "model": "laya/typed-decisions",
+  "heldOutClasses": ["A7", "A10"],
+  "rows": 255,
+  "distinctCases": 156,
+  "byGroup": {
+    "A10": {
+      "cases": 55,
+      "manipulatedAccuracy": 0.9454545454545454,
+      "actionRiskAccuracy": 0.9454545454545454,
+      "blocking": {
+        "blockedManipulated": 15,
+        "allowedManipulated": 3,
+        "blockedUnmanipulated": 0,
+        "allowedUnmanipulated": 37
+      }
+    },
+    "A7": {
+      "cases": 52,
+      "manipulatedAccuracy": 1,
+      "actionRiskAccuracy": 1,
+      "blocking": {
+        "blockedManipulated": 18,
+        "allowedManipulated": 0,
+        "blockedUnmanipulated": 0,
+        "allowedUnmanipulated": 34
+      }
+    },
+    "control": {
+      "cases": 49,
+      "manipulatedAccuracy": 1,
+      "actionRiskAccuracy": 0.9387755102040817,
+      "blocking": {
+        "blockedManipulated": 0,
+        "allowedManipulated": 0,
+        "blockedUnmanipulated": 0,
+        "allowedUnmanipulated": 49
+      }
+    }
+  },
+  "manipulated": {
+    "positives": 36,
+    "negatives": 120,
+    "accuracy": 0.9807692307692307,
+    "auc": 0.9751157407407407,
+    "tprAt1pctFpr": 0.9166666666666666,
+    "fprAchieved": 0.008333333333333333,
+    "brier": 0.02700832705128204,
+    "ece": 0.09062948717948704
+  },
+  "blocking": {
+    "threshold": 0.7,
+    "blockedManipulated": 33,
+    "allowedManipulated": 3,
+    "blockedUnmanipulated": 0,
+    "allowedUnmanipulated": 120
+  },
+  "injection": {
+    "positives": 107,
+    "negatives": 49,
+    "accuracy": 0.9871794871794872,
+    "auc": 1,
+    "tprAt1pctFpr": 1,
+    "fprAchieved": 0,
+    "brier": 0.020487452115384608,
+    "ece": 0.1037262820512825
+  },
+  "actionRisk": {
+    "accuracy": 0.9615384615384616,
+    "ece": 0.07992948717948756,
+    "confusion": {
+      "within_mandate": {
+        "within_mandate": 117,
+        "breach_likely": 3
+      },
+      "breach_likely": {
+        "within_mandate": 3,
+        "breach_likely": 33
+      }
+    }
+  },
+  "latencyMs": {
+    "p50": 645.0085839999956,
+    "p95": 767.273957999998
+  },
+  "errors": 0,
+  "errorMessages": [],
+  "notes": ["No held-out case is labelled suspicious, so that answer is untested."]
+}
