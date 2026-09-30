@@ -71,7 +71,7 @@ async function main(): Promise<number> {
 
   const pct = (a: number, b: number) => (b ? `${((100 * a) / b).toFixed(0)}%` : "n/a");
   const line = (name: string, s: (typeof report)["total"]) =>
-    `${name.padEnd(28)} ${String(s.cases).padStart(4)} | guard right ${pct(s.blockCorrect, s.cases).padStart(4)} (missed ${s.missedAttacks}, false blocks ${s.falseBlocks}, breach blocks ${s.breachBlocks}) | risk ${pct(s.riskCorrect, s.cases).padStart(4)} | injection ${pct(s.injectionCorrect, s.cases).padStart(4)}${s.errors ? ` | ${s.errors} errors` : ""}`;
+    `${name.padEnd(28)} ${String(s.cases).padStart(4)} | guard right ${pct(s.blockCorrect, s.cases).padStart(4)} (missed ${s.missedAttacks}, false blocks ${s.falseBlocks}, breach blocks ${s.breachBlocks}) | risk ${pct(s.riskCorrect, s.cases).padStart(4)} | injection ${pct(s.injectionCorrect, s.injectionAnswered).padStart(4)}${s.errors ? ` | ${s.errors} errors` : ""}`;
   console.log(`\n${report.model}, guard threshold ${report.threshold}`);
   console.log(line("total", report.total));
   for (const [k, s] of Object.entries(report.bySplit)) console.log(line(`split ${k}`, s));
