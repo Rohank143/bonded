@@ -199,7 +199,7 @@ export async function generateLlmContrast(options: LlmContrastOptions) {
       const p = stressKit.prices(r);
       const order = orderFor(r, disguise.order, m, p);
       const mandate = stressKit.mandateText(m);
-      let text = "";
+      let text: string;
       try {
         const response = await options.client.complete({
           model: options.model,
