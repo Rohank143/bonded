@@ -17,7 +17,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anchor_lang::prelude::Pubkey;
 use anchor_lang::solana_program::instruction::Instruction;
-use anchor_lang::AccountDeserialize;
+use anchor_lang::{AccountDeserialize, Owner};
 use bonded_client::{address, Attestation, Quote, VaultParams, TOKEN_PROGRAM, USD};
 use serde_json::{json, Value};
 use solana_commitment_config::CommitmentConfig;
@@ -28,6 +28,9 @@ use solana_signer::Signer;
 use solana_transaction::Transaction;
 use spl_associated_token_account_interface::address::get_associated_token_address_with_program_id;
 use spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent;
+
+mod cluster;
+mod deployment;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -85,6 +88,13 @@ fn ata(owner: &Pubkey, mint: &Pubkey) -> Pubkey {
 
 impl Devnet {
     fn connect() -> Result<Self> {
+        let rpc_url = std::env::var("SOLANA_RPC_URL").unwrap_or_else(|_| RPC_URL.into());
+        cluster::validate_rpc_url(&rpc_url)?;
+        let rpc = RpcClient::new_with_commitment(rpc_url.clone(), CommitmentConfig::confirmed());
+        let genesis = rpc.get_genesis_hash().map_err(|_| {
+            "could not verify the RPC genesis hash; check SOLANA_RPC_URL and connectivity"
+        })?;
+        let cluster = cluster::verify_cluster(&rpc_url, &genesis.to_string())?;
         let admin_path = std::env::var("SOLANA_KEYPAIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| home().join(".config/solana/id.json"));
@@ -94,16 +104,8 @@ impl Devnet {
             .map(PathBuf::from)
             .unwrap_or_else(|_| home().join(".config/bonded/solana-devnet"));
         std::fs::create_dir_all(&dir)?;
-        let rpc_url = std::env::var("SOLANA_RPC_URL").unwrap_or_else(|_| RPC_URL.into());
-        let cluster = if rpc_url.contains("devnet") {
-            "devnet"
-        } else if rpc_url.contains("127.0.0.1") || rpc_url.contains("localhost") {
-            "localnet"
-        } else {
-            return Err(format!("{rpc_url} doesn't look like devnet or a local validator").into());
-        };
         Ok(Self {
-            rpc: RpcClient::new_with_commitment(rpc_url, CommitmentConfig::confirmed()),
+            rpc,
             cluster,
             admin,
             attester: test_key(&dir, "attester")?,
@@ -139,17 +141,17 @@ impl Devnet {
         Ok(signature)
     }
 
-    fn exists(&self, account: &Pubkey) -> Result<bool> {
-        Ok(self
-            .rpc
-            .get_account_with_commitment(account, CommitmentConfig::confirmed())?
-            .value
-            .is_some())
+    fn read<T: AccountDeserialize + Owner>(&self, account: &Pubkey) -> Result<T> {
+        deployment::read(&self.rpc, account)
     }
 
-    fn read<T: AccountDeserialize>(&self, account: &Pubkey) -> Result<T> {
-        let data = self.rpc.get_account_data(account)?;
-        Ok(T::try_deserialize(&mut &data[..])?)
+    fn deployment(&self) -> Result<deployment::Deployment> {
+        deployment::verify(
+            &self.rpc,
+            &self.admin.pubkey(),
+            &self.attester.pubkey(),
+            &self.mint.pubkey(),
+        )
     }
 
     fn token_balance(&self, account: &Pubkey) -> Result<u64> {
@@ -206,14 +208,8 @@ impl Devnet {
             self.cluster,
             self.admin.pubkey()
         );
-        for program in [bonded_registry::ID, bonded_vault::ID, bonded_cover::ID] {
-            if !self.exists(&program)? {
-                return Err(format!(
-                    "program {program} isn't deployed; deploy it first (contracts/solana/README.md)"
-                )
-                .into());
-            }
-        }
+        // Read and validate all existing state before funding, minting or initialization.
+        let existing = self.deployment()?;
         let (operator, agent, underwriter) = (
             self.operator.pubkey(),
             self.agent.pubkey(),
@@ -224,7 +220,7 @@ impl Devnet {
         self.fund(&underwriter, SOL / 20, "fund underwriter")?;
 
         let mint = self.mint.pubkey();
-        if !self.exists(&mint)? {
+        if !existing.mint_exists {
             let space = spl_token_interface::state::Mint::LEN;
             let rent = self.rpc.get_minimum_balance_for_rent_exemption(space)?;
             let admin = self.admin.insecure_clone();
@@ -249,16 +245,16 @@ impl Devnet {
         }
 
         // Initialize whichever programs aren't yet.
-        let configs = [
-            address::registry_config(),
-            address::vault_config(),
-            address::cover_config(),
+        let missing_configs = [
+            existing.registry.is_none(),
+            existing.vault.is_none(),
+            existing.cover.is_none(),
         ];
         let init =
             bonded_client::initialize_all(&self.admin.pubkey(), &self.attester.pubkey(), &mint);
         let mut missing = vec![];
-        for (config, ix) in configs.iter().zip(init) {
-            if !self.exists(config)? {
+        for (is_missing, ix) in missing_configs.into_iter().zip(init) {
+            if is_missing {
                 missing.push(ix);
             }
         }
@@ -266,38 +262,40 @@ impl Devnet {
             let admin = self.admin.insecure_clone();
             self.send("initialize programs", &missing, &admin, &[])?;
         }
-        let cover: bonded_cover::Config = self.read(&address::cover_config())?;
-        if cover.base_mint != mint {
-            return Err(format!(
-                "the cover program was initialized with mint {}, not this setup's {mint}",
-                cover.base_mint
-            )
-            .into());
-        }
-
         // Seed the pool once with 1,000,000 test USD.
-        if self.token_balance(&address::pool_vault())? == 0 {
-            let from = self.mint_usd(&underwriter, 1_000_000 * USD, "mint to underwriter")?;
-            let shares_to = ata(&underwriter, &address::share_mint());
-            let uw = self.underwriter.insecure_clone();
-            let ixs = [
-                create_associated_token_account_idempotent(
-                    &underwriter,
-                    &underwriter,
-                    &address::share_mint(),
-                    &TOKEN_PROGRAM,
-                ),
-                bonded_client::pool_deposit(
-                    &mint,
-                    &from,
-                    &shares_to,
-                    &underwriter,
-                    1_000_000 * USD,
-                ),
-            ];
-            self.send("underwriter funds the pool", &ixs, &uw, &[])?;
+        if !matches!(existing.pool, deployment::PoolState::Funded) {
+            // Validate the initialized state again before minting the seed deposit.
+            let initialized = self.deployment()?;
+            initialized.require_initialized()?;
+            if !matches!(initialized.pool, deployment::PoolState::Funded) {
+                let from = self.mint_usd(&underwriter, 1_000_000 * USD, "mint to underwriter")?;
+                let shares_to = ata(&underwriter, &address::share_mint());
+                let uw = self.underwriter.insecure_clone();
+                let ixs = [
+                    create_associated_token_account_idempotent(
+                        &underwriter,
+                        &underwriter,
+                        &address::share_mint(),
+                        &TOKEN_PROGRAM,
+                    ),
+                    bonded_client::pool_deposit(
+                        &mint,
+                        &from,
+                        &shares_to,
+                        &underwriter,
+                        1_000_000 * USD,
+                    ),
+                ];
+                self.send("underwriter funds the pool", &ixs, &uw, &[])?;
+            }
         }
 
+        // Record observed, verified chain state, including after a partial setup was resumed.
+        let observed = self.deployment()?;
+        observed.require_initialized()?;
+        let cover = observed
+            .cover
+            .ok_or("cover config is missing after setup")?;
         let deployment = json!({
             "cluster": self.cluster,
             "programs": {
@@ -305,9 +303,9 @@ impl Devnet {
                 "bonded_vault": bonded_vault::ID.to_string(),
                 "bonded_cover": bonded_cover::ID.to_string(),
             },
-            "upgradeAuthority": self.admin.pubkey().to_string(),
-            "attester": self.attester.pubkey().to_string(),
-            "testUsdMint": mint.to_string(),
+            "upgradeAuthority": observed.upgrade_authority.to_string(),
+            "attester": cover.attester.to_string(),
+            "testUsdMint": cover.base_mint.to_string(),
             "pool": address::pool_vault().to_string(),
         });
         // The deployment record, committed like the EVM ones: addresses only, no keys.
@@ -322,11 +320,13 @@ impl Devnet {
     }
 
     fn e2e(&mut self, evidence: Option<&str>) -> Result<()> {
-        let mint = self.mint.pubkey();
-        if !self.exists(&address::cover_config())? {
-            return Err("not set up yet: run `bonded-devnet setup` first".into());
+        let observed = self.deployment()?;
+        observed.require_initialized()?;
+        if !matches!(observed.pool, deployment::PoolState::Funded) {
+            return Err("pool is not seeded: run `bonded-devnet setup` first".into());
         }
-        let registry: bonded_registry::Config = self.read(&address::registry_config())?;
+        let mint = self.mint.pubkey();
+        let registry = observed.registry.ok_or("registry config is missing")?;
         let agent_id = registry.agent_count + 1;
         let (operator, agent) = (self.operator.pubkey(), self.agent.pubkey());
         let op = self.operator.insecure_clone();
@@ -509,13 +509,14 @@ fn check(ok: bool, what: &str) -> Result<()> {
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
+    if !matches!(args.get(1).map(String::as_str), Some("setup" | "e2e")) {
+        eprintln!("Usage: bonded-devnet setup | bonded-devnet e2e [evidence.json]");
+        std::process::exit(1);
+    }
     let mut devnet = Devnet::connect()?;
     match args.get(1).map(String::as_str) {
         Some("setup") => devnet.setup(),
         Some("e2e") => devnet.e2e(args.get(2).map(String::as_str)),
-        _ => {
-            eprintln!("Usage: bonded-devnet setup | bonded-devnet e2e [evidence.json]");
-            std::process::exit(1);
-        }
+        _ => unreachable!("command validated before connecting"),
     }
 }

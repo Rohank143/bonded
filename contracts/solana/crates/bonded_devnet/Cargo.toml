@@ -24,3 +24,8 @@ solana-system-interface = { version = "3", features = ["bincode"] }
 solana-transaction = "3"
 spl-associated-token-account-interface = "2"
 spl-token-interface = "2"
+url = "2"
+
+[dev-dependencies]
+base64 = "0.22"
+tempfile = "3"

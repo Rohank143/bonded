@@ -21,6 +21,12 @@ pnpm solana:test
 
 This builds the programs and runs the tests on LiteSVM.
 
+The runner's configuration and network regression checks run without sending transactions, from `contracts/solana`:
+
+```bash
+cargo test -p bonded_devnet
+```
+
 ## Devnet
 
 The program ids come from keypairs in `target/deploy/`, which stay out of git (ADR-011, section 6). Deploy with the matching keypairs, never with `--ignore-keys`.
@@ -38,6 +44,10 @@ At the Day 10 sizes this costs about 5.7 SOL, with about 5.3 SOL needed at the p
 ```bash
 cargo run -p bonded_devnet -- setup
 ```
+
+Both commands verify the RPC's genesis hash before sending transactions. Private devnet RPC URLs work regardless of their hostname. A local validator must use a loopback URL; mainnet and testnet are refused even through a local proxy.
+
+Setup checks the deployed programs, existing configuration and test mint before funding accounts or minting tokens. Keep the original test keys: if an attester or authority does not match, restore the matching keys or point `BONDED_SOLANA_KEYS` and `SOLANA_KEYPAIR` at them. Generating new keys does not reset an existing deployment. If the pool has no assets but still has shares outstanding, setup stops before minting; it does not automatically recapitalize the pool.
 
 **3. Run the end-to-end flow.** Each run registers a new agent, posts a signed score, creates a vault holding 50,000, bonds 500, buys 20,000 of cover with a signed quote, has the agent send 1,000 out (a breach), and files the claim. It checks the vault froze, that 900 came back (the 10% deductible), the bond paid first and the pool the rest, and prints an explorer link for every transaction.
 
