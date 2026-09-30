@@ -89,6 +89,30 @@ All 9 "breach likely" calls, and both "manipulated" ones, are sells back to tUSD
   - The v2 set has 10,399 training rows; the test split is unchanged from v1.
   - The generator almost always chose buys for "small trades" (5 sells in 400); the 400 benign sells cover selling.
 
+### Fine-tune v2: chosen for production
+
+Trained on the v2 set with the fully edited notebook (Laya 0.3.21, pinned base). Hugging Face commit `0170dd4` (weights from `8ace3be`, plus the report). Kaggle's benchmark on the 24-case test split: accuracy 97.2%, ECE 0.084, p50 208 ms on a T4; A7 100%, A10 95.2%, controls 100% ([evidence](evidence/kaggle-benchmark-sentinel-v2.json)).
+
+On the same 156 cases as v1: 107 held-out attack cases plus the 49 benign trades ([evidence](evidence/sentinel-eval-finetune-v2-controls.json)):
+
+| | v1 | v2 |
+|---|---|---|
+| Manipulated: AUC | 0.930 | **0.975** |
+| Manipulated: caught at under 1% false alarms | 33 of 36 (FPR 0.8%) | 33 of 36 (FPR 0.8%) |
+| Benign trades flagged manipulated (the guard's block) | 2 of 49 | **0 of 49** |
+| Benign trades called "breach likely" (a label) | 9 of 49 | **3 of 49** |
+| Injection question: AUC | 0.862 | **1.000** |
+| Manipulated: calibration (ECE) | 0.079 | 0.091 |
+
+The 49 benign trades revealed the sell problem that v2's data targets, so they're no longer an independent test. A fresh batch of 48 LLM-driven benign episodes ($0.04; 46 distinct cases, no breaches) was run after training ([v1](evidence/sentinel-eval-v1-fresh-controls.json), [v2](evidence/sentinel-eval-v2-fresh-controls.json)):
+
+| Fresh 46 benign cases | v1 | v2 |
+|---|---|---|
+| Flagged manipulated (would be blocked) | 1 | **0** |
+| Called "breach likely" | 6 | **2** |
+
+v2 is equal or better on everything that decides a block, with slightly worse calibration (ECE 0.091 against 0.079). Production switches to v2. Limits unchanged: scripted attack agents, benign tasks from a fixed list of 16, no "suspicious" labels, and 36 manipulated cases, so one miss moves the catch rate by about 3 points.
+
 ### Kaggle's own benchmark (run `sentinel-v1`)
 
 Laya's benchmark on our test split ([evidence](evidence/kaggle-benchmark-sentinel-v1.json)): accuracy 94.4%, ECE 0.042, Brier 0.087, latency p50 217 ms on a T4. The split is only 24 cases (18 distinct states, 72 decisions), so this is a sanity check; the held-out evaluation above is the real measure.
@@ -103,11 +127,10 @@ The metrics themselves are computed on our test file.
 
 ## Done when
 
-- **"Sentinel eval report (TPR@1%FPR, ECE, latency)":** met, for base Laya and fine-tune v1.
-- **"Solana E2E breach → claim on devnet":** not yet; separate PR (needs a funded devnet wallet).
+- **"Sentinel eval report (TPR@1%FPR, ECE, latency)":** met, for base Laya, fine-tune v1 and fine-tune v2.
+- **"Solana E2E breach → claim on devnet":** PR #40 (`DAY-10-SOLANA.md`).
 
 ## Next
 
-- Set the cascade band, deploy the service to Railway (4 GB, read-only Hugging Face token and bearer key set by the founder), and re-run the Arena with Sentinel on.
-- Varied benign control episodes from an LLM-driven agent (under $1), so false positives are measured on more than 4 cases.
-- Solana devnet deploy and the ADR-011 follow-ups.
+- The Sentinel service is live on Railway (on v1 until this change is applied). Next: set the cascade band, and re-run the Arena with Sentinel on through the Railway service.
+- Solana keeper and TypeScript client, then the ADR-011 follow-ups.

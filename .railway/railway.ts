@@ -84,8 +84,9 @@ export default defineRailway(() => {
       PORT: "8000",
       LAYA_THREADS: "2",
       SENTINEL_MODEL_REPO: "ddboy19912/bonded-sentinel-laya",
-      // Fine-tune v1 (docs/progress/DAY-10.md). Change only after the held-out evaluation.
-      SENTINEL_MODEL_REVISION: "22d2ad765058158a1a3c7472ac551690a05fe1e6",
+      // Fine-tune v2 (docs/progress/DAY-10.md). Change only after the held-out evaluation;
+      // v1 (22d2ad765058158a1a3c7472ac551690a05fe1e6) is the rollback.
+      SENTINEL_MODEL_REVISION: "0170dd4d4000a0021d90813d9d7f795fb5bcbb97",
       HF_TOKEN: preserve(),
       LAYA_API_KEY: preserve(),
     },

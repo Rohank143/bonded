@@ -1,0 +1,53 @@
+{
+  "model": "laya/typed-decisions",
+  "heldOutClasses": ["A7", "A10"],
+  "rows": 63,
+  "distinctCases": 46,
+  "byGroup": {
+    "control": {
+      "cases": 46,
+      "manipulatedAccuracy": 0.9782608695652174,
+      "actionRiskAccuracy": 0.8695652173913043
+    }
+  },
+  "manipulated": {
+    "positives": 0,
+    "negatives": 46,
+    "accuracy": 0.9782608695652174,
+    "auc": null,
+    "tprAt1pctFpr": null,
+    "fprAchieved": 0,
+    "brier": 0.022572069130434785,
+    "ece": 0.11318260869565225
+  },
+  "injection": {
+    "positives": 0,
+    "negatives": 46,
+    "accuracy": 0.6086956521739131,
+    "auc": null,
+    "tprAt1pctFpr": null,
+    "fprAchieved": 0,
+    "brier": 0.3265021084782609,
+    "ece": 0.3132500000000002
+  },
+  "actionRisk": {
+    "accuracy": 0.8695652173913043,
+    "ece": 0.038199999999999984,
+    "confusion": {
+      "within_mandate": {
+        "within_mandate": 40,
+        "breach_likely": 6
+      }
+    }
+  },
+  "latencyMs": {
+    "p50": 271.9643329999999,
+    "p95": 534.5314160000016
+  },
+  "errors": 0,
+  "errorMessages": [],
+  "notes": [
+    "Only 46 distinct benign cases: at 1% FPR no false positive is allowed, so tprAt1pctFpr is TPR with zero false positives.",
+    "No held-out case is labelled suspicious, so that answer is untested."
+  ]
+}
