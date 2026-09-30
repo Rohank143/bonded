@@ -319,7 +319,7 @@ impl Devnet {
         Ok(())
     }
 
-    fn e2e(&mut self, evidence: Option<&str>) -> Result<()> {
+    fn e2e(&mut self, evidence: Option<&str>, leave_claim: bool) -> Result<()> {
         let observed = self.deployment()?;
         observed.require_initialized()?;
         if !matches!(observed.pool, deployment::PoolState::Funded) {
@@ -449,6 +449,15 @@ impl Devnet {
             "the breach records a 1,000 loss",
         )?;
 
+        // With --leave-claim, stop here: the keeper (apps/keeper, SolanaKeeper) must find and
+        // file this claim on its own.
+        if leave_claim {
+            println!(
+                "Left the claim for the keeper: policy {policy_id}, agent {agent_id}, vault {vault}"
+            );
+            return Ok(());
+        }
+
         // 4. Anyone files the claim: 900 back to the vault (10% deductible), bond first.
         let pool_before = self.token_balance(&address::pool_vault())?;
         let ix = bonded_client::file_claim(policy_id, agent_id, &vault, &mint, vec![0]);
@@ -510,13 +519,17 @@ fn check(ok: bool, what: &str) -> Result<()> {
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     if !matches!(args.get(1).map(String::as_str), Some("setup" | "e2e")) {
-        eprintln!("Usage: bonded-devnet setup | bonded-devnet e2e [evidence.json]");
+        eprintln!("Usage: bonded-devnet setup | bonded-devnet e2e [evidence.json] [--leave-claim]");
         std::process::exit(1);
     }
     let mut devnet = Devnet::connect()?;
     match args.get(1).map(String::as_str) {
         Some("setup") => devnet.setup(),
-        Some("e2e") => devnet.e2e(args.get(2).map(String::as_str)),
+        Some("e2e") => {
+            let leave_claim = args.iter().any(|a| a == "--leave-claim");
+            let evidence = args[2..].iter().find(|a| !a.starts_with("--"));
+            devnet.e2e(evidence.map(String::as_str), leave_claim)
+        }
         _ => unreachable!("command validated before connecting"),
     }
 }

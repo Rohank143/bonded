@@ -14,12 +14,14 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint src",
+    "lint": "eslint src test",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@bonded/db": "workspace:*",
     "@bonded/shared": "workspace:*",
-    "viem": "^2.56.9"
+    "viem": "^2.56.9",
+    "@bonded/solana": "workspace:*",
+    "@solana/web3.js": "^1.98.4"
   }
 }

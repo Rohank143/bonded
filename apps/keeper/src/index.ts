@@ -8,6 +8,7 @@ import {
 import { getAbiItem, type Address } from "viem";
 import type { ServiceChain } from "./chain.js";
 export * from "./chain.js";
+export * from "./solana.js";
 
 /** One durable scanner and transaction sender per chain. Finalized cursor mismatch fails closed. */
 export class Keeper {

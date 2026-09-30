@@ -24,6 +24,29 @@ Setting a secret (for example a new `KEEPER_KEY`) is done on Railway, not in the
 grep '^KEEPER_KEY=' .env | cut -d= -f2- | tr -d '\n' | railway variables --service keeper --set-from-stdin KEEPER_KEY
 ```
 
+### Solana claims
+
+The `keeper` service also files Solana claims (`SolanaKeeper`, ADR-011) once two variables are set on it. Claims are permissionless, so its key only pays fees; a fraction of a devnet SOL lasts a long time.
+
+1. Create a key. It stays on this Mac and on Railway, never in the repository:
+
+```bash
+solana-keygen new --no-bip39-passphrase -o ~/.config/bonded/solana-keeper.json
+```
+
+2. Fund its address (`solana-keygen pubkey ~/.config/bonded/solana-keeper.json`) with 0.1 devnet SOL at faucet.solana.com.
+3. Set both variables:
+
+```bash
+railway variables --service keeper --set "SOLANA_RPC_URL=https://api.devnet.solana.com"
+```
+
+```bash
+tr -d '\n' < ~/.config/bonded/solana-keeper.json | railway variables --service keeper --set-from-stdin SOLANA_KEEPER_KEY
+```
+
+Without them, the keeper runs EVM only, as before.
+
 ### Sentinel
 
 The `sentinel` service is different: it builds `services/sentinel/Dockerfile` (Laya's Python server, see `services/sentinel/README.md`), listens only on the private network at `http://sentinel.railway.internal:8000`, and has a 4 GB memory cap and 2 vCPUs. It pins the model with `SENTINEL_MODEL_REVISION`; change that only after the held-out evaluation (`docs/SENTINEL.md`). Its two secrets are set once:
