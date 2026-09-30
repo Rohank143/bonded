@@ -93,7 +93,9 @@ All 9 "breach likely" calls, and both "manipulated" ones, are sells back to tUSD
 
 Laya's benchmark on our test split ([evidence](evidence/kaggle-benchmark-sentinel-v1.json)): accuracy 94.4%, ECE 0.042, Brier 0.087, latency p50 217 ms on a T4. The split is only 24 cases (18 distinct states, 72 decisions), so this is a sanity check; the held-out evaluation above is the real measure.
 
-The v1 run missed edits d and f of the Kaggle guide, so its report still has the notebook's upstream labels:
+The v1 notebook (the copy downloaded from Kaggle) was missing edits a, b, d and f of the Kaggle guide. So v1 was most likely trained with the latest Laya, 0.3.22, and an unpinned base model, while the service runs 0.3.21. It loads and serves correctly, and the held-out numbers above come from the service. v2 uses `services/sentinel/kaggle/bonded-sentinel.ipynb`, which has all six edits.
+
+Its report also still has the notebook's upstream labels:
 - It names the benchmark `LocalLLaMA/typed-decisions` and counts five decisions per case (120). Sentinel asks three, so it's 72.
 - Its "comparison" rows (Jev 0.727, ModernBERT 0.646, and so on) are copied from Laya's own benchmark on a different dataset. They were not run on our data and are not a comparison with our model.
 

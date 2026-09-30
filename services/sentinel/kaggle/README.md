@@ -41,6 +41,8 @@ Then:
 
 ## 4. Make six edits
 
+**Shortcut:** [`bonded-sentinel.ipynb`](bonded-sentinel.ipynb) is Laya's notebook with all six edits already made (plus an upload of the report at the end of cell 18), for the founder's Kaggle dataset path and Hugging Face repo. Import it with **File → Import Notebook** and skip to section 5; change the path in cells 6, 12 and 16 and `NEW_REPO` in cell 16 if yours differ. The edits it contains:
+
 Cell numbers count from 0, as in the notebook file.
 
 **a. Pin the package** in the install cell (cell 4). Replace `"laya>=0.1.6"` with:
@@ -187,7 +189,7 @@ The notebook keeps its edits, so a retrain is: new data, a check of the edits, a
    node dist/laya-dataset-cli.js --arena ratings/vulnerable-agent_scripted/sentinel-dataset.jsonl --synthetic datasets/sentinel-synthetic-train-v2.jsonl --out datasets/laya-v2
    ```
 2. **Upload it as a new version** of the same Kaggle dataset: open `bonded-sentinel` → **New Version** → replace `train.jsonl`, `test.jsonl` and `manifest.json` → **Create**. The path stays the same.
-3. **In the notebook, check all six edits** (section 4) are there before running. v1 ran without d and f, so its report kept the upstream benchmark name, counted five decisions per case and showed the upstream comparison rows. Also check the install cell says `laya==0.3.21`.
+3. **Import [`bonded-sentinel.ipynb`](bonded-sentinel.ipynb)** into the notebook (**File → Import Notebook**), so all six edits are in. v1's saved version was missing edits a, b, d and f: it installed the latest Laya (0.3.22) with an unpinned base model, and its report kept the upstream benchmark name, counted five decisions per case and showed the upstream comparison rows.
 4. **Make sure the notebook uses the new data version:** in the **Input** panel, if `bonded-sentinel` offers an update, take it.
 5. **Save Version → Save & Run All (Commit)**, named `sentinel-v2`.
 6. The upload cell pushes to the same Hugging Face repo as a new commit. v1 stays as the earlier commit, so it's the rollback: the service serves whichever commit `SENTINEL_MODEL_REVISION` pins.
