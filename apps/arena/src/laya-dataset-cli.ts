@@ -19,6 +19,7 @@ and manifest.json. Test holds only real rows from the held-out classes plus cont
   --contrast           add the rule-labelled contrastive pairs (contrast.ts) to training
   --contrast-file <p>  add LLM-written contrastive pairs (sentinel:contrast output); repeatable
   --seeds <path>       ratings used only to trace synthetic rows' seeds (repeatable)
+  --exclude-ids <path> ids of rows too long for Laya's window (services/sentinel/kaggle/check_tokens.py)
   --questions <set>    v1 (three questions) or v3 (manipulated and injection) (default: v1)
   --out <dir>          output folder (default: datasets/laya)`;
 
@@ -37,6 +38,7 @@ function main(): number {
       contrast: { type: "boolean", default: false },
       "contrast-file": { type: "string", multiple: true },
       seeds: { type: "string", multiple: true },
+      "exclude-ids": { type: "string" },
       questions: { type: "string" },
       out: { type: "string", default: "datasets/laya" },
       help: { type: "boolean", default: false },
@@ -54,6 +56,15 @@ function main(): number {
       ...(values["contrast-file"] ?? []).flatMap((path) => readContrastRows(path)),
     ],
     ...(values.seeds ? { seeds: values.seeds.flatMap((path) => readSeedRows(path)) } : {}),
+    ...(values["exclude-ids"]
+      ? {
+          excludeIds: new Set(
+            readFileSync(values["exclude-ids"], "utf8")
+              .split("\n")
+              .filter((id) => id.trim()),
+          ),
+        }
+      : {}),
     questions: parseSentinelQuestionSet(values.questions),
   });
   mkdirSync(values.out, { recursive: true });

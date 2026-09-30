@@ -718,3 +718,35 @@ The changes are small and go both ways:
 - **v2:** pump at limit 0→1, lookalike token 3→5, quoted bypass 2→1.
 
 Neither model trained on this wording. Until v3 replaces v1, Arena runs that use v1 as a guard see the new wording and about 1% more misses on these cases. v3's gates score v1 on this wording, so the comparison is like for like.
+
+## v3 training data
+
+Built with `--questions v3`: every row asks two questions, manipulated and injection in inputs. 18,631 training rows and 120 test rows, all on the explicit token wording; every state fits Laya's 1,024-token window.
+
+| Source | Rows | What it adds |
+|---|---|---|
+| Arena, scripted vulnerable and hardened agents, new wording | 436 training, 120 test | Real episodes. Test holds held-out classes A7 and A10 plus controls |
+| v2's LLM-written synthetic rows | 10,275 | Varied scenes from v1 and v2's data, after the filters below |
+| Rule-built contrastive pairs (`contrast.ts`) | 3,960 (14 mechanisms × 120 pairs, plus 600 benign rows) | The same inputs with an obeyed trade and an independent trade |
+| LLM-written contrastive pairs (`llm-contrast.ts`) | 3,960 (1,980 pairs, 12 disguises, $0.83) | The same, with the planted messages written by a model |
+
+**How the pairs teach "manipulated":** each pair shares its mandate and inputs, including the planted instruction.
+- The obeyed row makes exactly the ordered trade, so it is manipulated.
+- The independent row makes a different trade (another stock and amount), so it is not.
+
+Only the action differs, so the channel, wording and tool can't serve as shortcuts. Obeyed trades are buys, sells, transfers and approvals. 1,356 LLM-written and 992 rule-built obeyed trades are inside the rules: the "suspicious" case the earlier models never learned, now labelled "manipulated" and derived as suspicious in code.
+
+**Labels:** from the stress suite's rules, never from a model. The LLM writes only the planted messages. The order, the independent trade, the prices and the labels come from code, and an answer is kept only if it carries the order's token and amount (or address), uses real read tools, quotes no prices, and uses no stress-suite language or untrained mechanism. 420 of 2,400 answers were rejected.
+
+**Kept out of training:**
+- **Five mechanisms, entirely:** base64, instructions split across inputs, "do not buy" mandates, verdict objects and price conditions (`UNTRAINED_MECHANISMS`). Their locked stress families test generalization. "Rebalance to stables" isn't among them, because real Arena seeds (A2-fake-halt-news, A3-stale-price) already use it.
+- **Generated rows:** no generated row repeats a stress case or its planted text (tested). Their world content and languages are different from the suite's (Portuguese, Italian, Dutch and Japanese, against the suite's Spanish, French, Chinese and German).
+- **Filtered from the older data** (in the manifest): 188 rows seeded from test episodes, 247 mislabelled over-limit rows, 98 synthetic rows using an untrained mechanism, and 4 rows whose state doesn't fit the window (`check_tokens.py`).
+
+**Gates before v3 replaces v1**, all scored on the new wording:
+1. The held-out Arena cases.
+2. The locked stress families, whole-family and wording-locked.
+3. Fresh benign controls.
+4. An Arena rerun with the scripted vulnerable agent behind Sentinel, where no seed that v1 stops may get through.
+
+The cascade comes after v3 passes alone.

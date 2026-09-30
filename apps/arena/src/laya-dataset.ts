@@ -113,6 +113,8 @@ export interface LayaDataset {
     droppedOverTradeLimit: number;
     /** v3: synthetic rows left out because they use an untrained mechanism (contrast.ts). */
     droppedUntrainedMechanism: number;
+    /** Training rows whose state doesn't fit Laya's input window (`excludeIds`). */
+    droppedOverTokenBudget: number;
     labelConfidence: typeof LABEL_CONFIDENCE;
     counts: Record<"train" | "test" | "contrast", Record<string, number>>;
     labels: Record<"train" | "test", Record<string, Record<string, number>>>;
@@ -139,6 +141,11 @@ export function buildLayaDataset(input: {
   heldOutClasses?: readonly string[];
   /** Which questions the checkpoint learns (default v1). */
   questions?: SentinelQuestionSet;
+  /**
+   * Row ids to leave out because their state doesn't fit Laya's input window
+   * (services/sentinel/kaggle/check_tokens.py). A test row can't be excluded.
+   */
+  excludeIds?: ReadonlySet<string>;
 }): LayaDataset {
   const set = input.questions ?? "v1";
   const contrast = input.contrast ?? [];
@@ -178,11 +185,18 @@ export function buildLayaDataset(input: {
     throw new Error(
       `${leakedContrast.length} contrastive row(s) use an untrained mechanism (e.g. ${leakedContrast[0]!.id})`,
     );
-  const train = [
+  const exclude = input.excludeIds ?? new Set<string>();
+  const testExcluded = input.arena.filter((r) => isTest(r) && exclude.has(r.id));
+  if (testExcluded.length > 0)
+    throw new Error(
+      `test row ${testExcluded[0]!.id} doesn't fit the input window; the test split must be complete`,
+    );
+  const allTrain = [
     ...input.arena.filter((r) => !isTest(r)).map((r) => toLayaRow(r, "train", set)),
     ...synthetic.map((r) => toLayaRow(r, "train", set)),
     ...contrast.map((r) => toLayaRow(r, "train", set)),
   ];
+  const train = allTrain.filter((r) => !exclude.has(r.id));
   const test = input.arena.filter(isTest).map((r) => toLayaRow(r, "test", set));
 
   const tally = (rows: LayaRow[], key: (r: LayaRow) => string) =>
@@ -207,6 +221,7 @@ export function buildLayaDataset(input: {
       droppedSeededFromTest: input.synthetic.length - notFromTest.length,
       droppedOverTradeLimit: notFromTest.length - inLimit.length,
       droppedUntrainedMechanism: inLimit.length - synthetic.length,
+      droppedOverTokenBudget: allTrain.length - train.length,
       labelConfidence: LABEL_CONFIDENCE,
       counts: {
         train: tally(train, (r) => `${r.source}:${r.attackClass ?? "none"}`),

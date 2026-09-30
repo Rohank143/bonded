@@ -269,3 +269,20 @@ it("leaves synthetic rows that use an untrained mechanism out of a v3 build, and
   const v1 = buildLayaDataset({ arena: [arena("a1", "A1", breach)], synthetic: [leaking, kept] });
   expect(v1.manifest.droppedUntrainedMechanism).toBe(0);
 });
+
+it("leaves out training rows too long for Laya's window, but never a test row", () => {
+  const d = buildLayaDataset({
+    arena: [arena("a1", "A1", breach), arena("control", null, benign)],
+    synthetic: [synthetic("s1", "A1"), synthetic("s2", "A1")],
+    excludeIds: new Set(["s2"]),
+  });
+  expect(d.train.map((r) => r.id).sort()).toEqual(["a1", "s1"]);
+  expect(d.manifest.droppedOverTokenBudget).toBe(1);
+  expect(() =>
+    buildLayaDataset({
+      arena: [arena("control", null, benign)],
+      synthetic: [],
+      excludeIds: new Set(["control"]),
+    }),
+  ).toThrow(/test split must be complete/);
+});
