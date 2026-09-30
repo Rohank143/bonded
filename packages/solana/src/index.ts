@@ -2,7 +2,10 @@ import { BorshCoder, type Idl } from "@anchor-lang/core";
 import {
   type AccountMeta,
   type Connection,
+  Ed25519Program,
   PublicKey,
+  SystemProgram,
+  SYSVAR_INSTRUCTIONS_PUBKEY,
   TransactionInstruction,
 } from "@solana/web3.js";
 import BN from "bn.js";
@@ -24,6 +27,7 @@ export const PROGRAM_IDS = {
 } as const;
 
 export const TOKEN_PROGRAM = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+const SYSTEM_PROGRAM = SystemProgram.programId;
 
 const coders = {
   vault: new BorshCoder(bondedVaultIdl),
@@ -37,6 +41,7 @@ const pda = (seeds: (Buffer | Uint8Array)[], program: PublicKey) =>
 
 /** Program-derived addresses, with the same seeds as the programs and bonded_client. */
 export const address = {
+  registryConfig: () => pda([Buffer.from("config")], PROGRAM_IDS.registry),
   agent: (agentId: bigint) => pda([Buffer.from("agent"), u64(agentId)], PROGRAM_IDS.registry),
   vaultConfig: () => pda([Buffer.from("config")], PROGRAM_IDS.vault),
   vault: (guardian: PublicKey, agentId: bigint) =>
@@ -261,4 +266,134 @@ export function fileClaimInstruction(plan: ClaimPlan): TransactionInstruction {
       token_program: TOKEN_PROGRAM,
     }),
   });
+}
+
+// ---------------------------------------------------------------- registry (scores)
+
+/** A score as the Solana registry stores it: the EVM `BondedTypes.Attestation` fields. */
+export interface SolanaAttestation {
+  agentId: bigint;
+  score: number;
+  expectedLossBps: number;
+  reportHash: Uint8Array;
+  mandateHash: Uint8Array;
+  codeHash: Uint8Array;
+  teeMeasurement: Uint8Array;
+  modelFamily: number;
+  issuedAt: number;
+  expiresAt: number;
+}
+
+export interface RegistryAgent {
+  agentId: bigint;
+  owner: PublicKey;
+  uri: string;
+  score: SolanaAttestation | null;
+}
+
+/** Domain tag the registry prefixes to every signed attestation (bonded_registry). */
+export const ATTESTATION_DOMAIN = Buffer.from("bonded-attestation-v1");
+
+const toRaw = (a: SolanaAttestation) => ({
+  agent_id: new BN(a.agentId.toString()),
+  score: a.score,
+  expected_loss_bps: a.expectedLossBps,
+  report_hash: [...a.reportHash],
+  mandate_hash: [...a.mandateHash],
+  code_hash: [...a.codeHash],
+  tee_measurement: [...a.teeMeasurement],
+  model_family: a.modelFamily,
+  issued_at: new BN(a.issuedAt),
+  expires_at: new BN(a.expiresAt),
+});
+
+const fromRaw = (r: Raw): SolanaAttestation => ({
+  agentId: big(r.agent_id),
+  score: r.score as number,
+  expectedLossBps: r.expected_loss_bps as number,
+  reportHash: Uint8Array.from(r.report_hash as number[]),
+  mandateHash: Uint8Array.from(r.mandate_hash as number[]),
+  codeHash: Uint8Array.from(r.code_hash as number[]),
+  teeMeasurement: Uint8Array.from(r.tee_measurement as number[]),
+  modelFamily: r.model_family as number,
+  issuedAt: num(r.issued_at),
+  expiresAt: num(r.expires_at),
+});
+
+/**
+ * The exact bytes the attester signs: the domain tag, the registry's program id, then the
+ * Borsh-encoded attestation (bonded_registry::attestation_message).
+ */
+export function attestationMessage(attestation: SolanaAttestation): Buffer {
+  return Buffer.concat([
+    ATTESTATION_DOMAIN,
+    PROGRAM_IDS.registry.toBuffer(),
+    coders.registry.types.encode("Attestation", toRaw(attestation)),
+  ]);
+}
+
+export async function fetchRegistryConfig(
+  connection: Connection,
+): Promise<{ attester: PublicKey; agentCount: bigint }> {
+  const info = await connection.getAccountInfo(address.registryConfig());
+  if (!info) throw new Error("the registry isn't initialized on this cluster");
+  const c = coders.registry.accounts.decode("Config", info.data) as Raw;
+  return { attester: c.attester as PublicKey, agentCount: big(c.agent_count) };
+}
+
+export async function fetchAgent(
+  connection: Connection,
+  agentId: bigint,
+): Promise<RegistryAgent | null> {
+  const info = await connection.getAccountInfo(address.agent(agentId));
+  if (!info) return null;
+  const a = coders.registry.accounts.decode("Agent", info.data) as Raw;
+  return {
+    agentId: big(a.agent_id),
+    owner: a.owner as PublicKey,
+    uri: a.uri as string,
+    score: a.score ? fromRaw(a.score as Raw) : null,
+  };
+}
+
+/** Register the next agent (id = agent count + 1), owned by `owner`, who signs and pays. */
+export function registerInstruction(
+  owner: PublicKey,
+  nextAgentId: bigint,
+  uri: string,
+): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: PROGRAM_IDS.registry,
+    data: coders.registry.instruction.encode("register", { uri }),
+    keys: metas(bondedRegistryIdl, "register", {
+      config: address.registryConfig(),
+      agent: address.agent(nextAgentId),
+      owner,
+      system_program: SYSTEM_PROGRAM,
+    }),
+  });
+}
+
+/**
+ * Post a score: the Ed25519 check of the attester's signature over `attestationMessage`, then
+ * the registry instruction, which looks for that check just before it.
+ */
+export function postScoreInstructions(
+  attestation: SolanaAttestation,
+  attester: { publicKey: PublicKey; secretKey: Uint8Array },
+): TransactionInstruction[] {
+  const verify = Ed25519Program.createInstructionWithPrivateKey({
+    privateKey: attester.secretKey,
+    message: attestationMessage(attestation),
+  });
+  const post = new TransactionInstruction({
+    programId: PROGRAM_IDS.registry,
+    data: coders.registry.instruction.encode("post_score", { attestation: toRaw(attestation) }),
+    keys: metas(bondedRegistryIdl, "post_score", {
+      config: address.registryConfig(),
+      agent: address.agent(attestation.agentId),
+      instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
+    }),
+  });
+  return [verify, post];
 }

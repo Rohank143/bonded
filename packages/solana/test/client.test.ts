@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
 import { BorshCoder } from "@anchor-lang/core";
-import { PublicKey } from "@solana/web3.js";
+import { Ed25519Program, Keypair, PublicKey } from "@solana/web3.js";
 import BN from "bn.js";
 import { describe, expect, it } from "vitest";
 import {
   address,
+  attestationMessage,
   bondedCoverIdl,
   bondedVaultIdl,
   claimable,
@@ -13,6 +14,8 @@ import {
   fileClaimInstruction,
   type Policy,
   PROGRAM_IDS,
+  postScoreInstructions,
+  registerInstruction,
   type Vault,
 } from "../src/index.js";
 
@@ -189,4 +192,52 @@ it("builds file_claim with the IDL's accounts and discriminator", () => {
   expect(ix.keys[2]!.pubkey.equals(v.address)).toBe(true);
   expect(ix.keys[4]!.pubkey.equals(address.bond(7n))).toBe(true);
   expect(ix.keys.some((k) => k.isSigner)).toBe(false); // anyone can file: no signer but the fee payer
+});
+
+describe("registry scores", () => {
+  const attestation = {
+    agentId: 2n,
+    score: 56,
+    expectedLossBps: 415,
+    reportHash: new Uint8Array(32).fill(1),
+    mandateHash: new Uint8Array(32).fill(2),
+    codeHash: new Uint8Array(32).fill(3),
+    teeMeasurement: new Uint8Array(32),
+    modelFamily: 6,
+    issuedAt: 1_790_603_796,
+    expiresAt: 1_793_195_796,
+  };
+
+  it("signs the domain tag, the registry's id and the Borsh-encoded attestation", () => {
+    const m = attestationMessage(attestation);
+    expect(m.subarray(0, 21).toString()).toBe("bonded-attestation-v1");
+    expect(m.subarray(21, 53).equals(PROGRAM_IDS.registry.toBuffer())).toBe(true);
+    // u64 + u16 + u32 + 4 × 32 bytes + u8 + i64 + i64, little-endian.
+    expect(m.length).toBe(53 + 8 + 2 + 4 + 128 + 1 + 8 + 8);
+    expect(m.readBigUInt64LE(53)).toBe(2n);
+    expect(m.readUInt16LE(61)).toBe(56);
+    expect(m.readUInt32LE(63)).toBe(415);
+    expect(m.readBigInt64LE(m.length - 8)).toBe(1_793_195_796n);
+  });
+
+  it("puts the attester's Ed25519 check just before post_score", () => {
+    const attester = Keypair.generate();
+    const [verify, post] = postScoreInstructions(attestation, attester);
+    expect(verify!.programId.equals(Ed25519Program.programId)).toBe(true);
+    // The check covers the attester's key and exactly the attestation message.
+    expect(verify!.data.subarray(16, 48).equals(attester.publicKey.toBuffer())).toBe(true);
+    expect(verify!.data.subarray(112).equals(attestationMessage(attestation))).toBe(true);
+    expect(post!.programId.equals(PROGRAM_IDS.registry)).toBe(true);
+    expect(post!.keys[1]!.pubkey.equals(address.agent(2n))).toBe(true);
+  });
+
+  it("registers the next agent id with its owner signing", () => {
+    const owner = Keypair.generate().publicKey;
+    const ix = registerInstruction(owner, 3n, "bonded://robinhoodTestnet/agent/2");
+    expect(ix.keys[1]!.pubkey.equals(address.agent(3n))).toBe(true);
+    expect(ix.keys.find((k) => k.pubkey.equals(owner))).toMatchObject({
+      isSigner: true,
+      isWritable: true,
+    });
+  });
 });
