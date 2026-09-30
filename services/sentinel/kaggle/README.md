@@ -173,6 +173,19 @@ Things seen on the first run:
 
 When it finishes, check that the model card on your Hugging Face repo describes Sentinel (edit e) and that the report's `n_decisions` is three times `n_cases` (edit f). Then download `benchmark_report.json` (cell 18 writes it to the output folder) and add it to the repository under `docs/progress/evidence/`. Note the Hugging Face repo name and commit.
 
+## Retraining (v2 and later)
+
+The notebook keeps its edits, so a retrain is: new data, a check of the edits, and a new saved version.
+
+1. **Build the new dataset** (the command in section 1, with the new `--synthetic` file) and check its manifest.
+2. **Upload it as a new version** of the same Kaggle dataset: open `bonded-sentinel` → **New Version** → replace `train.jsonl`, `test.jsonl` and `manifest.json` → **Create**. The path stays the same.
+3. **In the notebook, check all six edits** (section 4) are there before running. v1 ran without d and f, so its report kept the upstream benchmark name, counted five decisions per case and showed the upstream comparison rows. Also check the install cell says `laya==0.3.21`.
+4. **Make sure the notebook uses the new data version:** in the **Input** panel, if `bonded-sentinel` offers an update, take it.
+5. **Save Version → Save & Run All (Commit)**, named `sentinel-v2`.
+6. The upload cell pushes to the same Hugging Face repo as a new commit. v1 stays as the earlier commit, so it's the rollback: the service serves whichever commit `SENTINEL_MODEL_REVISION` pins.
+
+Then send the new commit hash. The new model goes live only if it scores at least as well as v1 on the held-out attacks and the benign trades (`docs/SENTINEL.md`, "When to retrain").
+
 ## What the result does and doesn't show
 
 - The notebook's report on our `test.jsonl` is the first held-out number: real episodes from attack classes Sentinel never trained on. It is small (22 held-out rows from one scripted agent today, plus controls), so treat it as a smoke test.

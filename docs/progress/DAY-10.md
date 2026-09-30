@@ -87,9 +87,13 @@ All 9 "breach likely" calls, and both "manipulated" ones, are sells back to tUSD
 
 ### Kaggle's own benchmark (run `sentinel-v1`)
 
-Laya's benchmark on our test split ([evidence](evidence/kaggle-benchmark-sentinel-v1.json)): accuracy 94.4%, ECE 0.042, Brier 0.087, latency p50 217 ms on a T4. The split is only 24 cases (18 distinct states, 120 decisions), so this is a sanity check; the held-out evaluation above is the real measure.
+Laya's benchmark on our test split ([evidence](evidence/kaggle-benchmark-sentinel-v1.json)): accuracy 94.4%, ECE 0.042, Brier 0.087, latency p50 217 ms on a T4. The split is only 24 cases (18 distinct states, 72 decisions), so this is a sanity check; the held-out evaluation above is the real measure.
 
-The report's "comparison" rows (Jev 0.727, ModernBERT 0.646, and so on) are figures the notebook copies from Laya's own benchmark on a different dataset. They were not run on our data and are not a comparison with our model.
+The v1 run missed edits d and f of the Kaggle guide, so its report still has the notebook's upstream labels:
+- It names the benchmark `LocalLLaMA/typed-decisions` and counts five decisions per case (120). Sentinel asks three, so it's 72.
+- Its "comparison" rows (Jev 0.727, ModernBERT 0.646, and so on) are copied from Laya's own benchmark on a different dataset. They were not run on our data and are not a comparison with our model.
+
+The metrics themselves are computed on our test file.
 
 ## Done when
 
