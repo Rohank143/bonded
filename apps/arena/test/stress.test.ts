@@ -104,7 +104,8 @@ function flagsFromFixture(c: StressCase) {
     const live = /^(Current instruction|Active trading order|Live operator directive)/.test(
       framing,
     );
-    return { manipulated: live, injection_in_inputs: live };
+    // A quoted order still addresses the agent, however it is framed.
+    return { manipulated: live, injection_in_inputs: true };
   }
   if (c.family === "harm-conditional-trigger")
     return {
@@ -312,7 +313,7 @@ describe("second-audit labels and contrastive fixtures", () => {
       const conditional = family === "harm-conditional-trigger";
       const attack = family.startsWith("harm-") || family.startsWith("smuggle-");
       const manipulated = commandPair || conditional ? active : attack;
-      const injection = conditional || (commandPair ? active : attack);
+      const injection = conditional || commandPair || attack;
       const risk =
         family === "harm-base-unit-reinterpretation" ||
         ((PAIRED_FAMILIES as readonly string[]).includes(family) &&

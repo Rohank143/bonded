@@ -7,6 +7,7 @@ import {
   toLayaRow,
   type LayaRow,
 } from "../src/laya-dataset.js";
+import { buildContrastRows } from "../src/contrast.js";
 import type { SyntheticRow } from "../src/synthetic.js";
 
 const arena = (
@@ -195,4 +196,93 @@ describe("buildLayaDataset", () => {
       /duplicate/,
     );
   });
+});
+
+describe("the v3 question set", () => {
+  it("writes only manipulated and injection, with targets the notebook reads", () => {
+    const row = toLayaRow(arena("r", "A2", breach), "train", "v3");
+    const questions = JSON.parse(row.questions);
+    const gold = JSON.parse(row.gold);
+    expect(Object.keys(questions)).toEqual(["manipulated", "injection_in_inputs"]);
+    expect(Object.keys(gold)).toEqual(["manipulated", "injection_in_inputs"]);
+    for (const key of Object.keys(questions)) {
+      const { target, label } = notebookTarget(questions[key], gold[key]);
+      expect(target.reduce((a, b) => a + b, 0)).toBeCloseTo(1);
+      expect(["false", "true"][label]).toBe(gold[key].label);
+    }
+  });
+
+  it("puts contrastive rows in training only, as their own source, and counts them", () => {
+    const contrast = buildContrastRows({ pairs: 2, benign: 3 });
+    const d = buildLayaDataset({
+      arena: [arena("a1", "A1", breach), arena("control", null, benign)],
+      synthetic: [],
+      contrast,
+      questions: "v3",
+    });
+    expect(d.manifest.questionSet).toBe("v3");
+    const trained = d.train.filter((r) => r.source === "contrast");
+    expect(trained).toHaveLength(contrast.length);
+    expect(d.test.some((r) => r.source === "contrast")).toBe(false);
+    expect(Object.keys(d.manifest.labels.train)).toEqual(["manipulated", "injection_in_inputs"]);
+    expect(Object.values(d.manifest.counts.contrast).reduce((a, b) => a + b, 0)).toBe(
+      contrast.length,
+    );
+    expect(
+      Math.max(
+        ...Object.values(
+          JSON.parse(trained[0]!.gold).manipulated.probabilities as Record<string, number>,
+        ),
+      ),
+    ).toBeCloseTo(LABEL_CONFIDENCE.contrast);
+  });
+});
+
+it("traces synthetic seeds through seed-only rows without training or testing on them", () => {
+  const seedRow = arena("old-a1", "A1", breach);
+  const oldControl = arena("old-control", null, benign);
+  const d = buildLayaDataset({
+    arena: [arena("a1", "A1", breach)],
+    seeds: [seedRow, oldControl],
+    synthetic: [synthetic("s1", "A1", "old-a1"), synthetic("s2", "A1", "old-control")],
+  });
+  expect(d.train.map((r) => r.id).sort()).toEqual(["a1", "s1"]);
+  expect(d.test).toHaveLength(0);
+  // Seeded from a test-split seed (a control): still left out.
+  expect(d.manifest.droppedSeededFromTest).toBe(1);
+});
+
+it("leaves synthetic rows that use an untrained mechanism out of a v3 build, and counts them", () => {
+  const leaking: SyntheticRow = {
+    ...synthetic("leak", "A1"),
+    mandate: "You manage tUSDG and tNVDA. Do not buy tTSLA today.",
+  };
+  const kept = synthetic("kept", "A1");
+  const v3 = buildLayaDataset({
+    arena: [arena("a1", "A1", breach)],
+    synthetic: [leaking, kept],
+    questions: "v3",
+  });
+  expect(v3.train.map((r) => r.id)).toEqual(["a1", "kept"]);
+  expect(v3.manifest.droppedUntrainedMechanism).toBe(1);
+  // v1 builds are unchanged.
+  const v1 = buildLayaDataset({ arena: [arena("a1", "A1", breach)], synthetic: [leaking, kept] });
+  expect(v1.manifest.droppedUntrainedMechanism).toBe(0);
+});
+
+it("leaves out training rows too long for Laya's window, but never a test row", () => {
+  const d = buildLayaDataset({
+    arena: [arena("a1", "A1", breach), arena("control", null, benign)],
+    synthetic: [synthetic("s1", "A1"), synthetic("s2", "A1")],
+    excludeIds: new Set(["s2"]),
+  });
+  expect(d.train.map((r) => r.id).sort()).toEqual(["a1", "s1"]);
+  expect(d.manifest.droppedOverTokenBudget).toBe(1);
+  expect(() =>
+    buildLayaDataset({
+      arena: [arena("control", null, benign)],
+      synthetic: [],
+      excludeIds: new Set(["control"]),
+    }),
+  ).toThrow(/test split must be complete/);
 });

@@ -198,6 +198,22 @@ The notebook keeps its edits, so a retrain is: new data, a check of the edits, a
 
 Then send the new commit hash. The new model goes live only if it scores at least as well as v1 on the held-out attacks and the benign trades (`docs/SENTINEL.md`, "When to retrain") and the Arena rerun is done.
 
+### v3
+
+v3 is trained on two questions, with contrastive pairs (`docs/SENTINEL-STRESS.md`, "v3 training data"). From `apps/arena`, after the ratings, synthetic files and LLM pairs listed there exist:
+
+```bash
+node dist/laya-dataset-cli.js --arena ratings/v3-vulnerable-scripted/sentinel-dataset.jsonl --arena ratings/v3-hardened-scripted/sentinel-dataset.jsonl --seeds <main checkout>/apps/arena/ratings/vulnerable-agent_scripted/sentinel-dataset.jsonl --synthetic <main checkout>/apps/arena/datasets/sentinel-synthetic-train-v2.jsonl --contrast --contrast-file datasets/sentinel-contrast-llm.jsonl --questions v3 --out datasets/laya-v3
+```
+
+Then find the rows too long for Laya's window, and rebuild with the same command plus `--exclude-ids datasets/laya-v3-too-long.txt`:
+
+```bash
+python ../../services/sentinel/kaggle/check_tokens.py datasets/laya-v3 datasets/laya-v3-too-long.txt
+```
+
+Upload the three files as a new version of `bonded-sentinel`, and run the same notebook (it needs no change: it reads the questions from the data) as a saved version named `sentinel-v3`. Training has about 37,000 items against v2's 31,000, so expect roughly four hours.
+
 ## What the result does and doesn't show
 
 - The notebook's report on our `test.jsonl` is the first held-out number: real episodes from attack classes Sentinel never trained on. It is small (22 held-out rows from one scripted agent today, plus controls), so treat it as a smoke test.
