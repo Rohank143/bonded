@@ -1,9 +1,12 @@
 import {
   SENTINEL_HELD_OUT_CLASSES,
+  SENTINEL_QUESTION_SETS,
   SENTINEL_QUESTIONS,
+  type SentinelQuestionSet,
   sentinelQuestions,
   sentinelState,
 } from "@bonded/shared";
+import type { ContrastRow } from "./contrast.js";
 import type { SentinelRow } from "./dataset.js";
 import { overTradeLimit, type SyntheticRow } from "./synthetic.js";
 
@@ -26,7 +29,7 @@ export interface LayaRow {
   questions: string;
   gold: string;
   /** Not read by the notebook; kept for analysis and per-class evaluation. */
-  source: "arena" | "synthetic";
+  source: "arena" | "synthetic" | "contrast";
   attackClass: string | null;
 }
 
@@ -35,9 +38,10 @@ export interface LayaRow {
  * request), but Laya is trained to report calibrated probabilities, so the rest is spread over
  * the other options. Synthetic labels are less certain than the judge's. These are assumptions.
  */
-export const LABEL_CONFIDENCE = { arena: 0.95, synthetic: 0.9 } as const;
+/** Label confidences; contrastive rows are rule-labelled like the stress suite, so as sure as Arena rows. */
+export const LABEL_CONFIDENCE = { arena: 0.95, synthetic: 0.9, contrast: 0.95 } as const;
 
-type AnyRow = SentinelRow | SyntheticRow;
+type AnyRow = SentinelRow | SyntheticRow | ContrastRow;
 const isSynthetic = (row: AnyRow): row is SyntheticRow =>
   "source" in row && row.source === "synthetic";
 
@@ -49,13 +53,21 @@ function gold(keys: readonly string[], label: string, confidence: number) {
   return { label, probabilities };
 }
 
-/** One Arena or synthetic row as one Laya row with all three Sentinel questions. */
-export function toLayaRow(row: AnyRow, split: LayaRow["split"]): LayaRow {
-  const source = isSynthetic(row) ? "synthetic" : "arena";
+/** One Arena or synthetic row as one Laya row with the question set's questions (default v1). */
+export function toLayaRow(
+  row: AnyRow,
+  split: LayaRow["split"],
+  set: SentinelQuestionSet = "v1",
+): LayaRow {
+  const source = isSynthetic(row)
+    ? "synthetic"
+    : "source" in row && row.source === "contrast"
+      ? "contrast"
+      : "arena";
   const confidence = LABEL_CONFIDENCE[source];
   const { manipulated, action_risk, injection_in_inputs } = row.labels;
-  const questions = sentinelQuestions();
-  const answers = {
+  const questions = sentinelQuestions(set);
+  const all = {
     manipulated: gold(["false", "true"], String(manipulated), confidence),
     action_risk: gold(
       Object.keys(SENTINEL_QUESTIONS.action_risk.criteria),
@@ -65,9 +77,9 @@ export function toLayaRow(row: AnyRow, split: LayaRow["split"]): LayaRow {
     injection_in_inputs: gold(["false", "true"], String(injection_in_inputs), confidence),
   };
   const golds = Object.fromEntries(
-    Object.entries(answers).map(([key, g]) => [
+    SENTINEL_QUESTION_SETS[set].map((key) => [
       key,
-      { type: SENTINEL_QUESTIONS[key as keyof typeof answers].type, ...g, confidence },
+      { type: SENTINEL_QUESTIONS[key].type, ...all[key], confidence },
     ]),
   );
   return {
@@ -93,13 +105,14 @@ export interface LayaDataset {
   train: LayaRow[];
   test: LayaRow[];
   manifest: {
+    questionSet: SentinelQuestionSet;
     heldOutClasses: readonly string[];
     /** Synthetic rows left out of training because their seed is a test-split episode. */
     droppedSeededFromTest: number;
     /** Synthetic rows not labelled a breach whose swap exceeds the per-trade limit. */
     droppedOverTradeLimit: number;
     labelConfidence: typeof LABEL_CONFIDENCE;
-    counts: Record<"train" | "test", Record<string, number>>;
+    counts: Record<"train" | "test" | "contrast", Record<string, number>>;
     labels: Record<"train" | "test", Record<string, Record<string, number>>>;
   };
 }
@@ -112,8 +125,14 @@ export interface LayaDataset {
 export function buildLayaDataset(input: {
   arena: SentinelRow[];
   synthetic: SyntheticRow[];
+  /** Rule-labelled contrastive pairs (contrast.ts); training only. */
+  contrast?: ContrastRow[];
   heldOutClasses?: readonly string[];
+  /** Which questions the checkpoint learns (default v1). */
+  questions?: SentinelQuestionSet;
 }): LayaDataset {
+  const set = input.questions ?? "v1";
+  const contrast = input.contrast ?? [];
   const heldOut = new Set<string>(input.heldOutClasses ?? SENTINEL_HELD_OUT_CLASSES);
   const leaked = input.synthetic.filter((r) => r.attackClass && heldOut.has(r.attackClass));
   if (leaked.length > 0)
@@ -121,7 +140,7 @@ export function buildLayaDataset(input: {
       `${leaked.length} synthetic row(s) are from held-out classes (e.g. ${leaked[0]!.id}); regenerate them with the held-out classes excluded`,
     );
   const ids = new Set<string>();
-  for (const row of [...input.arena, ...input.synthetic]) {
+  for (const row of [...input.arena, ...input.synthetic, ...contrast]) {
     if (ids.has(row.id)) throw new Error(`duplicate row id ${row.id}`);
     ids.add(row.id);
   }
@@ -143,10 +162,11 @@ export function buildLayaDataset(input: {
     (r) => r.labels.action_risk === "breach_likely" || !overTradeLimit(r),
   );
   const train = [
-    ...input.arena.filter((r) => !isTest(r)).map((r) => toLayaRow(r, "train")),
-    ...synthetic.map((r) => toLayaRow(r, "train")),
+    ...input.arena.filter((r) => !isTest(r)).map((r) => toLayaRow(r, "train", set)),
+    ...synthetic.map((r) => toLayaRow(r, "train", set)),
+    ...contrast.map((r) => toLayaRow(r, "train", set)),
   ];
-  const test = input.arena.filter(isTest).map((r) => toLayaRow(r, "test"));
+  const test = input.arena.filter(isTest).map((r) => toLayaRow(r, "test", set));
 
   const tally = (rows: LayaRow[], key: (r: LayaRow) => string) =>
     rows.reduce<Record<string, number>>((acc, r) => {
@@ -156,7 +176,7 @@ export function buildLayaDataset(input: {
     }, {});
   const labelTally = (rows: LayaRow[]) =>
     Object.fromEntries(
-      Object.keys(SENTINEL_QUESTIONS).map((q) => [
+      SENTINEL_QUESTION_SETS[set].map((q) => [
         q,
         tally(rows, (r) => (JSON.parse(r.gold) as Record<string, { label: string }>)[q]!.label),
       ]),
@@ -165,12 +185,18 @@ export function buildLayaDataset(input: {
     train,
     test,
     manifest: {
+      questionSet: set,
       heldOutClasses: [...heldOut],
       droppedSeededFromTest: input.synthetic.length - notFromTest.length,
       droppedOverTradeLimit: notFromTest.length - synthetic.length,
       labelConfidence: LABEL_CONFIDENCE,
       counts: {
         train: tally(train, (r) => `${r.source}:${r.attackClass ?? "none"}`),
+        contrast: contrast.reduce<Record<string, number>>((acc, r) => {
+          const k = `${r.mechanism}:${r.role}`;
+          acc[k] = (acc[k] ?? 0) + 1;
+          return acc;
+        }, {}),
         test: tally(test, (r) => `${r.source}:${r.attackClass ?? "none"}`),
       },
       labels: { train: labelTally(train), test: labelTally(test) },

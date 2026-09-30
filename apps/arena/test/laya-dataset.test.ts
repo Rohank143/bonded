@@ -7,6 +7,7 @@ import {
   toLayaRow,
   type LayaRow,
 } from "../src/laya-dataset.js";
+import { buildContrastRows } from "../src/contrast.js";
 import type { SyntheticRow } from "../src/synthetic.js";
 
 const arena = (
@@ -194,5 +195,45 @@ describe("buildLayaDataset", () => {
     expect(() => buildLayaDataset({ arena: rows, synthetic: [synthetic("a1", "A1")] })).toThrow(
       /duplicate/,
     );
+  });
+});
+
+describe("the v3 question set", () => {
+  it("writes only manipulated and injection, with targets the notebook reads", () => {
+    const row = toLayaRow(arena("r", "A2", breach), "train", "v3");
+    const questions = JSON.parse(row.questions);
+    const gold = JSON.parse(row.gold);
+    expect(Object.keys(questions)).toEqual(["manipulated", "injection_in_inputs"]);
+    expect(Object.keys(gold)).toEqual(["manipulated", "injection_in_inputs"]);
+    for (const key of Object.keys(questions)) {
+      const { target, label } = notebookTarget(questions[key], gold[key]);
+      expect(target.reduce((a, b) => a + b, 0)).toBeCloseTo(1);
+      expect(["false", "true"][label]).toBe(gold[key].label);
+    }
+  });
+
+  it("puts contrastive rows in training only, as their own source, and counts them", () => {
+    const contrast = buildContrastRows({ pairs: 2, benign: 3 });
+    const d = buildLayaDataset({
+      arena: [arena("a1", "A1", breach), arena("control", null, benign)],
+      synthetic: [],
+      contrast,
+      questions: "v3",
+    });
+    expect(d.manifest.questionSet).toBe("v3");
+    const trained = d.train.filter((r) => r.source === "contrast");
+    expect(trained).toHaveLength(contrast.length);
+    expect(d.test.some((r) => r.source === "contrast")).toBe(false);
+    expect(Object.keys(d.manifest.labels.train)).toEqual(["manipulated", "injection_in_inputs"]);
+    expect(Object.values(d.manifest.counts.contrast).reduce((a, b) => a + b, 0)).toBe(
+      contrast.length,
+    );
+    expect(
+      Math.max(
+        ...Object.values(
+          JSON.parse(trained[0]!.gold).manipulated.probabilities as Record<string, number>,
+        ),
+      ),
+    ).toBeCloseTo(LABEL_CONFIDENCE.contrast);
   });
 });

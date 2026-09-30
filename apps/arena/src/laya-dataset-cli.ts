@@ -2,6 +2,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
+import { parseSentinelQuestionSet } from "@bonded/shared";
+import { buildContrastRows } from "./contrast.js";
 import { buildLayaDataset } from "./laya-dataset.js";
 import type { SyntheticRow } from "./synthetic.js";
 import { readSeedRows } from "./synthetic.js";
@@ -14,6 +16,8 @@ and manifest.json. Test holds only real rows from the held-out classes plus cont
 
   --arena <path>       sentinel-dataset.jsonl from a rating; repeat for several ratings
   --synthetic <path>   synthetic rows generated with the held-out classes excluded
+  --contrast           add the rule-labelled contrastive pairs (contrast.ts) to training
+  --questions <set>    v1 (three questions) or v3 (manipulated and injection) (default: v1)
   --out <dir>          output folder (default: datasets/laya)`;
 
 function main(): number {
@@ -21,6 +25,8 @@ function main(): number {
     options: {
       arena: { type: "string", multiple: true },
       synthetic: { type: "string" },
+      contrast: { type: "boolean", default: false },
+      questions: { type: "string" },
       out: { type: "string", default: "datasets/laya" },
       help: { type: "boolean", default: false },
     },
@@ -32,6 +38,8 @@ function main(): number {
   const dataset = buildLayaDataset({
     arena: values.arena.flatMap((path) => readSeedRows(path)),
     synthetic: readSeedRows(values.synthetic) as unknown as SyntheticRow[],
+    ...(values.contrast ? { contrast: buildContrastRows() } : {}),
+    questions: parseSentinelQuestionSet(values.questions),
   });
   mkdirSync(values.out, { recursive: true });
   const jsonl = (rows: unknown[]) => rows.map((r) => `${JSON.stringify(r)}\n`).join("");
@@ -44,6 +52,7 @@ function main(): number {
   console.log(
     `train ${dataset.train.length} rows, test ${dataset.test.length} rows -> ${values.out}`,
   );
+  console.log(`questions: ${dataset.manifest.questionSet}`);
   console.log(`held out: ${dataset.manifest.heldOutClasses.join(", ")}`);
   console.log(
     `left out of training: ${dataset.manifest.droppedSeededFromTest} synthetic row(s) seeded from test episodes`,
