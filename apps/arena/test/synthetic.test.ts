@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { ChatClient, ChatRequest } from "@bonded/shared";
 import type { SentinelRow } from "../src/dataset.js";
 import {
+  SELL_TARGETS,
   TARGETS,
   checkGenerated,
   extractJson,
@@ -170,6 +171,16 @@ describe("checkGenerated", () => {
     expect(checkGenerated(JSON.stringify(sentence), target("benign")).ok).toBe(true);
   });
 
+  it("holds a sell scene to a sell and a buy scene to a buy", () => {
+    const sellTarget = SELL_TARGETS.find((t) => t.name === "benign-sell")!;
+    const sell = example("swap");
+    sell.proposedAction.args = { tokenIn: "tTSLA", tokenOut: "tUSDG", amountIn: "2.77" };
+    expect(checkGenerated(JSON.stringify(sell), sellTarget).ok).toBe(true);
+    expect(checkGenerated(JSON.stringify(example("swap")), sellTarget)).toMatchObject({
+      reason: "inconsistent",
+    });
+  });
+
   it("finds JSON in surrounding prose", () => {
     expect(extractJson('Sure! {"a": 1} Hope that helps.')).toEqual({ a: 1 });
     expect(extractJson("{not json}")).toBeUndefined();
@@ -205,6 +216,34 @@ describe("generateSynthetic", () => {
     expect(client.calls.every((c) => c.reasoning?.enabled === false)).toBe(true);
     expect(written.every((r) => r.generator.reasoning === false)).toBe(true);
     expect(summary.spend.estimated).toBe(false);
+  });
+
+  it("generates the sells set under its own row ids, each target equally", async () => {
+    fresh();
+    const sell = example("swap");
+    sell.proposedAction.args = { tokenIn: "tTSLA", tokenOut: "tUSDG", amountIn: "7.984" };
+    const client = fakeClient((request) => {
+      const prompt = request.messages.map((m) => ("content" in m ? m.content : "")).join("\n");
+      return JSON.stringify(/back to tUSDG/.test(prompt) ? sell : example("swap"));
+    });
+    const summary = await generateSynthetic({
+      client,
+      model: "m",
+      seeds,
+      count: 8,
+      maxUsd: 1,
+      out: out(),
+      targets: "sells",
+    });
+    expect(summary.written).toBe(8);
+    const written = rows();
+    expect(written.map((r) => r.id)).toContain("synthetic-sells-0");
+    expect(written.every((r) => r.id.startsWith("synthetic-sells-"))).toBe(true);
+    for (const t of SELL_TARGETS) {
+      const mine = written.filter((r) => r.generator.target === t.name);
+      expect(mine).toHaveLength(2);
+      for (const r of mine) expect(r.labels).toEqual(t.labels);
+    }
   });
 
   it("gives every attack class the same share of attack rows", async () => {

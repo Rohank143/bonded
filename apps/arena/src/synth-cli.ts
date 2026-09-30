@@ -7,7 +7,7 @@ import {
   llmConfigFromEnv,
 } from "@bonded/shared";
 import { loadDotEnv } from "./env.js";
-import { generateSynthetic, readSeedRows } from "./synthetic.js";
+import { generateSynthetic, readSeedRows, TARGET_SETS, type TargetSet } from "./synthetic.js";
 
 const USAGE = `Usage: pnpm sentinel:synth --seeds <jsonl> --max-usd <n> [options]
 
@@ -21,6 +21,8 @@ Needs OPENROUTER_API_KEY (or LLM_API_KEY with LLM_BASE_URL) in .env.
   --out <path>              JSONL output, appended; rerun to resume (default: datasets/sentinel-synthetic.jsonl)
   --exclude-classes <ids>   attack classes to keep out for held-out evaluation, comma-separated,
                             or "none" (default: SENTINEL_HELD_OUT_CLASSES, ${SENTINEL_HELD_OUT_CLASSES.join(",")})
+  --targets <default|sells> kinds of example: the balanced mix, or sells and small trades (v2)
+                            (default: default)
   --concurrency <n>         parallel requests (default: 4)
   --reasoning <on|off>      let a reasoning model think first; off is cheaper and avoids empty answers (default: off)`;
 
@@ -33,6 +35,7 @@ async function main(): Promise<number> {
       model: { type: "string", default: "deepseek/deepseek-v4.1-flash" },
       out: { type: "string", default: "datasets/sentinel-synthetic.jsonl" },
       "exclude-classes": { type: "string", default: SENTINEL_HELD_OUT_CLASSES.join(",") },
+      targets: { type: "string", default: "default" },
       concurrency: { type: "string", default: "4" },
       reasoning: { type: "string", default: "off" },
       help: { type: "boolean", default: false },
@@ -49,6 +52,7 @@ async function main(): Promise<number> {
   if (!Number.isInteger(count) || count < 1) throw new Error("--count must be a whole number");
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 16)
     throw new Error("--concurrency must be 1 to 16");
+  if (!(values.targets in TARGET_SETS)) throw new Error("--targets must be default or sells");
   if (values.reasoning !== "on" && values.reasoning !== "off")
     throw new Error("--reasoning must be on or off");
 
@@ -73,6 +77,7 @@ async function main(): Promise<number> {
     maxUsd,
     out: values.out,
     excludeClasses,
+    targets: values.targets as TargetSet,
     classNames,
     concurrency,
     reasoning: values.reasoning === "on",
