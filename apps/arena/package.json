@@ -26,7 +26,8 @@
     "sentinel-eval": "node dist/sentinel-eval-cli.js",
     "sentinel-stress": "node dist/stress-cli.js",
     "scores": "node dist/scores-cli.js",
-    "sentinel-contrast": "node dist/llm-contrast-cli.js"
+    "sentinel-contrast": "node dist/llm-contrast-cli.js",
+    "sentinel-shortcuts": "node dist/shortcuts-cli.js"
   },
   "dependencies": {
     "@bonded/demo-agents": "workspace:*",
