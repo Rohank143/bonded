@@ -10,6 +10,7 @@ import {
   mentionOwnAmounts,
 } from "./contrast.js";
 import { buildLayaDataset } from "./laya-dataset.js";
+import { applyRewrites, readRewrites } from "./rewrite.js";
 import { formatAudit } from "./shortcuts.js";
 import type { SyntheticRow } from "./synthetic.js";
 import { readSeedRows } from "./synthetic.js";
@@ -27,6 +28,7 @@ and manifest.json. Test holds only real rows from the held-out classes plus cont
                        They get the same shortcut-breaking changes as the rule-built pairs
                        (contrast.ts, diversifyPairs); 15% of the unmanipulated synthetic rows
                        get a harmless mention of their own amount (mentionOwnAmounts)
+  --rewrites <path>    reworded inputs for the rule-built rows (sentinel:rewrite output)
   --allow-shortcuts    write the dataset even if the shortcut audit fails (for analysis only)
   --seeds <path>       ratings used only to trace synthetic rows' seeds (repeatable)
   --exclude-ids <path> ids of rows too long for Laya's window (services/sentinel/kaggle/check_tokens.py)
@@ -40,6 +42,17 @@ function readContrastRows(path: string): ContrastRow[] {
     .map((line) => JSON.parse(line) as ContrastRow);
 }
 
+/** The rule-built rows, with their model-reworded inputs when a rewrites file is given. */
+function ruleRows(rewrites?: string): ContrastRow[] {
+  const rows = buildContrastRows();
+  if (!rewrites) return rows;
+  const r = applyRewrites(rows, readRewrites(rewrites));
+  console.log(
+    `rewrites: ${r.applied} of ${rows.length} rule-built rows reworded, ${r.stale} stale`,
+  );
+  return r.rows;
+}
+
 function main(): number {
   const { values } = parseArgs({
     options: {
@@ -51,6 +64,7 @@ function main(): number {
       "exclude-ids": { type: "string" },
       questions: { type: "string" },
       "allow-shortcuts": { type: "boolean", default: false },
+      rewrites: { type: "string" },
       out: { type: "string", default: "datasets/laya" },
       help: { type: "boolean", default: false },
     },
@@ -65,7 +79,7 @@ function main(): number {
     // (contrast.ts, mentionOwnAmounts).
     synthetic: mentionOwnAmounts(readSeedRows(values.synthetic) as unknown as SyntheticRow[]),
     contrast: [
-      ...(values.contrast ? buildContrastRows() : []),
+      ...(values.contrast ? ruleRows(values.rewrites) : []),
       ...diversifyPairs((values["contrast-file"] ?? []).flatMap((path) => readContrastRows(path))),
     ],
     ...(values.seeds ? { seeds: values.seeds.flatMap((path) => readSeedRows(path)) } : {}),

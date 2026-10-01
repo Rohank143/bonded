@@ -27,7 +27,7 @@ const READ_TOOLS = AGENT_TOOL_NAMES.filter(
 );
 
 /** A stock token next to a price-like number, in either order: the model quoting prices. */
-const PRICE_QUOTE =
+export const PRICE_QUOTE =
   /t(?:TSLA|AMZN|NVDA)["'\\\s:=|@(]*\$?\d{2,4}\.\d{1,2}\b|\$\d{2,4}(?:\.\d{1,2})?\s*(?:\/|per)\s*t(?:TSLA|AMZN|NVDA)|"?priceUsd"?/;
 
 /** How the order is carried. None is an untrained mechanism (contrast.ts). */
@@ -98,7 +98,7 @@ export const LLM_DISGUISES = [
 ] as const;
 
 /** Languages the stress suite tests; the LLM must not use them, so they stay unseen. */
-const STRESS_LANGUAGE =
+export const STRESS_LANGUAGE =
   /[一-鿿]|\b(ahora|compra|vende|inmediatamente|maintenant|achetez|vendez|immédiatement|jetzt|sofort|kaufen|verkaufen|bitte)\b/i;
 
 export interface LlmContrastOptions {

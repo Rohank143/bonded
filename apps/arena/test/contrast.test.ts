@@ -109,12 +109,13 @@ describe("contrastive training rows", () => {
       list.filter((r) => features(r).amountInInputs === "true").length / list.length;
     const obeyed = rows.filter((r) => r.role === "obeyed");
     const independent = rows.filter((r) => r.role === "independent");
-    // Many obeyed trades don't copy the amount (partial or vague orders), and many independent
-    // trades' amounts appear in the inputs anyway.
+    // Many obeyed trades don't copy the amount (vague orders), and harmless lines mention the
+    // obeyed and the independent amounts equally, so a copied amount says little either way.
     expect(share(obeyed)).toBeLessThan(0.65);
-    expect(share(independent)).toBeGreaterThan(0.35);
+    expect(share(independent)).toBeGreaterThan(0.2);
+    expect(share(obeyed) - share(independent)).toBeLessThan(0.45);
     // Obeyed orders with no stock named, and sells of a named stock that isn't ordered.
-    expect(obeyed.filter((r) => features(r).tokenInInputs === "false").length).toBeGreaterThan(500);
+    expect(obeyed.filter((r) => features(r).tokenInInputs === "false").length).toBeGreaterThan(400);
   });
 
   it("include ordinary transfers and approvals the mandate allows", () => {
@@ -255,25 +256,39 @@ describe("shortcut-breaking changes to rows from elsewhere", () => {
   it("keep each pair's inputs identical and its labels, and are deterministic", () => {
     const out = diversifyPairs(llm);
     expect(diversifyPairs(llm)).toEqual(out);
+    const amountOf = (r: ContrastRow) =>
+      (r.proposedAction as { args: { amountIn: string } }).args.amountIn;
+    let own = 0;
     for (let n = 0; n < out.length; n += 2) {
       expect(out[n]!.untrustedInputs).toEqual(out[n + 1]!.untrustedInputs);
-      expect(out[n]!.labels).toEqual(llm[n]!.labels);
-      expect(out[n + 1]!.proposedAction).toEqual(llm[n + 1]!.proposedAction);
+      expect(out[n]!.labels.manipulated).toBe(true);
+      expect(out[n + 1]!.labels.manipulated).toBe(false);
+      // The obeyed trade never changes.
+      expect(out[n]!.proposedAction).toEqual(llm.find((x) => x.id === out[n]!.id)!.proposedAction);
+      if (amountOf(out[n + 1]!) !== "700") {
+        // The agent's own buy of the ordered stock: same direction, not the ordered amount,
+        // inside the $5,000 limit.
+        own++;
+        expect((out[n + 1]!.proposedAction as { args: { tokenOut: string } }).args.tokenOut).toBe(
+          "tTSLA",
+        );
+        expect(amountOf(out[n + 1]!)).not.toBe("2000");
+        expect(Number(amountOf(out[n + 1]!))).toBeLessThanOrEqual(5000);
+      }
     }
-    const mentioned = out.filter((r, n) => n % 2 === 0 && r.untrustedInputs.length === 2).length;
-    expect(mentioned / 200).toBeGreaterThan(0.35);
-    // Partial obedience: less than ordered, never the independent amount.
-    const partial = out.filter(
-      (r) =>
-        r.role === "obeyed" &&
-        (r.proposedAction as { args: { amountIn: string } }).args.amountIn !== "2000",
+    // About half the pairs are kept, whole.
+    const kept = out.length / 2;
+    expect(kept).toBeGreaterThan(70);
+    expect(kept).toBeLessThan(130);
+    expect(own / kept).toBeGreaterThan(0.15);
+    const mentioned = out.filter((r, n) => n % 2 === 0 && r.untrustedInputs.length === 2);
+    expect(mentioned.length / kept).toBeGreaterThan(0.35);
+    // The mention carries the obeyed amount (2000) in some pairs and the other one in others.
+    const withOrdered = mentioned.filter((r) =>
+      r.untrustedInputs.some((i) => i.output.includes("2000") && !i.output.includes("buy")),
     );
-    expect(partial.length / 200).toBeGreaterThan(0.25);
-    for (const r of partial) {
-      const amount = Number((r.proposedAction as { args: { amountIn: string } }).args.amountIn);
-      expect(amount).toBeLessThan(2000);
-      expect(amount).not.toBe(700);
-    }
+    expect(withOrdered.length).toBeGreaterThan(10);
+    expect(withOrdered.length).toBeLessThan(mentioned.length - 10);
   });
 
   it("mention their own amount only in unmanipulated rows, without changing labels", () => {
