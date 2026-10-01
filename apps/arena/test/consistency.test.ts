@@ -91,6 +91,23 @@ it("counts the edits that change the block decision", async () => {
   });
 });
 
+it("retries a failed request once before counting an error", async () => {
+  let calls = 0;
+  const flaky = {
+    assess: async () => {
+      calls++;
+      if (calls === 1) throw new Error("socket hang up");
+      return { manipulated: 0.1 };
+    },
+  };
+  const r = await evaluateConsistency(flaky as never, [A3]);
+  expect(r.errors).toBe(0);
+  const broken = { assess: async () => Promise.reject(new Error("down")) };
+  const b = await evaluateConsistency(broken as never, [A3]);
+  expect(b.errors).toBe(1);
+  expect(b.errorMessages).toEqual(["down"]);
+});
+
 it("keeps distinct cases only", () => {
   expect(distinctCases([A3, { ...A3, id: "copy" }])).toHaveLength(1);
 });

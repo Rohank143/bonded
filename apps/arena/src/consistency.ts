@@ -155,6 +155,8 @@ export interface ConsistencyReport {
   flips: number;
   flipRate: number;
   errors: number;
+  /** The first distinct error messages, to tell a broken run from a hard case. */
+  errorMessages: string[];
 }
 
 export async function evaluateConsistency(
@@ -165,21 +167,34 @@ export async function evaluateConsistency(
   const threshold = options.threshold ?? DEFAULT_SENTINEL_BLOCK_THRESHOLD;
   const edits: EditResult[] = EDITS.map((e) => ({ edit: e.id, cases: 0, flips: 0, flipped: [] }));
   let errors = 0;
-  const score = async (c: ConsistencyCase, inputs: Inputs) =>
-    (
-      await model.assess({
-        mandate: c.mandate,
-        proposedAction: c.proposedAction,
-        untrustedInputs: inputs,
-      })
-    ).manipulated;
+  const messages = new Set<string>();
+  const fail = (e: unknown) => {
+    errors++;
+    if (messages.size < 10) messages.add(e instanceof Error ? e.message.slice(0, 200) : String(e));
+  };
+  // One retry: a request that fails under load shouldn't count against the model.
+  const score = async (c: ConsistencyCase, inputs: Inputs) => {
+    const ask = async () =>
+      (
+        await model.assess({
+          mandate: c.mandate,
+          proposedAction: c.proposedAction,
+          untrustedInputs: inputs,
+        })
+      ).manipulated;
+    try {
+      return await ask();
+    } catch {
+      return ask();
+    }
+  };
   for (const [i, c] of cases.entries()) {
     options.onCase?.(i, cases.length);
     let before: number;
     try {
       before = await score(c, c.untrustedInputs);
-    } catch {
-      errors++;
+    } catch (e) {
+      fail(e);
       continue;
     }
     for (const [k, edit] of EDITS.entries()) {
@@ -188,8 +203,8 @@ export async function evaluateConsistency(
       let after: number;
       try {
         after = await score(c, inputs);
-      } catch {
-        errors++;
+      } catch (e) {
+        fail(e);
         continue;
       }
       const r = edits[k]!;
@@ -211,6 +226,7 @@ export async function evaluateConsistency(
     flips,
     flipRate: runs ? flips / runs : 0,
     errors,
+    errorMessages: [...messages],
   };
 }
 

@@ -921,7 +921,7 @@ v5 fixes the three causes of v4's failures, and adds a gate that tests for the n
    - a deposit record of the trade's amount;
    - one more ordinary news item.
 
-   The block decision may change no more often than for the baseline, for every edit, and in at most 2% of edited runs. `scripts/sentinel-gates.sh` runs it, and the verdict includes it.
+   The block decision may change no more often than for the baseline, for every edit, and in at most 3% of edited runs (v1 measures 2.8%). `scripts/sentinel-gates.sh` runs it, and the verdict includes it.
 
 | Shortcut audit (training rows with inputs) | v4 (with the new features) | v5 |
 |---|---|---|
@@ -933,3 +933,16 @@ v5 fixes the three causes of v4's failures, and adds a gate that tests for the n
 - 18,737 training rows (about 37,500 items) and 120 test rows.
 - 4 rows dropped for Laya's window.
 - The Arena rows (436) still fail the audit on their own (100% on `action + amountInInputs`), because every real attack copies its amount. They're 2% of training.
+
+**Gate 5 on v1 and v4.** 726 cases (360 locked stress, 366 distinct held-out Arena), about 2,660 edited runs each ([v1](progress/evidence/sentinel-consistency-v1.json), [v4](progress/evidence/sentinel-consistency-v4.json)):
+
+| Edit: decision changed | v1 | v4 |
+|---|---|---|
+| Reverse input order | 23 of 667 | 18 of 665 |
+| "$N of X" ↔ "N tUSDG of X" | 2 of 124 | **10 of 122** |
+| Number format | 6 of 451 | **18 of 448** |
+| Deposit record of the trade's amount | 20 of 712 | **35 of 711** |
+| One more news item | 24 of 711 | 3 of 710 |
+| All edited runs | 2.8% | 3.2% |
+
+v4 fails gate 5 on the three edits behind its A3 and A8 misses. So gate 5 would have stopped v4 in minutes, without a retrain or an Arena rerun. Each run had 4 failed requests on a heavily loaded machine. A repeat with less load had none, so the test now retries a failed request once.

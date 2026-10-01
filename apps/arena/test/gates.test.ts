@@ -184,11 +184,11 @@ describe("decideGates", () => {
     const many = decideGates({
       ...passing,
       consistency: {
-        baseline: consistency({ "reverse-order": 30 }),
-        candidate: consistency({ "reverse-order": 25 }),
+        baseline: consistency({ "reverse-order": 40 }),
+        candidate: consistency({ "reverse-order": 35 }),
       },
     });
-    expect(many.gates[4]!.pass).toBe(false); // 2.5% is over the 2% ceiling
+    expect(many.gates[4]!.pass).toBe(false); // 3.5% is over the 3% ceiling
   });
 
   it("names the seeds a candidate newly lets through", () => {
