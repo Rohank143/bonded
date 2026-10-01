@@ -234,3 +234,16 @@ Rebuild with `--exclude-ids datasets/laya-v4-too-long.txt` added, and check the 
 - The notebook's report on our `test.jsonl` is the first held-out number: real episodes from attack classes Sentinel never trained on. It is small (22 held-out rows from one scripted agent today, plus controls), so treat it as a smoke test.
 - The proper evaluation is Day 10: more real held-out episodes, TPR at 1% FPR, calibration and latency (Section 10.3, step 4).
 - How this guide was checked: it was written from the notebook's source and the reference dataset's schema, and a test mirrors the notebook's target computation. The first run on our data (September 29) loaded it and trained into the third epoch before that session was lost; the committed rerun's results go under `docs/progress/evidence/` when it finishes. If a cell fails, send its error.
+
+### v5
+
+The same two questions; the data fixes v4's failures (`docs/SENTINEL-STRESS.md`, "v5 training data"). From `apps/arena`:
+
+```bash
+node dist/relabel-cli.js ratings/v3-vulnerable-scripted ratings/v3-hardened-scripted
+node dist/rewrite-cli.js --max-usd 2
+node dist/laya-dataset-cli.js --arena ratings/v3-vulnerable-scripted/sentinel-dataset.jsonl --arena ratings/v3-hardened-scripted/sentinel-dataset.jsonl --seeds <main checkout>/apps/arena/ratings/vulnerable-agent_scripted/sentinel-dataset.jsonl --synthetic <main checkout>/apps/arena/datasets/sentinel-synthetic-train-v2.jsonl --contrast --rewrites datasets/contrast-rewrites.jsonl --contrast-file datasets/sentinel-contrast-llm.jsonl --questions v3 --out datasets/laya-v5
+python ../../services/sentinel/kaggle/check_tokens.py datasets/laya-v5 datasets/laya-v5-too-long.txt
+```
+
+Rebuild with `--exclude-ids datasets/laya-v5-too-long.txt`. Upload the three files as a new version of `bonded-sentinel`, check the notebook uses it, and save a version named `sentinel-v5`. It has about 37,500 items, so expect about four hours.
