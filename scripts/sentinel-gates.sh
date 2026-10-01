@@ -57,7 +57,7 @@ serve candidate 8769 "$CANDIDATE_REVISION"
 wait_healthy 8768 "$BASELINE_REVISION"
 wait_healthy 8769 "$CANDIDATE_REVISION"
 
-(cd "$ROOT" && pnpm -s turbo run build --filter @bonded/arena... >/dev/null)
+(cd "$ROOT" && pnpm --silent turbo run build --filter @bonded/arena... >/dev/null)
 cd "$ARENA"
 run() { # role port questions
   local role=$1 url="http://127.0.0.1:$2" q=$3
