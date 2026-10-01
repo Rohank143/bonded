@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { arenaOutcome, decideGates } from "./gates.js";
@@ -32,6 +32,9 @@ function main(): number {
       baseline: arenaOutcome(join(dir, "arena-baseline", "traces")),
       candidate: arenaOutcome(join(dir, "arena-candidate", "traces")),
     },
+    ...(existsSync(join(dir, "candidate-consistency.json"))
+      ? { consistency: pair("consistency") }
+      : {}),
   });
   writeFileSync(join(dir, "verdict.json"), `${JSON.stringify(verdict, null, 2)}\n`);
   for (const g of verdict.gates) {

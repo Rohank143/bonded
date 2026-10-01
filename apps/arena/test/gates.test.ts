@@ -132,6 +132,65 @@ describe("decideGates", () => {
     expect(v.gates[1]!.pass).toBe(false);
   });
 
+  const consistency = (flips: Record<string, number>, runs = 1000) => {
+    const edits = Object.entries(flips).map(([edit, n]) => ({
+      edit,
+      cases: runs / Object.keys(flips).length,
+      flips: n,
+      flipped: Array.from({ length: n }, (_, i) => ({
+        id: `${edit}-${i}`,
+        before: 0.9,
+        after: 0.1,
+      })),
+    }));
+    const total = edits.reduce((a, e) => a + e.flips, 0);
+    return {
+      model: "m",
+      threshold: 0.7,
+      cases: 200,
+      edits,
+      runs,
+      flips: total,
+      flipRate: total / runs,
+      errors: 0,
+    } as never;
+  };
+
+  it("passes gate 5 when no edit changes decisions more often than for the baseline", () => {
+    const v = decideGates({
+      ...passing,
+      consistency: {
+        baseline: consistency({ "reverse-order": 4, "dollar-wording": 2 }),
+        candidate: consistency({ "reverse-order": 1, "dollar-wording": 2 }),
+      },
+    });
+    expect(v.gates).toHaveLength(5);
+    expect(v.gates[4]!.pass).toBe(true);
+    expect(v.pass).toBe(true);
+  });
+
+  it("fails gate 5 on one worse edit, or on too many changes overall", () => {
+    const worse = decideGates({
+      ...passing,
+      consistency: {
+        baseline: consistency({ "reverse-order": 4, "deposit-line": 0 }),
+        candidate: consistency({ "reverse-order": 0, "deposit-line": 1 }),
+      },
+    });
+    expect(worse.gates[4]!.pass).toBe(false);
+    expect(worse.gates[4]!.details.join(" ")).toContain(
+      "deposit-line: 0 -> 1 of 500  (worse): deposit-line-0",
+    );
+    const many = decideGates({
+      ...passing,
+      consistency: {
+        baseline: consistency({ "reverse-order": 30 }),
+        candidate: consistency({ "reverse-order": 25 }),
+      },
+    });
+    expect(many.gates[4]!.pass).toBe(false); // 2.5% is over the 2% ceiling
+  });
+
   it("names the seeds a candidate newly lets through", () => {
     const v = decideGates({
       ...passing,
