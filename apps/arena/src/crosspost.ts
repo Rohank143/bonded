@@ -18,7 +18,15 @@ import {
   parseEvmDeployment,
 } from "@bonded/shared";
 import { Connection, type Keypair, sendAndConfirmTransaction, Transaction } from "@solana/web3.js";
-import { createPublicClient, createWalletClient, defineChain, http } from "viem";
+import {
+  createPublicClient,
+  createWalletClient,
+  defineChain,
+  http,
+  isAddressEqual,
+  type Log,
+  parseEventLogs,
+} from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { signAttestation } from "./attestation.js";
 
@@ -103,6 +111,19 @@ export async function readEvmScore(
   };
 }
 
+/**
+ * The agent id a registration allocated, from its receipt's `Registered` event. Reading
+ * `totalAgents()` afterwards could return another caller's registration.
+ */
+export function registeredAgentId(logs: Log[], registry: `0x${string}`): string {
+  const events = parseEventLogs({ abi: bondedRegistryAbi, eventName: "Registered", logs }).filter(
+    (e) => isAddressEqual(e.address, registry),
+  );
+  if (events.length !== 1)
+    throw new Error(`expected one Registered event from ${registry}, found ${events.length}`);
+  return events[0]!.args.agentId.toString();
+}
+
 export interface PostResult {
   chain: ScoreChain;
   agentId: string;
@@ -119,6 +140,8 @@ export async function crosspostEvm(options: {
   uri: string;
   attesterKey: `0x${string}`;
   ownerKey: `0x${string}`;
+  /** Called once a new registration is confirmed, before anything that can fail. */
+  onRegistered?: (agentId: string) => void;
 }): Promise<PostResult> {
   const { read, registry, viemChain, config } = evm(options.chain);
   const wallet = (key: `0x${string}`) =>
@@ -137,15 +160,12 @@ export async function crosspostEvm(options: {
       functionName: "register",
       args: [options.uri],
     });
-    await read.waitForTransactionReceipt({ hash });
-    agentId = (
-      await read.readContract({
-        address: registry,
-        abi: bondedRegistryAbi,
-        functionName: "totalAgents",
-      })
-    ).toString();
+    const receipt = await read.waitForTransactionReceipt({ hash });
+    if (receipt.status !== "success")
+      throw new Error(`${options.chain}: registration ${hash} reverted`);
+    agentId = registeredAgentId(receipt.logs, registry);
     registeredNow = true;
+    options.onRegistered?.(agentId);
   }
   const current = await readEvmScore(options.chain, agentId);
   if (current && current.issuedAt >= options.home.issuedAt)
@@ -197,6 +217,8 @@ export async function crosspostSolana(options: {
   uri: string;
   attester: Keypair;
   owner: Keypair;
+  /** Called once a new registration is confirmed, before anything that can fail. */
+  onRegistered?: (agentId: string) => void;
 }): Promise<PostResult> {
   const connection = new Connection(options.rpcUrl, "confirmed");
   const config = await fetchRegistryConfig(connection);
@@ -215,6 +237,7 @@ export async function crosspostSolana(options: {
       { commitment: "confirmed" },
     );
     registeredNow = true;
+    options.onRegistered?.(agentId.toString());
   }
   const agent = await fetchAgent(connection, agentId);
   if (!agent) throw new Error(`solanaDevnet: agent ${agentId} isn't registered`);

@@ -2,9 +2,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { attestationMessage as solanaMessage } from "@bonded/solana";
-import { MODEL_FAMILY_CODE } from "@bonded/shared";
+import { bondedRegistryAbi, MODEL_FAMILY_CODE } from "@bonded/shared";
+import { encodeAbiParameters, encodeEventTopics, type Log } from "viem";
 import { expect, it } from "vitest";
-import { readLinks, toSolanaAttestation, writeLinks } from "../src/crosspost.js";
+import { readLinks, registeredAgentId, toSolanaAttestation, writeLinks } from "../src/crosspost.js";
 
 const home = {
   agentId: "2",
@@ -49,4 +50,30 @@ it("reads and writes the agent-links file", () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+const REGISTRY = "0x35F6d30BE731a639235CCAd7abEdda4d4BE8D4F9";
+const registeredLog = (agentId: bigint, address: `0x${string}` = REGISTRY): Log =>
+  ({
+    address,
+    topics: encodeEventTopics({
+      abi: bondedRegistryAbi,
+      eventName: "Registered",
+      args: { agentId, owner: "0xd42FA5ae8949710479954ae78D1b12Ff2e50A841" },
+    }),
+    data: encodeAbiParameters([{ type: "string" }], ["bonded://robinhoodTestnet/agent/2"]),
+    blockHash: null,
+    blockNumber: null,
+    logIndex: null,
+    transactionHash: null,
+    transactionIndex: null,
+    removed: false,
+  }) as unknown as Log;
+
+it("takes a new EVM agent's id from its own Registered event", () => {
+  expect(registeredAgentId([registeredLog(5n)], REGISTRY)).toBe("5");
+  // Another contract's event with the same shape doesn't count.
+  const other = "0x0000000000000000000000000000000000000001";
+  expect(registeredAgentId([registeredLog(9n, other), registeredLog(5n)], REGISTRY)).toBe("5");
+  expect(() => registeredAgentId([], REGISTRY)).toThrow(/found 0/);
 });

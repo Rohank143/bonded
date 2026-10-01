@@ -104,6 +104,12 @@ async function main(): Promise<number> {
   const results = [];
   for (const chain of targets) {
     const agentId = link.links[chain];
+    // Record a new registration as soon as it's confirmed, so a failed score post can't lose it
+    // and a retry doesn't register the agent again.
+    const onRegistered = (id: string) => {
+      link.links[chain] = id;
+      writeLinks(links, linksFile);
+    };
     const result =
       chain === "solanaDevnet"
         ? await crosspostSolana({
@@ -113,6 +119,7 @@ async function main(): Promise<number> {
             uri,
             attester: keypair(join(values["solana-keys"], "attester.json")),
             owner: keypair(join(values["solana-keys"], "operator.json")),
+            onRegistered,
           })
         : await crosspostEvm({
             chain,
@@ -121,10 +128,9 @@ async function main(): Promise<number> {
             uri,
             attesterKey: attesterKey!,
             ownerKey: ownerKey!,
+            onRegistered,
           });
     link.links[chain] = result.agentId;
-    // Record a new registration at once, so a later failure can't lose it.
-    if (result.registeredNow) writeLinks(links, linksFile);
     results.push(result);
     console.log(
       `  ${chain.padEnd(16)} agent ${result.agentId.padEnd(4)} ${result.status}${result.registeredNow ? " (registered now)" : ""}${result.tx ? ` ${result.tx}` : ""}`,
