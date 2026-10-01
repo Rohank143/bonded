@@ -67,7 +67,20 @@ export {
   runControls,
 } from "./controls.js";
 export {
+  attestTeeAgent,
+  DEFAULT_TCB_STATUSES,
+  type FetchTeeOptions,
+  type QuoteFacts,
+  type QuoteVerifier,
+  type TeeExpectation,
+  TeeVerificationError,
+  type VerifiedTee,
+  verifyQuoteWithIntel,
+  verifyTeeEvidence,
+} from "./tee.js";
+export {
   type ClassResult,
+  type RatingTee,
   type RatingOptions,
   type RatingReport,
   type RatingResult,

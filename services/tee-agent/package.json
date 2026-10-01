@@ -1,0 +1,29 @@
+{
+  "name": "@bonded/tee-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The hardened agent's identity service for Phala dstack: derives the agent's session keys inside the TEE and proves, with an Intel TDX quote, which code holds them.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src test",
+    "test": "vitest run",
+    "start": "node dist/main.js",
+    "compose-hash": "node dist/compose-hash.js"
+  },
+  "dependencies": {
+    "@bonded/shared": "workspace:*",
+    "@phala/dstack-sdk": "0.5.8",
+    "@solana/web3.js": "^1.98.4",
+    "viem": "^2.56.9"
+  },
+  "bin": {
+    "bonded-compose-hash": "./dist/compose-hash.js"
+  }
+}

@@ -1,0 +1,293 @@
+import { createHash } from "node:crypto";
+import { teeMeasurement, teeReportData } from "@bonded/shared";
+import { describe, expect, it } from "vitest";
+import {
+  attestTeeAgent,
+  type QuoteFacts,
+  type QuoteVerifier,
+  TeeVerificationError,
+  verifyTeeEvidence,
+} from "../src/tee.js";
+
+// A test-side copy of dstack's rules, written from the spec rather than imported, so a mistake in
+// the Arena's implementation can't hide behind the same mistake here.
+const sha384 = (...parts: (Buffer | string)[]) => {
+  const h = createHash("sha384");
+  parts.forEach((p) => h.update(p));
+  return h.digest();
+};
+const extend = (digests: Buffer[]) =>
+  digests.reduce(
+    (mr, d) => sha384(mr, Buffer.concat([d, Buffer.alloc(48 - d.length)])),
+    Buffer.alloc(48),
+  );
+
+const hash = (n: number) => `0x${n.toString(16).padStart(64, "0")}` as const;
+const COMPOSE = "ab".repeat(32);
+const CODE = hash(7);
+const NONCE = hash(9);
+const EVM = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8" as const;
+const SOL = "11111111111111111111111111111112";
+const MR = { mrTd: "01".repeat(48), rtMr0: "", rtMr1: "", rtMr2: "" };
+
+function composeEvent() {
+  const payload = Buffer.from(COMPOSE, "hex");
+  const type = Buffer.alloc(4);
+  type.writeUInt32LE(0x08000001);
+  return {
+    imr: 3,
+    event_type: 0x08000001,
+    digest: sha384(type, ":", "compose-hash", ":", payload).toString("hex"),
+    event: "compose-hash",
+    event_payload: COMPOSE,
+  };
+}
+
+function build() {
+  const boot = [
+    { imr: 0, event_type: 1, digest: "02".repeat(48), event: "", event_payload: "" },
+    { imr: 1, event_type: 1, digest: "03".repeat(48), event: "", event_payload: "" },
+    { imr: 2, event_type: 1, digest: "04".repeat(48), event: "", event_payload: "" },
+  ];
+  const instance = {
+    imr: 3,
+    event_type: 0x08000001,
+    digest: "05".repeat(48),
+    event: "instance-id",
+    event_payload: "00",
+  };
+  const log = [...boot, instance, composeEvent()];
+  const rtmr = (imr: number) =>
+    extend(log.filter((e) => e.imr === imr).map((e) => Buffer.from(e.digest, "hex"))).toString(
+      "hex",
+    );
+  const facts: QuoteFacts = {
+    status: "UpToDate",
+    mrTd: MR.mrTd,
+    rtMr0: rtmr(0),
+    rtMr1: rtmr(1),
+    rtMr2: rtmr(2),
+    rtMr3: rtmr(3),
+    reportData: `${teeReportData({ codeHash: CODE, evmAddress: EVM, solanaPublicKey: SOL, nonce: NONCE }).slice(2)}${"0".repeat(64)}`,
+  };
+  const evidence = {
+    quote: "0xabcd",
+    eventLog: JSON.stringify(log),
+    composeHash: COMPOSE,
+    codeHash: CODE,
+    evmAddress: EVM,
+    solanaPublicKey: SOL,
+    nonce: NONCE,
+  };
+  return { facts, evidence, log };
+}
+
+const verifier =
+  (facts: QuoteFacts): QuoteVerifier =>
+  async () =>
+    facts;
+const expectation = (facts: QuoteFacts) => ({
+  nonce: NONCE,
+  codeHash: CODE,
+  composeHash: COMPOSE,
+  verifyQuote: verifier(facts),
+});
+const rejects = (promise: Promise<unknown>, reason: RegExp) =>
+  expect(promise).rejects.toThrow(reason);
+
+describe("verifyTeeEvidence", () => {
+  it("accepts good evidence and measures the platform and compose hash", async () => {
+    const { facts, evidence } = build();
+    const tee = await verifyTeeEvidence(evidence, expectation(facts));
+    expect(tee.measurement).toBe(teeMeasurement({ ...facts, composeHash: COMPOSE }));
+    expect(tee).toMatchObject({ evmAddress: EVM, solanaPublicKey: SOL, tcbStatus: "UpToDate" });
+  });
+
+  it("gives two instances of the same app the same measurement", async () => {
+    const a = build();
+    const b = build();
+    b.log[3]!.digest = "09".repeat(48);
+    b.evidence.eventLog = JSON.stringify(b.log);
+    b.facts.rtMr3 = extend(
+      b.log.filter((e) => e.imr === 3).map((e) => Buffer.from(e.digest, "hex")),
+    ).toString("hex");
+    const first = await verifyTeeEvidence(a.evidence, expectation(a.facts));
+    const second = await verifyTeeEvidence(b.evidence, expectation(b.facts));
+    expect(second.measurement).toBe(first.measurement);
+  });
+
+  it("accepts SWHardeningNeeded but refuses an out-of-date platform", async () => {
+    const { facts, evidence } = build();
+    await expect(
+      verifyTeeEvidence(evidence, expectation({ ...facts, status: "SWHardeningNeeded" })),
+    ).resolves.toBeDefined();
+    await rejects(
+      verifyTeeEvidence(evidence, expectation({ ...facts, status: "OutOfDate" })),
+      /TCB status is OutOfDate/,
+    );
+    await rejects(
+      verifyTeeEvidence(evidence, expectation({ ...facts, status: "Revoked" })),
+      /Revoked/,
+    );
+  });
+
+  it("refuses when the quote does not verify", async () => {
+    const { evidence } = build();
+    await rejects(
+      verifyTeeEvidence(evidence, {
+        ...expectation(build().facts),
+        verifyQuote: async () => {
+          throw new Error("bad signature");
+        },
+      }),
+      /did not verify: bad signature/,
+    );
+  });
+
+  it("refuses a quote that is not a real TDX quote, using the real verifier", async () => {
+    const { evidence } = build();
+    await rejects(
+      verifyTeeEvidence(evidence, { nonce: NONCE, codeHash: CODE, composeHash: COMPOSE }),
+      /did not verify/,
+    );
+  });
+
+  it("refuses a quote that does not commit to these keys, this code and this nonce", async () => {
+    const { facts, evidence } = build();
+    for (const changed of [
+      { evmAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC" },
+      { solanaPublicKey: "11111111111111111111111111111113" },
+    ])
+      await rejects(
+        verifyTeeEvidence({ ...evidence, ...changed }, expectation(facts)),
+        /does not commit/,
+      );
+    await rejects(
+      verifyTeeEvidence(evidence, expectation({ ...facts, reportData: "00".repeat(64) })),
+      /does not commit/,
+    );
+  });
+
+  it("refuses an answer to a different challenge or about different code", async () => {
+    const { facts, evidence } = build();
+    await rejects(
+      verifyTeeEvidence({ ...evidence, nonce: hash(10) }, expectation(facts)),
+      /different challenge/,
+    );
+    await rejects(
+      verifyTeeEvidence(evidence, { ...expectation(facts), codeHash: hash(8) }),
+      /different code/,
+    );
+    await rejects(
+      verifyTeeEvidence(evidence, { ...expectation(facts), composeHash: "cd".repeat(32) }),
+      /different deployment/,
+    );
+  });
+
+  it("refuses an event log that does not replay to the quote's registers", async () => {
+    const { facts, evidence, log } = build();
+    const tampered = log.map((e) => (e.imr === 1 ? { ...e, digest: "ff".repeat(48) } : e));
+    await rejects(
+      verifyTeeEvidence({ ...evidence, eventLog: JSON.stringify(tampered) }, expectation(facts)),
+      /does not replay to RTMR1/,
+    );
+  });
+
+  it("refuses a compose-hash event whose payload was swapped", async () => {
+    const { facts, evidence, log } = build();
+    // Same digest (so the replay still matches the quote), different payload.
+    const forged = log.map((e) =>
+      e.event === "compose-hash" ? { ...e, event_payload: "cd".repeat(32) } : e,
+    );
+    await rejects(
+      verifyTeeEvidence({ ...evidence, eventLog: JSON.stringify(forged) }, expectation(facts)),
+      /does not match its digest/,
+    );
+  });
+
+  it("refuses a missing or duplicated compose-hash event", async () => {
+    const { evidence, log, facts } = build();
+    const without = log.filter((e) => e.event !== "compose-hash");
+    const noCompose = {
+      ...facts,
+      rtMr3: extend(
+        without.filter((e) => e.imr === 3).map((e) => Buffer.from(e.digest, "hex")),
+      ).toString("hex"),
+    };
+    await rejects(
+      verifyTeeEvidence({ ...evidence, eventLog: JSON.stringify(without) }, expectation(noCompose)),
+      /exactly one compose hash/,
+    );
+  });
+
+  it("refuses malformed evidence and event logs", async () => {
+    const { facts, evidence } = build();
+    await rejects(verifyTeeEvidence({ nope: true }, expectation(facts)), /malformed/);
+    await rejects(
+      verifyTeeEvidence({ ...evidence, eventLog: "not json" }, expectation(facts)),
+      /not JSON/,
+    );
+    await rejects(
+      verifyTeeEvidence({ ...evidence, eventLog: '[{"imr":0}]' }, expectation(facts)),
+      /malformed entry/,
+    );
+  });
+
+  it("throws TeeVerificationError", async () => {
+    const { facts, evidence } = build();
+    await expect(
+      verifyTeeEvidence(evidence, expectation({ ...facts, status: "Revoked" })),
+    ).rejects.toBeInstanceOf(TeeVerificationError);
+  });
+});
+
+describe("attestTeeAgent", () => {
+  it("sends a fresh nonce and verifies the answer", async () => {
+    const { facts, evidence } = build();
+    let nonce = "";
+    const tee = await attestTeeAgent({
+      url: "https://agent.example",
+      codeHash: CODE,
+      composeHash: COMPOSE,
+      // Echo the nonce the Arena sent; report data is bound to NONCE in this fixture, so rebuild it.
+      verifyQuote: async () => ({
+        ...facts,
+        reportData: `${teeReportData({ codeHash: CODE, evmAddress: EVM, solanaPublicKey: SOL, nonce }).slice(2)}${"0".repeat(64)}`,
+      }),
+      fetch: (async (input: URL) => {
+        nonce = input.searchParams.get("nonce")!;
+        return Response.json({ ...evidence, nonce });
+      }) as unknown as typeof fetch,
+    });
+    expect(nonce).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(tee.measurement).toMatch(/^0x[0-9a-f]{64}$/);
+  });
+
+  it("uses a different nonce every time", async () => {
+    const seen = new Set<string>();
+    for (let i = 0; i < 3; i++)
+      await attestTeeAgent({
+        url: "https://agent.example",
+        codeHash: CODE,
+        composeHash: COMPOSE,
+        fetch: (async (input: URL) => {
+          seen.add(input.searchParams.get("nonce")!);
+          return new Response("no", { status: 500 });
+        }) as unknown as typeof fetch,
+      }).catch(() => undefined);
+    expect(seen.size).toBe(3);
+  });
+
+  it("refuses plain http except on localhost, and refuses an error response", async () => {
+    const base = { codeHash: CODE, composeHash: COMPOSE };
+    await rejects(attestTeeAgent({ ...base, url: "http://agent.example" }), /must use https/);
+    await rejects(
+      attestTeeAgent({
+        ...base,
+        url: "http://localhost:8080",
+        fetch: (async () => new Response("no", { status: 502 })) as unknown as typeof fetch,
+      }),
+      /answered 502/,
+    );
+  });
+});

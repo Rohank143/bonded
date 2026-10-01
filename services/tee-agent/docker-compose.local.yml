@@ -1,0 +1,13 @@
+# Local run with no hardware: `TEE_BACKEND=mock`. The agent serves evidence, but its quote is not a
+# TDX quote, so the Arena refuses it. Use it to check the HTTP side and the wiring.
+services:
+  agent:
+    build:
+      context: ../..
+      dockerfile: services/tee-agent/Dockerfile
+      args:
+        CODE_HASH: "0x0000000000000000000000000000000000000000000000000000000000000001"
+    environment:
+      TEE_BACKEND: mock
+    ports:
+      - "8080:8080"

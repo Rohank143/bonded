@@ -18,6 +18,7 @@ import { runControls } from "./controls.js";
 import { loadDotEnv, usesLanguageModel } from "./env.js";
 import { type EpisodeResult, runEpisode, saveEpisode } from "./episode.js";
 import { rateAgent } from "./rate.js";
+import { attestTeeAgent } from "./tee.js";
 import { describeOutcome, summarise } from "./report.js";
 import { Sandbox } from "./sandbox.js";
 
@@ -38,6 +39,11 @@ Agent:
   --sentinel-fallback <id> with laya:<url>, ask this LLM when Laya is unsure (the cascade)
   --sentinel-questions <s> with laya:<url>, the checkpoint's question set: v1 or v3 (default: v1)
   --enforce                run the vault in Enforce mode (blocked, not just recorded)
+  --code-hash <0x..>       rate only: hash of the code version being rated (default: hash of its name)
+  --tee-url <https://..>   rate only: the agent's live TEE endpoint. The Arena challenges it, verifies
+                           its Intel TDX quote and puts the measurement in the attestation. Needs
+                           --code-hash and --tee-compose-hash; the rating fails if verification does
+  --tee-compose-hash <h>   rate only: the compose hash published for that deployment (docs/TEE.md)
 
 Attacks:
   --attack <id|all|none>   run only: seed to plant (default: all; none = control episode)
@@ -69,6 +75,9 @@ async function main(): Promise<number> {
       "sentinel-fallback": { type: "string" },
       "sentinel-questions": { type: "string" },
       enforce: { type: "boolean", default: false },
+      "code-hash": { type: "string" },
+      "tee-url": { type: "string" },
+      "tee-compose-hash": { type: "string" },
       repeats: { type: "string", default: "1" },
       controls: { type: "string" },
       "max-usd": { type: "string" },
@@ -126,8 +135,21 @@ async function main(): Promise<number> {
     }
     if (command === "rate") {
       const outDir = values.out ?? `ratings/${agent.name.replaceAll("/", "_")}`;
+      const codeHash = hex32(values["code-hash"], "--code-hash");
+      const tee = values["tee-url"]
+        ? await attestTeeAgent({
+            url: values["tee-url"],
+            codeHash: codeHash ?? required("--code-hash with --tee-url"),
+            composeHash:
+              hex32(values["tee-compose-hash"], "--tee-compose-hash") ??
+              required("--tee-compose-hash with --tee-url"),
+          })
+        : undefined;
+      if (tee) console.log(`TEE verified: measurement ${tee.measurement}`);
       const result = await rateAgent(sandbox, {
         agent,
+        ...(codeHash ? { codeHash } : {}),
+        ...(tee ? { tee } : {}),
         attacks: library,
         repeats: positiveInt(values.repeats, "--repeats"),
         controls: positiveInt(values.controls ?? "2", "--controls", true),
@@ -250,6 +272,17 @@ function positiveInt(text: string | undefined, flag: string, allowZero = false):
   if (!Number.isInteger(n) || n < (allowZero ? 0 : 1))
     throw new Error(`${flag} must be a whole number`);
   return n;
+}
+
+function hex32(text: string | undefined, flag: string): `0x${string}` | undefined {
+  if (text === undefined) return undefined;
+  if (!/^0x[0-9a-fA-F]{64}$/.test(text))
+    throw new Error(`${flag} must be 0x followed by 64 hex digits`);
+  return text as `0x${string}`;
+}
+
+function required(what: string): never {
+  throw new Error(`${what} is required`);
 }
 
 function missing(id: string | undefined): never {

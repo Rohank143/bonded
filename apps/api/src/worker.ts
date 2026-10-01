@@ -2,6 +2,7 @@ import { Database, json } from "@bonded/db";
 import {
   Sandbox,
   rateAgent,
+  attestTeeAgent,
   loadAttackLibrary,
   signAttestation,
   type SignedAttestation,
@@ -24,6 +25,16 @@ export const agentConfig = z.strictObject({
   kind: z.enum(["hardened", "vulnerable"]),
   mandate: EvmMandate,
   codeHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/),
+  /**
+   * Where the agent runs in a TEE: its https URL and the compose hash published for this
+   * `codeHash`'s deployment. When set, the rating fails unless the agent proves it (ADR-012).
+   */
+  tee: z
+    .strictObject({
+      url: z.url({ protocol: /^https$/ }),
+      composeHash: z.string().regex(/^(0x)?[0-9a-fA-F]{64}$/),
+    })
+    .optional(),
 });
 /** Process one durable rating job under the chain worker lock; retries recover accepted posts. */
 export async function workOne(
@@ -86,6 +97,15 @@ async function runLocked(
     );
     let signed = row.attestation as SignedAttestation | null;
     if (!signed) {
+      // A TEE that doesn't verify fails the job. It never falls back to an unmeasured rating.
+      const tee = config.tee
+        ? await attestTeeAgent({
+            url: config.tee.url,
+            codeHash: config.codeHash as Hex,
+            composeHash: config.tee.composeHash,
+          })
+        : undefined;
+      await check();
       const sandbox = await Sandbox.start({ forkUrl: rpcUrl, forkDeployment: chain.deployment });
       try {
         const result = await rateAgent(sandbox, {
@@ -95,6 +115,7 @@ async function runLocked(
               : createVulnerableAgent("scripted"),
           attacks: await loadAttackLibrary(),
           codeHash: config.codeHash as Hex,
+          ...(tee ? { tee } : {}),
           vault: { mandate: config.mandate as EvmMandateInput },
           onEpisode: async (episode, index, total) => {
             await check();
