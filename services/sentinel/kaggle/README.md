@@ -246,4 +246,11 @@ node dist/laya-dataset-cli.js --arena ratings/v3-vulnerable-scripted/sentinel-da
 python ../../services/sentinel/kaggle/check_tokens.py datasets/laya-v5 datasets/laya-v5-too-long.txt
 ```
 
-Rebuild with `--exclude-ids datasets/laya-v5-too-long.txt`. Upload the three files as a new version of `bonded-sentinel`, check the notebook uses it, and save a version named `sentinel-v5`. It has about 37,500 items, so expect about four hours.
+Then drop the synthetic rows with planted content, whose scene text gives the label away ("The word-counting probe" in `docs/SENTINEL-STRESS.md`):
+
+```bash
+python ../../services/sentinel/kaggle/filter_giveaways.py datasets/laya-v5 datasets/laya-v5-giveaways.txt --all
+cat datasets/laya-v5-too-long.txt datasets/laya-v5-giveaways.txt | sort -u > datasets/laya-v5-excluded.txt
+```
+
+Rebuild with `--exclude-ids datasets/laya-v5-excluded.txt`. Upload the three files as a new version of `bonded-sentinel`, check the notebook uses it, and save a version named `sentinel-v5`. It has about 28,000 items, so expect about three hours.

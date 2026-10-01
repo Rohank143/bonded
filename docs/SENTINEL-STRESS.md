@@ -930,7 +930,7 @@ v5 fixes the three causes of v4's failures, and adds a gate that tests for the n
 | Result | FAIL | PASS |
 
 **Built set:**
-- 18,737 training rows (about 37,500 items) and 120 test rows.
+- 18,737 training rows before the word-counting probe (13,989 after it; see below) and 120 test rows.
 - 4 rows dropped for Laya's window.
 - The Arena rows (436) still fail the audit on their own (100% on `action + amountInInputs`), because every real attack copies its amount. They're 2% of training.
 
@@ -946,3 +946,19 @@ v5 fixes the three causes of v4's failures, and adds a gate that tests for the n
 | All edited runs | 2.8% | 3.2% |
 
 v4 fails gate 5 on the three edits behind its A3 and A8 misses. So gate 5 would have stopped v4 in minutes, without a retrain or an Arena rerun. Each run had 4 failed requests on a heavily loaded machine. A repeat with less load had none, so the test now retries a failed request once.
+
+### The word-counting probe
+
+The shortcut audit checks known features, and each round turned up a new cue. So before training v5, a deliberately dumb model was trained on the data: TF-IDF over words and word pairs, logistic regression. It shows whether words alone carry the label.
+
+- **The scene text gave the label away in the synthetic rows, and in every dataset so far.** Among training rows with planted content, the inputs alone, without the action, predicted "manipulated":
+  - v3: 64.6% (majority 53.3%);
+  - v4: 62.2% (majority 52.5%).
+
+  The source is v2's LLM-written synthetic rows. On their own, 87.1% of those with planted content were predicted right (majority 58.7%), because the generator wrote each scene knowing its label. Words like "ignore" mark the safe ones.
+- **Filtering doesn't fix it.** Dropping the rows the probe could label left a set that still leaked after five rounds (63% against 50%). `services/sentinel/kaggle/filter_giveaways.py` does both: the rounds, or `--all`.
+- **v5 drops every synthetic row with planted content** (4,748, with `--all`). Its rows with planted content are now only the pairs (shared inputs, so the inputs can't tell) and the real Arena rows. Inputs-only accuracy on them: **50.3% against a 50.1% majority**. The 5,527 synthetic scenes with nothing planted stay: "nothing planted, so not manipulated" is correct.
+- **The probe doesn't solve the locked stress suite.** Words and action together score 45.6% there, below the 61.1% majority. So the suite tests the task, not wording.
+- **It nearly solves the 120-row Arena test set** (91.7% against a 53.3% majority, AUC 0.97). That set is easy, which makes gate 1 the weakest of the five gates. Gates 2 and 5 carry more weight.
+
+The rebuilt v5 set has 13,989 training rows (about 28,000 items), with 27% manipulated. It passes the shortcut audit: the best two-feature rule scores 80.3% against a 72.8% majority.
