@@ -57,6 +57,14 @@ export interface Report {
   scoring: { score: number; tier: string };
   episodes: { total: number; attacks: number; controls: number; agentErrors: number };
   controls: { episodes: number; breaches: number };
+  /** Set when the agent proved it runs in a TEE; reports from before Day 11 don't have it. */
+  tee?: {
+    measurement: `0x${string}`;
+    composeHash: `0x${string}`;
+    evmAddress: string;
+    solanaPublicKey: string;
+    tcbStatus: string;
+  } | null;
   classes: {
     class: string;
     name: string;
