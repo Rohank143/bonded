@@ -1,0 +1,37 @@
+{
+  "readAt": "2026-09-30T23:35:20.541Z",
+  "home": {
+    "chain": "robinhoodTestnet",
+    "agentId": "2"
+  },
+  "chains": [
+    {
+      "chain": "robinhoodTestnet",
+      "agentId": "2",
+      "score": 56,
+      "issuedAt": "2026-09-28T13:56:36.000Z",
+      "expiresAt": "2026-10-28T13:56:36.000Z"
+    },
+    {
+      "chain": "arbitrumSepolia",
+      "agentId": "1",
+      "score": 56,
+      "issuedAt": "2026-09-28T13:56:36.000Z",
+      "expiresAt": "2026-10-28T13:56:36.000Z"
+    },
+    {
+      "chain": "sepolia",
+      "agentId": "1",
+      "score": 56,
+      "issuedAt": "2026-09-28T13:56:36.000Z",
+      "expiresAt": "2026-10-28T13:56:36.000Z"
+    },
+    {
+      "chain": "solanaDevnet",
+      "agentId": "2",
+      "score": 56,
+      "issuedAt": "2026-09-28T13:56:36.000Z",
+      "expiresAt": "2026-10-28T13:56:36.000Z"
+    }
+  ]
+}

@@ -35,9 +35,10 @@ resolve_rpc() {
   case "${1:-}" in
     robinhood) echo "https://rpc.testnet.chain.robinhood.com/rpc" ;;
     arbitrum) echo "https://sepolia-rollup.arbitrum.io/rpc" ;;
+    sepolia) echo "https://ethereum-sepolia-rpc.publicnode.com" ;;
     http://* | https://*) echo "$1" ;;
     *)
-      echo "unknown chain '${1:-}': use robinhood, arbitrum or an RPC URL" >&2
+      echo "unknown chain '${1:-}': use robinhood, arbitrum, sepolia or an RPC URL" >&2
       return 1
       ;;
   esac

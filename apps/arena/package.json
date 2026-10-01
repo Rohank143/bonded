@@ -25,6 +25,7 @@
     "dataset": "node dist/laya-dataset-cli.js",
     "sentinel-eval": "node dist/sentinel-eval-cli.js",
     "sentinel-stress": "node dist/stress-cli.js",
+    "scores": "node dist/scores-cli.js",
     "sentinel-contrast": "node dist/llm-contrast-cli.js"
   },
   "dependencies": {
@@ -32,6 +33,8 @@
     "@bonded/shared": "workspace:*",
     "viem": "^2.56.9",
     "yaml": "^2.9.1",
-    "zod": "^4.6.5"
+    "zod": "^4.6.5",
+    "@bonded/solana": "workspace:*",
+    "@solana/web3.js": "^1.98.4"
   }
 }
