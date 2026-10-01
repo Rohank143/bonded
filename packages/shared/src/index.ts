@@ -12,3 +12,4 @@ export * from "./schemas/attack.js";
 export * from "./schemas/attestation.js";
 export * from "./quote.js";
 export * from "./sentinel.js";
+export * from "./tee.js";
