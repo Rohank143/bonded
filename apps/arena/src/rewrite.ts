@@ -149,7 +149,7 @@ export async function rewriteRows(options: RewriteOptions) {
       if (!next) return;
       const [key, inputs] = next;
       const targets = inputs.map((i, n) => ({ i, n })).filter(({ i }) => i.tool !== "get_prices");
-      let outputs: unknown[] = [];
+      let outputs: unknown[];
       try {
         const response = await options.client.complete({
           model: options.model,
