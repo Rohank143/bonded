@@ -8,6 +8,18 @@ export type Connection = pg.PoolClient;
 export const json = (value: unknown): string =>
   JSON.stringify(value, (_, v: unknown) => (typeof v === "bigint" ? v.toString() : v));
 
+/** One agent's TEE row (migration 0004). */
+export interface TeeCheckRow {
+  status: string;
+  detail: string | null;
+  measurement: string | null;
+  ratedMeasurement: string | null;
+  evmAddress: string | null;
+  blockingStatus: string | null;
+  checkedAt: Date;
+  verifiedAt: Date | null;
+}
+
 /** Raised when a caller tries to queue an agent outside the configured set. */
 export class AgentNotConfiguredError extends Error {}
 
@@ -116,34 +128,74 @@ export class Database {
       }
     });
   }
-  /** Store the keeper's latest live TEE check; `verified_at` moves only when the check passed. */
+  /**
+   * Store the keeper's latest live TEE check. A definite failure (`mismatch`, `invalid`) sets
+   * `blocking_status`; a pass (`verified`, `unrated`) clears it; `unreachable` leaves it alone, so an
+   * outage can neither raise nor clear a block. The agent's key is recorded only from a pass.
+   */
   async recordTeeCheck(check: {
     agentId: string;
     status: string;
     detail?: string | undefined;
     measurement?: string | undefined;
+    ratedMeasurement?: string | undefined;
+    evmAddress?: string | undefined;
   }) {
     await this.pool.query(
-      `INSERT INTO tee_checks(agent_id,status,detail,measurement,checked_at,verified_at)
-       VALUES($1,$2,$3,$4,now(),CASE WHEN $2='verified' THEN now() END)
-       ON CONFLICT(agent_id) DO UPDATE SET status=$2,detail=$3,measurement=$4,checked_at=now(),
+      `INSERT INTO tee_checks(agent_id,status,detail,measurement,rated_measurement,evm_address,
+                              blocking_status,checked_at,verified_at)
+       VALUES($1,$2,$3,$4,$5,CASE WHEN $2='verified' THEN $6 END,
+              CASE WHEN $2 IN ('mismatch','invalid') THEN $2 END,now(),
+              CASE WHEN $2='verified' THEN now() END)
+       ON CONFLICT(agent_id) DO UPDATE SET status=$2,detail=$3,measurement=$4,rated_measurement=$5,
+         evm_address=CASE WHEN $2='verified' AND $6::text IS NOT NULL THEN $6 ELSE tee_checks.evm_address END,
+         blocking_status=CASE WHEN $2 IN ('mismatch','invalid') THEN $2
+                              WHEN $2 IN ('verified','unrated') THEN NULL
+                              ELSE tee_checks.blocking_status END,
+         checked_at=now(),
          verified_at=CASE WHEN $2='verified' THEN now() ELSE tee_checks.verified_at END`,
-      [check.agentId, check.status, check.detail ?? null, check.measurement ?? null],
+      [
+        check.agentId,
+        check.status,
+        check.detail ?? null,
+        check.measurement ?? null,
+        check.ratedMeasurement ?? null,
+        check.evmAddress ?? null,
+      ],
     );
   }
-  /** The latest live TEE check for `<chain id>:<agent id>`, if the keeper has made one. */
-  async teeCheck(agentId: string): Promise<
-    | {
-        status: string;
-        detail: string | null;
-        measurement: string | null;
-        checkedAt: Date;
-        verifiedAt: Date | null;
-      }
-    | undefined
-  > {
+  /**
+   * A rating was posted. With a TEE: record its key and measurement and clear any earlier block,
+   * since the new score replaces what the block was about. Without one: drop the row, so a block
+   * from an earlier TEE rating can't outlive the move back to operator custody.
+   */
+  async recordTeeRating(
+    rating: { agentId: string; ratedMeasurement: string; evmAddress: string } | { agentId: string },
+    c?: Connection,
+  ) {
+    const q = c ?? this.pool;
+    if (!("evmAddress" in rating)) {
+      await q.query("DELETE FROM tee_checks WHERE agent_id=$1", [rating.agentId]);
+      return;
+    }
+    await q.query(
+      `INSERT INTO tee_checks(agent_id,status,measurement,rated_measurement,evm_address,
+                              blocking_status,checked_at,verified_at)
+       VALUES($1,'verified',$2,$2,$3,NULL,now(),now())
+       ON CONFLICT(agent_id) DO UPDATE SET status='verified',detail=NULL,measurement=$2,
+         rated_measurement=$2,evm_address=$3,blocking_status=NULL,checked_at=now(),verified_at=now()`,
+      [rating.agentId, rating.ratedMeasurement, rating.evmAddress],
+    );
+  }
+  /** Remove an agent's TEE row, e.g. when its TEE is no longer configured. */
+  async clearTee(agentId: string) {
+    await this.pool.query("DELETE FROM tee_checks WHERE agent_id=$1", [agentId]);
+  }
+  /** The latest live TEE check for `<chain id>:<agent id>`, if there is one. */
+  async teeCheck(agentId: string): Promise<TeeCheckRow | undefined> {
     const r = await this.pool.query(
-      "SELECT status,detail,measurement,checked_at,verified_at FROM tee_checks WHERE agent_id=$1",
+      `SELECT status,detail,measurement,rated_measurement,evm_address,blocking_status,checked_at,verified_at
+       FROM tee_checks WHERE agent_id=$1`,
       [agentId],
     );
     const row = r.rows[0];
@@ -152,6 +204,9 @@ export class Database {
         status: row.status,
         detail: row.detail,
         measurement: row.measurement,
+        ratedMeasurement: row.rated_measurement,
+        evmAddress: row.evm_address,
+        blockingStatus: row.blocking_status,
         checkedAt: row.checked_at,
         verifiedAt: row.verified_at,
       }

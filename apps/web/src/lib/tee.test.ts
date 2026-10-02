@@ -52,6 +52,16 @@ describe("liveCheckView", () => {
     expect(liveCheckView("verified").tone).toBe("safe");
   });
 
+  it("keeps an outstanding failure red while the agent is offline", () => {
+    expect(liveCheckView("unreachable", "mismatch")).toMatchObject({
+      label: "changed",
+      tone: "breach",
+    });
+    expect(liveCheckView("unreachable", "invalid").label).toBe("failed");
+    expect(liveCheckView("unreachable", null).label).toBe("offline");
+    expect(liveCheckView("verified", null).tone).toBe("safe");
+  });
+
   it("says new cover is paused when it is", () => {
     expect(liveCheckView("mismatch").hint).toMatch(/new cover is paused/);
     expect(liveCheckView("unreachable").hint).not.toMatch(/paused/);

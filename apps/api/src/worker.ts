@@ -187,12 +187,28 @@ async function runLocked(
           signed.signature,
         ]));
       await check();
-      await db.withLease(job, (c) =>
-        c.query(
+      const reportTee = (
+        await db.pool.query("SELECT report->'tee' AS tee FROM ratings WHERE id=$1", [job.id])
+      ).rows[0]?.tee as { evmAddress?: string } | null;
+      await db.withLease(job, async (c) => {
+        await c.query(
           "INSERT INTO attestations(id,agent_id,signed,tx_hash) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",
           [job.id, row.agent_id, json(signed), hash],
-        ),
-      );
+        );
+        // The posted score replaces whatever an earlier TEE failure was about (ADR-013): record its
+        // key and measurement, or drop the TEE row if this rating has no TEE.
+        const agentKey = `${chain.deployment.chainId}:${row.onchain_id}`;
+        if (reportTee?.evmAddress)
+          await db.recordTeeRating(
+            {
+              agentId: agentKey,
+              ratedMeasurement: signed.attestation.teeMeasurement,
+              evmAddress: reportTee.evmAddress,
+            },
+            c,
+          );
+        else await db.recordTeeRating({ agentId: agentKey }, c);
+      });
     }
     await db.finish(job);
   } catch (error) {

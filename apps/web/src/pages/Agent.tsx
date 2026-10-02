@@ -136,7 +136,10 @@ export function Agent() {
                   <dt className="text-muted">TEE live check</dt>
                   <dd>
                     {(() => {
-                      const view = liveCheckView(liveCheck.data?.status);
+                      const view = liveCheckView(
+                        liveCheck.data?.status,
+                        liveCheck.data?.blockingStatus,
+                      );
                       return (
                         <>
                           <Badge tone={view.tone}>{view.label}</Badge>{" "}

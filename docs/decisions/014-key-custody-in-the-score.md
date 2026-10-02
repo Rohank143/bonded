@@ -21,6 +21,8 @@ Add one risk group to the score, **Key custody (operator-server compromise)**, w
 
 `rateAgent` passes `custody: "tee"` only when the TEE evidence verified, and `"operator"` otherwise. `scoreRating` without a `custody` argument leaves the term out, as before, so every earlier call and test is unchanged.
 
+**The discount is only earned for a vault run by the TEE's key.** The TEE proves its own key; it says nothing about which key operates a given vault. So the quote API (ADR-013, decision 3) refuses new cover for an agent with a TEE measurement unless `vault.agent()` is the TEE's attested EVM address. An operator who runs the vault with some other key gets no TEE cover, not a TEE price. The rating itself can't check this, because it rates the agent in the Arena's sandbox vault.
+
 The discount reaches buyers without any other change: cover quotes are priced from the attestation's expected loss, so a TEE-verified rating gives a lower premium.
 
 ## Effect on the demo agents
@@ -35,6 +37,9 @@ Scripted hardened agent in Enforce mode, 5 runs per seed:
 With one run per seed: 80 (AA, 2.82%) against 83 (AA, 2.56%). The plan's worked example (96, 1.2%) is the TEE case. Scores already posted on-chain are not changed: they update when the agent is re-rated.
 
 ## Limits
+
+- **Nothing operates a vault with the TEE's key yet.** The TEE service has no route that signs or sends transactions, so the discount can be earned only by a vault whose agent key is set to the TEE's address (`rotateAgent`, guardian only) and that is then operated by something that holds that key. Building that is not part of Day 11.
+- **A later rotation** is caught for new cover only (ADR-013, decision 5).
 
 - **λ is a guess.** It is one constant, `KEY_CUSTODY_GROUP.lambda`. Change it if there is better incident data; the effect scales with it. At 0.02 the whole TEE discount is about 0.2 percentage points of expected loss in Enforce mode and about 0.7 in Monitor mode.
 - **b = 0 for a TEE is an assumption.** Hardware attacks on TDX, bugs in the agent code that leak the key, and trust in Phala and Intel are not modelled.

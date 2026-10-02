@@ -37,8 +37,9 @@ export interface LiveCheckView {
  * How the keeper's latest live check reads on the profile. Only a definite failure is red: an
  * unreachable agent is shown as such, since a stopped VM is not a broken one.
  */
-export function liveCheckView(status: string | undefined): LiveCheckView {
-  switch (status) {
+export function liveCheckView(status: string | undefined, blocking?: string | null): LiveCheckView {
+  // A failure that is still outstanding stays red while the agent is offline: an outage doesn't clear it.
+  switch (blocking ?? status) {
     case "verified":
       return { label: "verified", tone: "safe", hint: "the running TEE is the one that was rated" };
     case "mismatch":

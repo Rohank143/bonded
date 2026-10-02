@@ -43,8 +43,11 @@ export interface ScoreRecord {
 /** The keeper's latest live check of a TEE-hosted agent (docs/TEE.md, "Live checks"). */
 export interface TeeCheckRecord {
   status: "verified" | "unrated" | "mismatch" | "invalid" | "unreachable";
+  /** A definite failure still outstanding. It survives an offline agent (ADR-013). */
+  blockingStatus: "mismatch" | "invalid" | null;
   detail: string | null;
   measurement: string | null;
+  evmAddress: string | null;
   checkedAt: string;
   verifiedAt: string | null;
 }

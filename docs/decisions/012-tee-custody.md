@@ -38,6 +38,9 @@ Nothing the agent says is trusted. The Arena throws, and the rating fails, unles
 3. The event log replays to the quote's RTMR0 to RTMR3 (`new = sha384(old || digest)`). dstack's guest agent leaves `digest` empty for runtime events (the RTMR3 ones), so for those the Arena computes it as `sha384(type (u32 LE) ":" event ":" payload)`. The replay must then reach the quote's RTMR3, so the hardware binds each event's name and payload.
 4. The log has exactly one `compose-hash` event and its payload equals the compose hash the operator published for this deployment.
 5. The evidence's `codeHash` equals the code being rated.
+6. The `os-image-hash` event (RTMR3, so measured by the hardware) names an approved production dstack OS image (`APPROVED_OS_IMAGES`). A development image allows SSH into the VM, which lets the operator read the agent's keys, so it is refused. A new production image is added to that list in a reviewed change.
+
+Evidence is text the agent controls, so the event log is parsed strictly (register 0 to 3, unsigned 32-bit event type, hex digests and payloads of the right length). Anything malformed, or any error while processing evidence, is a verification failure. Only failing to get evidence at all (no answer, a gateway error, Intel's data not fetching) is `TeeUnavailableError`.
 
 There is no fallback. A configured TEE that doesn't verify fails the rating job. It never quietly produces an unmeasured score.
 
@@ -64,5 +67,7 @@ Derived by `getKey` from the app's identity: the same compose hash gets the same
 - **Trust in the attester.** The chain trusts the Arena's attester to have verified the quote. Intel and the measurement are trusted for the TEE claims, and the attester is trusted to have checked them.
 - **Verified on real hardware.** On 2026-10-02 a real quote from a Phala Cloud TDX VM (dstack 0.5.9, production OS, Intel TCB `UpToDate`) passed every check above, and a rating with it posted a real measurement. The captured evidence is a regression test. This confirms the digest rule, which the first version had assumed.
 - **Live re-checking** is ADR-013. The proof is no longer only a snapshot.
-- **Dev OS images are not rejected.** A dev image allows SSH into the VM, which defeats key custody. Today the runbook says to deploy with `--no-dev-os`. The OS image hash is in the quote's measurements, so the Arena could pin the allowed production image hash. That is future work, and until then the badge depends on the operator following the runbook.
+- **Dev OS images are refused**, by check 6. Deploying with `--no-dev-os` is still the way to get an approved one.
+- **What is attested is the deployed identity service, not the rated implementation.** `CODE_HASH` is a label the operator bakes into the image. The hardware proves that exact image (by digest) is running with that label and holds those keys. It does not prove the label equals the hash of the implementation the Arena rated in its sandbox: the Arena rates its own copy of the hardened agent, and the two are tied only by the operator's `codeHash`. Closing that needs a reproducible build that derives the label from the rated agent's source; it is not built.
+- **The service doesn't run the agent.** It serves identity and quotes. It has no route that submits transactions, so no vault is operated by the TEE's key today. Custody is real (the key can't be extracted) but only matters for a vault whose execution key is that key; see ADR-014 for how that is enforced.
 - **The simulator.** dstack's simulator signs with a fixed development key, so its quotes can't pass Intel verification. The Arena only accepts real quotes, and `TEE_BACKEND=mock` can never earn a badge.

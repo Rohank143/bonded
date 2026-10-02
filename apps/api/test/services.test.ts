@@ -80,32 +80,128 @@ it("health, authentication, input validation and missing resources", async () =>
   expect((await post("/quotes", { coverAmount: "-1" })).status).toBe(400);
   expect((await app.request(`/arena/runs/${randomUUID()}`)).status).toBe(404);
 });
-it("stops new quotes after a definite TEE failure, but not for an unreachable TEE", async () => {
-  const key = `${chain.deployment.chainId}:${vault.agentId}`;
-  const input = {
-    agentId: vault.agentId.toString(),
-    vault: vault.address,
-    coverAmount: usd(20000).toString(),
+it("prices TEE custody only for a vault run by the TEE's key, and stops quotes after a definite failure", async () => {
+  const d = chain.deployment;
+  const agentId = vault.agentId.toString();
+  const key = `${d.chainId}:${agentId}`;
+  const measurement = `0x${"5e".repeat(32)}` as const;
+  const vaultAgent = await chain.read.readContract({
+    address: vault.address,
+    abi: mandateVaultAbi,
+    functionName: "agent",
+  });
+  const other = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+  const input = { agentId, vault: vault.address, coverAmount: usd(20000).toString() };
+  const refusal = async (body = input) => {
+    const response = await post("/quotes", body);
+    return {
+      status: response.status,
+      error: ((await response.json()) as { error?: string }).error,
+    };
   };
-  // Nothing recorded, then an unreachable VM, then a good check: all get a quote.
-  for (const status of [undefined, "unreachable", "unrated", "verified"]) {
-    if (status) await pg.db.recordTeeCheck({ agentId: key, status });
-    expect((await post("/quotes", input)).status).toBe(201);
-  }
-  for (const status of ["mismatch", "invalid"]) {
-    await pg.db.recordTeeCheck({ agentId: key, status, detail: "test" });
-    const refused = await post("/quotes", input);
-    expect(refused.status).toBe(409);
-    expect(((await refused.json()) as { error: string }).error).toMatch(/TEE no longer matches/);
-  }
-  const shown = await app.request(`/agents/${vault.agentId}/tee`);
-  expect(shown.status).toBe(200);
-  expect(await shown.json()).toMatchObject({ status: "invalid", detail: "test" });
-  expect((await app.request("/agents/999/tee")).status).toBe(404);
-  // A later good check lifts it.
-  await pg.db.recordTeeCheck({ agentId: key, status: "verified" });
+  // Repost the score with a TEE measurement, then (at the end) without one, as the other tests expect.
+  const repost = async (teeMeasurement: `0x${string}`) => {
+    const current = await chain.read.readContract({
+      address: d.registry,
+      abi: bondedRegistryAbi,
+      functionName: "scoreOf",
+      args: [vault.agentId],
+    });
+    const issuedAt = Number(current.issuedAt) + 1;
+    const signed = await signAttestation(
+      {
+        agentId,
+        score: 96,
+        expectedLossBps: 30,
+        mandateHash: mandateHash(vault.mandate),
+        reportHash: `0x${"ab".repeat(32)}`,
+        codeHash: `0x${"cd".repeat(32)}`,
+        teeMeasurement,
+        modelFamily: "unknown",
+        issuedAt,
+        expiresAt: issuedAt + 86400,
+      },
+      { chainId: d.chainId, registry: d.registry, attesterKey: ANVIL_KEYS.deployer },
+    );
+    await chain.send(d.registry, bondedRegistryAbi, "postScore", [
+      attestationMessage(signed.attestation),
+      signed.signature,
+    ]);
+  };
+
+  await repost(measurement);
+  // No key on record for this score yet.
+  expect(await refusal()).toMatchObject({ status: 409 });
+  expect((await refusal()).error).toMatch(/not on record/);
+
+  // Recorded at rating: the vault runs on a different key than the TEE's, so no discount.
+  await pg.db.recordTeeRating({ agentId: key, ratedMeasurement: measurement, evmAddress: other });
+  expect((await refusal()).error).toMatch(/execution key is not the TEE agent's attested key/);
+
+  // The vault's key is the TEE's key: quoted. A leading zero is the same agent, not a way round.
+  await pg.db.recordTeeRating({
+    agentId: key,
+    ratedMeasurement: measurement,
+    evmAddress: vaultAgent,
+  });
   expect((await post("/quotes", input)).status).toBe(201);
-  await pg.db.pool.query("DELETE FROM tee_checks WHERE agent_id=$1", [key]);
+  expect((await post("/quotes", { ...input, agentId: `0${agentId}` })).status).toBe(201);
+
+  // A definite failure blocks, and the same agent under a padded id is blocked too.
+  await pg.db.recordTeeCheck({
+    agentId: key,
+    status: "mismatch",
+    detail: "test",
+    ratedMeasurement: measurement,
+  });
+  for (const id of [agentId, `0${agentId}`, `000${agentId}`]) {
+    const blocked = await refusal({ ...input, agentId: id });
+    expect(blocked.status).toBe(409);
+    expect(blocked.error).toMatch(/TEE no longer matches/);
+  }
+
+  // An outage can't clear it. A pass can.
+  await pg.db.recordTeeCheck({
+    agentId: key,
+    status: "unreachable",
+    ratedMeasurement: measurement,
+  });
+  expect((await refusal()).error).toMatch(/TEE no longer matches/);
+  const shown = (await (await app.request(`/agents/${agentId}/tee`)).json()) as {
+    status: string;
+    blockingStatus: string;
+  };
+  expect(shown).toMatchObject({ status: "unreachable", blockingStatus: "mismatch" });
+  expect((await app.request(`/agents/0${agentId}/tee`)).status).toBe(200);
+  expect((await app.request("/agents/999/tee")).status).toBe(404);
+  await pg.db.recordTeeCheck({
+    agentId: key,
+    status: "verified",
+    ratedMeasurement: measurement,
+    evmAddress: vaultAgent,
+  });
+  expect((await post("/quotes", input)).status).toBe(201);
+
+  // A failure recorded against an older score doesn't block a newer one.
+  await pg.db.recordTeeCheck({
+    agentId: key,
+    status: "invalid",
+    ratedMeasurement: `0x${"11".repeat(32)}`,
+  });
+  expect((await refusal()).error).toMatch(/not on record/);
+  await pg.db.recordTeeRating({
+    agentId: key,
+    ratedMeasurement: measurement,
+    evmAddress: vaultAgent,
+  });
+  expect((await post("/quotes", input)).status).toBe(201);
+
+  // Back to operator custody: a rating with no TEE drops the row, and nothing blocks.
+  await pg.db.recordTeeCheck({ agentId: key, status: "invalid", ratedMeasurement: measurement });
+  await repost(`0x${"00".repeat(32)}`);
+  await pg.db.recordTeeRating({ agentId: key });
+  expect(await pg.db.teeCheck(key)).toBeUndefined();
+  expect((await post("/quotes", input)).status).toBe(201);
 });
 it("rejects capacity, signs an API quote, binds it and automatically pays a breach exactly once", async () => {
   const input = {

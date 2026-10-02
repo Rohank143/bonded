@@ -32,10 +32,6 @@
       ],
       "destinations": []
     },
-    "codeHash": "0xd4f47556cb3c40c3547ea51e0152be194b98c879ddb6933d2d7f8229233185cc",
-    "tee": {
-      "url": "https://e4160e590cd56ae4412244fc6318e26ae3a8338e-8080.dstack-pha-prod5.phala.network",
-      "composeHash": "0x0205e8388bdc2234aae96b01537fc79226d1144e41876c95e9bf49c8e32f9e19"
-    }
+    "codeHash": "0xd4f47556cb3c40c3547ea51e0152be194b98c879ddb6933d2d7f8229233185cc"
   }
 ]

@@ -39,10 +39,3 @@ it("an agent's TEE entry needs an https URL and a compose hash, and nothing else
   ])
     expect(() => agentConfig.parse({ ...base, tee: bad })).toThrow();
 });
-
-it("the deployed hardened agent runs in the TEE it was verified against", () => {
-  const configs = z.array(agentConfig).parse(JSON.parse(read("config/agents.46630.json")));
-  const hardened = configs.find((c) => c.kind === "hardened");
-  expect(hardened?.tee?.url).toMatch(/^https:\/\/[0-9a-f]{40}-8080\./);
-  expect(hardened?.tee?.composeHash).toMatch(/^0x[0-9a-f]{64}$/);
-});

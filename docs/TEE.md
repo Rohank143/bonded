@@ -85,13 +85,22 @@ The Arena sends a random challenge, verifies the quote with Intel's collateral, 
 
 **6. What the first real deployment showed.** The Arena has been run against a real deployment (2026-10-02, dstack 0.5.9). Two things differed from the spec I started from, both fixed: the guest agent leaves `digest` empty for runtime events, so the Arena computes it, and Phala's API shows the manifest with extra null fields. A real quote, with its event log, is saved as a test fixture (`apps/arena/test/fixtures/tee-live.json`).
 
-**7. Make it live.** Put the TEE in the agent's service config, so API rating jobs verify it too:
+**7. Bind a vault to the TEE's key, then make it live.** The TEE proves its own key. For the score's TEE discount to apply, the vault being insured must be run by that key:
+
+- the vault's execution key (`vault.agent()`) must equal the `evmAddress` from `curl <url>/health`. The vault's guardian sets it with `rotateAgent(address)`, or you create a new vault with that address as the agent (`MandateVaultFactory.createVault`);
+- the API refuses new cover for an agent with a TEE measurement unless that holds (ADR-013, decision 3).
+
+**Do not do this to agent 2.** It is the Gate 1 demo vault, and rotating its key would break its scripted live flow. Use a separate demo agent and vault for TEE custody.
+
+The TEE service doesn't operate a vault yet (it has no route that sends transactions), so a TEE-bound vault can be quoted and rated but is not traded by the TEE. ADR-012 and ADR-014 say so.
+
+Then put the TEE in that agent's service config (`config/agents.46630.json`), so API rating jobs verify it:
 
 ```json
 { "kind": "hardened", "codeHash": "0x…", "mandate": { "…": "…" }, "tee": { "url": "https://<that-url>", "composeHash": "0x…" } }
 ```
 
-Then run a rating through the API. `scripts/rate-live-tee.sh` does it: it asks for the API token with no echo, starts the VM, runs the rating, prints the result and **always stops the VM when it ends**, so the VM bills only while the rating runs. It works only after this config is merged and the API has redeployed. When the score is posted, the agent's page shows the TEE badge. Cross-chain posting copies the measurement to the other chains' registries.
+Run a rating through the API with `scripts/rate-live-tee.sh <agent id>`: it asks for the API token with no echo and never puts it in a process argument, starts the VM, runs the rating, prints the result and **always stops the VM when it ends**, so the VM bills only while the rating runs. It works only after this code is merged and the API has redeployed. When the score is posted, the agent's page shows the TEE badge.
 
 ## What the TEE does to the price (ADR-014)
 
@@ -101,8 +110,8 @@ A rating now includes a key-custody term. It is an assumption, not a measurement
 
 The keeper challenges every agent that has a `tee` entry every ten minutes (`TEE_CHECK_MS`, default 600000) and compares the live measurement with the one in its on-chain score. The profile shows the result as "TEE live check".
 
-- **Offline** (grey): the VM is stopped or not answering. Nothing is blocked. A stopped VM is not a broken one, and it can't leak a key.
-- **Changed** or **failed** (red): the running TEE is not the one that was rated, or its proof doesn't verify. The API stops signing new cover quotes for that agent until it passes again or is re-rated. Cover already bound is not touched.
+- **Offline** (grey): the VM is stopped or not answering. Nothing is blocked because of it. A stopped VM is not a broken one, and it can't leak a key.
+- **Changed** or **failed** (red): the running TEE is not the one that was rated, or its proof doesn't verify. The API stops signing new cover quotes for that agent until a check passes again or the agent is re-rated. An outage doesn't clear it. Cover already bound is not touched.
 
 ## Cost, and pausing it
 
@@ -119,7 +128,7 @@ phala cvms start bonded-tee-agent
 ```
 
 - Tested on 2026-10-02: after a stop and start the app has the same URL, the same session keys and the same measurement, and its quote verifies again. Allow a couple of minutes after `start` before rating.
-- While it is stopped, API rating jobs for the hardened agent fail by design (no unmeasured score). Start it before running one.
+- While it is stopped, API rating jobs for an agent with a TEE entry fail by design (no unmeasured score). Start it before running one, or use the script.
 - **Deleting** it stops the disk charge too, but a new deployment gets a new app id, so a new URL and new keys. Update the agent's `tee` entry and re-rate.
 - Phala's pricing page mentions $20 of free credit for CVM usage after account verification. Check whether your account has it.
 

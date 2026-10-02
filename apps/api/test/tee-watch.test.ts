@@ -1,6 +1,7 @@
 import { TeeUnavailableError, TeeVerificationError, type VerifiedTee } from "@bonded/arena";
 import { describe, expect, it } from "vitest";
-import { type Attest, checkAgentTee, QUOTE_BLOCKING } from "../src/tee-watch.js";
+import type { TeeCheckRow } from "@bonded/db";
+import { type Attest, checkAgentTee, QUOTE_BLOCKING, teeQuoteBlock } from "../src/tee-watch.js";
 
 const hash = (n: number) => `0x${n.toString(16).padStart(64, "0")}` as const;
 const RATED = hash(5);
@@ -26,6 +27,26 @@ describe("checkAgentTee", () => {
     expect(result).toMatchObject({ status: "mismatch", measurement: hash(6) });
   });
 
+  it("flags a verified TEE whose key is not the one recorded for the rating", async () => {
+    const attest = (async () => ({
+      measurement: RATED,
+      evmAddress: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+    })) as unknown as Attest;
+    const other = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC";
+    const swapped = await checkAgentTee(tee, hash(7), RATED, attest, other);
+    expect(swapped).toMatchObject({ status: "mismatch" });
+    expect(swapped.detail).toMatch(/key/);
+    const same = await checkAgentTee(
+      tee,
+      hash(7),
+      RATED,
+      attest,
+      "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+    );
+    expect(same.status).toBe("verified");
+    expect(same.evmAddress).toBe("0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
+  });
+
   it("calls it unrated when the score has no TEE measurement yet", async () => {
     expect(await check(live(hash(6)), ZERO)).toEqual({ status: "unrated", measurement: hash(6) });
   });
@@ -38,7 +59,12 @@ describe("checkAgentTee", () => {
   it("calls an agent or Intel data that can't be reached unreachable", async () => {
     const result = await check(fails(new TeeUnavailableError("the TEE agent answered 502")));
     expect(result).toEqual({ status: "unreachable", detail: "the TEE agent answered 502" });
-    expect((await check(fails(new Error("boom")))).status).toBe("unreachable");
+  });
+
+  it("calls anything else that goes wrong with evidence a failure, never an outage", async () => {
+    // A hostile agent must not be able to make itself "unreachable" and so keep getting quotes.
+    const result = await check(fails(new TypeError("Cannot read properties of null")));
+    expect(result).toEqual({ status: "invalid", detail: "the check failed unexpectedly" });
   });
 
   it("passes the agent's code hash and compose hash to the verifier", async () => {
@@ -54,5 +80,50 @@ describe("checkAgentTee", () => {
 describe("what stops quotes", () => {
   it("is only a definite failure, never an unreachable or unrated agent", () => {
     expect([...QUOTE_BLOCKING].sort()).toEqual(["invalid", "mismatch"]);
+  });
+});
+
+describe("teeQuoteBlock", () => {
+  const KEY = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+  const row = (over: Partial<TeeCheckRow> = {}): TeeCheckRow => ({
+    status: "verified",
+    detail: null,
+    measurement: RATED,
+    ratedMeasurement: RATED,
+    evmAddress: KEY,
+    blockingStatus: null,
+    checkedAt: new Date(),
+    verifiedAt: new Date(),
+    ...over,
+  });
+  const block = (r: TeeCheckRow | undefined, vaultAgent = KEY, onchain = RATED) =>
+    teeQuoteBlock({ onchainMeasurement: onchain, vaultAgent, row: r });
+
+  it("ignores everything for an agent with no TEE measurement", () => {
+    expect(block(undefined, KEY, ZERO)).toBeUndefined();
+    expect(block(row({ blockingStatus: "invalid", evmAddress: null }), KEY, ZERO)).toBeUndefined();
+  });
+
+  it("allows a vault run by the TEE's key with no failure, ignoring address case", () => {
+    expect(block(row())).toBeUndefined();
+    expect(block(row(), KEY.toLowerCase())).toBeUndefined();
+  });
+
+  it("refuses when the key isn't on record for this very score", () => {
+    expect(block(undefined)).toMatch(/not on record/);
+    expect(block(row({ evmAddress: null }))).toMatch(/not on record/);
+    expect(block(row({ ratedMeasurement: hash(6) }))).toMatch(/not on record/);
+  });
+
+  it("refuses when the vault's execution key is not the TEE's key, including after a rotation", () => {
+    expect(block(row(), "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC")).toMatch(
+      /execution key is not the TEE agent's attested key/,
+    );
+  });
+
+  it("refuses on an outstanding definite failure, and not on an outage", () => {
+    for (const blockingStatus of ["mismatch", "invalid"])
+      expect(block(row({ blockingStatus }))).toMatch(/no longer matches/);
+    expect(block(row({ status: "unreachable", blockingStatus: null }))).toBeUndefined();
   });
 });

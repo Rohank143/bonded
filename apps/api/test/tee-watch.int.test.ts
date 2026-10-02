@@ -93,6 +93,51 @@ it("records an unreachable agent without touching the last good time", async () 
   expect(down?.verifiedAt?.getTime()).toBe(good?.verifiedAt?.getTime());
 });
 
+it("keeps a definite failure through an outage, and a pass clears it", async () => {
+  await runTeeChecks(pg.db, chain, live(hash(6)));
+  expect((await pg.db.teeCheck(key))?.blockingStatus).toBe("mismatch");
+  await runTeeChecks(pg.db, chain, async () => {
+    const { TeeUnavailableError } = await import("@bonded/arena");
+    throw new TeeUnavailableError("down");
+  });
+  const down = await pg.db.teeCheck(key);
+  expect(down).toMatchObject({ status: "unreachable", blockingStatus: "mismatch" });
+  await runTeeChecks(pg.db, chain, live(RATED));
+  expect((await pg.db.teeCheck(key))?.blockingStatus).toBeNull();
+});
+
+it("records the rated measurement and the key it saw, and flags a different key", async () => {
+  const other = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC";
+  const withKey = (evmAddress: string) =>
+    (async () => ({ measurement: RATED, evmAddress }) as unknown as VerifiedTee) as Attest;
+  await pg.db.clearTee(key);
+  await runTeeChecks(pg.db, chain, withKey(other));
+  expect(await pg.db.teeCheck(key)).toMatchObject({
+    status: "verified",
+    ratedMeasurement: RATED,
+    evmAddress: other,
+  });
+  // The key recorded for this rating is now the reference: a different one is a mismatch.
+  await runTeeChecks(pg.db, chain, withKey("0x70997970C51812dc3A010C7d01b50e0d17dc79C8"));
+  expect(await pg.db.teeCheck(key)).toMatchObject({
+    status: "mismatch",
+    blockingStatus: "mismatch",
+    evmAddress: other,
+  });
+});
+
+it("skips agents with no TEE configured and clears their old failure", async () => {
+  await pg.db.recordTeeCheck({ agentId: key, status: "invalid", ratedMeasurement: RATED });
+  await pg.db.reconcileAgents(sandbox.deployment.chainId, [
+    {
+      agentId: vault.agentId.toString(),
+      config: { kind: "hardened", mandate: vault.mandate, codeHash: CODE },
+    },
+  ]);
+  expect(await runTeeChecks(pg.db, chain, live(RATED))).toBe(0);
+  expect(await pg.db.teeCheck(key)).toBeUndefined();
+});
+
 it("skips agents with no TEE configured and agents that are disabled", async () => {
   const d = sandbox.deployment;
   await pg.db.reconcileAgents(d.chainId, [
