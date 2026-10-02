@@ -40,6 +40,16 @@ Plan reference: docs/PLAN.md Section 20, Day 11, and Section 12. Decisions: [ADR
 - A definite failure (`mismatch`, `invalid`) stops the API signing new cover quotes for that agent, and an outage doesn't clear it. An unreachable agent that has never failed is not blocked, so pausing the VM to save cost never locks the agent out of cover. New cover also needs the vault's execution key to be the TEE's key.
 - `TeeUnavailableError` now separates "could not get the evidence" (a stopped VM, a gateway error, Intel's data not fetched) from "the evidence failed verification".
 
+## TEE demo agent on Robinhood testnet (2026-10-02)
+
+Created with `pnpm tee:seed`, from the founder's deployer wallet (`0xd42F…A841`, also the vault's guardian and the agent's owner):
+
+- Agent **3**, vault `0x5E554c456e26bEBa46e742742CdE9CAd9fC79dE1`, Enforce mode, $10,000 operator bond, $50,000 deposited.
+- The vault's execution key is the TEE's key `0x239C0eD31e4e3313C06e8eD5C042dA6cB4c817BC` (checked on-chain with `vault.agent()` after creation).
+- Transactions: register `0xa99d2c96…b437`, createVault `0xb6ac4bbb…c5de`, stake `0x54ecb232…b8b0`, deposit `0x9d4a804e…e8ef`.
+- Agent 3's entry (with its `tee` block) is in `config/agents.46630.json`. Agent 2 is unchanged: it stays the Gate 1 breach demo.
+- Not yet rated: the badge appears after `scripts/rate-live-tee.sh 3` runs against the redeployed API.
+
 ## Not done
 
 - **The badge on the live testnet.** It needs a demo agent whose vault is run by the TEE's key and a rating job for it through the deployed API (docs/TEE.md, step 7). Nothing was posted to Robinhood testnet from here.

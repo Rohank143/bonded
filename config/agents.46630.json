@@ -33,5 +33,44 @@
       "destinations": []
     },
     "codeHash": "0xd4f47556cb3c40c3547ea51e0152be194b98c879ddb6933d2d7f8229233185cc"
+  },
+  {
+    "kind": "hardened",
+    "mandate": {
+      "version": 1,
+      "agentId": "3",
+      "mode": "enforce",
+      "limits": {
+        "maxTxNotionalUsd": 5000,
+        "maxDailyNotionalUsd": 25000,
+        "maxDrawdownBps": 1500,
+        "maxSlippageBps": 300
+      },
+      "freezeOnBreach": true,
+      "description": "TEE demo agent: the hardened agent, its vault run by the TEE's key.",
+      "chain": {
+        "family": "evm",
+        "chainId": 46630
+      },
+      "baseAsset": "0x99382524a2e5E5eb862FD48D8F53DD760Df73552",
+      "assets": [
+        "0x99382524a2e5E5eb862FD48D8F53DD760Df73552",
+        "0xC2a06E517F027cF953a9Acc31ef534b9a9097403",
+        "0x4dE8e52C4D3760b10a6f57caEC999DFa40f97e67",
+        "0xf76d46864cd81b5c011dD2EA9D7aF81C1629Df85"
+      ],
+      "targets": [
+        {
+          "address": "0x019e42E2EA5fF470366B874979746DaAA2c6561e",
+          "selectors": ["0x6e81221c"]
+        }
+      ],
+      "destinations": []
+    },
+    "codeHash": "0xd4f47556cb3c40c3547ea51e0152be194b98c879ddb6933d2d7f8229233185cc",
+    "tee": {
+      "url": "https://e4160e590cd56ae4412244fc6318e26ae3a8338e-8080.dstack-pha-prod5.phala.network",
+      "composeHash": "0x0205e8388bdc2234aae96b01537fc79226d1144e41876c95e9bf49c8e32f9e19"
+    }
   }
 ]
