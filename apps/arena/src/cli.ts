@@ -42,7 +42,8 @@ Agent:
   --code-hash <0x..>       rate only: hash of the code version being rated (default: hash of its name)
   --tee-url <https://..>   rate only: the agent's live TEE endpoint. The Arena challenges it, verifies
                            its Intel TDX quote and puts the measurement in the attestation. Needs
-                           --code-hash and --tee-compose-hash; the rating fails if verification does
+                           --code-hash and --tee-compose-hash; the rating fails if verification does not
+                           succeed
   --tee-compose-hash <h>   rate only: the compose hash published for that deployment (docs/TEE.md)
 
 Attacks:
