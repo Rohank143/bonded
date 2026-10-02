@@ -1,4 +1,4 @@
-import type { AddressInfo } from "node:net";
+import { connect, type AddressInfo } from "node:net";
 import { TeeEvidence, teeReportData } from "@bonded/shared";
 import { bytesToHex } from "viem";
 import { afterEach, describe, expect, it } from "vitest";
@@ -116,6 +116,26 @@ describe("the HTTP server", () => {
     );
     expect((await fetch(`${base}/sign`)).status).toBe(404);
     expect((await fetch(`${base}/key`)).status).toBe(404);
+  });
+
+  it("answers a malformed request target with 400 instead of crashing", async () => {
+    const { base } = await serve();
+    const { port } = new URL(base);
+    // Node's parser accepts this target and `new URL` rejects it, so it used to throw in the handler.
+    for (const target of ["//[", "//%", "http://[::1"]) {
+      const reply = await new Promise<string>((resolve, reject) => {
+        const socket = connect(Number(port), "127.0.0.1", () =>
+          socket.write(`GET ${target} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n`),
+        );
+        let data = "";
+        socket.on("data", (chunk) => (data += chunk));
+        socket.on("end", () => resolve(data));
+        socket.on("error", reject);
+      });
+      expect(reply).toMatch(/^HTTP\/1\.1 400/);
+    }
+    // And the server is still up.
+    expect((await fetch(`${base}/health`)).status).toBe(200);
   });
 
   it("never returns a private key", async () => {
