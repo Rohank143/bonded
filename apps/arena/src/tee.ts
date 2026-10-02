@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { getCollateralAndVerify } from "@phala/dcap-qvl";
+import { getCollateral, PHALA_PCCS_URL, Quote, verify } from "@phala/dcap-qvl";
 import {
   stripHexPrefix,
   TeeEvidence,
@@ -32,9 +32,27 @@ export type QuoteVerifier = (quote: Uint8Array) => Promise<QuoteFacts>;
 
 const toHex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");
 
-/** The real verifier: Intel's certificate chain and revocation data, fetched through Phala's PCCS. */
+/**
+ * The real verifier: Intel's certificate chain and revocation data, fetched through Phala's PCCS.
+ * A malformed quote, or one that fails verification against that data, is a verification
+ * failure. Failing to fetch the data throws `TeeUnavailableError`, because it says nothing about
+ * the quote.
+ */
 export const verifyQuoteWithIntel: QuoteVerifier = async (quote) => {
-  const verified = await getCollateralAndVerify(quote);
+  try {
+    Quote.parse(Buffer.from(quote));
+  } catch {
+    throw new TeeVerificationError("the quote is malformed");
+  }
+  let collateral;
+  try {
+    collateral = await getCollateral(PHALA_PCCS_URL, Buffer.from(quote));
+  } catch (error) {
+    throw new TeeUnavailableError(
+      `Intel's collateral could not be fetched: ${error instanceof Error ? error.message : "error"}`,
+    );
+  }
+  const verified = verify(Buffer.from(quote), collateral, Date.now() / 1000);
   const td = verified.report.asTd10() ?? verified.report.asTd15()?.base;
   if (!td) throw new TeeVerificationError("the quote is not from an Intel TDX machine");
   return {
@@ -55,6 +73,18 @@ export class TeeVerificationError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "TeeVerificationError";
+  }
+}
+
+/**
+ * The evidence could not be obtained: the agent didn't answer (a stopped VM, a network error, a
+ * gateway error) or Intel's data couldn't be fetched. It says nothing about whether the agent is
+ * what it claims, which is why it is not a `TeeVerificationError`.
+ */
+export class TeeUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TeeUnavailableError";
   }
 }
 
@@ -187,7 +217,7 @@ export async function verifyTeeEvidence(
   try {
     facts = await verify(Buffer.from(stripHexPrefix(evidence.quote), "hex"));
   } catch (error) {
-    if (error instanceof TeeVerificationError) throw error;
+    if (error instanceof TeeVerificationError || error instanceof TeeUnavailableError) throw error;
     return fail(`the quote did not verify: ${error instanceof Error ? error.message : "error"}`);
   }
   if (!(expected.acceptedStatuses ?? DEFAULT_TCB_STATUSES).includes(facts.status))
@@ -259,9 +289,20 @@ export async function attestTeeAgent(options: FetchTeeOptions): Promise<Verified
     throw new TeeVerificationError("the TEE agent's URL must use https");
   const nonce = `0x${randomBytes(32).toString("hex")}`;
   url.searchParams.set("nonce", nonce);
-  const response = await (options.fetch ?? fetch)(url, {
-    signal: AbortSignal.timeout(options.timeoutMs ?? 30_000),
-  });
-  if (!response.ok) throw new TeeVerificationError(`the TEE agent answered ${response.status}`);
-  return verifyTeeEvidence(await response.json(), { ...options, nonce });
+  let response: Response;
+  try {
+    response = await (options.fetch ?? fetch)(url, {
+      signal: AbortSignal.timeout(options.timeoutMs ?? 30_000),
+    });
+  } catch {
+    throw new TeeUnavailableError("the TEE agent did not answer");
+  }
+  if (!response.ok) throw new TeeUnavailableError(`the TEE agent answered ${response.status}`);
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    throw new TeeVerificationError("the evidence is not JSON");
+  }
+  return verifyTeeEvidence(body, { ...options, nonce });
 }

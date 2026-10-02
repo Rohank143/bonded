@@ -6,6 +6,7 @@ import {
   attestTeeAgent,
   type QuoteFacts,
   type QuoteVerifier,
+  TeeUnavailableError,
   TeeVerificationError,
   verifyTeeEvidence,
 } from "../src/tee.js";
@@ -149,7 +150,7 @@ describe("verifyTeeEvidence", () => {
     const { evidence } = build();
     await rejects(
       verifyTeeEvidence(evidence, { nonce: NONCE, codeHash: CODE, composeHash: COMPOSE }),
-      /did not verify/,
+      /malformed/,
     );
   });
 
@@ -277,6 +278,40 @@ describe("attestTeeAgent", () => {
         }) as unknown as typeof fetch,
       }).catch(() => undefined);
     expect(seen.size).toBe(3);
+  });
+
+  it("separates an agent that can't be reached from one that fails verification", async () => {
+    const base = { codeHash: CODE, composeHash: COMPOSE, url: "https://agent.example" };
+    const fetchWith = (impl: () => Promise<Response>) => impl as unknown as typeof fetch;
+    for (const down of [
+      fetchWith(async () => {
+        throw new TypeError("fetch failed");
+      }),
+      fetchWith(async () => new Response("bad gateway", { status: 502 })),
+    ])
+      await expect(attestTeeAgent({ ...base, fetch: down })).rejects.toBeInstanceOf(
+        TeeUnavailableError,
+      );
+    const notJson = fetchWith(async () => new Response("<html>", { status: 200 }));
+    await expect(attestTeeAgent({ ...base, fetch: notJson })).rejects.toBeInstanceOf(
+      TeeVerificationError,
+    );
+    const garbage = fetchWith(async () => Response.json({ nope: true }));
+    await expect(attestTeeAgent({ ...base, fetch: garbage })).rejects.toBeInstanceOf(
+      TeeVerificationError,
+    );
+  });
+
+  it("lets a quote verifier's unavailability through as unavailable", async () => {
+    const { facts, evidence } = build();
+    await expect(
+      verifyTeeEvidence(evidence, {
+        ...expectation(facts),
+        verifyQuote: async () => {
+          throw new TeeUnavailableError("PCCS is down");
+        },
+      }),
+    ).rejects.toBeInstanceOf(TeeUnavailableError);
   });
 
   it("refuses plain http except on localhost, and refuses an error response", async () => {

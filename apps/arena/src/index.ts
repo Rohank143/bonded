@@ -73,6 +73,7 @@ export {
   type QuoteFacts,
   type QuoteVerifier,
   type TeeExpectation,
+  TeeUnavailableError,
   TeeVerificationError,
   type VerifiedTee,
   verifyQuoteWithIntel,
