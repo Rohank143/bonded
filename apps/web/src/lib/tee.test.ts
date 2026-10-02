@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Report } from "./api";
-import { teeView } from "./tee";
+import { liveCheckView, teeView } from "./tee";
 
 const M = `0x${"ab".repeat(32)}` as const;
 const ZERO = `0x${"00".repeat(32)}`;
@@ -40,5 +40,20 @@ describe("teeView", () => {
 
   it("handles a report from before TEE support", () => {
     expect(teeView(M, {} as Report).keys).toBeNull();
+  });
+});
+
+describe("liveCheckView", () => {
+  it("is red only for a definite failure", () => {
+    expect(liveCheckView("mismatch").tone).toBe("breach");
+    expect(liveCheckView("invalid").tone).toBe("breach");
+    for (const status of ["unreachable", "unrated", undefined])
+      expect(liveCheckView(status).tone).toBe("neutral");
+    expect(liveCheckView("verified").tone).toBe("safe");
+  });
+
+  it("says new cover is paused when it is", () => {
+    expect(liveCheckView("mismatch").hint).toMatch(/new cover is paused/);
+    expect(liveCheckView("unreachable").hint).not.toMatch(/paused/);
   });
 });

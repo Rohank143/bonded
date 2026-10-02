@@ -4,7 +4,7 @@ import { useReadContracts } from "wagmi";
 import { bondedRegistryAbi, operatorBondAbi, tierForScore } from "@bonded/shared";
 import { apiUrl, deployment } from "../config";
 import { ApiError, api } from "../lib/api";
-import { teeView } from "../lib/tee";
+import { liveCheckView, teeView } from "../lib/tee";
 import { bps, usd, when } from "../lib/format";
 import {
   AddressLink,
@@ -56,6 +56,14 @@ export function Agent() {
     queryKey: ["run", score.data?.runId],
     queryFn: () => api.run(score.data!.runId),
     enabled: Boolean(score.data?.runId),
+  });
+
+  const liveCheck = useQuery({
+    queryKey: ["tee", id],
+    queryFn: () => api.tee(id),
+    enabled: valid,
+    refetchInterval: 60_000,
+    retry: false,
   });
 
   if (!valid) return <Page title="Agent">Agent IDs are whole numbers.</Page>;
@@ -121,6 +129,27 @@ export function Agent() {
                 <>
                   <dt className="text-muted">TEE measurement</dt>
                   <dd className="break-all font-mono text-xs">{tee.measurement}</dd>
+                </>
+              )}
+              {tee.measurement && (
+                <>
+                  <dt className="text-muted">TEE live check</dt>
+                  <dd>
+                    {(() => {
+                      const view = liveCheckView(liveCheck.data?.status);
+                      return (
+                        <>
+                          <Badge tone={view.tone}>{view.label}</Badge>{" "}
+                          <span className="text-xs text-muted">
+                            {view.hint}
+                            {liveCheck.data?.verifiedAt
+                              ? `; last verified ${new Date(liveCheck.data.verifiedAt).toLocaleString()}`
+                              : ""}
+                          </span>
+                        </>
+                      );
+                    })()}
+                  </dd>
                 </>
               )}
               {tee.keys && (

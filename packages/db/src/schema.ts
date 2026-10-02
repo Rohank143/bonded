@@ -97,3 +97,11 @@ export const events = pgTable("events", {
   payload: jsonb().notNull(),
   createdAt: created(),
 });
+export const teeChecks = pgTable("tee_checks", {
+  agentId: text("agent_id").primaryKey(),
+  status: text().notNull(),
+  detail: text(),
+  measurement: text(),
+  checkedAt: timestamp("checked_at", { withTimezone: true }).notNull().defaultNow(),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }),
+});

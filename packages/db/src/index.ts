@@ -42,6 +42,7 @@ export class Database {
       "0001_services.sql",
       "0002_report_bytes.sql",
       "0003_agent_availability.sql",
+      "0004_tee_checks.sql",
     ];
     await this.transaction(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(7001)");
@@ -114,6 +115,47 @@ export class Database {
         await this.publish("rating.failed", { runId: row.id }, c);
       }
     });
+  }
+  /** Store the keeper's latest live TEE check; `verified_at` moves only when the check passed. */
+  async recordTeeCheck(check: {
+    agentId: string;
+    status: string;
+    detail?: string | undefined;
+    measurement?: string | undefined;
+  }) {
+    await this.pool.query(
+      `INSERT INTO tee_checks(agent_id,status,detail,measurement,checked_at,verified_at)
+       VALUES($1,$2,$3,$4,now(),CASE WHEN $2='verified' THEN now() END)
+       ON CONFLICT(agent_id) DO UPDATE SET status=$2,detail=$3,measurement=$4,checked_at=now(),
+         verified_at=CASE WHEN $2='verified' THEN now() ELSE tee_checks.verified_at END`,
+      [check.agentId, check.status, check.detail ?? null, check.measurement ?? null],
+    );
+  }
+  /** The latest live TEE check for `<chain id>:<agent id>`, if the keeper has made one. */
+  async teeCheck(agentId: string): Promise<
+    | {
+        status: string;
+        detail: string | null;
+        measurement: string | null;
+        checkedAt: Date;
+        verifiedAt: Date | null;
+      }
+    | undefined
+  > {
+    const r = await this.pool.query(
+      "SELECT status,detail,measurement,checked_at,verified_at FROM tee_checks WHERE agent_id=$1",
+      [agentId],
+    );
+    const row = r.rows[0];
+    return (
+      row && {
+        status: row.status,
+        detail: row.detail,
+        measurement: row.measurement,
+        checkedAt: row.checked_at,
+        verifiedAt: row.verified_at,
+      }
+    );
   }
   /** Queue only enabled agents, locking against concurrent configuration removal. */
   async enqueue(agentId: string) {

@@ -7,6 +7,7 @@ import { Keeper, SolanaKeeper, connectChain, connectSolana, parseSolanaKey } fro
 import { parseEvmDeployment } from "@bonded/shared";
 import { z } from "zod";
 import { createApi } from "./index.js";
+import { runTeeChecks, teeCheckInterval } from "./tee-watch.js";
 import { agentConfig, workOne } from "./worker.js";
 
 loadDotEnv();
@@ -101,6 +102,9 @@ if (role === "migrate") {
       const solana = new SolanaKeeper(db, connectSolana(solanaRpc, parseSolanaKey(solanaKey)));
       tasks.push(loop(() => solana.tick(), 15_000));
     }
+    // Re-check TEE-hosted agents against their rated measurement. A stopped VM is just "unreachable".
+    const teeEvery = teeCheckInterval.parse(process.env.TEE_CHECK_MS ?? 600_000);
+    tasks.push(loop(() => runTeeChecks(db, chain), teeEvery));
     // The keeper role is always deployed once, so it owns event retention.
     const retentionDays = z.coerce
       .number()

@@ -93,6 +93,13 @@ The Arena sends a random challenge, verifies the quote with Intel's collateral, 
 
 Then run a rating through the API. `scripts/rate-live-tee.sh` does it: it asks for the API token with no echo, starts the VM, runs the rating, prints the result and **always stops the VM when it ends**, so the VM bills only while the rating runs. It works only after this config is merged and the API has redeployed. When the score is posted, the agent's page shows the TEE badge. Cross-chain posting copies the measurement to the other chains' registries.
 
+## Live checks (ADR-013)
+
+The keeper challenges every agent that has a `tee` entry every ten minutes (`TEE_CHECK_MS`, default 600000) and compares the live measurement with the one in its on-chain score. The profile shows the result as "TEE live check".
+
+- **Offline** (grey): the VM is stopped or not answering. Nothing is blocked. A stopped VM is not a broken one, and it can't leak a key.
+- **Changed** or **failed** (red): the running TEE is not the one that was rated, or its proof doesn't verify. The API stops signing new cover quotes for that agent until it passes again or is re-rated. Cover already bound is not touched.
+
 ## Cost, and pausing it
 
 - `tdx.small` is Phala's smallest instance: $0.058 an hour for compute plus $0.0028 an hour for its 20 GB disk, about $44 a month running.

@@ -9,6 +9,7 @@ import type { ServiceChain } from "@bonded/keeper";
 import type { Hex } from "viem";
 import { issueQuote } from "./quotes.js";
 import { EventStreams } from "./events.js";
+import { QUOTE_BLOCKING } from "./tee-watch.js";
 export { issueQuote } from "./quotes.js";
 const uint = z.string().regex(/^\d{1,78}$/);
 const quoteInput = z.strictObject({
@@ -72,8 +73,17 @@ export function createApi(options: {
     );
     return r.rowCount ? c.json(r.rows[0]) : c.json({ error: "score not found" }, 404);
   });
+  app.get("/agents/:id/tee", async (c) => {
+    const id = uint.parse(c.req.param("id"));
+    const check = await db.teeCheck(`${chain.deployment.chainId}:${id}`);
+    return check ? c.json(check) : c.json({ error: "no TEE check for this agent" }, 404);
+  });
   app.post("/quotes", async (c) => {
     const input = quoteInput.parse(await c.req.json());
+    // A definite TEE failure stops new cover; an unreachable agent doesn't (ADR-013).
+    const tee = await db.teeCheck(`${chain.deployment.chainId}:${input.agentId}`);
+    if (tee && QUOTE_BLOCKING.includes(tee.status))
+      throw new QuoteError("the agent's TEE no longer matches its rating; re-rate it first");
     const signed = await issueQuote(
       chain,
       { ...input, vault: input.vault as Hex },

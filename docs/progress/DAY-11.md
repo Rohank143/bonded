@@ -27,10 +27,17 @@ Plan reference: docs/PLAN.md Section 20, Day 11, and Section 12. Decisions: [ADR
 - `arena rate --tee-url …` ran end to end against it: the rating (hardened-agent/scripted, score 83) carries the measurement `0xb933453b…8f01`, and the sandbox registry accepted the attestation.
 - `config/agents.46630.json`: the hardened agent (agent 2) now has a `tee` entry. An API rating job for it verifies the live TEE first and fails if it doesn't verify. If the CVM is stopped or deleted, ratings of that agent fail until it is back. That is the design: no unmeasured score.
 
+## Live checks (added after the first deployment)
+
+- The keeper re-checks each TEE-hosted agent every ten minutes against the measurement in its on-chain score (ADR-013). Results are stored (`tee_checks`, migration 0004), served at `GET /agents/:id/tee` and shown on the profile as "TEE live check".
+- A definite failure (`mismatch`, `invalid`) stops the API signing new cover quotes for that agent. An unreachable agent does not, so pausing the VM to save cost never locks the agent out of cover.
+- `TeeUnavailableError` now separates "could not get the evidence" (a stopped VM, a gateway error, Intel's data not fetched) from "the evidence failed verification".
+
 ## Not done
 
 - **The badge on the live testnet.** It appears once a rating job runs on the deployed API after this is merged (`POST /arena/runs` for agent 2, which needs the API token). Nothing was posted to Robinhood testnet from here.
 - **No premium discount.** The actuarial model has no key-theft term, so the score is unchanged. See ADR-012.
+- **Existing cover is never voided by a failed check**, only new quotes are refused (ADR-013).
 - **The Arena doesn't attack the live TEE agent.** It rates the code in its sandbox and verifies the live agent's proof. See ADR-012, decision 2.
 - **Dev OS images aren't rejected** by the verifier (ADR-012).
 - **Ethereum Sepolia registry and 4-chain scores** were finished before Day 11 (the `multichain-scores` work) and are not part of this change.

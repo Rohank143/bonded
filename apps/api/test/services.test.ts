@@ -80,6 +80,33 @@ it("health, authentication, input validation and missing resources", async () =>
   expect((await post("/quotes", { coverAmount: "-1" })).status).toBe(400);
   expect((await app.request(`/arena/runs/${randomUUID()}`)).status).toBe(404);
 });
+it("stops new quotes after a definite TEE failure, but not for an unreachable TEE", async () => {
+  const key = `${chain.deployment.chainId}:${vault.agentId}`;
+  const input = {
+    agentId: vault.agentId.toString(),
+    vault: vault.address,
+    coverAmount: usd(20000).toString(),
+  };
+  // Nothing recorded, then an unreachable VM, then a good check: all get a quote.
+  for (const status of [undefined, "unreachable", "unrated", "verified"]) {
+    if (status) await pg.db.recordTeeCheck({ agentId: key, status });
+    expect((await post("/quotes", input)).status).toBe(201);
+  }
+  for (const status of ["mismatch", "invalid"]) {
+    await pg.db.recordTeeCheck({ agentId: key, status, detail: "test" });
+    const refused = await post("/quotes", input);
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as { error: string }).error).toMatch(/TEE no longer matches/);
+  }
+  const shown = await app.request(`/agents/${vault.agentId}/tee`);
+  expect(shown.status).toBe(200);
+  expect(await shown.json()).toMatchObject({ status: "invalid", detail: "test" });
+  expect((await app.request("/agents/999/tee")).status).toBe(404);
+  // A later good check lifts it.
+  await pg.db.recordTeeCheck({ agentId: key, status: "verified" });
+  expect((await post("/quotes", input)).status).toBe(201);
+  await pg.db.pool.query("DELETE FROM tee_checks WHERE agent_id=$1", [key]);
+});
 it("rejects capacity, signs an API quote, binds it and automatically pays a breach exactly once", async () => {
   const input = {
     agentId: vault.agentId.toString(),

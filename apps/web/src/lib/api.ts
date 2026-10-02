@@ -40,6 +40,14 @@ export interface ScoreRecord {
   tx_hash: string;
   signed: { attestation: { reportHash: string; issuedAt: number; expiresAt: number } };
 }
+/** The keeper's latest live check of a TEE-hosted agent (docs/TEE.md, "Live checks"). */
+export interface TeeCheckRecord {
+  status: "verified" | "unrated" | "mismatch" | "invalid" | "unreachable";
+  detail: string | null;
+  measurement: string | null;
+  checkedAt: string;
+  verifiedAt: string | null;
+}
 export interface RunRecord {
   id: string;
   status: "queued" | "running" | "done" | "failed";
@@ -91,6 +99,7 @@ export interface SignedQuoteResponse {
 export const api = {
   health: () => request<{ ok: boolean; chainId: number }>("/health"),
   score: (agentId: string) => request<ScoreRecord>(`/agents/${agentId}/score`),
+  tee: (agentId: string) => request<TeeCheckRecord>(`/agents/${agentId}/tee`),
   run: (runId: string) => request<RunRecord>(`/arena/runs/${runId}`),
   startRun: (token: string, agentId: string) =>
     post<{ runId: string }>("/arena/runs", token, { agentId }),
