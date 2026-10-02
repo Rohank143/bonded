@@ -4,6 +4,7 @@ import { useReadContracts } from "wagmi";
 import { bondedRegistryAbi, operatorBondAbi, tierForScore } from "@bonded/shared";
 import { apiUrl, deployment } from "../config";
 import { ApiError, api } from "../lib/api";
+import { liveCheckView, teeView } from "../lib/tee";
 import { bps, usd, when } from "../lib/format";
 import {
   AddressLink,
@@ -57,6 +58,14 @@ export function Agent() {
     enabled: Boolean(score.data?.runId),
   });
 
+  const liveCheck = useQuery({
+    queryKey: ["tee", id],
+    queryFn: () => api.tee(id),
+    enabled: valid,
+    refetchInterval: 60_000,
+    retry: false,
+  });
+
   if (!valid) return <Page title="Agent">Agent IDs are whole numbers.</Page>;
   if (reads.isLoading) return <Loading what={`agent ${id}`} />;
   const [onchain, owner, bond, fresh] = reads.data ?? [];
@@ -65,6 +74,7 @@ export function Agent() {
   const a = onchain?.result;
   const rated = a && a.issuedAt > 0n;
   const report = run.data?.report;
+  const tee = teeView(a?.teeMeasurement, report);
   return (
     <Page
       title={`Agent ${id}`}
@@ -91,6 +101,15 @@ export function Agent() {
               }
               hint={`expires ${when(a.expiresAt)}`}
             />
+            <Stat
+              label="Key custody"
+              value={
+                tee.inTee ? <Badge tone="safe">TEE</Badge> : <Badge tone="neutral">Operator</Badge>
+              }
+              hint={
+                tee.inTee ? "key generated inside Intel TDX" : "key held on the operator's server"
+              }
+            />
           </Grid>
         ) : (
           <p className="text-sm text-muted">Not rated yet.</p>
@@ -106,6 +125,46 @@ export function Agent() {
               <dd className="break-all font-mono text-xs">{a.reportHash}</dd>
               <dt className="text-muted">Mandate hash</dt>
               <dd className="break-all font-mono text-xs">{a.mandateHash}</dd>
+              {tee.measurement && (
+                <>
+                  <dt className="text-muted">TEE measurement</dt>
+                  <dd className="break-all font-mono text-xs">{tee.measurement}</dd>
+                </>
+              )}
+              {tee.measurement && (
+                <>
+                  <dt className="text-muted">TEE live check</dt>
+                  <dd>
+                    {(() => {
+                      const view = liveCheckView(
+                        liveCheck.data?.status,
+                        liveCheck.data?.blockingStatus,
+                      );
+                      return (
+                        <>
+                          <Badge tone={view.tone}>{view.label}</Badge>{" "}
+                          <span className="text-xs text-muted">
+                            {view.hint}
+                            {liveCheck.data?.verifiedAt
+                              ? `; last verified ${new Date(liveCheck.data.verifiedAt).toLocaleString()}`
+                              : ""}
+                          </span>
+                        </>
+                      );
+                    })()}
+                  </dd>
+                </>
+              )}
+              {tee.keys && (
+                <>
+                  <dt className="text-muted">TEE session keys</dt>
+                  <dd className="break-all font-mono text-xs">
+                    {tee.keys.evm} (EVM)
+                    <br />
+                    {tee.keys.solana} (Solana)
+                  </dd>
+                </>
+              )}
             </>
           )}
           {score.data && (

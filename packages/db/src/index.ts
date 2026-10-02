@@ -8,6 +8,19 @@ export type Connection = pg.PoolClient;
 export const json = (value: unknown): string =>
   JSON.stringify(value, (_, v: unknown) => (typeof v === "bigint" ? v.toString() : v));
 
+/** One agent's TEE row (migration 0004). */
+export interface TeeCheckRow {
+  status: string;
+  detail: string | null;
+  measurement: string | null;
+  ratedMeasurement: string | null;
+  ratedReportHash: string | null;
+  evmAddress: string | null;
+  blockingStatus: string | null;
+  checkedAt: Date;
+  verifiedAt: Date | null;
+}
+
 /** Raised when a caller tries to queue an agent outside the configured set. */
 export class AgentNotConfiguredError extends Error {}
 
@@ -42,6 +55,8 @@ export class Database {
       "0001_services.sql",
       "0002_report_bytes.sql",
       "0003_agent_availability.sql",
+      "0004_tee_checks.sql",
+      "0005_tee_rating_version.sql",
     ];
     await this.transaction(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(7001)");
@@ -114,6 +129,107 @@ export class Database {
         await this.publish("rating.failed", { runId: row.id }, c);
       }
     });
+  }
+  /**
+   * Store a live check only if its observed rating is still current. Custody evidence and failures
+   * survive outages within one report, but cannot be inherited by a replacement report.
+   */
+  async recordTeeCheck(check: {
+    agentId: string;
+    status: string;
+    detail?: string | undefined;
+    measurement?: string | undefined;
+    ratedMeasurement?: string | undefined;
+    ratedReportHash?: string | undefined;
+    evmAddress?: string | undefined;
+    /** The row version read before consulting the chain; null means no version was on record. */
+    observedReportHash?: string | null;
+  }) {
+    await this.pool.query(
+      `INSERT INTO tee_checks(agent_id,status,detail,measurement,rated_measurement,rated_report_hash,
+                              evm_address,blocking_status,checked_at,verified_at)
+       SELECT $1,$2,$3,$4,$5,$7,CASE WHEN $2='verified' THEN $6 END,
+              CASE WHEN $2 IN ('mismatch','invalid') THEN $2 END,now(),
+              CASE WHEN $2='verified' THEN now() END
+       WHERE NOT $9 OR $8::text IS NULL OR EXISTS (
+         SELECT 1 FROM tee_checks WHERE agent_id=$1 AND rated_report_hash IS NOT DISTINCT FROM $8)
+       ON CONFLICT(agent_id) DO UPDATE SET status=$2,detail=$3,measurement=$4,
+         rated_measurement=$5,rated_report_hash=$7,
+         evm_address=CASE WHEN $2='verified' THEN $6
+                         WHEN tee_checks.rated_report_hash IS NOT DISTINCT FROM $7
+                          AND tee_checks.rated_measurement IS NOT DISTINCT FROM $5
+                         THEN tee_checks.evm_address END,
+         blocking_status=CASE WHEN $2 IN ('mismatch','invalid') THEN $2
+                              WHEN $2 IN ('verified','unrated') THEN NULL
+                              WHEN tee_checks.rated_report_hash IS NOT DISTINCT FROM $7
+                               AND tee_checks.rated_measurement IS NOT DISTINCT FROM $5
+                              THEN tee_checks.blocking_status END,
+         checked_at=now(),
+         verified_at=CASE WHEN $2='verified' THEN now()
+                          WHEN tee_checks.rated_report_hash IS NOT DISTINCT FROM $7
+                           AND tee_checks.rated_measurement IS NOT DISTINCT FROM $5
+                          THEN tee_checks.verified_at END
+       WHERE NOT $9 OR tee_checks.rated_report_hash IS NOT DISTINCT FROM $8`,
+      [
+        check.agentId,
+        check.status,
+        check.detail ?? null,
+        check.measurement ?? null,
+        check.ratedMeasurement ?? null,
+        check.evmAddress ?? null,
+        check.ratedReportHash ?? null,
+        check.observedReportHash ?? null,
+        Object.hasOwn(check, "observedReportHash"),
+      ],
+    );
+  }
+  /** A posted rating replaces its custody evidence and clears earlier failures. */
+  async recordTeeRating(
+    rating:
+      | { agentId: string; ratedMeasurement: string; ratedReportHash: string; evmAddress: string }
+      | { agentId: string },
+    c?: Connection,
+  ) {
+    const q = c ?? this.pool;
+    if (!("evmAddress" in rating)) {
+      await q.query("DELETE FROM tee_checks WHERE agent_id=$1", [rating.agentId]);
+      return;
+    }
+    await q.query(
+      `INSERT INTO tee_checks(agent_id,status,measurement,rated_measurement,rated_report_hash,evm_address,
+                              blocking_status,checked_at,verified_at)
+       VALUES($1,'verified',$2,$2,$4,$3,NULL,now(),now())
+       ON CONFLICT(agent_id) DO UPDATE SET status='verified',detail=NULL,measurement=$2,
+         rated_measurement=$2,rated_report_hash=$4,evm_address=$3,blocking_status=NULL,
+         checked_at=now(),verified_at=now()`,
+      [rating.agentId, rating.ratedMeasurement, rating.evmAddress, rating.ratedReportHash],
+    );
+  }
+  /** Remove an agent's TEE row, e.g. when its TEE is no longer configured. */
+  async clearTee(agentId: string) {
+    await this.pool.query("DELETE FROM tee_checks WHERE agent_id=$1", [agentId]);
+  }
+  /** The latest live TEE check for `<chain id>:<agent id>`, if there is one. */
+  async teeCheck(agentId: string): Promise<TeeCheckRow | undefined> {
+    const r = await this.pool.query(
+      `SELECT status,detail,measurement,rated_measurement,rated_report_hash,evm_address,blocking_status,checked_at,verified_at
+       FROM tee_checks WHERE agent_id=$1`,
+      [agentId],
+    );
+    const row = r.rows[0];
+    return (
+      row && {
+        status: row.status,
+        detail: row.detail,
+        measurement: row.measurement,
+        ratedMeasurement: row.rated_measurement,
+        ratedReportHash: row.rated_report_hash,
+        evmAddress: row.evm_address,
+        blockingStatus: row.blocking_status,
+        checkedAt: row.checked_at,
+        verifiedAt: row.verified_at,
+      }
+    );
   }
   /** Queue only enabled agents, locking against concurrent configuration removal. */
   async enqueue(agentId: string) {

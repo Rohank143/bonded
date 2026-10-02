@@ -1,0 +1,13 @@
+# Deployed to Phala Cloud with `phala deploy` (docs/TEE.md). dstack hashes this file into the
+# app's compose hash, and the hardware measures that hash, so everything the agent runs is fixed
+# here: pin the image by digest, never by a tag that can move.
+services:
+  agent:
+    # Replace REPLACE_WITH_DIGEST with the sha256 that `docker push` printed (docs/TEE.md, step 2).
+    image: ghcr.io/ddboy19912/bonded-tee-agent@sha256:e543f1b56448679f72012cd782372701ba5678f9763f4aa53c6729d35da308c8
+    ports:
+      - "8080:8080"
+    volumes:
+      # dstack's guest agent socket: key derivation and quotes.
+      - /var/run/dstack.sock:/var/run/dstack.sock
+    restart: unless-stopped

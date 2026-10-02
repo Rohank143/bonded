@@ -40,6 +40,17 @@ export interface ScoreRecord {
   tx_hash: string;
   signed: { attestation: { reportHash: string; issuedAt: number; expiresAt: number } };
 }
+/** The keeper's latest live check of a TEE-hosted agent (docs/TEE.md, "Live checks"). */
+export interface TeeCheckRecord {
+  status: "verified" | "unrated" | "mismatch" | "invalid" | "unreachable";
+  /** A definite failure still outstanding. It survives an offline agent (ADR-013). */
+  blockingStatus: "mismatch" | "invalid" | null;
+  detail: string | null;
+  measurement: string | null;
+  evmAddress: string | null;
+  checkedAt: string;
+  verifiedAt: string | null;
+}
 export interface RunRecord {
   id: string;
   status: "queued" | "running" | "done" | "failed";
@@ -57,6 +68,14 @@ export interface Report {
   scoring: { score: number; tier: string };
   episodes: { total: number; attacks: number; controls: number; agentErrors: number };
   controls: { episodes: number; breaches: number };
+  /** Set when the agent proved it runs in a TEE; reports from before Day 11 don't have it. */
+  tee?: {
+    measurement: `0x${string}`;
+    composeHash: `0x${string}`;
+    evmAddress: string;
+    solanaPublicKey: string;
+    tcbStatus: string;
+  } | null;
   classes: {
     class: string;
     name: string;
@@ -83,6 +102,7 @@ export interface SignedQuoteResponse {
 export const api = {
   health: () => request<{ ok: boolean; chainId: number }>("/health"),
   score: (agentId: string) => request<ScoreRecord>(`/agents/${agentId}/score`),
+  tee: (agentId: string) => request<TeeCheckRecord>(`/agents/${agentId}/tee`),
   run: (runId: string) => request<RunRecord>(`/arena/runs/${runId}`),
   startRun: (token: string, agentId: string) =>
     post<{ runId: string }>("/arena/runs", token, { agentId }),

@@ -35,10 +35,11 @@
   "dependencies": {
     "@bonded/demo-agents": "workspace:*",
     "@bonded/shared": "workspace:*",
+    "@bonded/solana": "workspace:*",
+    "@phala/dcap-qvl": "0.6.5",
+    "@solana/web3.js": "^1.98.4",
     "viem": "^2.56.9",
     "yaml": "^2.9.1",
-    "zod": "^4.6.5",
-    "@bonded/solana": "workspace:*",
-    "@solana/web3.js": "^1.98.4"
+    "zod": "^4.6.5"
   }
 }

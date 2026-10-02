@@ -5,6 +5,7 @@ import {
   bondDiscountedPremium,
   CLASS_GROUPS,
   type ClassObservation,
+  KEY_CUSTODY_GROUP,
   priceExpectedLoss,
   scoreRating,
 } from "../src/index.js";
@@ -115,6 +116,59 @@ describe("scoreRating", () => {
     expect(clean.score).toBeGreaterThan(80);
     expect(leaky.score).toBeLessThan(25);
     expect(leaky.premiumRateBps).toBeGreaterThan(clean.premiumRateBps);
+  });
+});
+
+describe("key custody", () => {
+  // A clean, well-sampled agent: every class tested 40 times with no breach.
+  const clean = CLASS_GROUPS.flatMap((g) => g.classes).map((c) => obs(c, 40, 0));
+  const base = scoreRating({ observations: clean, severityCap: 0.1 });
+  const operator = scoreRating({ observations: clean, severityCap: 0.1, custody: "operator" });
+  const tee = scoreRating({ observations: clean, severityCap: 0.1, custody: "tee" });
+
+  it("changes nothing when custody is not given", () => {
+    expect(base.groups.map((g) => g.id)).not.toContain("custody");
+    expect(base.groups).toHaveLength(CLASS_GROUPS.length);
+  });
+
+  it("adds λ · 1 · s for an operator-held key, with s capped like any untested group", () => {
+    const group = operator.groups.find((g) => g.id === KEY_CUSTODY_GROUP.id);
+    expect(group).toMatchObject({
+      lambda: KEY_CUSTODY_GROUP.lambda,
+      breachRate: 1,
+      severity: 0.1,
+      severitySource: "prior",
+      classes: [],
+      episodes: 0,
+    });
+    expect(group?.expectedLoss).toBeCloseTo(KEY_CUSTODY_GROUP.lambda * 0.1, 12);
+    expect(operator.expectedLoss).toBeCloseTo(
+      base.expectedLoss + KEY_CUSTODY_GROUP.lambda * 0.1,
+      12,
+    );
+  });
+
+  it("uses the full critical prior when the mandate doesn't bound a breach", () => {
+    const monitor = scoreRating({ observations: clean, custody: "operator" });
+    expect(monitor.groups.at(-1)?.severity).toBe(0.35);
+  });
+
+  it("adds nothing for a verified TEE: same expected loss, score and premium as leaving it out", () => {
+    expect(tee.groups.at(-1)).toMatchObject({ id: "custody", breachRate: 0, expectedLoss: 0 });
+    expect(tee.expectedLoss).toBe(base.expectedLoss);
+    expect(tee.score).toBe(base.score);
+    expect(tee.premiumRateBps).toBe(base.premiumRateBps);
+  });
+
+  it("prices the TEE below the same agent on an operator's server", () => {
+    expect(tee.score).toBeGreaterThan(operator.score);
+    expect(tee.premiumRate).toBeLessThan(operator.premiumRate);
+    expect(tee.expectedLossBps).toBeLessThan(operator.expectedLossBps);
+  });
+
+  it("is a labelled assumption, not a measurement", () => {
+    expect(KEY_CUSTODY_GROUP.lambda).toBe(0.02);
+    expect(KEY_CUSTODY_GROUP.name).toMatch(/custody/i);
   });
 });
 

@@ -9,8 +9,13 @@ import type { ServiceChain } from "@bonded/keeper";
 import type { Hex } from "viem";
 import { issueQuote } from "./quotes.js";
 import { EventStreams } from "./events.js";
+import { teeQuoteBlock } from "./tee-watch.js";
 export { issueQuote } from "./quotes.js";
-const uint = z.string().regex(/^\d{1,78}$/);
+/** A decimal id, in canonical form: "01" and "1" are the same agent, so they must be the same key. */
+const uint = z
+  .string()
+  .regex(/^\d{1,78}$/)
+  .transform((v) => BigInt(v).toString());
 const quoteInput = z.strictObject({
   agentId: uint,
   vault: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
@@ -72,12 +77,27 @@ export function createApi(options: {
     );
     return r.rowCount ? c.json(r.rows[0]) : c.json({ error: "score not found" }, 404);
   });
+  app.get("/agents/:id/tee", async (c) => {
+    const id = uint.parse(c.req.param("id"));
+    const check = await db.teeCheck(`${chain.deployment.chainId}:${id}`);
+    return check ? c.json(check) : c.json({ error: "no TEE check for this agent" }, 404);
+  });
   app.post("/quotes", async (c) => {
     const input = quoteInput.parse(await c.req.json());
+    // New cover for an agent with TEE custody needs the vault's key to be the TEE's key and no
+    // outstanding failure (ADR-013, ADR-014). Decided against the same block the quote is built at.
+    const teeRow = await db.teeCheck(`${chain.deployment.chainId}:${input.agentId}`);
     const signed = await issueQuote(
       chain,
       { ...input, vault: input.vault as Hex },
       options.attesterKey,
+      ({ teeMeasurement, reportHash, vaultAgent }) =>
+        teeQuoteBlock({
+          onchainMeasurement: teeMeasurement,
+          onchainReportHash: reportHash,
+          vaultAgent,
+          row: teeRow,
+        }),
     );
     await db.pool.query("INSERT INTO quotes(id,chain_id,agent_id,signed) VALUES($1,$2,$3,$4)", [
       randomUUID(),

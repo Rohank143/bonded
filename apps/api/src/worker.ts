@@ -2,6 +2,7 @@ import { Database, json } from "@bonded/db";
 import {
   Sandbox,
   rateAgent,
+  attestTeeAgent,
   loadAttackLibrary,
   signAttestation,
   type SignedAttestation,
@@ -24,6 +25,16 @@ export const agentConfig = z.strictObject({
   kind: z.enum(["hardened", "vulnerable"]),
   mandate: EvmMandate,
   codeHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/),
+  /**
+   * Where the agent runs in a TEE: its https URL and the compose hash published for this
+   * `codeHash`'s deployment. When set, the rating fails unless the agent proves it (ADR-012).
+   */
+  tee: z
+    .strictObject({
+      url: z.url({ protocol: /^https$/ }),
+      composeHash: z.string().regex(/^(0x)?[0-9a-fA-F]{64}$/),
+    })
+    .optional(),
 });
 /** Process one durable rating job under the chain worker lock; retries recover accepted posts. */
 export async function workOne(
@@ -86,6 +97,15 @@ async function runLocked(
     );
     let signed = row.attestation as SignedAttestation | null;
     if (!signed) {
+      // A TEE that doesn't verify fails the job. It never falls back to an unmeasured rating.
+      const tee = config.tee
+        ? await attestTeeAgent({
+            url: config.tee.url,
+            codeHash: config.codeHash as Hex,
+            composeHash: config.tee.composeHash,
+          })
+        : undefined;
+      await check();
       const sandbox = await Sandbox.start({ forkUrl: rpcUrl, forkDeployment: chain.deployment });
       try {
         const result = await rateAgent(sandbox, {
@@ -95,6 +115,7 @@ async function runLocked(
               : createVulnerableAgent("scripted"),
           attacks: await loadAttackLibrary(),
           codeHash: config.codeHash as Hex,
+          ...(tee ? { tee } : {}),
           vault: { mandate: config.mandate as EvmMandateInput },
           onEpisode: async (episode, index, total) => {
             await check();
@@ -166,12 +187,29 @@ async function runLocked(
           signed.signature,
         ]));
       await check();
-      await db.withLease(job, (c) =>
-        c.query(
+      const reportTee = (
+        await db.pool.query("SELECT report->'tee' AS tee FROM ratings WHERE id=$1", [job.id])
+      ).rows[0]?.tee as { evmAddress?: string } | null;
+      await db.withLease(job, async (c) => {
+        await c.query(
           "INSERT INTO attestations(id,agent_id,signed,tx_hash) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",
           [job.id, row.agent_id, json(signed), hash],
-        ),
-      );
+        );
+        // The posted score replaces whatever an earlier TEE failure was about (ADR-013): record its
+        // key and measurement, or drop the TEE row if this rating has no TEE.
+        const agentKey = `${chain.deployment.chainId}:${row.onchain_id}`;
+        if (reportTee?.evmAddress)
+          await db.recordTeeRating(
+            {
+              agentId: agentKey,
+              ratedMeasurement: signed.attestation.teeMeasurement,
+              ratedReportHash: signed.attestation.reportHash,
+              evmAddress: reportTee.evmAddress,
+            },
+            c,
+          );
+        else await db.recordTeeRating({ agentId: agentKey }, c);
+      });
     }
     await db.finish(job);
   } catch (error) {

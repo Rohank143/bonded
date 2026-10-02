@@ -26,6 +26,7 @@ import { datasetRows, type SentinelRow, writeDataset } from "./dataset.js";
 import { BENIGN_GOALS, type EpisodeResult, runEpisode, saveEpisode } from "./episode.js";
 import { episodeOutcome } from "./report.js";
 import type { Sandbox } from "./sandbox.js";
+import type { VerifiedTee } from "./tee.js";
 import { type AgentVaultOptions, createAgentVault } from "./vault.js";
 
 /**
@@ -49,6 +50,11 @@ export interface RatingOptions {
   modelFamily?: ModelFamily;
   /** Hash of the agent's code or config version (default: hash of its name). */
   codeHash?: `0x${string}`;
+  /**
+   * Evidence that the rated code is running in a TEE, already verified (`attestTeeAgent`). Its
+   * measurement goes into the attestation. Its code hash must be the rated `codeHash`.
+   */
+  tee?: VerifiedTee;
   /** Called after each episode, e.g. for progress output. */
   onEpisode?: (result: EpisodeResult, index: number, total: number) => void | Promise<void>;
 }
@@ -81,6 +87,17 @@ export interface RatingReport {
   spend: ReturnType<SpendingCap["summary"]>;
   stoppedEarly: string | null;
   mitigations: string[];
+  /** The verified TEE the agent runs in, or null when it runs on the operator's own server. */
+  tee: RatingTee | null;
+}
+
+/** What the report records about a verified TEE (the full evidence is not kept). */
+export interface RatingTee {
+  measurement: `0x${string}`;
+  composeHash: `0x${string}`;
+  evmAddress: `0x${string}`;
+  solanaPublicKey: string;
+  tcbStatus: string;
 }
 
 export interface RatingResult {
@@ -96,6 +113,8 @@ const SEVERITY_ORDER: Severity[] = ["low", "medium", "high", "critical"];
 
 export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promise<RatingResult> {
   const started = Date.now();
+  if (options.tee && options.tee.codeHash.toLowerCase() !== options.codeHash?.toLowerCase())
+    throw new Error("the TEE runs different code than the codeHash being rated");
   const repeats = options.repeats ?? 1;
   const controls = options.controls ?? 2;
   const cap = new SpendingCap({ maxUsd: options.maxUsd ?? Number.POSITIVE_INFINITY });
@@ -145,6 +164,10 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
   const classes = classResults(episodes);
   const scoring = scoreRating({
     observations: observations(episodes, options.attacks),
+    // Key custody is an assumed term, not a measurement (ADR-014): the TEE only counts once verified.
+    // The rating can't know which key operates the covered vault, so the quote API enforces that the
+    // vault's execution key is this TEE's key before it prices cover (ADR-013, decision 3).
+    custody: options.tee ? "tee" : "operator",
     ...(mode === "enforce"
       ? { severityCap: Math.min(1, profile.mandate.limits.maxTxNotionalUsd / deposit) }
       : {}),
@@ -189,6 +212,15 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
     spend: cap.summary(),
     stoppedEarly,
     mitigations: mitigations(classes, mode),
+    tee: options.tee
+      ? {
+          measurement: options.tee.measurement,
+          composeHash: options.tee.composeHash,
+          evmAddress: options.tee.evmAddress,
+          solanaPublicKey: options.tee.solanaPublicKey,
+          tcbStatus: options.tee.tcbStatus,
+        }
+      : null,
   };
 
   const reportJson = `${JSON.stringify(report, null, 2)}\n`;
@@ -203,7 +235,7 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
       reportHash,
       mandateHash: mandateHash(profile.mandate),
       codeHash: options.codeHash ?? keccak256(stringToBytes(options.agent.name)),
-      teeMeasurement: `0x${"0".repeat(64)}`,
+      teeMeasurement: options.tee?.measurement ?? `0x${"0".repeat(64)}`,
       modelFamily,
       issuedAt,
       expiresAt: issuedAt + ATTESTATION_TTL_SECONDS,
@@ -334,6 +366,12 @@ export function renderReportMarkdown(
     `- Model spend: $${report.spend.spentUsd.toFixed(4)}${report.spend.estimated ? " (estimated)" : ""}` +
       `, ${report.spend.inputTokens} input and ${report.spend.outputTokens} output tokens`,
     `- Duration: ${(report.durationMs / 1000).toFixed(1)} s`,
+    ...(report.tee
+      ? [
+          `- TEE: Intel TDX on Phala dstack, measurement ${report.tee.measurement}; the agent's session ` +
+            `key is ${report.tee.evmAddress} (EVM) and ${report.tee.solanaPublicKey} (Solana)`,
+        ]
+      : []),
     ...(report.stoppedEarly ? [`- **Stopped early:** ${report.stoppedEarly}`] : []),
     "",
     "## Risk by class group",
@@ -342,11 +380,15 @@ export function renderReportMarkdown(
     "|---|---|---|---|---|---|---|---|",
     ...s.groups.map(
       (g) =>
-        `| ${g.name} | ${g.classes.join(", ")} | ${g.lambda} | ${g.breaches} / ${g.episodes} | ` +
+        `| ${g.name} | ${g.classes.length ? g.classes.join(", ") : "assumed, not tested"} | ${g.lambda} | ${g.breaches} / ${g.episodes} | ` +
         `${pct(g.observedRate)} | ${pct(g.breachRate)} | ${pct(g.severity)} (${g.severitySource}) | ` +
         `${pct(g.expectedLoss)} |`,
     ),
     `| **Total** | | | | | | | **${pct(s.expectedLoss)}** |`,
+    "",
+    "The key-custody row is an assumption, not an Arena result: it assumes a 2% a year chance that the " +
+      "agent's server is compromised, in which case a key held there is stolen, and a key held in a " +
+      "verified TEE is not. The attacks above can't measure it.",
     "",
     "## Attack classes",
     "",

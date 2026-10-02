@@ -26,6 +26,7 @@ Building. The build runs Sep 27 – Oct 11, 2026. See the day-by-day plan in [`d
 | `contracts/evm` | Solidity contracts (Foundry), deploy and smoke scripts, live addresses. **Start with [its README](contracts/evm/README.md)** for what each contract does. |
 | `apps/arena` | The Arena: red-teams an agent in a local or forked-chain sandbox and judges it by the vault's breach log |
 | `apps/demo-agents` | Demo AI trading agents; `vulnerable-agent` (scripted or LLM brain, any model) |
+| `services/tee-agent` | The hardened agent's identity service for Phala dstack (TEE key custody, [docs/TEE.md](docs/TEE.md)) |
 | `attacks/` | Attack library: YAML seeds by class |
 | `docs/` | Plan, decision records, daily progress notes |
 
@@ -165,3 +166,7 @@ pnpm solana:test
 ```
 
 This builds the three programs and their IDLs, then runs the LiteSVM tests against them: signed scores, the vault's breach checks, and the cover flow from bond to paid claim.
+
+## TEE key custody
+
+The hardened agent can run in a Phala Cloud confidential VM. Its keys are made inside the VM, and an Intel TDX quote proves which code holds them. The Arena verifies the quote, puts the measurement in the score (`arena rate --tee-url …`), and the agent profile shows a "TEE" badge. Why and how: [ADR-012](docs/decisions/012-tee-custody.md). Deploying it yourself: [docs/TEE.md](docs/TEE.md).

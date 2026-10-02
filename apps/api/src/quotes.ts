@@ -21,6 +21,12 @@ export async function issueQuote(
   chain: ServiceChain,
   input: { agentId: string; vault: Address; coverAmount: string },
   key: Hex,
+  /** Called with what the quote depends on; returns a reason to refuse it, or undefined. */
+  guard?: (info: {
+    teeMeasurement: string;
+    reportHash: string;
+    vaultAgent: string;
+  }) => string | undefined,
 ): Promise<SignedQuote> {
   const { read, deployment: d } = chain;
   const block = await read.getBlock();
@@ -42,61 +48,83 @@ export async function issueQuote(
     issuedAt: Number(raw.issuedAt),
     expiresAt: Number(raw.expiresAt),
   });
-  const [bond, existing, assets, total, leverage, agentCap, familyCap, familyCover, guardian] =
-    await Promise.all([
-      read.readContract({
-        ...at,
-        address: d.bond,
-        abi: operatorBondAbi,
-        functionName: "bondOf",
-        args: [BigInt(input.agentId)],
-      }),
-      read.readContract({
-        ...at,
-        address: d.coverManager,
-        abi: coverManagerAbi,
-        functionName: "activeCoverOfAgent",
-        args: [BigInt(input.agentId)],
-      }),
-      read.readContract({ ...at, address: d.pool, abi: coverPoolAbi, functionName: "totalAssets" }),
-      read.readContract({
-        ...at,
-        address: d.coverManager,
-        abi: coverManagerAbi,
-        functionName: "totalActiveCover",
-      }),
-      read.readContract({
-        ...at,
-        address: d.coverManager,
-        abi: coverManagerAbi,
-        functionName: "maxLeverageBps",
-      }),
-      read.readContract({
-        ...at,
-        address: d.coverManager,
-        abi: coverManagerAbi,
-        functionName: "maxAgentCoverBps",
-      }),
-      read.readContract({
-        ...at,
-        address: d.coverManager,
-        abi: coverManagerAbi,
-        functionName: "modelFamilyCapBps",
-      }),
-      read.readContract({
-        ...at,
-        address: d.coverManager,
-        abi: coverManagerAbi,
-        functionName: "activeCoverOfFamily",
-        args: [raw.modelFamily],
-      }),
-      read.readContract({
-        ...at,
-        address: input.vault,
-        abi: mandateVaultAbi,
-        functionName: "guardian",
-      }),
-    ]);
+  const [
+    bond,
+    existing,
+    assets,
+    total,
+    leverage,
+    agentCap,
+    familyCap,
+    familyCover,
+    guardian,
+    vaultAgent,
+  ] = await Promise.all([
+    read.readContract({
+      ...at,
+      address: d.bond,
+      abi: operatorBondAbi,
+      functionName: "bondOf",
+      args: [BigInt(input.agentId)],
+    }),
+    read.readContract({
+      ...at,
+      address: d.coverManager,
+      abi: coverManagerAbi,
+      functionName: "activeCoverOfAgent",
+      args: [BigInt(input.agentId)],
+    }),
+    read.readContract({ ...at, address: d.pool, abi: coverPoolAbi, functionName: "totalAssets" }),
+    read.readContract({
+      ...at,
+      address: d.coverManager,
+      abi: coverManagerAbi,
+      functionName: "totalActiveCover",
+    }),
+    read.readContract({
+      ...at,
+      address: d.coverManager,
+      abi: coverManagerAbi,
+      functionName: "maxLeverageBps",
+    }),
+    read.readContract({
+      ...at,
+      address: d.coverManager,
+      abi: coverManagerAbi,
+      functionName: "maxAgentCoverBps",
+    }),
+    read.readContract({
+      ...at,
+      address: d.coverManager,
+      abi: coverManagerAbi,
+      functionName: "modelFamilyCapBps",
+    }),
+    read.readContract({
+      ...at,
+      address: d.coverManager,
+      abi: coverManagerAbi,
+      functionName: "activeCoverOfFamily",
+      args: [raw.modelFamily],
+    }),
+    read.readContract({
+      ...at,
+      address: input.vault,
+      abi: mandateVaultAbi,
+      functionName: "guardian",
+    }),
+    read.readContract({
+      ...at,
+      address: input.vault,
+      abi: mandateVaultAbi,
+      functionName: "agent",
+    }),
+  ]);
+  const refusal = guard?.({
+    teeMeasurement: attestation.teeMeasurement,
+    reportHash: attestation.reportHash,
+    vaultAgent,
+  });
+  if (refusal) throw new QuoteError(refusal);
   const amount = BigInt(input.coverAmount);
   const cap = Math.min(agentCap, tierForScore(attestation.score).maxCoverBpsOfPool);
   if (total + amount > (assets * BigInt(leverage)) / 10000n)

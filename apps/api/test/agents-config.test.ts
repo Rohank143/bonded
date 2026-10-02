@@ -24,3 +24,18 @@ it("agent 2 matches the mandate attested on chain during Gate 1", () => {
   const agent = configs.find((c) => c.mandate.agentId === "2");
   expect(agent && mandateHash(agent.mandate)).toBe(evidence.attestation.attestation.mandateHash);
 });
+
+it("an agent's TEE entry needs an https URL and a compose hash, and nothing else", () => {
+  const base = JSON.parse(read("config/agents.46630.json"))[0];
+  delete base.tee;
+  const tee = { url: "https://app-8080.dstack.example", composeHash: `0x${"ab".repeat(32)}` };
+  expect(agentConfig.parse({ ...base, tee }).tee).toEqual(tee);
+  expect(agentConfig.parse(base).tee).toBeUndefined();
+  for (const bad of [
+    { ...tee, url: "http://app-8080.dstack.example" },
+    { ...tee, composeHash: "0x12" },
+    { url: tee.url },
+    { ...tee, extra: true },
+  ])
+    expect(() => agentConfig.parse({ ...base, tee: bad })).toThrow();
+});
