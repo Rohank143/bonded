@@ -11,6 +11,7 @@ import process from "node:process";
 import console from "node:console";
 import { readFile, writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
+import { URL } from "node:url";
 import { Sandbox, ANVIL_KEYS, loadDotEnv } from "@bonded/arena";
 import { connectChain } from "@bonded/keeper";
 import {
@@ -30,7 +31,9 @@ const CONFIG = "config/agents.46630.json";
 const HEX32 = /^0x[0-9a-fA-F]{64}$/;
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 
+const args = process.argv.slice(2);
 const { values } = parseArgs({
+  args: args[0] === "--" ? args.slice(1) : args,
   options: {
     "tee-address": { type: "string" },
     "tee-url": { type: "string" },
@@ -62,7 +65,19 @@ const teeUrl = values["tee-url"];
 const composeHash = values["compose-hash"];
 const codeHash = values["code-hash"];
 if (!teeAddress || !ADDRESS.test(teeAddress)) fail("--tee-address must be an EVM address");
-if (!teeUrl || !/^https:\/\/\S+$/.test(teeUrl)) fail("--tee-url must be an https URL");
+try {
+  const url = new URL(teeUrl);
+  if (
+    url.protocol !== "https:" ||
+    !url.hostname ||
+    url.username ||
+    url.password ||
+    /\s/.test(teeUrl)
+  )
+    fail("--tee-url must be an https URL");
+} catch {
+  fail("--tee-url must be an https URL");
+}
 if (!composeHash || !HEX32.test(composeHash)) fail("--compose-hash must be 0x and 64 hex digits");
 if (!codeHash || !HEX32.test(codeHash)) fail("--code-hash must be 0x and 64 hex digits");
 

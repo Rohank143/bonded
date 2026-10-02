@@ -91,12 +91,17 @@ export async function checkAgentTee(
  */
 export function teeQuoteBlock(input: {
   onchainMeasurement: string;
+  onchainReportHash: string;
   vaultAgent: string;
   row?: TeeCheckRow | undefined;
 }): string | undefined {
-  const { onchainMeasurement: rated, vaultAgent, row } = input;
+  const { onchainMeasurement: rated, onchainReportHash, vaultAgent, row } = input;
   if (!isTeeMeasurement(rated)) return undefined;
-  if (!row?.evmAddress || row.ratedMeasurement?.toLowerCase() !== rated.toLowerCase())
+  if (
+    !row?.evmAddress ||
+    row.ratedMeasurement?.toLowerCase() !== rated.toLowerCase() ||
+    row.ratedReportHash?.toLowerCase() !== onchainReportHash.toLowerCase()
+  )
     return "the TEE agent's key is not on record for this rating yet; re-rate the agent";
   if (row.evmAddress.toLowerCase() !== vaultAgent.toLowerCase())
     return "the vault's execution key is not the TEE agent's attested key";
@@ -124,16 +129,32 @@ export async function runTeeChecks(
       await db.clearTee(key);
       continue;
     }
-    const score = await chain.read.readContract({
-      address: chain.deployment.registry,
-      abi: bondedRegistryAbi,
-      functionName: "scoreOf",
-      args: [BigInt(row.agent_id)],
-    });
+    // Read the row first: a worker may replace it while the chain read or attestation is pending.
     const previous = await db.teeCheck(key);
-    // The key recorded for the current rating, if the row is about this score.
+    const observedReportHash = previous?.ratedReportHash ?? null;
+    let score;
+    try {
+      score = await chain.read.readContract({
+        address: chain.deployment.registry,
+        abi: bondedRegistryAbi,
+        functionName: "scoreOf",
+        args: [BigInt(row.agent_id)],
+      });
+    } catch {
+      await db.recordTeeCheck({
+        agentId: key,
+        status: "unreachable",
+        detail: "the on-chain score could not be read",
+        ratedMeasurement: previous?.ratedMeasurement ?? undefined,
+        ratedReportHash: previous?.ratedReportHash ?? undefined,
+        observedReportHash,
+      });
+      checked++;
+      continue;
+    }
     const ratedEvm =
-      previous?.ratedMeasurement?.toLowerCase() === score.teeMeasurement.toLowerCase()
+      previous?.ratedReportHash?.toLowerCase() === score.reportHash.toLowerCase() &&
+      previous.ratedMeasurement?.toLowerCase() === score.teeMeasurement.toLowerCase()
         ? previous.evmAddress
         : null;
     const result = await checkAgentTee(
@@ -143,7 +164,13 @@ export async function runTeeChecks(
       attest,
       ratedEvm,
     );
-    await db.recordTeeCheck({ agentId: key, ratedMeasurement: score.teeMeasurement, ...result });
+    await db.recordTeeCheck({
+      agentId: key,
+      ratedMeasurement: score.teeMeasurement,
+      ratedReportHash: score.reportHash,
+      observedReportHash,
+      ...result,
+    });
     checked++;
   }
   return checked;

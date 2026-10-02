@@ -20,10 +20,22 @@ AGENT_ID="${1:?usage: scripts/rate-live-tee.sh <agent id> (an agent with a tee e
 API_URL="${API_URL:-https://api-production-ba50.up.railway.app}"
 CVM_NAME="${CVM_NAME:-bonded-tee-agent}"
 
-case "$API_URL" in
-  https://*|http://localhost*|http://127.0.0.1*) ;;
-  *) echo "API_URL must use https (got: $API_URL)." >&2; exit 1 ;;
-esac
+# Parse the host: prefix checks accept localhost@remote or localhost.remote and leak the token.
+python3 - "$API_URL" <<'PYURL' || { echo "API_URL must use https (http only for localhost)." >&2; exit 1; }
+import sys
+from urllib.parse import urlsplit
+try:
+    raw = sys.argv[1]
+    url = urlsplit(raw)
+    port = url.port  # rejects malformed ports before any token or VM operation
+    valid = (url.hostname and not url.username and not url.password
+             and not any(c.isspace() or ord(c) < 32 for c in raw)
+             and (url.scheme == "https" or
+                  (url.scheme == "http" and url.hostname in ("localhost", "127.0.0.1", "::1"))))
+except ValueError:
+    valid = False
+sys.exit(0 if valid else 1)
+PYURL
 
 # One run at a time: two runs would fight over starting and stopping the same VM.
 LOCK="${TMPDIR:-/tmp}/rate-live-tee-$CVM_NAME.lock"

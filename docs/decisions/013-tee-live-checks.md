@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-10-02
-- **Code:** `apps/api/src/tee-watch.ts`, `packages/db/migrations/0004_tee_checks.sql`, `apps/arena/src/tee.ts`, `apps/web/src/lib/tee.ts`
+- **Code:** `apps/api/src/tee-watch.ts`, `packages/db/migrations/0004_tee_checks.sql`, `packages/db/migrations/0005_tee_rating_version.sql`, `apps/arena/src/tee.ts`, `apps/web/src/lib/tee.ts`
 
 ## Context
 
@@ -45,6 +45,19 @@ Agent IDs are canonicalized before any lookup (`01` and `1` are the same agent).
 ### 5. Existing cover is not touched
 
 Cover already bound stays bound. The plan allows voiding existing cover in TEE mode, but that is a payout-affecting decision and belongs on-chain and deterministic, not in an off-chain check that can be wrong or unavailable. A key rotation after cover is bound is therefore only caught for new cover. It is not built.
+
+### 6. Rating versions and concurrent checks
+
+Custody keys, verification times and latched failures belong to the score's report hash as well as
+its measurement. A replacement report can rate the same deployment with another key. An outage
+against that replacement cannot inherit evidence or failures from the earlier report; new quotes
+wait for verified evidence for the current report. The quote guard checks both values.
+
+The keeper reads the stored report version before reading the chain or fetching evidence. Its write
+compares that observed version with the stored version, so a delayed check cannot overwrite a
+replacement rating recorded by the worker, or recreate a row removed by an operator-custody rating.
+A failed score read records an outage against the prior version and allows the rest of the batch to
+continue. Within one version, outages preserve the key, last verification time and any failure.
 
 ## Limits
 

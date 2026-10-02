@@ -135,13 +135,19 @@ it("prices TEE custody only for a vault run by the TEE's key, and stops quotes a
   expect((await refusal()).error).toMatch(/not on record/);
 
   // Recorded at rating: the vault runs on a different key than the TEE's, so no discount.
-  await pg.db.recordTeeRating({ agentId: key, ratedMeasurement: measurement, evmAddress: other });
+  await pg.db.recordTeeRating({
+    agentId: key,
+    ratedMeasurement: measurement,
+    ratedReportHash: `0x${"ab".repeat(32)}`,
+    evmAddress: other,
+  });
   expect((await refusal()).error).toMatch(/execution key is not the TEE agent's attested key/);
 
   // The vault's key is the TEE's key: quoted. A leading zero is the same agent, not a way round.
   await pg.db.recordTeeRating({
     agentId: key,
     ratedMeasurement: measurement,
+    ratedReportHash: `0x${"ab".repeat(32)}`,
     evmAddress: vaultAgent,
   });
   expect((await post("/quotes", input)).status).toBe(201);
@@ -153,6 +159,7 @@ it("prices TEE custody only for a vault run by the TEE's key, and stops quotes a
     status: "mismatch",
     detail: "test",
     ratedMeasurement: measurement,
+    ratedReportHash: `0x${"ab".repeat(32)}`,
   });
   for (const id of [agentId, `0${agentId}`, `000${agentId}`]) {
     const blocked = await refusal({ ...input, agentId: id });
@@ -165,6 +172,7 @@ it("prices TEE custody only for a vault run by the TEE's key, and stops quotes a
     agentId: key,
     status: "unreachable",
     ratedMeasurement: measurement,
+    ratedReportHash: `0x${"ab".repeat(32)}`,
   });
   expect((await refusal()).error).toMatch(/TEE no longer matches/);
   const shown = (await (await app.request(`/agents/${agentId}/tee`)).json()) as {
@@ -178,6 +186,7 @@ it("prices TEE custody only for a vault run by the TEE's key, and stops quotes a
     agentId: key,
     status: "verified",
     ratedMeasurement: measurement,
+    ratedReportHash: `0x${"ab".repeat(32)}`,
     evmAddress: vaultAgent,
   });
   expect((await post("/quotes", input)).status).toBe(201);
@@ -192,12 +201,18 @@ it("prices TEE custody only for a vault run by the TEE's key, and stops quotes a
   await pg.db.recordTeeRating({
     agentId: key,
     ratedMeasurement: measurement,
+    ratedReportHash: `0x${"ab".repeat(32)}`,
     evmAddress: vaultAgent,
   });
   expect((await post("/quotes", input)).status).toBe(201);
 
   // Back to operator custody: a rating with no TEE drops the row, and nothing blocks.
-  await pg.db.recordTeeCheck({ agentId: key, status: "invalid", ratedMeasurement: measurement });
+  await pg.db.recordTeeCheck({
+    agentId: key,
+    status: "invalid",
+    ratedMeasurement: measurement,
+    ratedReportHash: `0x${"ab".repeat(32)}`,
+  });
   await repost(`0x${"00".repeat(32)}`);
   await pg.db.recordTeeRating({ agentId: key });
   expect(await pg.db.teeCheck(key)).toBeUndefined();

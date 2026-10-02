@@ -103,6 +103,7 @@ export const teeChecks = pgTable("tee_checks", {
   detail: text(),
   measurement: text(),
   ratedMeasurement: text("rated_measurement"),
+  ratedReportHash: text("rated_report_hash"),
   evmAddress: text("evm_address"),
   blockingStatus: text("blocking_status"),
   checkedAt: timestamp("checked_at", { withTimezone: true }).notNull().defaultNow(),

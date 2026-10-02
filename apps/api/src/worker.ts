@@ -203,6 +203,7 @@ async function runLocked(
             {
               agentId: agentKey,
               ratedMeasurement: signed.attestation.teeMeasurement,
+              ratedReportHash: signed.attestation.reportHash,
               evmAddress: reportTee.evmAddress,
             },
             c,

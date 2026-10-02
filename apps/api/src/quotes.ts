@@ -22,7 +22,11 @@ export async function issueQuote(
   input: { agentId: string; vault: Address; coverAmount: string },
   key: Hex,
   /** Called with what the quote depends on; returns a reason to refuse it, or undefined. */
-  guard?: (info: { teeMeasurement: string; vaultAgent: string }) => string | undefined,
+  guard?: (info: {
+    teeMeasurement: string;
+    reportHash: string;
+    vaultAgent: string;
+  }) => string | undefined,
 ): Promise<SignedQuote> {
   const { read, deployment: d } = chain;
   const block = await read.getBlock();
@@ -115,7 +119,11 @@ export async function issueQuote(
       functionName: "agent",
     }),
   ]);
-  const refusal = guard?.({ teeMeasurement: attestation.teeMeasurement, vaultAgent });
+  const refusal = guard?.({
+    teeMeasurement: attestation.teeMeasurement,
+    reportHash: attestation.reportHash,
+    vaultAgent,
+  });
   if (refusal) throw new QuoteError(refusal);
   const amount = BigInt(input.coverAmount);
   const cap = Math.min(agentCap, tierForScore(attestation.score).maxCoverBpsOfPool);

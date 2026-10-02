@@ -91,8 +91,13 @@ export function createApi(options: {
       chain,
       { ...input, vault: input.vault as Hex },
       options.attesterKey,
-      ({ teeMeasurement, vaultAgent }) =>
-        teeQuoteBlock({ onchainMeasurement: teeMeasurement, vaultAgent, row: teeRow }),
+      ({ teeMeasurement, reportHash, vaultAgent }) =>
+        teeQuoteBlock({
+          onchainMeasurement: teeMeasurement,
+          onchainReportHash: reportHash,
+          vaultAgent,
+          row: teeRow,
+        }),
     );
     await db.pool.query("INSERT INTO quotes(id,chain_id,agent_id,signed) VALUES($1,$2,$3,$4)", [
       randomUUID(),

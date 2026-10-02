@@ -49,10 +49,17 @@ describe("seed-tee-agent", () => {
     expect(stdout).toMatch(/Nothing was sent/);
   });
 
+  it("accepts the separator forwarded by the documented pnpm command", async () => {
+    const [path, ...options] = args(["--dry-run"]);
+    const { stdout } = await run(process.execPath, [path!, "--", ...options], { cwd: root });
+    expect(stdout).toMatch(/Nothing was sent/);
+  });
+
   it("refuses bad arguments before touching a chain", async () => {
     for (const bad of [
       ["--tee-address", "nope"],
       ["--tee-url", "http://insecure.example"],
+      ["--tee-url", "https://["],
       ["--compose-hash", "0x12"],
       ["--code-hash", "0x12"],
     ]) {

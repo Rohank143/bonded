@@ -90,6 +90,7 @@ describe("teeQuoteBlock", () => {
     detail: null,
     measurement: RATED,
     ratedMeasurement: RATED,
+    ratedReportHash: hash(1),
     evmAddress: KEY,
     blockingStatus: null,
     checkedAt: new Date(),
@@ -97,7 +98,7 @@ describe("teeQuoteBlock", () => {
     ...over,
   });
   const block = (r: TeeCheckRow | undefined, vaultAgent = KEY, onchain = RATED) =>
-    teeQuoteBlock({ onchainMeasurement: onchain, vaultAgent, row: r });
+    teeQuoteBlock({ onchainMeasurement: onchain, onchainReportHash: hash(1), vaultAgent, row: r });
 
   it("ignores everything for an agent with no TEE measurement", () => {
     expect(block(undefined, KEY, ZERO)).toBeUndefined();
@@ -113,6 +114,7 @@ describe("teeQuoteBlock", () => {
     expect(block(undefined)).toMatch(/not on record/);
     expect(block(row({ evmAddress: null }))).toMatch(/not on record/);
     expect(block(row({ ratedMeasurement: hash(6) }))).toMatch(/not on record/);
+    expect(block(row({ ratedReportHash: hash(2) }))).toMatch(/not on record/);
   });
 
   it("refuses when the vault's execution key is not the TEE's key, including after a rotation", () => {
