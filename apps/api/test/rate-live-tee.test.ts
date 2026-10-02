@@ -24,3 +24,12 @@ it("rejects remote plaintext and malformed API URLs before prompting or touching
     expect(result.stdout).not.toMatch(/Starting|Stopping|API token/);
   }
 });
+
+it("never puts a non-ASCII character right after an unbraced variable", async () => {
+  // In a UTF-8 locale on macOS, bash reads `$CVM_NAME…` as one variable name and, with `set -u`,
+  // stops with "unbound variable" after the token prompt. Braces end the name.
+  const { readFileSync } = await import("node:fs");
+  const text = readFileSync(script, "utf8");
+  const bad = [...text.matchAll(/\$([A-Za-z_][A-Za-z0-9_]*)(?=[^\x00-\x7f])/g)].map((m) => m[0]);
+  expect(bad).toEqual([]);
+});

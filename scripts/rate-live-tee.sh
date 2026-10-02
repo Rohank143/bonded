@@ -51,7 +51,7 @@ trap 'stop_vm; rmdir "$LOCK" 2>/dev/null || true' EXIT
 read -rs -p "API token (not echoed): " API_TOKEN
 echo
 
-echo "Starting $CVM_NAME…"
+echo "Starting ${CVM_NAME}…"
 phala cvms start "$CVM_NAME" >/dev/null
 for _ in $(seq 1 60); do [ "$(status)" = running ] && break; sleep 10; done
 [ "$(status)" = running ] || { echo "The VM did not start." >&2; exit 1; }
