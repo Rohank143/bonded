@@ -27,6 +27,7 @@ it("agent 2 matches the mandate attested on chain during Gate 1", () => {
 
 it("an agent's TEE entry needs an https URL and a compose hash, and nothing else", () => {
   const base = JSON.parse(read("config/agents.46630.json"))[0];
+  delete base.tee;
   const tee = { url: "https://app-8080.dstack.example", composeHash: `0x${"ab".repeat(32)}` };
   expect(agentConfig.parse({ ...base, tee }).tee).toEqual(tee);
   expect(agentConfig.parse(base).tee).toBeUndefined();
@@ -37,4 +38,11 @@ it("an agent's TEE entry needs an https URL and a compose hash, and nothing else
     { ...tee, extra: true },
   ])
     expect(() => agentConfig.parse({ ...base, tee: bad })).toThrow();
+});
+
+it("the deployed hardened agent runs in the TEE it was verified against", () => {
+  const configs = z.array(agentConfig).parse(JSON.parse(read("config/agents.46630.json")));
+  const hardened = configs.find((c) => c.kind === "hardened");
+  expect(hardened?.tee?.url).toMatch(/^https:\/\/[0-9a-f]{40}-8080\./);
+  expect(hardened?.tee?.composeHash).toMatch(/^0x[0-9a-f]{64}$/);
 });

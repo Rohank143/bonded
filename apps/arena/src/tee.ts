@@ -117,6 +117,15 @@ function runtimeEventDigest(entry: EventLogEntry): string {
     .digest("hex");
 }
 
+/**
+ * The digest the hardware extended for an event. dstack's guest agent leaves `digest` empty for
+ * runtime events (the RTMR3 ones), so it is computed from the event itself. Because the replay
+ * must then reach the quote's RTMR3, the event's name and payload are bound by the hardware.
+ */
+function digestOf(entry: EventLogEntry): string {
+  return entry.digest === "" ? runtimeEventDigest(entry) : entry.digest;
+}
+
 function parseEventLog(raw: string): EventLogEntry[] {
   let parsed: unknown;
   try {
@@ -197,7 +206,7 @@ export async function verifyTeeEvidence(
 
   const log = parseEventLog(evidence.eventLog);
   const replayed = [0, 1, 2, 3].map((imr) =>
-    replayRtmr(log.filter((e) => e.imr === imr).map((e) => e.digest)),
+    replayRtmr(log.filter((e) => e.imr === imr).map(digestOf)),
   );
   const quoted = [facts.rtMr0, facts.rtMr1, facts.rtMr2, facts.rtMr3];
   replayed.forEach((value, i) => {
@@ -207,7 +216,7 @@ export async function verifyTeeEvidence(
   const composeEvents = log.filter((e) => e.imr === 3 && e.event === "compose-hash");
   if (composeEvents.length !== 1) fail("the event log must record exactly one compose hash");
   const composeEvent = composeEvents[0]!;
-  if (!sameHex(runtimeEventDigest(composeEvent), composeEvent.digest))
+  if (!sameHex(runtimeEventDigest(composeEvent), digestOf(composeEvent)))
     fail("the compose-hash event does not match its digest");
   if (!sameHex(composeEvent.event_payload, expected.composeHash))
     fail("the hardware measured a different compose hash than the one published");

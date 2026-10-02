@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { teeMeasurement, teeReportData } from "@bonded/shared";
 import { describe, expect, it } from "vitest";
 import {
@@ -288,6 +289,59 @@ describe("attestTeeAgent", () => {
         fetch: (async () => new Response("no", { status: 502 })) as unknown as typeof fetch,
       }),
       /answered 502/,
+    );
+  });
+});
+
+// Evidence captured from a real Phala Cloud TDX VM (dstack 0.5.9, production OS). Intel's check of
+// the quote is replaced by the facts it returned at capture time, since collateral needs the
+// network. Everything else is verified for real, including the way dstack leaves the digest empty
+// for runtime events.
+describe("evidence from a real dstack TDX VM", () => {
+  const live = JSON.parse(
+    readFileSync(new URL("./fixtures/tee-live.json", import.meta.url), "utf8"),
+  ) as { evidence: Record<string, string>; facts: QuoteFacts };
+  const expected = {
+    nonce: live.evidence.nonce!,
+    codeHash: live.evidence.codeHash as `0x${string}`,
+    composeHash: live.evidence.composeHash!,
+    verifyQuote: verifier(live.facts),
+  };
+  const log = JSON.parse(live.evidence.eventLog!) as {
+    imr: number;
+    event: string;
+    digest: string;
+    event_payload: string;
+  }[];
+
+  it("has runtime events with no digest, as the real guest agent sends them", () => {
+    expect(log.some((e) => e.imr === 3 && e.digest === "")).toBe(true);
+  });
+
+  it("verifies and measures the platform and compose hash", async () => {
+    const tee = await verifyTeeEvidence(live.evidence, expected);
+    expect(tee.measurement).toBe(
+      teeMeasurement({ ...live.facts, composeHash: live.evidence.composeHash! }),
+    );
+    expect(tee.tcbStatus).toBe("UpToDate");
+  });
+
+  it("refuses when any runtime event's payload is altered", async () => {
+    for (const event of ["compose-hash", "app-id", "os-image-hash"]) {
+      const forged = log.map((e) =>
+        e.event === event ? { ...e, event_payload: "cd".repeat(e.event_payload.length / 2) } : e,
+      );
+      await rejects(
+        verifyTeeEvidence({ ...live.evidence, eventLog: JSON.stringify(forged) }, expected),
+        /does not replay to RTMR3/,
+      );
+    }
+  });
+
+  it("refuses a different published compose hash", async () => {
+    await rejects(
+      verifyTeeEvidence(live.evidence, { ...expected, composeHash: "cd".repeat(32) }),
+      /different deployment/,
     );
   });
 });

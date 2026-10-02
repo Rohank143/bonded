@@ -21,6 +21,23 @@ describe("composeHashOf", () => {
     );
   });
 
+  it("gives the same hash for Phala's API view, with unset fields as null and an empty init_script", () => {
+    const apiView = {
+      ...manifest,
+      salt: null,
+      port_policy: null,
+      swap_size: null,
+      init_script: [],
+    };
+    expect(composeHashOf(JSON.stringify(apiView))).toBe(composeHashOf(JSON.stringify(manifest)));
+  });
+
+  it("still changes when a set field changes", () => {
+    expect(composeHashOf(JSON.stringify({ ...manifest, kms_enabled: false }))).not.toBe(
+      composeHashOf(JSON.stringify(manifest)),
+    );
+  });
+
   it("changes when the image changes", () => {
     const other = {
       ...manifest,

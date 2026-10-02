@@ -6,13 +6,22 @@ import { getComposeHash } from "@phala/dstack-sdk";
 /**
  * The compose hash dstack will measure for an app-compose manifest (the JSON `phala deploy`
  * builds from docker-compose.yml). Compute it yourself before trusting a deployment: it is the
- * value you give the Arena as `--tee-compose-hash`.
+ * value you give the Arena as `--tee-compose-hash`. Checked against a real deployment: it matches
+ * the compose hash Phala reports and the hardware measures.
  */
 export function composeHashOf(manifestJson: string): string {
   const manifest: unknown = JSON.parse(manifestJson);
   if (typeof manifest !== "object" || manifest === null || Array.isArray(manifest))
     throw new Error("an app-compose manifest is a JSON object");
-  return `0x${getComposeHash(manifest as Parameters<typeof getComposeHash>[0])}`;
+  // Phala's API shows the manifest with every optional field present: unset ones as null and an
+  // empty `init_script`. The hashed manifest has none of them, so drop them to get its hash.
+  const hashed = Object.fromEntries(
+    Object.entries(manifest).filter(
+      ([key, value]) =>
+        value !== null && !(key === "init_script" && Array.isArray(value) && value.length === 0),
+    ),
+  );
+  return `0x${getComposeHash(hashed as Parameters<typeof getComposeHash>[0])}`;
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
