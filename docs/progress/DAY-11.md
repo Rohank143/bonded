@@ -18,10 +18,19 @@ Plan reference: docs/PLAN.md Section 20, Day 11, and Section 12. Decisions: [ADR
 - Tee-agent: keys, the commitment sent to the hardware, a fresh quote each time, route rules, no private key in any response, no error detail leaked. Compose-hash tool.
 - Web: when the badge and keys show.
 
+## Real deployment (2026-10-02)
+
+- Image `ghcr.io/ddboy19912/bonded-tee-agent@sha256:e543f1b5…` (amd64, public), pinned in `services/tee-agent/docker-compose.yml`. The Docker build and a mock-mode run were tested on the founder's Mac.
+- CVM `bonded-tee-agent` on Phala Cloud: `tdx.small`, dstack 0.5.9 production OS, app id `e4160e59…3a8338e`, compose hash `0x0205e838…32f9e19`. The first deploy used a dev OS image because the CLI picked up an SSH key; it was deleted and redeployed with `--no-dev-os`.
+- The compose hash computed from Phala's manifest matches Phala's value and the one the hardware measured.
+- The Arena verified a real Intel TDX quote from it (TCB `UpToDate`). Two fixes came out of that, both in the verifier and its tests: the guest agent sends empty digests for runtime events, and Phala's API manifest has null fields the hash doesn't include. The evidence is saved as a test fixture.
+- `arena rate --tee-url …` ran end to end against it: the rating (hardened-agent/scripted, score 83) carries the measurement `0xb933453b…8f01`, and the sandbox registry accepted the attestation.
+- `config/agents.46630.json`: the hardened agent (agent 2) now has a `tee` entry. An API rating job for it verifies the live TEE first and fails if it doesn't verify. If the CVM is stopped or deleted, ratings of that agent fail until it is back. That is the design: no unmeasured score.
+
 ## Not done
 
-- **No real deployment yet.** It needs the Phala account and `phala` CLI on the founder's machine (docs/TEE.md). Until then, nothing here has seen a real TDX quote: the verifier is tested against facts built from the spec, and the Intel verifier is tested only on a garbage quote. The first deployment is the real test; docs/TEE.md step 6 says what to send me if the event digest rule needs a fix.
-- **The Docker build is untested here.** Docker's daemon wasn't running on this Mac. The build's steps (install, build, `pnpm deploy`) were run by hand, and the bundle was started in mock mode and answered both routes.
+- **The badge on the live testnet.** It appears once a rating job runs on the deployed API after this is merged (`POST /arena/runs` for agent 2, which needs the API token). Nothing was posted to Robinhood testnet from here.
 - **No premium discount.** The actuarial model has no key-theft term, so the score is unchanged. See ADR-012.
 - **The Arena doesn't attack the live TEE agent.** It rates the code in its sandbox and verifies the live agent's proof. See ADR-012, decision 2.
+- **Dev OS images aren't rejected** by the verifier (ADR-012).
 - **Ethereum Sepolia registry and 4-chain scores** were finished before Day 11 (the `multichain-scores` work) and are not part of this change.

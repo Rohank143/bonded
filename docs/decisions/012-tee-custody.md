@@ -35,8 +35,8 @@ Nothing the agent says is trusted. The Arena throws, and the rating fails, unles
 
 1. The quote verifies against Intel's certificate chain (`@phala/dcap-qvl`, collateral through Phala's PCCS) and Intel's TCB status for the machine is `UpToDate` or `SWHardeningNeeded`.
 2. The quote's report data equals the commitment in decision 3, recomputed by the Arena.
-3. The event log replays to the quote's RTMR0 to RTMR3 (`new = sha384(old || digest)`).
-4. The log has exactly one `compose-hash` event, its digest matches its payload, and the payload equals the compose hash the operator published for this deployment.
+3. The event log replays to the quote's RTMR0 to RTMR3 (`new = sha384(old || digest)`). dstack's guest agent leaves `digest` empty for runtime events (the RTMR3 ones), so for those the Arena computes it as `sha384(type (u32 LE) ":" event ":" payload)`. The replay must then reach the quote's RTMR3, so the hardware binds each event's name and payload.
+4. The log has exactly one `compose-hash` event and its payload equals the compose hash the operator published for this deployment.
 5. The evidence's `codeHash` equals the code being rated.
 
 There is no fallback. A configured TEE that doesn't verify fails the rating job. It never quietly produces an unmeasured score.
@@ -62,5 +62,6 @@ Derived by `getKey` from the app's identity: the same compose hash gets the same
 - **No premium discount yet.** Plan Section 12 says TEE custody sets the key-theft exposure to about zero. The actuarial model has no key-theft term today, so the score and premium are unchanged. A discount has to come from a measured effect, as the plan requires, so we show the badge and don't invent a number.
 - **On-chain quote verification** (the plan's stretch goal) is not built. The Arena verifies off-chain and the attester signs the result.
 - **Trust in the attester.** The chain trusts the Arena's attester to have verified the quote. Intel and the measurement are trusted for the TEE claims, and the attester is trusted to have checked them.
-- **dstack's event digest.** Check 4 recomputes a runtime event's digest as `sha384(type (u32 LE) ":" event ":" payload)`. The unit tests prove the implementation follows that rule, and the first real deployment must confirm the rule matches what dstack records (docs/TEE.md, step 6).
+- **Verified on real hardware.** On 2026-10-02 a real quote from a Phala Cloud TDX VM (dstack 0.5.9, production OS, Intel TCB `UpToDate`) passed every check above, and a rating with it posted a real measurement. The captured evidence is a regression test. This confirms the digest rule, which the first version had assumed.
+- **Dev OS images are not rejected.** A dev image allows SSH into the VM, which defeats key custody. Today the runbook says to deploy with `--no-dev-os`. The OS image hash is in the quote's measurements, so the Arena could pin the allowed production image hash. That is future work, and until then the badge depends on the operator following the runbook.
 - **The simulator.** dstack's simulator signs with a fixed development key, so its quotes can't pass Intel verification. The Arena only accepts real quotes, and `TEE_BACKEND=mock` can never earn a badge.

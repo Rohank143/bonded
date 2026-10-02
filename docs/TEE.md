@@ -48,10 +48,14 @@ Phala Cloud runs x86 machines, so the image must be built for `linux/amd64` (an 
 **3. Deploy.**
 
 ```bash
-phala deploy --name bonded-tee-agent --compose services/tee-agent/docker-compose.yml
+phala deploy --name bonded-tee-agent --compose services/tee-agent/docker-compose.yml --instance-type tdx.small --no-dev-os --wait
 ```
 
-Phala prints the app's URL (a `https://<app-id>-8080.<gateway>` address). Check it:
+**Always pass `--no-dev-os`.** The CLI finds your SSH key and otherwise deploys a dev OS image, which allows SSH into the VM, so the operator could read the agent's keys. `phala cvms get <name>` must show `Dstack: dstack-0.5.9` without `dev`. The Arena does not reject dev images yet, so this is on you.
+
+The instance costs $0.058 an hour (`tdx.small`). Your Phala balance must be above zero first.
+
+Find the app's URL with `phala cvms get <name> --json` (the `endpoints` entry, `https://<app-id>-8080.<gateway>`). Check it:
 
 ```bash
 curl https://<that-url>/health
@@ -69,7 +73,7 @@ pnpm --filter @bonded/tee-agent build
 pnpm --filter @bonded/tee-agent compose-hash path/to/app-compose.json
 ```
 
-The value must also equal the `composeHash` in `curl <url>/attestation?nonce=0x<64 hex>` and the compose hash Phala shows for the app. If they differ, stop.
+`phala cvms get <name> --json` has a `compose_file` field. Save it as a file and pass that file. The tool drops the null fields and empty `init_script` that Phala's API adds, so the hash is the one the hardware measures. The value must also equal the `compose_hash` Phala reports and the `composeHash` in `curl <url>/attestation?nonce=0x<64 hex>` and the compose hash Phala shows for the app. If they differ, stop.
 
 **5. Rate with the TEE.** From the repository root:
 
@@ -79,7 +83,7 @@ pnpm arena rate --agent hardened --enforce --code-hash 0x<code hash> --tee-url h
 
 The Arena sends a random challenge, verifies the quote with Intel's collateral, and prints `TEE verified: measurement 0x…`. The attestation carries it, and the report has a TEE line. Any failure stops the rating and says why.
 
-**6. First deployment only: confirm the event digest rule.** The Arena recomputes the compose-hash event's digest (ADR-012, "Not done"). If step 5 fails with "the compose-hash event does not match its digest", that rule differs from what dstack records. Send me the full `/attestation` output and the error; it's a one-line fix, and the tests need the real event for a fixture.
+**6. What the first real deployment showed.** The Arena has been run against a real deployment (2026-10-02, dstack 0.5.9). Two things differed from the spec I started from, both fixed: the guest agent leaves `digest` empty for runtime events, so the Arena computes it, and Phala's API shows the manifest with extra null fields. A real quote, with its event log, is saved as a test fixture (`apps/arena/test/fixtures/tee-live.json`).
 
 **7. Make it live.** Put the TEE in the agent's service config, so API rating jobs verify it too:
 
