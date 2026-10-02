@@ -93,6 +93,25 @@ The Arena sends a random challenge, verifies the quote with Intel's collateral, 
 
 Then run a rating through the API (`POST /arena/runs`). When the score is posted, the agent's page shows the TEE badge. Cross-chain posting copies the measurement to the other chains' registries.
 
+## Cost, and pausing it
+
+- `tdx.small` is Phala's smallest instance: $0.058 an hour for compute plus $0.0028 an hour for its 20 GB disk, about $44 a month running.
+- Billing is per minute. **Stopping** the VM stops the compute charge at once. Only the disk is charged (about $2 a month), and the disk is kept.
+- **Stop it when you aren't using it, start it when you need it:**
+
+```bash
+phala cvms stop bonded-tee-agent
+```
+
+```bash
+phala cvms start bonded-tee-agent
+```
+
+- Tested on 2026-10-02: after a stop and start the app has the same URL, the same session keys and the same measurement, and its quote verifies again. Allow a couple of minutes after `start` before rating.
+- While it is stopped, API rating jobs for the hardened agent fail by design (no unmeasured score). Start it before running one.
+- **Deleting** it stops the disk charge too, but a new deployment gets a new app id, so a new URL and new keys. Update the agent's `tee` entry and re-rate.
+- Phala's pricing page mentions $20 of free credit for CVM usage after account verification. Check whether your account has it.
+
 ## Things to know
 
 - **Re-deploying changes the answer.** A new image digest means a new compose hash and a new measurement, so every re-deploy needs a new rating. That is the point: the score belongs to one exact deployment.
