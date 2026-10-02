@@ -30,6 +30,8 @@ it("never puts a non-ASCII character right after an unbraced variable", async ()
   // stops with "unbound variable" after the token prompt. Braces end the name.
   const { readFileSync } = await import("node:fs");
   const text = readFileSync(script, "utf8");
-  const bad = [...text.matchAll(/\$([A-Za-z_][A-Za-z0-9_]*)(?=[^\x00-\x7f])/g)].map((m) => m[0]);
+  const bad = [...text.matchAll(/\$([A-Za-z_][A-Za-z0-9_]*)(.)/gu)]
+    .filter((m) => m[2]!.charCodeAt(0) > 127)
+    .map((m) => m[0]);
   expect(bad).toEqual([]);
 });
