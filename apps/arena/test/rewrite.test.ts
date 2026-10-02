@@ -88,3 +88,40 @@ it("rewrites pairs once, keeps failed inputs, and applies only matching rewrites
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+it("counts a response without an outputs array as failed, so a rerun retries the group", async () => {
+  const rows = buildContrastRows({ pairs: 1, benign: 0 }).slice(0, 2);
+  const dir = mkdtempSync(join(tmpdir(), "rewrite-"));
+  try {
+    const out = join(dir, "rw.jsonl");
+    const truncated = {
+      complete: async () => ({ choices: [{ message: { content: '{"outputs": ["cut' } }] }),
+    };
+    const first = await rewriteRows({
+      client: truncated as never,
+      model: "m",
+      rows,
+      maxUsd: 1,
+      out,
+    });
+    expect(first).toMatchObject({ written: 0, failed: 1 });
+    // Nothing was recorded, so the next run tries the same group again.
+    const echo = {
+      complete: async (req: { messages: { content: string }[] }) => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                outputs: JSON.parse(req.messages[1]!.content.split("\n").at(-1)!),
+              }),
+            },
+          },
+        ],
+      }),
+    };
+    const second = await rewriteRows({ client: echo as never, model: "m", rows, maxUsd: 1, out });
+    expect(second).toMatchObject({ written: 1, skippedExisting: 0, failed: 0 });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

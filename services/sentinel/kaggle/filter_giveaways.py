@@ -48,7 +48,7 @@ def inputs_text(state: dict) -> str:
 def scores(texts: list[str], labels: np.ndarray, seed: int) -> np.ndarray:
     """Each row's out-of-fold probability for its own label."""
     out = np.zeros(len(texts))
-    folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
+    folds = StratifiedKFold(n_splits=FOLDS, shuffle=True, random_state=seed)
     for train, held in folds.split(texts, labels):
         vec = TfidfVectorizer(ngram_range=(1, 2), min_df=3, max_features=200_000, token_pattern=TOKENS)
         x = vec.fit_transform([texts[i] for i in train])
@@ -56,6 +56,14 @@ def scores(texts: list[str], labels: np.ndarray, seed: int) -> np.ndarray:
         p = model.predict_proba(vec.transform([texts[i] for i in held]))[:, 1]
         out[held] = np.where(labels[held] == 1, p, 1 - p)
     return out
+
+
+FOLDS = 5
+
+
+def can_score(labels: np.ndarray) -> bool:
+    """Five-fold scoring needs at least five rows of each label."""
+    return len(labels) > 0 and min(int(labels.sum()), int(len(labels) - labels.sum())) >= FOLDS
 
 
 def main() -> None:
@@ -81,6 +89,9 @@ def main() -> None:
     for n in range(rounds):
         texts = [t for _, t, _ in rows]
         labels = np.array([y for _, _, y in rows])
+        if not can_score(labels):
+            print(f"round {n + 1}: {len(rows)} rows left, too few of one label to score; stopping")
+            break
         p = scores(texts, labels, seed=n)
         accuracy = float(np.mean(p >= 0.5))
         majority = max(labels.mean(), 1 - labels.mean())
@@ -93,12 +104,16 @@ def main() -> None:
         rows = [row for row, g in zip(rows, give) if not g]
     texts = [t for _, t, _ in rows]
     labels = np.array([y for _, _, y in rows])
+    out.write_text("".join(f"{i}\n" for i in dropped))
+    if not can_score(labels):
+        print(f"after: {len(rows)} rows kept, too few of one label to measure inputs-only accuracy")
+        print(f"{len(dropped)} ids written to {out}")
+        return
     p = scores(texts, labels, seed=rounds)
     print(
         f"after: {len(rows)} rows kept, inputs-only accuracy {float(np.mean(p >= 0.5)):.1%} "
         f"(majority {max(labels.mean(), 1 - labels.mean()):.1%}), manipulated {labels.mean():.1%}"
     )
-    out.write_text("".join(f"{i}\n" for i in dropped))
     print(f"{len(dropped)} ids written to {out}")
 
 

@@ -31,6 +31,9 @@ async function main(): Promise<number> {
     console.log(USAGE);
     return values.help ? 0 : 1;
   }
+  const concurrency = Number(values.concurrency);
+  if (!Number.isInteger(concurrency) || concurrency < 1)
+    throw new Error("--concurrency must be a whole number of 1 or more");
   loadDotEnv();
   const summary = await rewriteRows({
     client: new OpenAICompatibleClient(llmConfigFromEnv()),
@@ -38,7 +41,7 @@ async function main(): Promise<number> {
     rows: buildContrastRows(),
     maxUsd,
     out: values.out,
-    concurrency: Number(values.concurrency),
+    concurrency,
     onDone: (n) => {
       if (n % 250 === 0) console.log(`  ${n} rewritten`);
     },

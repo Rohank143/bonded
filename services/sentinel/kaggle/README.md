@@ -223,7 +223,7 @@ node dist/laya-dataset-cli.js --arena ratings/v3-vulnerable-scripted/sentinel-da
 python ../../services/sentinel/kaggle/check_tokens.py datasets/laya-v4 datasets/laya-v4-too-long.txt
 ```
 
-Rebuild with `--exclude-ids datasets/laya-v4-too-long.txt` added, and check the result with `pnpm sentinel:shortcuts apps/arena/datasets/laya-v4` (it must print PASS). Then:
+Rebuild with `--exclude-ids datasets/laya-v4-too-long.txt` added, and check the result with `pnpm sentinel:shortcuts datasets/laya-v4` (the path is relative to `apps/arena`, where the script runs; it must print PASS). Then:
 
 1. Upload the three files as a new version of `bonded-sentinel`.
 2. **Import `bonded-sentinel.ipynb` from the repository again** (File, Import Notebook). The v3 model card on Hugging Face still said "three questions", so the saved Kaggle notebook was older than the repository's.

@@ -166,7 +166,10 @@ export async function rewriteRows(options: RewriteOptions) {
         });
         const json = extractJson(response.choices[0]?.message.content ?? "") as
           { outputs?: unknown[] } | undefined;
-        outputs = json?.outputs ?? [];
+        // No outputs array (truncated or not JSON): a failed request, not a finished group,
+        // so a rerun tries it again.
+        if (!Array.isArray(json?.outputs)) throw new Error("no outputs array");
+        outputs = json.outputs;
       } catch {
         summary.failed++;
         continue;
