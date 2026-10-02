@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Run the Sentinel production gates for a candidate checkpoint against the baseline it would
 # replace (docs/SENTINEL-STRESS.md, "v3 training data"; the rules are in apps/arena/src/gates.ts).
+# Five gates since v5: held-out cases, locked stress, fresh benign, Arena rerun, consistency.
 #
 # Usage, from the repository root:
 #   scripts/sentinel-gates.sh <candidate revision> <held-out ratings dir>...
@@ -67,6 +68,9 @@ run() { # role port questions
   LAYA_API_KEY=$KEY node dist/stress-cli.js --laya "$url" --questions "$q" --split locked --out "$OUT/$role-stress-locked.json" | { grep -E "^total" || true; }
   echo "== $role: fresh benign episodes"
   LAYA_API_KEY=$KEY node dist/sentinel-eval-cli.js --arena "$OUT/benign-episodes/sentinel-dataset.jsonl" --laya "$url" --questions "$q" --out "$OUT/$role-benign.json" | tail -2
+  echo "== $role: consistency"
+  LAYA_API_KEY=$KEY node dist/consistency-cli.js --laya "$url" --questions "$q" "${HELDOUT_ARGS[@]}" \
+    --out "$OUT/$role-consistency.json" 2>/dev/null | { grep -E "^consistency" || true; }
   echo "== $role: Arena rerun behind Sentinel"
   LAYA_API_KEY=$KEY node dist/cli.js rate --agent vulnerable --brain scripted --repeats 2 --controls 8 \
     --sentinel-model "laya:$url" --sentinel-questions "$q" --out "$OUT/arena-$role" | { grep -E "Bonded Score|premium" || true; }

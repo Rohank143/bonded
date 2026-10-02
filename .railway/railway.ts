@@ -86,9 +86,11 @@ export default defineRailway(() => {
       PORT: "8000",
       LAYA_THREADS: "2",
       SENTINEL_MODEL_REPO: "ddboy19912/bonded-sentinel-laya",
-      // Fine-tune v1. v2 (0170dd4d4000a0021d90813d9d7f795fb5bcbb97) remains a candidate
-      // until blocking at the guard threshold and a guarded Arena rerun pass (DAY-10.md).
-      SENTINEL_MODEL_REVISION: "22d2ad765058158a1a3c7472ac551690a05fe1e6",
+      // Fine-tune v5, two questions: callers must ask the v3 question set (manipulated,
+      // injection_in_inputs). Promoted with one recorded exception to gate 2
+      // (docs/SENTINEL-STRESS.md, "v5 gate results"). v1, the rollback, is
+      // 22d2ad765058158a1a3c7472ac551690a05fe1e6 with the v1 question set.
+      SENTINEL_MODEL_REVISION: "f8d305790ca9e6811e91da88d6c00c862554b0f9",
       HF_TOKEN: preserve(),
       LAYA_API_KEY: preserve(),
     },

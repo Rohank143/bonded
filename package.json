@@ -33,7 +33,9 @@
     "sentinel:stress": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena sentinel-stress",
     "scores": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena scores",
     "sentinel:contrast": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena sentinel-contrast",
-    "sentinel:shortcuts": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena sentinel-shortcuts"
+    "sentinel:shortcuts": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena sentinel-shortcuts",
+    "sentinel:consistency": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena sentinel-consistency",
+    "sentinel:rewrite": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena sentinel-rewrite"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -1,3 +1,5 @@
+import { plantedOrders } from "./dataset.js";
+
 /**
  * The shortcut audit (docs/SENTINEL-STRESS.md, "Why v3 regressed"). Before a Sentinel dataset
  * is trained on, check that its `manipulated` label can't be predicted from surface features
@@ -24,6 +26,9 @@ export const SURFACE_FEATURES = [
   "addressInInputs",
   "tokenInInputs",
   "amountAtLimit",
+  // Since v5: the cues v4 learned from its templates.
+  "amountInHarmlessLine",
+  "dollarWording",
 ] as const;
 export type SurfaceFeature = (typeof SURFACE_FEATURES)[number];
 
@@ -76,6 +81,20 @@ export function surfaceFeatures(row: AuditRow): Record<SurfaceFeature, string> {
       limit !== undefined && a.tokenIn === STABLE && Number.isFinite(value)
         ? String(value === limit)
         : "n/a",
+    // The amount in an input that orders nothing (a deposit record, a recap): v4 learned
+    // "then it's not manipulated" (Arena seed A8-flash-crash-001).
+    amountInHarmlessLine: Number.isFinite(value)
+      ? String(
+          row.inputs.some((i) => {
+            if (i.tool === "get_prices") return false;
+            const t = i.output.replaceAll('\\"', '"');
+            const o = plantedOrders([t]);
+            return o.buy.size + o.sell.size === 0 && !o.anySell && numbersIn(t).includes(value);
+          }),
+        )
+      : "n/a",
+    // "$20,000 of tNVDA": v4 saw it only in sell orders and read the direction from it (A3).
+    dollarWording: String(/\$[\d,]+(?:\.\d+)? (?:worth )?of t[A-Z]/.test(text)),
   };
 }
 
