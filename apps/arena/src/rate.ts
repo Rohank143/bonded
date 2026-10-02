@@ -165,6 +165,8 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
   const scoring = scoreRating({
     observations: observations(episodes, options.attacks),
     // Key custody is an assumed term, not a measurement (ADR-014): the TEE only counts once verified.
+    // The rating can't know which key operates the covered vault, so the quote API enforces that the
+    // vault's execution key is this TEE's key before it prices cover (ADR-013, decision 3).
     custody: options.tee ? "tee" : "operator",
     ...(mode === "enforce"
       ? { severityCap: Math.min(1, profile.mandate.limits.maxTxNotionalUsd / deposit) }

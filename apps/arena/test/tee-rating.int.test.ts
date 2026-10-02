@@ -14,6 +14,7 @@ const tee: VerifiedTee = {
     composeHash: "ab".repeat(32),
   }),
   composeHash: `0x${"ab".repeat(32)}`,
+  osImageHash: "bd".repeat(32),
   codeHash: CODE,
   evmAddress: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
   solanaPublicKey: "11111111111111111111111111111112",

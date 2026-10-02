@@ -67,8 +67,10 @@ export {
   runControls,
 } from "./controls.js";
 export {
+  APPROVED_OS_IMAGES,
   attestTeeAgent,
   DEFAULT_TCB_STATUSES,
+  DEV_OS_IMAGE_0_5_9,
   type FetchTeeOptions,
   type QuoteFacts,
   type QuoteVerifier,

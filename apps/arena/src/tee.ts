@@ -92,6 +92,8 @@ export interface VerifiedTee {
   /** Goes into the attestation as `teeMeasurement`. */
   measurement: `0x${string}`;
   composeHash: `0x${string}`;
+  /** The dstack OS image the VM booted, as measured by the hardware. */
+  osImageHash: string;
   codeHash: `0x${string}`;
   evmAddress: `0x${string}`;
   solanaPublicKey: string;
@@ -102,6 +104,20 @@ export interface VerifiedTee {
   rtMr2: string;
 }
 
+/**
+ * The dstack OS images the Arena accepts. The OS image hash is measured into RTMR3 (the
+ * `os-image-hash` event), so the hardware vouches for which OS the VM booted. A development image
+ * allows SSH into the VM, which lets the operator read the agent's keys, so it is not on this
+ * list and is refused. Add a production image here, in a reviewed change, when Phala releases one.
+ */
+export const APPROVED_OS_IMAGES: Readonly<Record<string, string>> = {
+  "dstack-0.5.9": "bd369a8c2f9edb2b52dad48ac8e0b32dde5f1337c423a506b48d07403a7d8033",
+};
+
+/** The dstack 0.5.9 development image, which allows SSH into the VM. Never accepted. */
+export const DEV_OS_IMAGE_0_5_9 =
+  "de9c74f0c85d0820ce075cb4a99f8e39f7b681be632907c5bf8bdc95ea72feb9";
+
 export interface TeeExpectation {
   /** The challenge the Arena sent. */
   nonce: string;
@@ -111,6 +127,8 @@ export interface TeeExpectation {
   composeHash: string;
   verifyQuote?: QuoteVerifier;
   acceptedStatuses?: readonly string[];
+  /** OS image hashes to accept (default: `APPROVED_OS_IMAGES`). */
+  approvedOsImages?: readonly string[];
 }
 
 interface EventLogEntry {
@@ -156,6 +174,14 @@ function digestOf(entry: EventLogEntry): string {
   return entry.digest === "" ? runtimeEventDigest(entry) : entry.digest;
 }
 
+const HEX = /^[0-9a-fA-F]*$/;
+const isHex = (v: unknown, maxBytes: number): v is string =>
+  typeof v === "string" && v.length % 2 === 0 && v.length <= maxBytes * 2 && HEX.test(v);
+
+/**
+ * Parses the event log strictly. Anything that isn't exactly the shape dstack emits is a
+ * verification failure, not an exception: a hostile agent controls this string.
+ */
 function parseEventLog(raw: string): EventLogEntry[] {
   let parsed: unknown;
   try {
@@ -164,17 +190,22 @@ function parseEventLog(raw: string): EventLogEntry[] {
     throw new TeeVerificationError("the event log is not JSON");
   }
   if (!Array.isArray(parsed)) throw new TeeVerificationError("the event log is not a list");
-  return parsed.map((entry) => {
-    const e = entry as Partial<EventLogEntry>;
+  if (parsed.length > 10_000) throw new TeeVerificationError("the event log is too long");
+  return parsed.map((entry: unknown) => {
+    const e = (typeof entry === "object" && entry !== null ? entry : {}) as Record<string, unknown>;
     if (
-      typeof e.imr !== "number" ||
-      typeof e.event_type !== "number" ||
-      typeof e.digest !== "string" ||
+      !Number.isInteger(e.imr) ||
+      (e.imr as number) < 0 ||
+      (e.imr as number) > 3 ||
+      !Number.isInteger(e.event_type) ||
+      (e.event_type as number) < 0 ||
+      (e.event_type as number) > 0xffffffff ||
+      !isHex(e.digest, 48) ||
       typeof e.event !== "string" ||
-      typeof e.event_payload !== "string"
+      !isHex(e.event_payload, 1 << 20)
     )
       throw new TeeVerificationError("the event log has a malformed entry");
-    return e as EventLogEntry;
+    return e as unknown as EventLogEntry;
   });
 }
 
@@ -234,41 +265,59 @@ export async function verifyTeeEvidence(
   if (!sameHex(facts.reportData, expectedData))
     fail("the quote does not commit to this code, these keys and this challenge");
 
-  const log = parseEventLog(evidence.eventLog);
-  const replayed = [0, 1, 2, 3].map((imr) =>
-    replayRtmr(log.filter((e) => e.imr === imr).map(digestOf)),
-  );
-  const quoted = [facts.rtMr0, facts.rtMr1, facts.rtMr2, facts.rtMr3];
-  replayed.forEach((value, i) => {
-    if (!sameHex(value, quoted[i]!)) fail(`the event log does not replay to RTMR${i}`);
-  });
+  // Everything below handles text the agent controls. Whatever goes wrong with it is a verification
+  // failure, never an untyped exception (which a caller could mistake for an outage).
+  try {
+    const log = parseEventLog(evidence.eventLog);
+    const replayed = [0, 1, 2, 3].map((imr) =>
+      replayRtmr(log.filter((e) => e.imr === imr).map(digestOf)),
+    );
+    const quoted = [facts.rtMr0, facts.rtMr1, facts.rtMr2, facts.rtMr3];
+    replayed.forEach((value, i) => {
+      if (!sameHex(value, quoted[i]!)) fail(`the event log does not replay to RTMR${i}`);
+    });
 
-  const composeEvents = log.filter((e) => e.imr === 3 && e.event === "compose-hash");
-  if (composeEvents.length !== 1) fail("the event log must record exactly one compose hash");
-  const composeEvent = composeEvents[0]!;
-  if (!sameHex(runtimeEventDigest(composeEvent), digestOf(composeEvent)))
-    fail("the compose-hash event does not match its digest");
-  if (!sameHex(composeEvent.event_payload, expected.composeHash))
-    fail("the hardware measured a different compose hash than the one published");
+    // An RTMR3 event is only vouched for by the hardware when its digest is the one computed from
+    // its own name and payload.
+    const measuredEvent = (name: string): string => {
+      const events = log.filter((e) => e.imr === 3 && e.event === name);
+      if (events.length !== 1) return fail(`the event log must record exactly one ${name} event`);
+      const event = events[0]!;
+      if (!sameHex(runtimeEventDigest(event), digestOf(event)))
+        return fail(`the ${name} event does not match its digest`);
+      return event.event_payload;
+    };
 
-  return {
-    measurement: teeMeasurement({
+    if (!sameHex(measuredEvent("compose-hash"), expected.composeHash))
+      fail("the hardware measured a different compose hash than the one published");
+    const osImageHash = measuredEvent("os-image-hash");
+    const approved = expected.approvedOsImages ?? Object.values(APPROVED_OS_IMAGES);
+    if (!approved.some((hash) => sameHex(hash, osImageHash)))
+      fail("the VM booted an OS image that is not an approved production image");
+
+    return {
+      measurement: teeMeasurement({
+        mrTd: facts.mrTd,
+        rtMr0: facts.rtMr0,
+        rtMr1: facts.rtMr1,
+        rtMr2: facts.rtMr2,
+        composeHash: expected.composeHash,
+      }),
+      composeHash: toHex32(expected.composeHash),
+      osImageHash: stripHexPrefix(osImageHash).toLowerCase(),
+      codeHash: evidence.codeHash as `0x${string}`,
+      evmAddress: evidence.evmAddress as `0x${string}`,
+      solanaPublicKey: evidence.solanaPublicKey,
+      tcbStatus: facts.status,
       mrTd: facts.mrTd,
       rtMr0: facts.rtMr0,
       rtMr1: facts.rtMr1,
       rtMr2: facts.rtMr2,
-      composeHash: expected.composeHash,
-    }),
-    composeHash: toHex32(expected.composeHash),
-    codeHash: evidence.codeHash as `0x${string}`,
-    evmAddress: evidence.evmAddress as `0x${string}`,
-    solanaPublicKey: evidence.solanaPublicKey,
-    tcbStatus: facts.status,
-    mrTd: facts.mrTd,
-    rtMr0: facts.rtMr0,
-    rtMr1: facts.rtMr1,
-    rtMr2: facts.rtMr2,
-  };
+    };
+  } catch (error) {
+    if (error instanceof TeeVerificationError) throw error;
+    throw new TeeVerificationError("the evidence could not be processed");
+  }
 }
 
 export interface FetchTeeOptions extends Omit<TeeExpectation, "nonce"> {
@@ -283,7 +332,12 @@ export interface FetchTeeOptions extends Omit<TeeExpectation, "nonce"> {
  * but https (plain http only for localhost, where the simulator runs).
  */
 export async function attestTeeAgent(options: FetchTeeOptions): Promise<VerifiedTee> {
-  const url = new URL("/attestation", options.url);
+  let url: URL;
+  try {
+    url = new URL("/attestation", options.url);
+  } catch {
+    throw new TeeVerificationError("the TEE agent's URL is not valid");
+  }
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
   if (url.protocol !== "https:" && !(local && url.protocol === "http:"))
     throw new TeeVerificationError("the TEE agent's URL must use https");

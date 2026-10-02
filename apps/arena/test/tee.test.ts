@@ -3,7 +3,9 @@ import { readFileSync } from "node:fs";
 import { teeMeasurement, teeReportData } from "@bonded/shared";
 import { describe, expect, it } from "vitest";
 import {
+  APPROVED_OS_IMAGES,
   attestTeeAgent,
+  DEV_OS_IMAGE_0_5_9,
   type QuoteFacts,
   type QuoteVerifier,
   TeeUnavailableError,
@@ -32,20 +34,23 @@ const EVM = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8" as const;
 const SOL = "11111111111111111111111111111112";
 const MR = { mrTd: "01".repeat(48), rtMr0: "", rtMr1: "", rtMr2: "" };
 
-function composeEvent() {
-  const payload = Buffer.from(COMPOSE, "hex");
+const PROD_OS = Object.values(APPROVED_OS_IMAGES)[0]!;
+
+function runtimeEvent(event: string, payloadHex: string) {
+  const payload = Buffer.from(payloadHex, "hex");
   const type = Buffer.alloc(4);
   type.writeUInt32LE(0x08000001);
   return {
     imr: 3,
     event_type: 0x08000001,
-    digest: sha384(type, ":", "compose-hash", ":", payload).toString("hex"),
-    event: "compose-hash",
-    event_payload: COMPOSE,
+    digest: sha384(type, ":", event, ":", payload).toString("hex"),
+    event,
+    event_payload: payloadHex,
   };
 }
+const composeEvent = () => runtimeEvent("compose-hash", COMPOSE);
 
-function build() {
+function build(os: string = PROD_OS) {
   const boot = [
     { imr: 0, event_type: 1, digest: "02".repeat(48), event: "", event_payload: "" },
     { imr: 1, event_type: 1, digest: "03".repeat(48), event: "", event_payload: "" },
@@ -58,7 +63,7 @@ function build() {
     event: "instance-id",
     event_payload: "00",
   };
-  const log = [...boot, instance, composeEvent()];
+  const log = [...boot, instance, composeEvent(), runtimeEvent("os-image-hash", os)];
   const rtmr = (imr: number) =>
     extend(log.filter((e) => e.imr === imr).map((e) => Buffer.from(e.digest, "hex"))).toString(
       "hex",
@@ -218,7 +223,7 @@ describe("verifyTeeEvidence", () => {
     };
     await rejects(
       verifyTeeEvidence({ ...evidence, eventLog: JSON.stringify(without) }, expectation(noCompose)),
-      /exactly one compose hash/,
+      /exactly one compose-hash event/,
     );
   });
 
@@ -233,6 +238,88 @@ describe("verifyTeeEvidence", () => {
       verifyTeeEvidence({ ...evidence, eventLog: '[{"imr":0}]' }, expectation(facts)),
       /malformed entry/,
     );
+  });
+
+  it("accepts only an approved production OS image", async () => {
+    const approved = build();
+    const tee = await verifyTeeEvidence(approved.evidence, expectation(approved.facts));
+    expect(tee.osImageHash).toBe(PROD_OS);
+    // A development image: genuine hardware, SSH into the VM, so the keys are not safe.
+    const dev = build(DEV_OS_IMAGE_0_5_9);
+    await rejects(
+      verifyTeeEvidence(dev.evidence, expectation(dev.facts)),
+      /not an approved production image/,
+    );
+    // Some other image nobody approved.
+    const other = build("ee".repeat(32));
+    await rejects(
+      verifyTeeEvidence(other.evidence, expectation(other.facts)),
+      /not an approved production image/,
+    );
+  });
+
+  it("never lists the development image as approved", () => {
+    expect(Object.values(APPROVED_OS_IMAGES)).not.toContain(DEV_OS_IMAGE_0_5_9);
+  });
+
+  it("can be told a different set of approved images", async () => {
+    const other = build("ee".repeat(32));
+    await expect(
+      verifyTeeEvidence(other.evidence, {
+        ...expectation(other.facts),
+        approvedOsImages: ["ee".repeat(32)],
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it("refuses a log with no OS image event, or with the event twice", async () => {
+    const { evidence, log, facts } = build();
+    const rtmr3 = (entries: typeof log) =>
+      extend(entries.filter((e) => e.imr === 3).map((e) => Buffer.from(e.digest, "hex"))).toString(
+        "hex",
+      );
+    const without = log.filter((e) => e.event !== "os-image-hash");
+    await rejects(
+      verifyTeeEvidence(
+        { ...evidence, eventLog: JSON.stringify(without) },
+        expectation({ ...facts, rtMr3: rtmr3(without) }),
+      ),
+      /exactly one os-image-hash/,
+    );
+    const twice = [...log, log.at(-1)!];
+    await rejects(
+      verifyTeeEvidence(
+        { ...evidence, eventLog: JSON.stringify(twice) },
+        expectation({ ...facts, rtMr3: rtmr3(twice) }),
+      ),
+      /exactly one os-image-hash/,
+    );
+  });
+
+  it("treats a malformed event log as a verification failure, never as another kind of error", async () => {
+    const { evidence, facts } = build();
+    const good = JSON.parse(evidence.eventLog) as Record<string, unknown>[];
+    const bad = [
+      "[null]",
+      "[1]",
+      '["x"]',
+      "[[]]",
+      JSON.stringify([{ ...good[0], event_type: -1 }]),
+      JSON.stringify([{ ...good[0], event_type: 2 ** 32 }]),
+      JSON.stringify([{ ...good[0], event_type: 1.5 }]),
+      JSON.stringify([{ ...good[0], imr: 7 }]),
+      JSON.stringify([{ ...good[0], imr: -1 }]),
+      JSON.stringify([{ ...good[0], digest: "zz" }]),
+      JSON.stringify([{ ...good[0], digest: "abc" }]),
+      JSON.stringify([{ ...good[0], digest: "00".repeat(49) }]),
+      JSON.stringify([{ ...good[0], event_payload: "xyz" }]),
+      JSON.stringify([{ ...good[0], event: 5 }]),
+      "{}",
+    ];
+    for (const eventLog of bad)
+      await expect(
+        verifyTeeEvidence({ ...evidence, eventLog }, expectation(facts)),
+      ).rejects.toBeInstanceOf(TeeVerificationError);
   });
 
   it("throws TeeVerificationError", async () => {
@@ -348,6 +435,16 @@ describe("evidence from a real dstack TDX VM", () => {
     digest: string;
     event_payload: string;
   }[];
+
+  it("passes the production OS policy, and fails it if only another image is approved", async () => {
+    const tee = await verifyTeeEvidence(live.evidence, expected);
+    expect(tee.osImageHash).toBe(PROD_OS);
+    expect(tee.osImageHash).not.toBe(DEV_OS_IMAGE_0_5_9);
+    await rejects(
+      verifyTeeEvidence(live.evidence, { ...expected, approvedOsImages: [DEV_OS_IMAGE_0_5_9] }),
+      /not an approved production image/,
+    );
+  });
 
   it("has runtime events with no digest, as the real guest agent sends them", () => {
     expect(log.some((e) => e.imr === 3 && e.digest === "")).toBe(true);
