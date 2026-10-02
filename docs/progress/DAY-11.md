@@ -27,6 +27,12 @@ Plan reference: docs/PLAN.md Section 20, Day 11, and Section 12. Decisions: [ADR
 - `arena rate --tee-url …` ran end to end against it: the rating (hardened-agent/scripted, score 83) carries the measurement `0xb933453b…8f01`, and the sandbox registry accepted the attestation.
 - `config/agents.46630.json`: the hardened agent (agent 2) now has a `tee` entry. An API rating job for it verifies the live TEE first and fails if it doesn't verify. If the CVM is stopped or deleted, ratings of that agent fail until it is back. That is the design: no unmeasured score.
 
+## Premium discount (added after the first deployment)
+
+- The score has a **Key custody** group (ADR-014). Its numbers are labelled assumptions (λ = 0.02 a year, an operator-held key assumed stolen if the host is compromised, a verified-TEE key assumed safe), not Arena measurements. A verified TEE adds nothing to expected loss; an operator-held key adds λ · s.
+- Scripted hardened agent, Enforce mode, 5 runs per seed: **93 (AAA), 1.48% premium** on an operator's server against **96 (AAA), 1.22%** in a verified TEE. The plan's demo numbers (96, 1.2%) are now the TEE case. With one run per seed: 80 (AA, 2.82%) against 83 (AA, 2.56%).
+- Everything that doesn't pass `custody` is scored as before.
+
 ## Live checks (added after the first deployment)
 
 - The keeper re-checks each TEE-hosted agent every ten minutes against the measurement in its on-chain score (ADR-013). Results are stored (`tee_checks`, migration 0004), served at `GET /agents/:id/tee` and shown on the profile as "TEE live check".
@@ -36,7 +42,6 @@ Plan reference: docs/PLAN.md Section 20, Day 11, and Section 12. Decisions: [ADR
 ## Not done
 
 - **The badge on the live testnet.** It appears once a rating job runs on the deployed API after this is merged (`POST /arena/runs` for agent 2, which needs the API token). Nothing was posted to Robinhood testnet from here.
-- **No premium discount.** The actuarial model has no key-theft term, so the score is unchanged. See ADR-012.
 - **Existing cover is never voided by a failed check**, only new quotes are refused (ADR-013).
 - **The Arena doesn't attack the live TEE agent.** It rates the code in its sandbox and verifies the live agent's proof. See ADR-012, decision 2.
 - **Dev OS images aren't rejected** by the verifier (ADR-012).

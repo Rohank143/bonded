@@ -93,6 +93,10 @@ The Arena sends a random challenge, verifies the quote with Intel's collateral, 
 
 Then run a rating through the API. `scripts/rate-live-tee.sh` does it: it asks for the API token with no echo, starts the VM, runs the rating, prints the result and **always stops the VM when it ends**, so the VM bills only while the rating runs. It works only after this config is merged and the API has redeployed. When the score is posted, the agent's page shows the TEE badge. Cross-chain posting copies the measurement to the other chains' registries.
 
+## What the TEE does to the price (ADR-014)
+
+A rating now includes a key-custody term. It is an assumption, not a measurement: it assumes a 2% a year chance that an agent's server is compromised. An operator-held key is assumed stolen in that case, and a key in a verified TEE is assumed safe. So the same agent rates a little better in a verified TEE: 96 and a 1.22% premium, against 93 and 1.48% on an operator's server (hardened demo agent, Enforce mode, 5 runs per seed). The effect scales with that 2%, a single constant in `packages/shared/src/actuarial.ts`.
+
 ## Live checks (ADR-013)
 
 The keeper challenges every agent that has a `tee` entry every ten minutes (`TEE_CHECK_MS`, default 600000) and compares the live measurement with the one in its on-chain score. The profile shows the result as "TEE live check".

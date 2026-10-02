@@ -59,7 +59,7 @@ Derived by `getKey` from the app's identity: the same compose hash gets the same
 
 ## Not done, and limits
 
-- **No premium discount yet.** Plan Section 12 says TEE custody sets the key-theft exposure to about zero. The actuarial model has no key-theft term today, so the score and premium are unchanged. A discount has to come from a measured effect, as the plan requires, so we show the badge and don't invent a number.
+- **The premium discount** is ADR-014: a labelled assumed key-custody term in the score, which a verified TEE zeroes.
 - **On-chain quote verification** (the plan's stretch goal) is not built. The Arena verifies off-chain and the attester signs the result.
 - **Trust in the attester.** The chain trusts the Arena's attester to have verified the quote. Intel and the measurement are trusted for the TEE claims, and the attester is trusted to have checked them.
 - **Verified on real hardware.** On 2026-10-02 a real quote from a Phala Cloud TDX VM (dstack 0.5.9, production OS, Intel TCB `UpToDate`) passed every check above, and a rating with it posted a real measurement. The captured evidence is a regression test. This confirms the digest rule, which the first version had assumed.
