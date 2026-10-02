@@ -51,3 +51,16 @@ it("the deployed TEE demo agent is agent 3, with a TEE entry, and agent 2 has no
   expect(tee?.tee?.composeHash).toMatch(/^0x[0-9a-f]{64}$/);
   expect(configs.filter((c) => c.tee)).toHaveLength(1);
 });
+
+it("repeats is optional, a whole number from 1 to 10, and is set only for the TEE demo agent", () => {
+  const configs = z.array(agentConfig).parse(JSON.parse(read("config/agents.46630.json")));
+  const base = JSON.parse(read("config/agents.46630.json"))[0];
+  expect(agentConfig.parse(base).repeats).toBeUndefined();
+  for (const repeats of [1, 5, 10])
+    expect(agentConfig.parse({ ...base, repeats }).repeats).toBe(repeats);
+  for (const bad of [0, 11, 1.5, -1, "5", null])
+    expect(() => agentConfig.parse({ ...base, repeats: bad })).toThrow();
+  // Agent 2 stays at one run per seed: it is the Gate 1 breach demo and its evidence is pinned.
+  expect(configs.find((c) => c.mandate.agentId === "2")?.repeats).toBeUndefined();
+  expect(configs.find((c) => c.mandate.agentId === "3")?.repeats).toBe(5);
+});
