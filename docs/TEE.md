@@ -91,7 +91,7 @@ The Arena sends a random challenge, verifies the quote with Intel's collateral, 
 { "kind": "hardened", "codeHash": "0x…", "mandate": { "…": "…" }, "tee": { "url": "https://<that-url>", "composeHash": "0x…" } }
 ```
 
-Then run a rating through the API (`POST /arena/runs`). When the score is posted, the agent's page shows the TEE badge. Cross-chain posting copies the measurement to the other chains' registries.
+Then run a rating through the API. `scripts/rate-live-tee.sh` does it: it asks for the API token with no echo, starts the VM, runs the rating, prints the result and **always stops the VM when it ends**, so the VM bills only while the rating runs. It works only after this config is merged and the API has redeployed. When the score is posted, the agent's page shows the TEE badge. Cross-chain posting copies the measurement to the other chains' registries.
 
 ## Cost, and pausing it
 
