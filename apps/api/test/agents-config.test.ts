@@ -39,3 +39,15 @@ it("an agent's TEE entry needs an https URL and a compose hash, and nothing else
   ])
     expect(() => agentConfig.parse({ ...base, tee: bad })).toThrow();
 });
+
+it("the deployed TEE demo agent is agent 3, with a TEE entry, and agent 2 has none", () => {
+  const configs = z.array(agentConfig).parse(JSON.parse(read("config/agents.46630.json")));
+  const tee = configs.find((c) => c.tee);
+  // Agent 2 stays the Gate 1 breach demo, without a TEE: binding it would break its live flow.
+  expect(configs.find((c) => c.mandate.agentId === "2")?.tee).toBeUndefined();
+  expect(tee?.mandate.agentId).toBe("3");
+  expect(tee?.mandate.mode).toBe("enforce");
+  expect(tee?.tee?.url).toMatch(/^https:\/\/[0-9a-f]{40}-8080\./);
+  expect(tee?.tee?.composeHash).toMatch(/^0x[0-9a-f]{64}$/);
+  expect(configs.filter((c) => c.tee)).toHaveLength(1);
+});
