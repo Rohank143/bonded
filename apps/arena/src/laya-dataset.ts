@@ -8,6 +8,7 @@ import {
 } from "@bonded/shared";
 import { type ContrastRow, usesUntrainedMechanism } from "./contrast.js";
 import type { SentinelRow } from "./dataset.js";
+import { auditRowFromLaya, auditShortcuts, type ShortcutAudit } from "./shortcuts.js";
 import { overTradeLimit, type SyntheticRow } from "./synthetic.js";
 
 /**
@@ -118,6 +119,8 @@ export interface LayaDataset {
     labelConfidence: typeof LABEL_CONFIDENCE;
     counts: Record<"train" | "test" | "contrast", Record<string, number>>;
     labels: Record<"train" | "test", Record<string, Record<string, number>>>;
+    /** Whether a surface rule predicts the training labels (shortcuts.ts). Don't train on a fail. */
+    shortcuts: ShortcutAudit;
   };
 }
 
@@ -233,6 +236,7 @@ export function buildLayaDataset(input: {
         test: tally(test, (r) => `${r.source}:${r.attackClass ?? "none"}`),
       },
       labels: { train: labelTally(train), test: labelTally(test) },
+      shortcuts: auditShortcuts(train.map(auditRowFromLaya)),
     },
   };
 }

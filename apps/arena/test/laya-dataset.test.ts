@@ -236,6 +236,16 @@ describe("the v3 question set", () => {
       ),
     ).toBeCloseTo(LABEL_CONFIDENCE.contrast);
   });
+
+  it("audits the training rows for surface shortcuts in the manifest", () => {
+    const contrast = buildContrastRows({ pairs: 20, benign: 40 });
+    const d = buildLayaDataset({ arena: [], synthetic: [], contrast, questions: "v3" });
+    const audit = d.manifest.shortcuts;
+    // Every row with inputs is audited, read back from the Laya rows themselves.
+    expect(audit.rows).toBe(contrast.filter((r) => r.untrustedInputs.length > 0).length);
+    expect(audit.cells.some((c) => c.feature === "amountInInputs")).toBe(true);
+    expect(typeof audit.pass).toBe("boolean");
+  });
 });
 
 it("traces synthetic seeds through seed-only rows without training or testing on them", () => {

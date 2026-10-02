@@ -3,8 +3,14 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { parseSentinelQuestionSet } from "@bonded/shared";
-import { buildContrastRows, type ContrastRow } from "./contrast.js";
+import {
+  buildContrastRows,
+  type ContrastRow,
+  diversifyPairs,
+  mentionOwnAmounts,
+} from "./contrast.js";
 import { buildLayaDataset } from "./laya-dataset.js";
+import { formatAudit } from "./shortcuts.js";
 import type { SyntheticRow } from "./synthetic.js";
 import { readSeedRows } from "./synthetic.js";
 
@@ -17,7 +23,11 @@ and manifest.json. Test holds only real rows from the held-out classes plus cont
   --arena <path>       sentinel-dataset.jsonl from a rating; repeat for several ratings
   --synthetic <path>   synthetic rows generated with the held-out classes excluded
   --contrast           add the rule-labelled contrastive pairs (contrast.ts) to training
-  --contrast-file <p>  add LLM-written contrastive pairs (sentinel:contrast output); repeatable
+  --contrast-file <p>  add LLM-written contrastive pairs (sentinel:contrast output); repeatable.
+                       They get the same shortcut-breaking changes as the rule-built pairs
+                       (contrast.ts, diversifyPairs); 15% of the unmanipulated synthetic rows
+                       get a harmless mention of their own amount (mentionOwnAmounts)
+  --allow-shortcuts    write the dataset even if the shortcut audit fails (for analysis only)
   --seeds <path>       ratings used only to trace synthetic rows' seeds (repeatable)
   --exclude-ids <path> ids of rows too long for Laya's window (services/sentinel/kaggle/check_tokens.py)
   --questions <set>    v1 (three questions) or v3 (manipulated and injection) (default: v1)
@@ -40,6 +50,7 @@ function main(): number {
       seeds: { type: "string", multiple: true },
       "exclude-ids": { type: "string" },
       questions: { type: "string" },
+      "allow-shortcuts": { type: "boolean", default: false },
       out: { type: "string", default: "datasets/laya" },
       help: { type: "boolean", default: false },
     },
@@ -50,10 +61,12 @@ function main(): number {
   }
   const dataset = buildLayaDataset({
     arena: values.arena.flatMap((path) => readSeedRows(path)),
-    synthetic: readSeedRows(values.synthetic) as unknown as SyntheticRow[],
+    // Harmless mentions of their own amount in 15% of the unmanipulated synthetic rows
+    // (contrast.ts, mentionOwnAmounts).
+    synthetic: mentionOwnAmounts(readSeedRows(values.synthetic) as unknown as SyntheticRow[]),
     contrast: [
       ...(values.contrast ? buildContrastRows() : []),
-      ...(values["contrast-file"] ?? []).flatMap((path) => readContrastRows(path)),
+      ...diversifyPairs((values["contrast-file"] ?? []).flatMap((path) => readContrastRows(path))),
     ],
     ...(values.seeds ? { seeds: values.seeds.flatMap((path) => readSeedRows(path)) } : {}),
     ...(values["exclude-ids"]
@@ -67,6 +80,14 @@ function main(): number {
       : {}),
     questions: parseSentinelQuestionSet(values.questions),
   });
+  const audit = dataset.manifest.shortcuts;
+  console.log(formatAudit(audit));
+  if (!audit.pass && !values["allow-shortcuts"]) {
+    console.error(
+      "Not written: a surface rule predicts the labels. Fix the data, don't train on it.",
+    );
+    return 1;
+  }
   mkdirSync(values.out, { recursive: true });
   const jsonl = (rows: unknown[]) => rows.map((r) => `${JSON.stringify(r)}\n`).join("");
   writeFileSync(join(values.out, "train.jsonl"), jsonl(dataset.train));

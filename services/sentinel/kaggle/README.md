@@ -214,6 +214,21 @@ python ../../services/sentinel/kaggle/check_tokens.py datasets/laya-v3 datasets/
 
 Upload the three files as a new version of `bonded-sentinel`, and run the same notebook (it needs no change: it reads the questions from the data) as a saved version named `sentinel-v3`. Training has about 37,000 items against v2's 31,000, so expect roughly four hours.
 
+### v4
+
+v4 uses v3's two questions and the same sources. The data is rebuilt so no surface rule predicts the labels (`docs/SENTINEL-STRESS.md`, "v4 training data"). The command is v3's with a new output folder. It applies the shortcut-breaking changes to the LLM-written pairs and the synthetic rows itself. It also runs the shortcut audit and refuses to write a dataset that fails it:
+
+```bash
+node dist/laya-dataset-cli.js --arena ratings/v3-vulnerable-scripted/sentinel-dataset.jsonl --arena ratings/v3-hardened-scripted/sentinel-dataset.jsonl --seeds <main checkout>/apps/arena/ratings/vulnerable-agent_scripted/sentinel-dataset.jsonl --synthetic <main checkout>/apps/arena/datasets/sentinel-synthetic-train-v2.jsonl --contrast --contrast-file datasets/sentinel-contrast-llm.jsonl --questions v3 --out datasets/laya-v4
+python ../../services/sentinel/kaggle/check_tokens.py datasets/laya-v4 datasets/laya-v4-too-long.txt
+```
+
+Rebuild with `--exclude-ids datasets/laya-v4-too-long.txt` added, and check the result with `pnpm sentinel:shortcuts apps/arena/datasets/laya-v4` (it must print PASS). Then:
+
+1. Upload the three files as a new version of `bonded-sentinel`.
+2. **Import `bonded-sentinel.ipynb` from the repository again** (File, Import Notebook). The v3 model card on Hugging Face still said "three questions", so the saved Kaggle notebook was older than the repository's.
+3. Save a version named `sentinel-v4`. Training has about 41,000 items, so expect roughly four and a half hours.
+
 ## What the result does and doesn't show
 
 - The notebook's report on our `test.jsonl` is the first held-out number: real episodes from attack classes Sentinel never trained on. It is small (22 held-out rows from one scripted agent today, plus controls), so treat it as a smoke test.
