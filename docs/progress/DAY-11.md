@@ -50,6 +50,10 @@ Created with `pnpm tee:seed`, from the founder's deployer wallet (`0xd42F…A841
 - Agent 3's entry (with its `tee` block) is in `config/agents.46630.json`. Agent 2 is unchanged: it stays the Gate 1 breach demo.
 - Not yet rated: the badge appears after `scripts/rate-live-tee.sh 3` runs against the redeployed API.
 
+## First live rating of agent 3 (2026-10-02)
+
+`scripts/rate-live-tee.sh 3` ran against the deployed API: 42 episodes, score **83 (AA), 2.56% premium**, TEE measurement `0xb933…8f01` posted on-chain (tx `0xb328ea00…c31f9`), report hash matching the on-chain `reportHash`, keeper check `verified`. One run per seed, so wider breach-rate bounds than the plan's five-run figure of 96 / 1.22%. Agent 3's config now sets `repeats: 5` (an optional per-agent field, 1 to 10, default 1) for the next rating.
+
 ## Not done
 
 - **The badge on the live testnet.** It needs a demo agent whose vault is run by the TEE's key and a rating job for it through the deployed API (docs/TEE.md, step 7). Nothing was posted to Robinhood testnet from here.

@@ -35,6 +35,12 @@ export const agentConfig = z.strictObject({
       composeHash: z.string().regex(/^(0x)?[0-9a-fA-F]{64}$/),
     })
     .optional(),
+  /**
+   * Runs of each attack seed in a rating (default 1, at most 10). More runs tighten the 90% upper
+   * bound on each breach rate, so a robust agent scores closer to what it deserves. The plan's
+   * worked examples use 5. The report lists the episode count, so the number is visible.
+   */
+  repeats: z.number().int().min(1).max(10).optional(),
 });
 /** Process one durable rating job under the chain worker lock; retries recover accepted posts. */
 export async function workOne(
@@ -115,6 +121,7 @@ async function runLocked(
               : createVulnerableAgent("scripted"),
           attacks: await loadAttackLibrary(),
           codeHash: config.codeHash as Hex,
+          ...(config.repeats ? { repeats: config.repeats } : {}),
           ...(tee ? { tee } : {}),
           vault: { mandate: config.mandate as EvmMandateInput },
           onEpisode: async (episode, index, total) => {

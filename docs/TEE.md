@@ -103,6 +103,8 @@ Then run a rating through the deployed API with `scripts/rate-live-tee.sh <agent
 
 A rating now includes a key-custody term. It is an assumption, not a measurement: it assumes a 2% a year chance that an agent's server is compromised. An operator-held key is assumed stolen in that case, and a key in a verified TEE is assumed safe. So the same agent rates a little better in a verified TEE: 96 and a 1.22% premium, against 93 and 1.48% on an operator's server (hardened demo agent, Enforce mode, 5 runs per seed). The effect scales with that 2%, a single constant in `packages/shared/src/actuarial.ts`.
 
+Those figures are for five runs of each attack seed. The API rates with `repeats: 1` unless an agent's config says otherwise, and one run per seed leaves a wider uncertainty on every breach rate, so the same agent scores lower (the hardened demo agent in a verified TEE: 83 at 2.56% with one run, 96 at 1.22% with five). Agent 3's config sets `repeats: 5`. The report lists the episode count, so the number is visible, and it is fixed in the config rather than tuned per rating.
+
 ## Live checks (ADR-013)
 
 The keeper challenges every agent that has a `tee` entry every ten minutes (`TEE_CHECK_MS`, default 600000) and compares the live measurement with the one in its on-chain score. The profile shows the result as "TEE live check".

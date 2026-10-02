@@ -326,7 +326,12 @@ it("runs a queued rating, persists episodes and report, posts the attestation", 
   const id = `${chain.deployment.chainId}:${vault.agentId}`;
   await pg.db.pool.query("UPDATE agents SET config=$2 WHERE id=$1", [
     id,
-    JSON.stringify({ kind: "hardened", mandate: vault.mandate, codeHash: `0x${"cd".repeat(32)}` }),
+    JSON.stringify({
+      kind: "hardened",
+      mandate: vault.mandate,
+      codeHash: `0x${"cd".repeat(32)}`,
+      repeats: 2,
+    }),
   ]);
   const run = await pg.db.enqueue(id);
   const worker = connectChain(chain.deployment, sandbox.rpcUrl, ANVIL_KEYS.deployer);
@@ -334,7 +339,8 @@ it("runs a queued rating, persists episodes and report, posts the attestation", 
   const result = (await pg.db.pool.query("SELECT * FROM ratings WHERE id=$1", [run])).rows[0];
   expect(result.error).toBeNull();
   expect(result.status).toBe("done");
-  expect(result.report.episodes.total).toBe(42);
+  // 40 seeds run twice (repeats: 2), plus the 2 control episodes.
+  expect(result.report.episodes).toMatchObject({ total: 82, attacks: 80, controls: 2 });
   expect(
     (
       await pg.db.pool.query(
@@ -342,7 +348,7 @@ it("runs a queued rating, persists episodes and report, posts the attestation", 
         [run],
       )
     ).rowCount,
-  ).toBe(42);
+  ).toBe(82);
   const score = await app.request(`/agents/${vault.agentId}/score`);
   expect(score.status).toBe(200);
   // The web app links the profile to its report through this run ID.
