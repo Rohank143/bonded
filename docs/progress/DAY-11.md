@@ -26,7 +26,7 @@ Plan reference: docs/PLAN.md Section 20, Day 11, and Section 12. Decisions: [ADR
 - Later review changes: the verifier refuses development OS images, treats malformed evidence as a failure, the quote API canonicalizes agent IDs and binds the vault's key, the HTTP service answers malformed request targets with 400, and the live-rating script keeps the token out of curl's arguments (see the PR).
 - The Arena verified a real Intel TDX quote from it (TCB `UpToDate`). Two fixes came out of that, both in the verifier and its tests: the guest agent sends empty digests for runtime events, and Phala's API manifest has null fields the hash doesn't include. The evidence is saved as a test fixture.
 - `arena rate --tee-url …` ran end to end against it: the rating (hardened-agent/scripted, score 83) carries the measurement `0xb933453b…8f01`, and the sandbox registry accepted the attestation.
-- The API's agent config takes an optional `tee` entry; a rating job for such an agent verifies the live TEE first and fails if it doesn't. The deployed config has none: agent 2 is the Gate 1 demo vault, and TEE custody needs a vault run by the TEE's key (docs/TEE.md, step 7), so the live badge needs a separate demo agent.
+- The API's agent config takes an optional `tee` entry; a rating job for such an agent verifies the live TEE first and fails if it doesn't. The deployed config has none: agent 2 is the Gate 1 demo vault, and TEE custody needs a vault run by the TEE's key (docs/TEE.md, step 7), so the live badge needs a separate demo agent, which `pnpm tee:seed` creates.
 
 ## Premium discount (added after the first deployment)
 

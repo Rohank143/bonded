@@ -85,22 +85,19 @@ The Arena sends a random challenge, verifies the quote with Intel's collateral, 
 
 **6. What the first real deployment showed.** The Arena has been run against a real deployment (2026-10-02, dstack 0.5.9). Two things differed from the spec I started from, both fixed: the guest agent leaves `digest` empty for runtime events, so the Arena computes it, and Phala's API shows the manifest with extra null fields. A real quote, with its event log, is saved as a test fixture (`apps/arena/test/fixtures/tee-live.json`).
 
-**7. Bind a vault to the TEE's key, then make it live.** The TEE proves its own key. For the score's TEE discount to apply, the vault being insured must be run by that key:
+**7. Create the TEE demo agent, then make it live.** The TEE proves its own key. For the score's TEE discount to apply, the vault being insured must be run by that key (the API refuses new cover otherwise, ADR-013 decision 3). So the TEE needs its own agent and vault, not agent 2: agent 2 is the Gate 1 demo vault, and rotating its key would break its scripted live flow.
 
-- the vault's execution key (`vault.agent()`) must equal the `evmAddress` from `curl <url>/health`. The vault's guardian sets it with `rotateAgent(address)`, or you create a new vault with that address as the agent (`MandateVaultFactory.createVault`);
-- the API refuses new cover for an agent with a TEE measurement unless that holds (ADR-013, decision 3).
+`pnpm tee:seed` does it. It registers an agent, creates a vault whose execution key is the TEE's EVM key (you stay the guardian and can rotate it), stakes the operator bond, deposits into the vault, and prints the agent's config entry. It signs with `DEPLOYER_PRIVATE_KEY` from your `.env` (never printed) and spends testnet gas. Run it from your main checkout, where `.env` is, once the VM has been deployed (the address is the `evmAddress` in `curl <url>/health`, or in the evidence from your last rating; it stays the same across stop and start):
 
-**Do not do this to agent 2.** It is the Gate 1 demo vault, and rotating its key would break its scripted live flow. Use a separate demo agent and vault for TEE custody.
-
-The TEE service doesn't operate a vault yet (it has no route that sends transactions), so a TEE-bound vault can be quoted and rated but is not traded by the TEE. ADR-012 and ADR-014 say so.
-
-Then put the TEE in that agent's service config (`config/agents.46630.json`), so API rating jobs verify it:
-
-```json
-{ "kind": "hardened", "codeHash": "0x…", "mandate": { "…": "…" }, "tee": { "url": "https://<that-url>", "composeHash": "0x…" } }
+```bash
+pnpm tee:seed -- --tee-address 0x<evmAddress> --tee-url https://<that-url> --compose-hash 0x<compose hash> --code-hash 0x<code hash> --dry-run
 ```
 
-Run a rating through the API with `scripts/rate-live-tee.sh <agent id>`: it asks for the API token with no echo and never puts it in a process argument, starts the VM, runs the rating, prints the result and **always stops the VM when it ends**, so the VM bills only while the rating runs. It works only after this code is merged and the API has redeployed. When the score is posted, the agent's page shows the TEE badge.
+`--dry-run` checks the arguments and sends nothing. Run it again without `--dry-run` to do it. The last line of output is JSON with the agent id, the vault and the config entry. Paste it to me (it has no secrets): the entry goes into `config/agents.46630.json` through a pull request, since the API reads that file when it deploys. Or add `--write-config` and commit the change yourself.
+
+The TEE service doesn't operate a vault yet (it has no route that sends transactions), so this vault can be rated and quoted but is not traded by the TEE. ADR-012 and ADR-014 say so. Agent 2 stays the breach demo.
+
+Then run a rating through the deployed API with `scripts/rate-live-tee.sh <agent id>`, after the config is merged and the API has redeployed. It asks for the API token with no echo and never puts it in a process argument, starts the VM, runs the rating, prints the result and **always stops the VM when it ends**, so the VM bills only while the rating runs. When the score is posted, the agent's page shows the TEE badge.
 
 ## What the TEE does to the price (ADR-014)
 
