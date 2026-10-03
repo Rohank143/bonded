@@ -21,7 +21,7 @@ No high-severity finding. Every contract fix that remains is listed in the mainn
 
 | Check | Tool or approach | Result |
 |---|---|---|
-| Invariant tests | Foundry, handler-based, CI profile (256 runs, depth 64), branch `invariant-tests` | 16 invariants and 1 inflation fuzz test pass. Stress run: 1,000 runs per invariant and 50,000 fuzz runs |
+| Invariant tests | Foundry, handler-based, CI profile (256 runs, depth 64), [PR #70](https://github.com/ddboy19912/bonded/pull/70) | 16 invariants and 1 inflation fuzz test pass. Stress run: 1,000 runs per invariant and 50,000 fuzz runs |
 | Do the invariants catch bugs? | `contracts/evm/test/invariant/mutations.py` plants one known bug per property | 11 of 11 planted bugs caught |
 | Static analysis, EVM | Slither 0.11.6, `slither . --filter-paths "lib/\|test/\|script/"` | 0 high, 12 medium, 54 low, 19 informational, 5 optimisation. Triage below |
 | Static analysis, Solana | `cargo clippy --all-targets` (Rust 1.89), then with `-W clippy::pedantic` | Default lints: 0 warnings. Pedantic: the 2 casts in on-chain code checked and safe |
@@ -47,7 +47,7 @@ The handler drives real user actions: underwriter deposits and cooldown exits, o
 `BountyBoard.accept` checks that the caller is an attester, but not that the caller isn't the hunter. An attester key could commit an attack, reveal it and pay itself from the bounty pool.
 
 - **Impact:** limited to the bounty pool (about $9,500 of test tUSDG today). It needs the attester key, which can already sign quotes, so it is not a new trust assumption, but it removes one check on that key.
-- **Status: fixed off chain** (branch `bounty-self-accept`). The bounty worker reads `BondedRegistry.isAttester(hunter)` on every fresh attempt and rejects such a submission on chain without running the attack. A test has the attester commit and reveal an attack that would earn 500 tUSDG from a normal hunter: it is rejected, with no `Accepted` event. Without the check, the same test sees the submission paid.
+- **Status: fixed off chain** ([PR #71](https://github.com/ddboy19912/bonded/pull/71)). The bounty worker reads `BondedRegistry.isAttester(hunter)` on every fresh attempt and rejects such a submission on chain without running the attack. A test has the attester commit and reveal an attack that would earn 500 tUSDG from a normal hunter: it is rejected, with no `Accepted` event. Without the check, the same test sees the submission paid.
 - **Contract fix at the next BountyBoard deployment (#67):** `accept` reverts when the hunter is an attester (or `hunter == msg.sender`).
 
 ### F-02 (Medium for mainnet, accepted on testnet) All contracts are owned by one EOA
