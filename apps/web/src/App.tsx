@@ -7,6 +7,7 @@ const links = [
   ["/vaults", "Vaults"],
   ["/underwrite", "Underwrite"],
   ["/claims", "Claims"],
+  ["/bounties", "Bounties"],
 ] as const;
 
 export function Layout() {

@@ -109,3 +109,26 @@ export const teeChecks = pgTable("tee_checks", {
   checkedAt: timestamp("checked_at", { withTimezone: true }).notNull().defaultNow(),
   verifiedAt: timestamp("verified_at", { withTimezone: true }),
 });
+export const bounties = pgTable(
+  "bounties",
+  {
+    chainId: integer("chain_id").notNull(),
+    submissionId: numeric("submission_id", { precision: 78, scale: 0 }).notNull(),
+    hunter: text().notNull(),
+    specUri: text("spec_uri").notNull(),
+    specYaml: text("spec_yaml").notNull(),
+    spec: jsonb().notNull(),
+    status: text().notNull().default("validating"),
+    verdict: jsonb(),
+    txHash: text("tx_hash"),
+    broadcastPending: boolean("broadcast_pending").notNull().default(false),
+    pendingTxHash: text("pending_tx_hash"),
+    error: text(),
+    attempts: integer().notNull().default(0),
+    token: uuid(),
+    leaseUntil: timestamp("lease_until", { withTimezone: true }),
+    availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: created(),
+  },
+  (t) => [primaryKey({ columns: [t.chainId, t.submissionId] })],
+);

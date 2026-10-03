@@ -4,8 +4,8 @@ import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { z } from "zod";
 import { Database, json, AgentNotConfiguredError } from "@bonded/db";
-import { QuoteError, bondedRegistryAbi, leaderboardHeadline } from "@bonded/shared";
-import { readLeaderboard } from "@bonded/arena";
+import { QuoteError, bondedRegistryAbi, bountyBoardAbi, leaderboardHeadline } from "@bonded/shared";
+import { readLeaderboard, BountySpecError, parseBountySpec, specUri } from "@bonded/arena";
 import type { ServiceChain } from "@bonded/keeper";
 import type { Hex } from "viem";
 import { issueQuote } from "./quotes.js";
@@ -51,8 +51,11 @@ export function createApi(options: {
     }),
   );
   app.use("*", bodyLimit({ maxSize: 16384 }));
+  // A bounty reveal needs no operator token: the hunter posts the spec, and the hash check
+  // against the chain's revealed specURI is what authenticates it.
+  const PUBLIC_POST = /^\/bounties\/\d{1,78}\/reveal$/;
   app.use("*", async (c, next) => {
-    if (c.req.method === "POST") {
+    if (c.req.method === "POST" && !PUBLIC_POST.test(c.req.path)) {
       const token = Buffer.from(c.req.header("Authorization") ?? "");
       const expected = Buffer.from(`Bearer ${options.apiToken}`);
       if (token.length !== expected.length || !timingSafeEqual(token, expected))
@@ -166,6 +169,47 @@ export function createApi(options: {
     );
     return c.json({ headline: leaderboardHeadline(entries), entries: checked });
   });
+  // BountyBoard.Status: None, Committed, Revealed, Accepted, Rejected.
+  const REVEALED = 2;
+  app.post("/bounties/:id/reveal", async (c) => {
+    const id = uint.parse(c.req.param("id"));
+    const yaml = await c.req.text();
+    const submission = await chain.read
+      .readContract({
+        address: chain.deployment.bountyBoard,
+        abi: bountyBoardAbi,
+        functionName: "getSubmission",
+        args: [BigInt(id)],
+      })
+      .catch(() => undefined);
+    if (!submission) return c.json({ error: "no such submission" }, 404);
+    if (submission.status < REVEALED)
+      return c.json({ error: "reveal the submission on BountyBoard first" }, 409);
+    if (submission.specURI !== specUri(yaml))
+      return c.json({ error: "the spec's sha256 doesn't match the revealed specURI" }, 400);
+    // A repeated post, even after settlement, returns the submission's status.
+    const known = await db.bountyStatus(chain.deployment.chainId, id);
+    if (known) return c.json({ created: false, status: known }, 200);
+    if (submission.status !== REVEALED)
+      return c.json({ error: "the submission was settled on chain without validation here" }, 409);
+    let spec;
+    try {
+      spec = parseBountySpec(yaml);
+    } catch (e) {
+      if (e instanceof BountySpecError) return c.json({ error: e.message }, 400);
+      throw e;
+    }
+    const result = await db.submitBounty({
+      chainId: chain.deployment.chainId,
+      submissionId: id,
+      hunter: submission.hunter,
+      specUri: submission.specURI,
+      specYaml: yaml,
+      spec,
+    });
+    return c.json(result, result.created ? 202 : 200);
+  });
+  app.get("/bounties", async (c) => c.json(await db.bounties(chain.deployment.chainId)));
   app.get("/events", async (c) => {
     const after = uint.parse(c.req.header("Last-Event-ID") ?? c.req.query("after") ?? "0");
     const runId = c.req.query("runId");

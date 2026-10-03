@@ -72,7 +72,7 @@ Railway injects `PORT`; the API reads it. Every service runs migrations under a 
 
 The hosted services load `config/agents.46630.json` (agent 2, the scripted hardened adapter from Gate 1; its mandate hash matches the one attested on chain). Provision agents through `AGENTS_FILE`, a JSON array of `{ "kind": "hardened", "mandate": <full EVM mandate>, "codeHash": "0x…" }` records. `kind` is `hardened` or `vulnerable`, selecting the existing scripted demo adapter. Agent IDs must already exist on the configured chain; the mandate's chain and agent ID must match. Keep this file server-owned. On startup, a supplied file is the complete configured set for that chain: removed agents are disabled and their queued/running jobs are failed (active workers stop at their next lease check), while historical reports and attestations remain readable. An empty array disables the entire chain's configured set; omitting `AGENTS_FILE` leaves it unchanged. Already-broadcast transactions cannot be cancelled. Arbitrary submitted agent code and LLM configurations are outside this initial worker interface.
 
-POST endpoints require `Authorization: Bearer <API_TOKEN>`. GET endpoints are public.
+POST endpoints require `Authorization: Bearer <API_TOKEN>`, except a bounty reveal, which the spec's hash against the chain authenticates. GET endpoints are public.
 
 Browsers can call the API only from origins listed in `WEB_ORIGINS` (comma-separated, for example `http://localhost:5173,https://bonded.vercel.app`). Other origins get no CORS headers. The hosted `api` service sets it in `.railway/railway.ts`.
 
@@ -85,6 +85,8 @@ Browsers can call the API only from origins listed in `WEB_ORIGINS` (comma-separ
 | `GET /agents/:id/score` | Latest worker-posted signed attestation and transaction hash |
 | `POST /quotes` | `{ "agentId": "1", "vault": "0x…", "coverAmount": "20000000000" }` → signed quote |
 | `GET /events?runId=<uuid>` | SSE episode feed; optional run filter, `Last-Event-ID` replay |
+| `POST /bounties/:id/reveal` | The attack's YAML as the body (no token) → 202 `{ created, status }`; see [BOUNTIES.md](BOUNTIES.md) |
+| `GET /bounties` | Submissions with status, reward, reason and transaction, without payloads |
 
 Amounts are integer strings in base-asset units. Quotes use the registry score and one block's pool exposure, bond and caps, then simulate `buyCover` as the guardian. Quotes do not reserve capacity: chain state can change before purchase, and the contract checks again. Missing or invalid chain state currently returns a generic 503; underwriting cap failures return 409.
 
