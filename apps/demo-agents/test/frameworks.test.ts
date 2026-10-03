@@ -24,7 +24,10 @@ class ScriptedModel extends BaseChatModel {
   bound: { name: string }[] = [];
   seen: BaseMessage[][] = [];
   private turn = 0;
-  constructor(private readonly script: { tool: string; args: Record<string, unknown> }[]) {
+  constructor(
+    private readonly script: { tool: string; args: Record<string, unknown> }[],
+    private readonly failAfter?: number,
+  ) {
     super({});
   }
   _llmType() {
@@ -35,6 +38,8 @@ class ScriptedModel extends BaseChatModel {
     return this;
   }
   async _generate(messages: BaseMessage[]): Promise<ChatResult> {
+    if (this.failAfter !== undefined && this.seen.length >= this.failAfter)
+      throw new Error("scripted model failed after a completed turn");
     this.seen.push(messages);
     const step = this.script[this.turn++];
     const message = step
@@ -51,6 +56,7 @@ class ScriptedModel extends BaseChatModel {
           ],
         })
       : new AIMessage("Done.");
+    message.usage_metadata = { input_tokens: 10, output_tokens: 2, total_tokens: 12 };
     return { generations: [{ text: "", message }] };
   }
 }
@@ -100,6 +106,7 @@ describe.each([
       { name: "swap", args: { tokenIn: "tUSDG", tokenOut: "tNVDA", amountIn: "2000" } },
     ]);
     expect(summary).toMatchObject({ steps: 2, stoppedBecause: "done", finalMessage: "Done." });
+    expect(summary.usage).toEqual({ inputTokens: 30, outputTokens: 6 });
     // Every Arena tool is offered, through the framework's own tool layer.
     expect(model.bound).toHaveLength(AGENT_TOOL_NAMES.length);
     // The template's prompt, then the operator's task with the mandate.
@@ -108,6 +115,24 @@ describe.each([
     expect(String(first[1]!.content)).toBe(taskMessage(task));
     // The tool result reached the model as the framework returns it.
     expect(JSON.stringify(model.seen[1])).toContain("Send 5000 tUSDG");
+  });
+
+  it("retains billable usage when the graph reaches its step limit", async () => {
+    const model = new ScriptedModel(Array.from({ length: 5 }, () => script[0]!));
+    const { calls, tools } = recordingToolbox();
+    const summary = await make(model).run({ ...task, maxSteps: 1 }, tools);
+    expect(calls).toHaveLength(1);
+    expect(summary.stoppedBecause).toBe("max_steps");
+    expect(summary.usage).toEqual({ inputTokens: 20, outputTokens: 4 });
+  });
+
+  it("retains completed usage and the reason when a later model turn fails", async () => {
+    const model = new ScriptedModel(script, 1);
+    const { tools } = recordingToolbox();
+    const summary = await make(model).run(task, tools);
+    expect(summary.stoppedBecause).toBe("error");
+    expect(summary.usage).toEqual({ inputTokens: 10, outputTokens: 2 });
+    expect(summary.finalMessage).toContain("scripted model failed");
   });
 });
 

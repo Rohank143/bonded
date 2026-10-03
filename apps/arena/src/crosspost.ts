@@ -10,6 +10,8 @@ import {
 import {
   type Attestation,
   attestationMessage,
+  attestationTypedData,
+  bondedDomain,
   bondedRegistryAbi,
   EVM_CHAINS,
   type EvmChainKey,
@@ -23,6 +25,8 @@ import {
   createWalletClient,
   defineChain,
   http,
+  getAbiItem,
+  hashTypedData,
   isAddressEqual,
   type Log,
   parseEventLogs,
@@ -79,6 +83,7 @@ function evm(chain: EvmChainKey) {
   return {
     config,
     registry: deployment.registry,
+    deployedAtBlock: deployment.deployedAtBlock,
     viemChain,
     read: createPublicClient({ chain: viemChain, transport: http(config.rpcUrl) }),
   };
@@ -143,7 +148,7 @@ export async function crosspostEvm(options: {
   /** Called once a new registration is confirmed, before anything that can fail. */
   onRegistered?: (agentId: string) => void;
 }): Promise<PostResult> {
-  const { read, registry, viemChain, config } = evm(options.chain);
+  const { read, registry, viemChain, config, deployedAtBlock } = evm(options.chain);
   const wallet = (key: `0x${string}`) =>
     createWalletClient({
       account: privateKeyToAccount(key),
@@ -168,8 +173,28 @@ export async function crosspostEvm(options: {
     options.onRegistered?.(agentId);
   }
   const current = await readEvmScore(options.chain, agentId);
-  if (current && current.issuedAt >= options.home.issuedAt)
-    return { chain: options.chain, agentId, status: "already-current", registeredNow };
+  const intended = { ...options.home, agentId };
+  if (current && current.issuedAt >= intended.issuedAt) {
+    if (!sameScore(current, intended))
+      throw new Error(`${options.chain}: agent ${agentId} holds a newer or different rating`);
+    // A previous post may have mined before the caller saved its transaction. Recover the
+    // exact attestation's event so retries retain evidence without posting or registering again.
+    const logs = await read.getLogs({
+      address: registry,
+      event: getAbiItem({ abi: bondedRegistryAbi, name: "ValidationResponse" }),
+      args: {
+        requestHash: hashTypedData(
+          attestationTypedData(bondedDomain(config.chainId, registry), current),
+        ),
+      },
+      fromBlock: BigInt(deployedAtBlock),
+      toBlock: "latest",
+      strict: true,
+    });
+    const tx = logs[0]?.transactionHash;
+    if (!tx) throw new Error(`${options.chain}: matching score's post event wasn't found`);
+    return { chain: options.chain, agentId, status: "already-current", registeredNow, tx };
+  }
   const signed = await signAttestation(
     { ...options.home, agentId },
     { chainId: config.chainId, registry, attesterKey: options.attesterKey },
@@ -180,7 +205,12 @@ export async function crosspostEvm(options: {
     functionName: "postScore",
     args: [attestationMessage(signed.attestation), signed.signature],
   });
-  await read.waitForTransactionReceipt({ hash });
+  const receipt = await read.waitForTransactionReceipt({ hash });
+  if (receipt.status !== "success")
+    throw new Error(`${options.chain}: score post ${hash} reverted`);
+  const posted = await readEvmScore(options.chain, agentId);
+  if (!posted || !sameScore(posted, intended))
+    throw new Error(`${options.chain}: stored score doesn't match the intended rating`);
   const valid = await read.readContract({
     address: registry,
     abi: bondedRegistryAbi,
@@ -190,6 +220,22 @@ export async function crosspostEvm(options: {
   if (!valid)
     throw new Error(`${options.chain}: the registry accepted the score but reports it invalid`);
   return { chain: options.chain, agentId, status: "posted", registeredNow, tx: hash };
+}
+
+/** Every signed field must match; an equal timestamp alone does not identify a rating. */
+function sameScore(a: Attestation, b: Attestation): boolean {
+  return (
+    a.agentId === b.agentId &&
+    a.score === b.score &&
+    a.expectedLossBps === b.expectedLossBps &&
+    a.reportHash.toLowerCase() === b.reportHash.toLowerCase() &&
+    a.mandateHash.toLowerCase() === b.mandateHash.toLowerCase() &&
+    a.codeHash.toLowerCase() === b.codeHash.toLowerCase() &&
+    a.teeMeasurement.toLowerCase() === b.teeMeasurement.toLowerCase() &&
+    a.modelFamily === b.modelFamily &&
+    a.issuedAt === b.issuedAt &&
+    a.expiresAt === b.expiresAt
+  );
 }
 
 const hexBytes = (hex: string) => Uint8Array.from(Buffer.from(hex.slice(2), "hex"));

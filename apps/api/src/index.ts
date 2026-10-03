@@ -143,7 +143,7 @@ export function createApi(options: {
     const checked = await Promise.all(
       entries.map(async (e) => {
         if (
-          !e.onchain ||
+          !e.onchain?.tx ||
           e.onchain.chain !== "robinhoodTestnet" ||
           chain.deployment.chainId !== 46630
         )

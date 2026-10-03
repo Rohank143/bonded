@@ -130,7 +130,12 @@ export const api = {
   health: () => request<{ ok: boolean; chainId: number }>("/health"),
   leaderboard: () =>
     request<{
-      headline: { rated: number; failingInjection: number };
+      headline: {
+        templates: number;
+        failingTemplates: number;
+        evaluations: number;
+        failingEvaluations: number;
+      };
       entries: LeaderboardRecord[];
     }>("/leaderboard"),
   score: (agentId: string) => request<ScoreRecord>(`/agents/${agentId}/score`),

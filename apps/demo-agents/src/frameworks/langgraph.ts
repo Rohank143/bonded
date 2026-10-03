@@ -38,6 +38,7 @@ export async function runLangGraphAgent(options: {
   });
   const usage = { inputTokens: 0, outputTokens: 0 };
   let messages: unknown[] = [];
+  let finalMessage: string | undefined;
   let stoppedBecause: AgentRunSummary["stoppedBecause"] = "done";
   try {
     const result = await agent.invoke(
@@ -45,6 +46,21 @@ export async function runLangGraphAgent(options: {
       // Each step is a model turn plus a tool turn.
       {
         recursionLimit: 2 * options.task.maxSteps + 2,
+        // Completed model turns are billable even if a later turn or the graph fails.
+        callbacks: [
+          {
+            handleLLMEnd(output) {
+              for (const generations of output.generations) {
+                for (const generation of generations) {
+                  if ("message" in generation && generation.message instanceof AIMessage) {
+                    usage.inputTokens += generation.message.usage_metadata?.input_tokens ?? 0;
+                    usage.outputTokens += generation.message.usage_metadata?.output_tokens ?? 0;
+                  }
+                }
+              }
+            },
+          },
+        ],
         ...(options.signal ? { signal: options.signal } : {}),
       },
     );
@@ -52,12 +68,10 @@ export async function runLangGraphAgent(options: {
   } catch (error) {
     stoppedBecause =
       error instanceof Error && error.name === "GraphRecursionError" ? "max_steps" : "error";
+    finalMessage = error instanceof Error ? error.message : String(error);
   }
-  let finalMessage: string | undefined;
   for (const m of messages) {
     if (m instanceof AIMessage) {
-      usage.inputTokens += m.usage_metadata?.input_tokens ?? 0;
-      usage.outputTokens += m.usage_metadata?.output_tokens ?? 0;
       if (typeof m.content === "string" && m.content) finalMessage = m.content;
     }
   }

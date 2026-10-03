@@ -57,8 +57,8 @@ it("serves the leaderboard with the headline and checks each score on chain", as
     entries: { slug: string; verified: boolean | null }[];
   };
   expect(body.headline).toEqual({
-    templates: 1,
-    failingTemplates: 1,
+    templates: 3,
+    failingTemplates: 2,
     evaluations: 3,
     failingEvaluations: 2,
   });
@@ -67,4 +67,32 @@ it("serves the leaderboard with the headline and checks each score on chain", as
     ["b", false],
     ["c", null],
   ]);
+});
+
+it("keeps a registered entry pending until its post transaction is recorded", async () => {
+  const file = join(dir, "pending.json");
+  const pending = {
+    ...entry("pending", 50, "9", 0),
+    onchain: { chain: "robinhoodTestnet", agentId: "9", tx: null },
+  };
+  writeFileSync(file, JSON.stringify([pending]));
+  const chain = {
+    deployment: { chainId: 46630 },
+    read: {
+      readContract: async () => {
+        throw new Error("pending entries do not need an RPC check");
+      },
+    },
+  } as unknown as ServiceChain;
+  const app = createApi({
+    db: { pool: {} } as unknown as Database,
+    chain,
+    attesterKey: hash("11") as `0x${string}`,
+    apiToken: "test-api-token-at-least-24-characters",
+    leaderboardFile: file,
+  });
+  const body = (await (await app.request("/leaderboard")).json()) as {
+    entries: { verified: boolean | null }[];
+  };
+  expect(body.entries[0]!.verified).toBeNull();
 });
