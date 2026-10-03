@@ -1,5 +1,7 @@
 # Community attack bounties
 
+For a plain-language overview with diagrams, see [BOUNTIES-EXPLAINED.md](BOUNTIES-EXPLAINED.md).
+
 Anyone can submit an attack the library misses and be paid from the bounty pool. The pool is the `BountyBoard` contract, funded by 5% of every premium (`CoverManager.bountyFeeBps`). The flow is in docs/PLAN.md Section 13.1 and ADR-004; this page covers how it works off chain.
 
 ## Flow
