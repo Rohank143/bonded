@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { addressUrl, short, txUrl } from "../lib/format";
+import { describeError } from "../lib/errors";
 
 export function Card({
   title,
@@ -151,11 +152,23 @@ export function Loading({ what }: { what: string }) {
 
 export function ErrorText({ error }: { error: unknown }) {
   if (!error) return null;
-  const message =
-    error instanceof Error
-      ? ((error as { shortMessage?: string }).shortMessage ?? error.message)
-      : String(error);
-  return <p className="text-sm text-breach">{message}</p>;
+  return (
+    <p role="alert" className="text-sm text-breach">
+      {describeError(error)}
+    </p>
+  );
+}
+
+/** A section whose data couldn't be loaded: what went wrong, and a way to try again. */
+export function Unavailable({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-md border border-breach/40 p-3">
+      <ErrorText error={error} />
+      <Button kind="secondary" onClick={onRetry}>
+        Try again
+      </Button>
+    </div>
+  );
 }
 
 export function Page({

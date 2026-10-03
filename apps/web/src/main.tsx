@@ -15,6 +15,7 @@ import { Underwrite } from "./pages/Underwrite";
 import { Claims } from "./pages/Claims";
 import { Leaderboard } from "./pages/Leaderboard";
 import { Bounties } from "./pages/Bounties";
+import { NotFound } from "./pages/NotFound";
 import "./index.css";
 
 const router = createBrowserRouter([
@@ -30,7 +31,7 @@ const router = createBrowserRouter([
       { path: "/claims", element: <Claims /> },
       { path: "/leaderboard", element: <Leaderboard /> },
       { path: "/bounties", element: <Bounties /> },
-      { path: "*", element: <p className="text-sm text-muted">Page not found.</p> },
+      { path: "*", element: <NotFound /> },
     ],
   },
 ]);

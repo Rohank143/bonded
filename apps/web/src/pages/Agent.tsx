@@ -1,10 +1,12 @@
-import { useParams } from "react-router";
+import { Link, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useReadContracts } from "wagmi";
 import { bondedRegistryAbi, operatorBondAbi, tierForScore } from "@bonded/shared";
 import { apiUrl, deployment } from "../config";
 import { ApiError, api } from "../lib/api";
 import { liveCheckView, teeView } from "../lib/tee";
+import { isRpcUnavailable } from "../lib/errors";
+import { apiLookups, isRegistered } from "../lib/agent";
 import { bps, usd, when } from "../lib/format";
 import {
   AddressLink,
@@ -16,6 +18,7 @@ import {
   Page,
   Stat,
   TxLink,
+  Unavailable,
 } from "../components/ui";
 
 export function Agent() {
@@ -46,10 +49,14 @@ export function Agent() {
     ],
     query: { enabled: valid },
   });
+  const [onchain, owner, bond, fresh] = reads.data ?? [];
+  const a = onchain?.result;
+  const lookups = apiLookups(a);
+  const rated = lookups.rated;
   const score = useQuery({
     queryKey: ["score", id],
     queryFn: () => api.score(id),
-    enabled: valid,
+    enabled: valid && lookups.score,
     retry: (n, e) => !(e instanceof ApiError && e.status === 404) && n < 2,
   });
   const run = useQuery({
@@ -61,18 +68,32 @@ export function Agent() {
   const liveCheck = useQuery({
     queryKey: ["tee", id],
     queryFn: () => api.tee(id),
-    enabled: valid,
+    enabled: valid && lookups.tee,
     refetchInterval: 60_000,
     retry: false,
   });
 
   if (!valid) return <Page title="Agent">Agent IDs are whole numbers.</Page>;
   if (reads.isLoading) return <Loading what={`agent ${id}`} />;
-  const [onchain, owner, bond, fresh] = reads.data ?? [];
-  if (owner?.error)
-    return <Page title={`Agent ${id}`}>This agent is not registered on this chain.</Page>;
-  const a = onchain?.result;
-  const rated = a && a.issuedAt > 0n;
+  const readError = reads.error ?? [onchain, owner, bond, fresh].find((r) => r?.error)?.error;
+  if (reads.isError || isRpcUnavailable(readError))
+    return (
+      <Page title={`Agent ${id}`}>
+        <Unavailable error={readError} onRetry={() => void reads.refetch()} />
+      </Page>
+    );
+  if (owner?.error || !isRegistered(owner?.result))
+    return (
+      <Page title={`Agent ${id}`}>
+        <p className="text-sm text-muted">
+          No agent {id} is registered on this chain. See the{" "}
+          <Link to="/leaderboard" className="text-accent hover:underline">
+            leaderboard
+          </Link>{" "}
+          for rated agents.
+        </p>
+      </Page>
+    );
   const report = run.data?.report;
   const tee = teeView(a?.teeMeasurement, report);
   return (
@@ -81,7 +102,7 @@ export function Agent() {
       intro="The score is the latest attestation in BondedRegistry. Cover is priced from it."
     >
       <Card title="Bonded Score">
-        {rated ? (
+        {rated && a ? (
           <Grid>
             <Stat label="Score" value={a.score} hint={`tier ${tierForScore(a.score).tier}`} />
             <Stat label="Expected loss" value={bps(a.expectedLossBps)} hint="per year, of cover" />
@@ -117,7 +138,7 @@ export function Agent() {
         <dl className="mt-4 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[10rem_1fr]">
           <dt className="text-muted">Owner</dt>
           <dd>{owner?.result ? <AddressLink address={owner.result} /> : "…"}</dd>
-          {rated && (
+          {rated && a && (
             <>
               <dt className="text-muted">Issued</dt>
               <dd>{when(a.issuedAt)}</dd>
@@ -146,7 +167,7 @@ export function Agent() {
                           <span className="text-xs text-muted">
                             {view.hint}
                             {liveCheck.data?.verifiedAt
-                              ? `; last verified ${new Date(liveCheck.data.verifiedAt).toLocaleString()}`
+                              ? `; last verified ${when(Date.parse(liveCheck.data.verifiedAt) / 1000)}`
                               : ""}
                           </span>
                         </>

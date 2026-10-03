@@ -14,3 +14,4 @@ export * from "./quote.js";
 export * from "./sentinel.js";
 export * from "./tee.js";
 export * from "./leaderboard.js";
+export * from "./bounty-example.js";

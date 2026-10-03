@@ -11,7 +11,7 @@ export function Vaults() {
       intro="A vault holds an agent's funds and enforces its mandate on chain: allowed tokens, contracts, limits. Every breach is recorded here, and that record is what pays claims."
     >
       <Card>
-        {vaults.isLoading && <Loading what="vaults" />}
+        {vaults.isPending && !vaults.error && <Loading what="vaults" />}
         <ErrorText error={vaults.error} />
         {vaults.data?.length === 0 && <p className="text-sm text-muted">No vaults yet.</p>}
         {vaults.data && vaults.data.length > 0 && (
