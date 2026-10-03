@@ -116,9 +116,24 @@ async function workLocked(
     if (onChain.status !== REVEALED) throw new Error(`submission ${id} isn't revealed on chain`);
     // Never fail or resend while a previous broadcast could still mine. A known reverted
     // receipt is safe to retry; missing hashes/receipts remain reconcilable even after the cap.
-    if (job.broadcastPending) {
-      if (!job.pendingTxHash)
-        throw new Error("broadcast outcome unknown; awaiting chain reconciliation");
+    // A send whose hash never got recorded (the worker stopped mid-broadcast) is resolved by its
+    // nonce: used while still unsettled means it never landed; unused means re-send it with
+    // that same nonce, so the original and the re-send can't both mine.
+    let resendNonce: number | undefined;
+    if (job.broadcastPending && !job.pendingTxHash) {
+      if (job.pendingNonce === null)
+        throw new Error("broadcast outcome unknown and no nonce recorded; awaiting the chain");
+      const used = await chain.read.getTransactionCount({
+        address: chain.wallet.account.address,
+        blockTag: "latest",
+      });
+      if (used > job.pendingNonce) {
+        await check();
+        await db.recordBountyBroadcast(job, false);
+        throw new Error("the pending nonce was used without settling; sending again next attempt");
+      }
+      resendNonce = job.pendingNonce;
+    } else if (job.broadcastPending) {
       const receipt = await chain.read.getTransactionReceipt({ hash: job.pendingTxHash as Hex });
       if (receipt.status === "success")
         throw new Error("broadcast mined; awaiting updated submission state");
@@ -127,7 +142,7 @@ async function workLocked(
       throw new Error("prior broadcast reverted; scheduling the next sending attempt");
     }
     // Exhaustion limits validation and sending, never reconciliation of a mined payout.
-    if (job.attempts > 3) {
+    if (resendNonce === undefined && job.attempts > 3) {
       await check();
       await db.finishBounty(job, {
         failed: "validation failed after three attempts; chain still revealed",
@@ -145,6 +160,8 @@ async function workLocked(
       ),
     ];
     let verdict = job.verdict as BountyVerdict | null;
+    if (resendNonce !== undefined && !verdict)
+      throw new Error("a pending send has no recorded verdict; awaiting the chain");
     if (!verdict) {
       const sandbox = await Sandbox.start({ forkUrl: rpcUrl, forkDeployment: chain.deployment });
       try {
@@ -156,19 +173,23 @@ async function workLocked(
       await db.recordBountyVerdict(job, verdict);
     }
     // The measured breaches are stable; eligibility isn't reserved by an unpaid approval.
-    // Another accepted bounty may now cover it. Recheck only while the chain is Revealed.
-    verdict = decideBounty({
-      duplicateOf: duplicateOf(spec, library),
-      breaches: verdict.breaches,
-      newSurface: !coveredSurface(spec, library),
-      runs: verdict.runs,
-    });
-    await check();
-    await db.recordBountyVerdict(job, verdict);
+    // Another accepted bounty may now cover it. Recheck only while the chain is Revealed, and
+    // never for a re-send: it must be the exact call the pending nonce may already carry.
+    if (resendNonce === undefined) {
+      verdict = decideBounty({
+        duplicateOf: duplicateOf(spec, library),
+        breaches: verdict.breaches,
+        newSurface: !coveredSurface(spec, library),
+        runs: verdict.runs,
+      });
+      await check();
+      await db.recordBountyVerdict(job, verdict);
+    }
     const lifecycle = {
-      beforeBroadcast: async () => {
+      ...(resendNonce === undefined ? {} : { nonce: resendNonce }),
+      beforeBroadcast: async (nonce: number) => {
         await check();
-        await db.recordBountyBroadcast(job, true);
+        await db.recordBountyBroadcast(job, true, null, nonce);
       },
       onBroadcast: (hash: Hex) => db.recordBountyBroadcast(job, true, hash),
       onReverted: () => db.recordBountyBroadcast(job, false),
