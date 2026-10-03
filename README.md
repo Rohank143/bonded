@@ -25,7 +25,7 @@ Building. The build runs Sep 27 – Oct 11, 2026. See the day-by-day plan in [`d
 | `packages/shared` | Schemas (mandate, attack spec, attestation, quote), chain configs, tiers, EIP-712 types, deployment files |
 | `contracts/evm` | Solidity contracts (Foundry), deploy and smoke scripts, live addresses. **Start with [its README](contracts/evm/README.md)** for what each contract does. |
 | `apps/arena` | The Arena: red-teams an agent in a local or forked-chain sandbox and judges it by the vault's breach log |
-| `apps/demo-agents` | Demo AI trading agents; `vulnerable-agent` (scripted or LLM brain, any model) |
+| `apps/demo-agents` | The agents Bonded rates: vulnerable, hardened, the demo's Agent A, framework adapters. **What each one is: [docs/AGENTS.md](docs/AGENTS.md)** |
 | `services/tee-agent` | The hardened agent's identity service for Phala dstack (TEE key custody, [docs/TEE.md](docs/TEE.md)) |
 | `attacks/` | Attack library: YAML seeds by class |
 | `docs/` | Plan, decision records, daily progress notes |
