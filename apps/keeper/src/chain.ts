@@ -15,6 +15,16 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import type { EvmDeployment } from "@bonded/shared";
 
+/** Durable callers can track the uncertain interval around an RPC broadcast. */
+export interface SendLifecycle {
+  /** Reuse this nonce (a retry of a send whose outcome is unknown); default: the next one. */
+  nonce?: number;
+  /** Called with the nonce the transaction will use, before it is broadcast. */
+  beforeBroadcast: (nonce: number) => Promise<void>;
+  onBroadcast: (hash: Hex) => Promise<void>;
+  onReverted: () => Promise<void>;
+}
+
 const transactions = new Map<string, Promise<unknown>>();
 /** Connect a deployment and serialize writes per chain/account to avoid nonce races. */
 export function connectChain(deployment: EvmDeployment, rpcUrl: string, key: Hex): ServiceChain {
@@ -35,7 +45,13 @@ export function connectChain(deployment: EvmDeployment, rpcUrl: string, key: Hex
     read,
     wallet,
     /** Simulate, estimate with a margin, serialize the send and require a successful receipt. */
-    async send(address: Address, abi: Abi, functionName: string, args: readonly unknown[]) {
+    async send(
+      address: Address,
+      abi: Abi,
+      functionName: string,
+      args: readonly unknown[],
+      lifecycle?: SendLifecycle,
+    ) {
       const accountKey = `${deployment.chainId}:${wallet.account.address}`;
       const previous = transactions.get(accountKey) ?? Promise.resolve();
       const pending = previous
@@ -55,12 +71,26 @@ export function connectChain(deployment: EvmDeployment, rpcUrl: string, key: Hex
             args,
             account: wallet.account,
           });
+          // A tracked send fixes its nonce first, so its caller can tell later whether it landed.
+          const nonce = lifecycle
+            ? (lifecycle.nonce ??
+              (await read.getTransactionCount({
+                address: wallet.account.address,
+                blockTag: "pending",
+              })))
+            : undefined;
+          if (lifecycle) await lifecycle.beforeBroadcast(nonce!);
           const hash = await wallet.writeContract({
             ...request,
             gas: (estimate * 12n) / 10n + 30000n,
+            ...(nonce === undefined ? {} : { nonce }),
           });
+          await lifecycle?.onBroadcast(hash);
           const receipt = await read.waitForTransactionReceipt({ hash });
-          if (receipt.status !== "success") throw new Error(`${functionName} reverted: ${hash}`);
+          if (receipt.status !== "success") {
+            await lifecycle?.onReverted();
+            throw new Error(`${functionName} reverted: ${hash}`);
+          }
           return hash;
         });
       transactions.set(accountKey, pending);
@@ -76,5 +106,11 @@ export interface ServiceChain {
   deployment: EvmDeployment;
   read: PublicClient<Transport, Chain>;
   wallet: WalletClient<Transport, Chain, Account>;
-  send(address: Address, abi: Abi, functionName: string, args: readonly unknown[]): Promise<Hex>;
+  send(
+    address: Address,
+    abi: Abi,
+    functionName: string,
+    args: readonly unknown[],
+    lifecycle?: SendLifecycle,
+  ): Promise<Hex>;
 }

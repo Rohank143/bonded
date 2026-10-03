@@ -21,6 +21,38 @@ export interface TeeCheckRow {
   verifiedAt: Date | null;
 }
 
+/** A bounty under validation, leased by one worker (migration 0006). */
+export interface BountyJob {
+  chainId: number;
+  submissionId: string;
+  token: string;
+  hunter: string;
+  attempts: number;
+  broadcastPending: boolean;
+  pendingTxHash: string | null;
+  /** The nonce the pending send was given before broadcast (migration 0008). */
+  pendingNonce: number | null;
+  spec: unknown;
+  /** The verdict an earlier attempt recorded before sending its transaction, if any. */
+  verdict: unknown;
+}
+
+/** A bounty as the public sees it: no payload, which stays private (docs/disclosures). */
+export interface BountySummary {
+  submissionId: string;
+  hunter: string;
+  specUri: string;
+  attackId: string;
+  attackClass: string;
+  title: string;
+  surfaces: string[];
+  status: string;
+  reward: string | null;
+  reason: string | null;
+  txHash: string | null;
+  createdAt: Date;
+}
+
 /** Raised when a caller tries to queue an agent outside the configured set. */
 export class AgentNotConfiguredError extends Error {}
 
@@ -57,6 +89,9 @@ export class Database {
       "0003_agent_availability.sql",
       "0004_tee_checks.sql",
       "0005_tee_rating_version.sql",
+      "0006_bounties.sql",
+      "0007_bounty_broadcasts.sql",
+      "0008_bounty_nonce.sql",
     ];
     await this.transaction(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(7001)");
@@ -233,16 +268,18 @@ export class Database {
   }
   /** Queue only enabled agents, locking against concurrent configuration removal. */
   async enqueue(agentId: string) {
+    return this.transaction((c) => this.enqueueIn(c, agentId));
+  }
+  /** Queue a rating inside a caller's transaction. */
+  private async enqueueIn(c: Connection, agentId: string): Promise<string> {
     const id = randomUUID();
-    await this.transaction(async (c) => {
-      const agent = await c.query("SELECT id FROM agents WHERE id=$1 AND enabled FOR SHARE", [
-        agentId,
-      ]);
-      if (!agent.rowCount) throw new AgentNotConfiguredError("agent not configured");
-      await c.query("INSERT INTO ratings(id,agent_id) VALUES($1,$2)", [id, agentId]);
-      await c.query("INSERT INTO jobs(id) VALUES($1)", [id]);
-      await this.publish("rating.queued", { runId: id }, c);
-    });
+    const agent = await c.query("SELECT id FROM agents WHERE id=$1 AND enabled FOR SHARE", [
+      agentId,
+    ]);
+    if (!agent.rowCount) throw new AgentNotConfiguredError("agent not configured");
+    await c.query("INSERT INTO ratings(id,agent_id) VALUES($1,$2)", [id, agentId]);
+    await c.query("INSERT INTO jobs(id) VALUES($1)", [id]);
+    await this.publish("rating.queued", { runId: id }, c);
     return id;
   }
   /** Reap exhausted leases and claim one eligible job, fencing stale workers with a new token. */
@@ -317,6 +354,201 @@ export class Database {
         c,
       );
     });
+  }
+  /**
+   * Record a revealed bounty for validation. Idempotent: posting the same submission again
+   * returns its current status without queueing it twice.
+   */
+  async submitBounty(b: {
+    chainId: number;
+    submissionId: string;
+    hunter: string;
+    specUri: string;
+    specYaml: string;
+    spec: unknown;
+  }): Promise<{ created: boolean; status: string }> {
+    return this.transaction(async (c) => {
+      const r = await c.query(
+        `INSERT INTO bounties(chain_id,submission_id,hunter,spec_uri,spec_yaml,spec)
+        VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT (chain_id,submission_id) DO NOTHING RETURNING status`,
+        [b.chainId, b.submissionId, b.hunter, b.specUri, b.specYaml, json(b.spec)],
+      );
+      if (r.rowCount) {
+        await this.publish(
+          "bounty.revealed",
+          { chainId: b.chainId, submissionId: b.submissionId },
+          c,
+        );
+        return { created: true, status: r.rows[0].status as string };
+      }
+      const existing = await c.query(
+        "SELECT status FROM bounties WHERE chain_id=$1 AND submission_id=$2",
+        [b.chainId, b.submissionId],
+      );
+      return { created: false, status: existing.rows[0].status as string };
+    });
+  }
+  /** Lease a waiting bounty, including exhausted jobs that still need chain reconciliation. */
+  async takeBounty(chainId: number): Promise<BountyJob | undefined> {
+    return this.transaction(async (c) => {
+      const r = await c.query(
+        `UPDATE bounties SET token=$1,attempts=attempts+CASE WHEN broadcast_pending THEN 0 ELSE 1 END,lease_until=now()+interval '60 seconds'
+        WHERE (chain_id,submission_id)=(SELECT chain_id,submission_id FROM bounties
+          WHERE chain_id=$2 AND status='validating' AND available_at<=now()
+            AND (lease_until IS NULL OR lease_until<now())
+          ORDER BY available_at FOR UPDATE SKIP LOCKED LIMIT 1)
+        RETURNING submission_id,token,hunter,spec,verdict,attempts,broadcast_pending,pending_tx_hash,pending_nonce`,
+        [randomUUID(), chainId],
+      );
+      const row = r.rows[0];
+      return row
+        ? {
+            chainId,
+            submissionId: String(row.submission_id),
+            token: row.token as string,
+            hunter: row.hunter as string,
+            attempts: row.attempts as number,
+            broadcastPending: row.broadcast_pending as boolean,
+            pendingTxHash: row.pending_tx_hash as string | null,
+            pendingNonce: row.pending_nonce === null ? null : Number(row.pending_nonce),
+            spec: row.spec,
+            verdict: row.verdict,
+          }
+        : undefined;
+    });
+  }
+  /** Extend a bounty lease this worker still holds. */
+  async renewBounty(job: BountyJob) {
+    const r = await this.pool.query(
+      `UPDATE bounties SET lease_until=now()+interval '60 seconds'
+      WHERE chain_id=$1 AND submission_id=$2 AND token=$3 AND status='validating' AND lease_until>now()`,
+      [job.chainId, job.submissionId, job.token],
+    );
+    if (!r.rowCount) throw new Error("bounty lease lost");
+  }
+  /**
+   * Record the verdict before its transaction is sent, so a retry settles the same decision
+   * instead of recomputing it against a library that may have changed since.
+   */
+  async recordBountyVerdict(job: BountyJob, verdict: unknown) {
+    const r = await this.pool.query(
+      `UPDATE bounties SET verdict=$4 WHERE chain_id=$1 AND submission_id=$2 AND token=$3
+        AND status='validating' AND lease_until>now()`,
+      [job.chainId, job.submissionId, job.token, json(verdict)],
+    );
+    if (!r.rowCount) throw new Error("bounty lease lost");
+  }
+  /** Persist send intent before broadcasting, its hash afterward, or a confirmed revert. */
+  async recordBountyBroadcast(
+    job: BountyJob,
+    pending: boolean,
+    hash: string | null = null,
+    nonce: number | null = null,
+  ) {
+    // Clearing the pending state clears its nonce; marking it keeps a nonce already recorded.
+    const r = await this.pool.query(
+      `UPDATE bounties SET broadcast_pending=$4,pending_tx_hash=$5,
+          pending_nonce=CASE WHEN $4 THEN COALESCE($6,pending_nonce) ELSE NULL END
+        WHERE chain_id=$1 AND submission_id=$2 AND token=$3 AND status='validating' AND lease_until>now()`,
+      [job.chainId, job.submissionId, job.token, pending, hash, nonce],
+    );
+    if (!r.rowCount) throw new Error("bounty lease lost");
+  }
+  /**
+   * Record the decision, or schedule a retry after an error, if the lease still holds. An
+   * acceptance queues a fresh rating of every enabled agent on the chain in the same
+   * transaction, so a bounty can't end accepted without its re-rating (docs/PLAN.md 13.1).
+   */
+  async finishBounty(
+    job: BountyJob,
+    outcome:
+      | { status: "accepted" | "rejected"; verdict: unknown; txHash: string }
+      | { error: string }
+      | { failed: string },
+  ) {
+    await this.transaction(async (c) => {
+      const done = "status" in outcome;
+      const r = await c.query(
+        `UPDATE bounties SET status=$4,verdict=COALESCE($5::jsonb,verdict),tx_hash=COALESCE($6,tx_hash),
+          error=$7,lease_until=NULL,available_at=now()+interval '30 seconds',
+          broadcast_pending=CASE WHEN $4='validating' THEN broadcast_pending ELSE false END,
+          pending_tx_hash=CASE WHEN $4='validating' THEN pending_tx_hash ELSE NULL END
+        WHERE chain_id=$1 AND submission_id=$2 AND token=$3 AND status='validating' AND lease_until>now()
+        RETURNING status`,
+        [
+          job.chainId,
+          job.submissionId,
+          job.token,
+          done ? outcome.status : "failed" in outcome ? "failed" : "validating",
+          done ? json(outcome.verdict) : null,
+          done ? outcome.txHash : null,
+          done ? null : "failed" in outcome ? outcome.failed : outcome.error,
+        ],
+      );
+      if (!r.rowCount) throw new Error("bounty lease lost");
+      if (done && outcome.status === "accepted") {
+        const agents = await c.query("SELECT id FROM agents WHERE chain_id=$1 AND enabled", [
+          job.chainId,
+        ]);
+        for (const row of agents.rows) await this.enqueueIn(c, row.id as string);
+      }
+      await this.publish(
+        `bounty.${done ? outcome.status : "failed" in outcome ? "failed" : "retry"}`,
+        { chainId: job.chainId, submissionId: job.submissionId },
+        c,
+      );
+    });
+  }
+  /** Every bounty on a chain, newest first, without payloads. */
+  async bounties(chainId: number): Promise<BountySummary[]> {
+    const r = await this.pool.query(
+      `SELECT submission_id,hunter,spec_uri,spec,status,verdict,tx_hash,created_at FROM bounties
+      WHERE chain_id=$1 ORDER BY created_at DESC`,
+      [chainId],
+    );
+    return r.rows.map((row) => {
+      const spec = row.spec as { id: string; class: string; title: string; surfaces: string[] };
+      const verdict = row.verdict as { reward?: string; reason?: string } | null;
+      return {
+        submissionId: String(row.submission_id),
+        hunter: row.hunter,
+        specUri: row.spec_uri,
+        attackId: spec.id,
+        attackClass: spec.class,
+        title: spec.title,
+        surfaces: spec.surfaces,
+        status: row.status,
+        reward: verdict?.reward ?? null,
+        reason: verdict?.reason ?? null,
+        txHash: row.tx_hash,
+        createdAt: row.created_at,
+      };
+    });
+  }
+  /** Accepted attacks plus uncertain acceptance broadcasts reserve bounty eligibility. */
+  async bountyValidationAttacks(chainId: number, submissionId: string): Promise<unknown[]> {
+    const r = await this.pool.query(
+      `SELECT spec FROM bounties WHERE chain_id=$1 AND submission_id<>$2 AND
+        (status='accepted' OR (status='validating' AND broadcast_pending AND verdict->>'decision'='accept'))`,
+      [chainId, submissionId],
+    );
+    return r.rows.map((row) => row.spec);
+  }
+  /** Accepted bounty specs, which join the attack library for this chain's ratings. */
+  async acceptedAttacks(chainId: number): Promise<unknown[]> {
+    const r = await this.pool.query(
+      "SELECT spec FROM bounties WHERE chain_id=$1 AND status='accepted' ORDER BY created_at",
+      [chainId],
+    );
+    return r.rows.map((row) => row.spec);
+  }
+  /** One bounty's status, for a repeated reveal. */
+  async bountyStatus(chainId: number, submissionId: string): Promise<string | undefined> {
+    const r = await this.pool.query(
+      "SELECT status FROM bounties WHERE chain_id=$1 AND submission_id=$2",
+      [chainId, submissionId],
+    );
+    return r.rows[0]?.status as string | undefined;
   }
   /** Close idle clients and wait for borrowed clients to return. Drain streams first. */
   async close() {

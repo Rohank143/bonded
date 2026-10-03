@@ -349,6 +349,14 @@ it("runs a queued rating, persists episodes and report, posts the attestation", 
       )
     ).rowCount,
   ).toBe(82);
+  // The public stream carries verdicts, never planted text or traces (a seed's payload stands in
+  // for a private bounty's).
+  const published = JSON.stringify(
+    (await pg.db.pool.query("SELECT payload FROM events WHERE topic='rating.episode'")).rows,
+  );
+  expect(published).not.toContain("Regulators have halted trading");
+  expect(published).not.toContain('"planted"');
+  expect(published).not.toContain('"trace"');
   const score = await app.request(`/agents/${vault.agentId}/score`);
   expect(score.status).toBe(200);
   // The web app links the profile to its report through this run ID.
