@@ -4,6 +4,7 @@ import {
   AgentKitAgent,
   type Brain,
   createHardenedAgent,
+  createPartialAgent,
   DEFAULT_AGENT_MODEL,
   createVulnerableAgent,
   CascadeSentinel,
@@ -15,7 +16,12 @@ import {
   SentinelGuard,
   SolanaAgentKitAgent,
 } from "@bonded/demo-agents";
-import { type ArenaAgent, EVM_CHAINS, parseSentinelQuestionSet } from "@bonded/shared";
+import {
+  type ArenaAgent,
+  EVM_CHAINS,
+  type EvmMandateInput,
+  parseSentinelQuestionSet,
+} from "@bonded/shared";
 import { loadAttackLibrary } from "./attacks.js";
 import { runControls } from "./controls.js";
 import { loadDotEnv, usesLanguageModel } from "./env.js";
@@ -32,7 +38,7 @@ const USAGE = `Usage:
                                                        false-alarm test (no score)
 
 Agent:
-  --agent <vulnerable|hardened|decision|agentkit|solana-agent-kit>
+  --agent <vulnerable|hardened|partial|decision|agentkit|solana-agent-kit>
                            agent to test (default: vulnerable). agentkit and solana-agent-kit run
                            those frameworks' template agents with the Arena's tools (needs
                            OPENROUTER_API_KEY; --model picks the model)
@@ -115,10 +121,18 @@ async function main(): Promise<number> {
   if (usesLanguageModel(values)) loadDotEnv();
   // Build the agent first, so a missing API key fails before a sandbox is started.
   const agent = buildAgent(values);
-  const vault = values.enforce ? { mandate: { mode: "enforce" as const } } : undefined;
+  let vault: { mandate: Partial<EvmMandateInput> } | undefined = values.enforce
+    ? { mandate: { mode: "enforce" } }
+    : undefined;
   const forkUrl = values.fork ? (FORKS[values.fork] ?? values.fork) : undefined;
   console.log(forkUrl ? `Forking ${forkUrl}` : "Starting a fresh local chain");
   const sandbox = await Sandbox.start({ forkUrl, log: (m) => m && console.log(m) });
+  // The partial agent's mandate allows refunds to the depositor: the address its weak check
+  // trusts and address poisoning imitates (docs/PLAN.md, Day 14 detail).
+  if (values.agent === "partial")
+    vault = {
+      mandate: { ...vault?.mandate, destinations: [sandbox.address("depositor")] },
+    };
   try {
     if (command === "controls") {
       const outDir = values.out ?? `ratings/controls-${agent.name.replaceAll("/", "_")}`;
@@ -246,6 +260,9 @@ function buildAgent(values: {
     }
     case "hardened":
       return createHardenedAgent(brain as Brain, llm, sentinel);
+    case "partial":
+      if (sentinel.length) throw new Error("--sentinel-model works with vulnerable or hardened");
+      return createPartialAgent(brain as Brain, llm);
     case "decision":
       if (sentinel.length) throw new Error("--sentinel-model works with vulnerable or hardened");
       return new DecisionModelAgent(new LlmDecisionModel(llm));
@@ -259,7 +276,7 @@ function buildAgent(values: {
     }
     default:
       throw new Error(
-        `unknown agent ${values.agent} (vulnerable, hardened, decision, agentkit or solana-agent-kit)`,
+        `unknown agent ${values.agent} (vulnerable, hardened, partial, decision, agentkit or solana-agent-kit)`,
       );
   }
 }

@@ -57,6 +57,14 @@ export interface ActionGuard {
 export class PolicyGuard implements ActionGuard {
   readonly name = "policy";
 
+  /**
+   * @param options.matchAddressEnds compare addresses by their first 6 and last 4 characters
+   *   only. Off by default. The demo's Agent A turns it on: a realistic gap that address
+   *   poisoning exploits, which the Arena measures and the premium prices. See docs/PLAN.md,
+   *   Day 14 detail.
+   */
+  constructor(private readonly options: { matchAddressEnds?: boolean } = {}) {}
+
   async check(
     tool: string,
     args: Record<string, string>,
@@ -66,11 +74,11 @@ export class PolicyGuard implements ActionGuard {
     if (!policy) return { allow: false, reason: "no mandate policy to check against" };
     switch (tool) {
       case "transfer":
-        return listed(policy.transferAllowlist, args.to)
+        return listed(policy.transferAllowlist, args.to, this.options.matchAddressEnds)
           ? { allow: true }
           : { allow: false, reason: `transfers to ${args.to} are not in the mandate` };
       case "approve":
-        return listed(policy.approvalAllowlist, args.spender)
+        return listed(policy.approvalAllowlist, args.spender, this.options.matchAddressEnds)
           ? { allow: true }
           : { allow: false, reason: `approving ${args.spender} is not in the mandate` };
       case "swap":
@@ -197,8 +205,15 @@ export class GuardedToolbox implements AgentToolbox {
   }
 }
 
-function listed(list: readonly string[], address: string | undefined): boolean {
-  return address !== undefined && list.some((a) => a.toLowerCase() === address.toLowerCase());
+/**
+ * Whether `address` is on the list. With `ends`, only the first 6 and last 4 characters are
+ * compared, the way people (and many wallet screens) check an address: the gap address
+ * poisoning exploits.
+ */
+function listed(list: readonly string[], address: string | undefined, ends = false): boolean {
+  if (address === undefined) return false;
+  const key = (a: string) => (ends ? `${a.slice(0, 6)}…${a.slice(-4)}` : a).toLowerCase();
+  return list.some((a) => key(a) === key(address));
 }
 
 function tokenAllowed(policy: AgentPolicy, symbol: string | undefined): boolean {
