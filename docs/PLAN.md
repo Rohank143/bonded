@@ -640,7 +640,7 @@ Wallets: wagmi/viem (EVM) and Solana wallet adapter.
 
 | Chain | Environment for the hackathon | What we deploy | Notes to verify on Day 1 |
 |---|---|---|---|
-| **Robinhood Chain** | Testnet (public since Feb 2026); mainnet optional at the end | Full EVM suite, mock stock tokens (if testnet stock tokens are unavailable), AMM pool, MockOracle | RPC URL, chain id, faucet, USDC availability, Chainlink feeds, Uniswap deployment |
+| **Robinhood Chain** | Testnet (public since Feb 2026); mainnet after the hackathon (#67) | Full EVM suite, mock stock tokens (if testnet stock tokens are unavailable), AMM pool, MockOracle | RPC URL, chain id, faucet, USDC availability, Chainlink feeds, Uniswap deployment |
 | **Arbitrum** | Arbitrum Sepolia | Full EVM suite | Circle testnet USDC, Chainlink feeds |
 | **Ethereum** | Sepolia | ERC-8004 registries (canonical if deployed, otherwise reference implementation) + BondedRegistry + a cover deployment | Canonical ERC-8004 addresses |
 | **Solana** | Devnet | `bonded_vault`, `bonded_cover`, `bonded_registry` | Circle devnet USDC, Jupiter devnet support (else a mock AMM) |
@@ -660,7 +660,7 @@ Wallets: wagmi/viem (EVM) and Solana wallet adapter.
 
 Locally, `docker compose` runs Postgres and the same image, so the one-command demo still works from a clean state. Moving to another Docker host needs no code changes.
 
-**Optional "live on mainnet" moment (Day 14).** Deploy to Robinhood Chain mainnet with a strict TVL cap and a small funded pool. This needs founder-provided funds; see Section 24.
+**Mainnet comes after the hackathon** (decided on Day 13). The submission runs on testnets. A later Robinhood Chain mainnet deploy gets a strict TVL cap and a small founder-funded pool, and has prerequisites listed in [issue #67](https://github.com/ddboy19912/bonded/issues/67).
 
 ---
 
@@ -795,10 +795,23 @@ Day 1 = Sun Sep 27. Submission target = Day 15 (Sun Oct 11). Day 16 (Mon Oct 12)
 | 10 | Tue Oct 6 | Solana tests + devnet deploy + keeper/SDK support; Sentinel service + held-out eval + Arena re-run with Sentinel on | Solana E2E breach → claim on devnet; Sentinel eval report (TPR@1%FPR, ECE, latency) |
 | 11 | Wed Oct 7 | TEE: hardened agent on Phala dstack, measurement bound in the attestation; Ethereum Sepolia registry deployment; multi-chain attestation posting | TEE badge shows on the agent profile; a score is readable on 4 chains |
 | 12 | Thu Oct 8 | Bounties (commit/reveal/validate/accept) + public leaderboard (≥2 framework adapters, real OSS agents) + disclosure notes | **GATE 2: feature complete.** Founder review #2 |
-| 13 | Fri Oct 9 | Hardening: `/security-review`, Slither, invariant tests, bug bash, UX polish, error states | No high-severity findings open; all suites green |
-| 14 | Sat Oct 10 | Demo seeding script; pitch deck; README; docs; optional Robinhood Chain mainnet deploy (capped) | Demo runs in one command from a clean state |
+| 13 | Fri Oct 9 | Hardening: invariant tests, Slither and clippy, `/security-review`, the bounty self-accept fix, bug bash, UX polish, error states, uptime check and Telegram alerts (detail below) | No high-severity findings open; all suites green; `docs/AUDIT.md` written; a test alert reaches Telegram |
+| 14 | Sat Oct 10 | Demo seeding script; pitch deck; README; docs; open the bounty board to outside hunters | Demo runs in one command from a clean state |
 | 15 | Sun Oct 11 | Record pitch video + technical demo video; final deploys; **submit** | Submission confirmed |
 | 16 | Mon Oct 12 | Buffer: fixes, resubmission if needed | Deadline |
+
+**Day 13 detail (hardening).** Each workstream is its own branch and PR, with the full fresh-clone pipeline in the description.
+
+| # | Branch | Work | Done when |
+|---|---|---|---|
+| 1 | `invariant-tests` | Handler-based Foundry invariants. **CoverPool:** shares match assets; locked ≤ assets; free = assets − locked; withdrawals never touch locked capital. **ClaimsEngine:** bond pays before pool; each breach paid once; payout ≤ loss − deductible. **MandateVault (ERC-4626):** NAV, rounding direction, inflation resistance. **OperatorBond:** slashed ≤ staked. **BountyBoard:** paid ≤ funded; status only moves forward. No invariant tests exist today, although `foundry.toml` configures them. | Pass with the CI profile (256 runs, depth 64); each property shown to catch a planted bug |
+| 2 | `static-analysis` | Slither on the EVM contracts (installed with `pipx`), `cargo clippy` on the Solana programs. Each finding is fixed, a false positive with the reason, or an accepted risk. | No high or medium finding untriaged |
+| 3 | `static-analysis` | `/security-review` and a manual pass of the Section 25 checklist: access control, CEI and reentrancy, oracle staleness, caps in `buyCover`, freeze-on-breach, waterfall and ERC-4626 math. Off chain: the public `POST /bounties/:id/reveal` (body size, rate limit), CORS, attester and API-token paths, keeper and worker failure handling, and how the web builds transactions. | Findings and their status in `docs/AUDIT.md` (Section 17's internal audit note) |
+| 4 | `bounty-self-accept` | BountyBoard lets an attester accept its own submission. The worker refuses submissions from attester addresses (tested). A contract check `hunter != msg.sender` ships only if workstreams 2–3 force a BountyBoard redeploy anyway; otherwise it waits for mainnet (#67). | Tested; decision recorded in the audit note |
+| 5 | `web-polish` | Bug bash on https://bonded-nu.vercel.app. Error states: API down, RPC error, no wallet, wrong network, unknown agent, empty lists, rejected transactions. Phone width (375px). No console errors (non-TEE agents log a 404 from `/agents/:id/tee` today). Number formats, explorer links, landing copy. | Every page checked on desktop and phone with each state forced; fixes have web tests |
+| 6 | `ops-alerts` | Uptime: UptimeRobot calls `GET /health` every 5 minutes and alerts through its built-in Telegram integration (#23). Alerts: a Telegram bot posts crashes, a lagging keeper, stuck claims and failed ratings from the API and keeper (#24), through the Bot API with `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. Alerts are rate-limited and never include secrets or attack payloads. | A test alert from each source reaches the Telegram chat; `docs/SERVICES.md` Monitoring updated |
+
+Moved out of Day 13: early stopping (#34) saves rating cost but isn't hardening, so it moves to after submission.
 
 **Working agreements**
 - Every piece of work goes on its own short, descriptive branch (e.g. `day-01-scaffold`) and lands in `main` through a pull request that the founder merges. See `CLAUDE.md` for the full workflow.
@@ -815,13 +828,17 @@ Day 1 = Sun Sep 27. Submission target = Day 15 (Sun Oct 11). Day 16 (Mon Oct 12)
 | Laya adapter behind the `DecisionModel` interface (Section 10) | Day 6 (ADR-007, decision 5). Hugging Face is blocked in the cloud environment | Day 10: the Sentinel service, evaluation and the Arena re-run | [Issue #12](https://github.com/ddboy19912/bonded/issues/12) |
 | Quote signing | Day 6 | Day 7, with `buyCover` | Done on Day 7 ([PR #17](https://github.com/ddboy19912/bonded/pull/17)) |
 | External uptime check on the public API `/health` | Day 7 | Day 13 (hardening), before the demo is recorded against the hosted API | [Issue #23](https://github.com/ddboy19912/bonded/issues/23) |
-| Chat alerts for crashes, a lagging keeper, stuck claims and failed ratings; guardian alerts (Section 14.2) | Day 7 | Day 13 (hardening). Required before any mainnet deploy | [Issue #24](https://github.com/ddboy19912/bonded/issues/24) |
+| Chat alerts (a Telegram bot) for crashes, a lagging keeper, stuck claims and failed ratings; guardian alerts (Section 14.2) | Day 7 | Day 13 (hardening). Required before any mainnet deploy | [Issue #24](https://github.com/ddboy19912/bonded/issues/24) |
 | Automatic keeper recovery from deep chain reorganisations (today it stops for an operator) | Day 7 | Before mainnet or real funds. Not needed for the testnet demo or the gates | [Issue #25](https://github.com/ddboy19912/bonded/issues/25) |
 | Sentinel cascade: Laya first, an LLM only for low-confidence checks (BUSINESS.md lever 1) | Day 9 | Day 10, with the Sentinel service | [Issue #32](https://github.com/ddboy19912/bonded/issues/32) |
 | Grey-area judge only where the chain can't see (lever 3) | Day 9 | When the grey-area judge is built | [Issue #33](https://github.com/ddboy19912/bonded/issues/33) |
-| Stop rating a class once the tier can't change (lever 4) | Day 9 | Day 13 (hardening) | [Issue #34](https://github.com/ddboy19912/bonded/issues/34) |
+| Stop rating a class once the tier can't change (lever 4) | Day 9 | After submission (moved from Day 13: a cost saving, not hardening) | [Issue #34](https://github.com/ddboy19912/bonded/issues/34) |
 | Re-rate only what changed (lever 5) | Day 9 | After Gate 2, before paying customers | [Issue #35](https://github.com/ddboy19912/bonded/issues/35) |
 | Prompt caching for Arena model calls (lever 6) | Day 9 | Day 12, with the first model-driven leaderboard ratings | [Issue #36](https://github.com/ddboy19912/bonded/issues/36) |
+| Leaderboard with 5 runs per attack | Day 12 | Optional, before submission if time allows | [Issue #64](https://github.com/ddboy19912/bonded/issues/64) |
+| Automatic Vercel deploys from GitHub | Day 12 | Optional | [Issue #65](https://github.com/ddboy19912/bonded/issues/65) |
+| Pre-demo checklist (TEE VM, re-rate agent 3) | Day 12 | Day 15, before recording | [Issue #66](https://github.com/ddboy19912/bonded/issues/66) |
+| Robinhood Chain mainnet deploy | Day 13 (decision) | After the hackathon | [Issue #67](https://github.com/ddboy19912/bonded/issues/67) |
 
 ---
 
@@ -882,9 +899,11 @@ Day 1 = Sun Sep 27. Submission target = Day 15 (Sun Oct 11). Day 16 (Mon Oct 12)
 | 7 | Phala Cloud account | TEE deployment | Day 11 |
 | 8 | Join the **Jev waitlist** (optional) | A second Sentinel backend; Jev-bot leaderboard entry | Anytime |
 | 9 | Colosseum Copilot token (optional) | Check uniqueness against 5,400+ past submissions | Anytime |
-| 10 | Decide on the optional mainnet deploy + small pool funding | "Live on Robinhood Chain mainnet" moment | By Day 13 |
+| 10 | ~~Decide on the optional mainnet deploy + small pool funding~~ Decided: after the hackathon | "Live on Robinhood Chain mainnet" moment | Done (Day 13), [issue #67](https://github.com/ddboy19912/bonded/issues/67) |
 | 11 | **Railway** account (Hobby plan) connected to the GitHub repo, with a usage limit set; set the secrets from ADR-008 in Railway | Live API, keeper and Arena worker (ADR-008) | Day 7 |
-| 12 | Free **Vercel** account (Hobby) | Frontend hosting | Day 12 |
+| 12 | Free **Vercel** account (Hobby) | Frontend hosting | Day 12 (done) |
+| 13 | Free **UptimeRobot** account: an HTTP monitor on `https://api-production-ba50.up.railway.app/health` every 5 minutes, with the Telegram alert contact from item 14 | External uptime check (#23) | Day 13 |
+| 14 | A **Telegram bot** for alerts: create it with @BotFather, add it to a private chat or group, and send it one message. Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` as Railway secrets on the api and keeper services (Claude finds the chat id with you, without seeing the token) | Chat alerts (#24) | Day 13 |
 
 ---
 
