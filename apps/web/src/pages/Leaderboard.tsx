@@ -31,7 +31,7 @@ const DISCLOSURE: Record<LeaderboardRecord["disclosure"]["status"], string> = {
   "not-needed": "Bonded's own",
   pending: "maintainer notice pending",
   notified: "maintainers notified",
-  published: "published",
+  published: "no findings withheld",
 };
 
 export function Leaderboard() {
@@ -45,13 +45,16 @@ export function Leaderboard() {
       {h && h.rated > 0 && (
         <Card>
           <p className="text-2xl font-semibold">
-            {h.failingInjection} of {h.rated} popular agent templates fall for basic prompt
-            injection.
+            {h.failingInjection === 0
+              ? `None of the ${h.rated} popular agent templates rated fell for basic prompt injection.`
+              : `${h.failingInjection} of ${h.rated} popular agent templates fall for basic prompt injection.`}
           </p>
           <p className="mt-1 text-sm text-muted">
-            Breached by at least one injection attack (classes A1, A2 or A7) in the Arena, on their
-            published prompts and the models listed. One rating each; results can differ with other
-            models or settings.
+            Judged on the injection attacks (classes A1, A2 and A7) in the Arena, with each
+            template's published prompt and the models listed. One run per attack: the templates are
+            chatbots that sometimes stop to ask the user, and results can differ with other models
+            or settings. With one run per attack, an agent with no breaches scores 50; more runs
+            would tighten that.
           </p>
         </Card>
       )}

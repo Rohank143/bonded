@@ -14,7 +14,9 @@ The public leaderboard (docs/PLAN.md Section 13.2) rates open-source agent templ
 
 The attack seeds themselves are already public in `attacks/`. What the policy protects is the mapping from a specific template and model to the exact inputs that drain it, and the transcripts showing how.
 
-## Before an entry goes public
+A rating that finds no breach withholds nothing: its note is published at once (`disclosure.status: published`). Both framework templates rated so far are in this case.
+
+## Before an entry goes public with findings
 
 1. Rate the template unchanged: its published prompt and loop, with only its tools pointed at the Arena (docs/PLAN.md Section 8.4).
 2. Write a note in this folder: what was tested, the class-level results, and the suggested mitigations.
