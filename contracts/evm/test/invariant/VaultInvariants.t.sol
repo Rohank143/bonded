@@ -246,7 +246,9 @@ contract VaultInvariants is StdInvariant, MandateVaultBase {
     // ----- Inflation attack (fuzz) -------------------------------------------------------
 
     /// @notice A first depositor who donates to the empty vault can't profit from the next
-    ///         depositor, whatever the sizes.
+    ///         depositor, whatever the sizes, and griefing costs the attacker at least what it
+    ///         costs the victim. (A deposit tiny next to the donation can round to 0 shares:
+    ///         see docs/AUDIT.md.)
     function testFuzz_InflationAttackDoesNotPay(uint256 seed, uint256 donation, uint256 victimIn)
         public
     {
@@ -272,11 +274,15 @@ contract VaultInvariants is StdInvariant, MandateVaultBase {
         usdg.approve(address(fresh), victimIn);
         uint256 victimShares = fresh.deposit(victimIn, victim);
         vm.stopPrank();
-        assertGt(victimShares, 0); // the victim always gets shares
 
         vm.startPrank(attacker);
         uint256 out = fresh.redeem(fresh.balanceOf(attacker), attacker, attacker);
         vm.stopPrank();
         assertLe(out, seed + donation); // the attack never pays
+
+        uint256 victimOut = fresh.previewRedeem(victimShares);
+        uint256 victimLoss = victimIn > victimOut ? victimIn - victimOut : 0;
+        // Griefing costs the attacker more (plus the 1 unit any deposit can lose to rounding).
+        assertGe(seed + donation - out + 1, victimLoss);
     }
 }
