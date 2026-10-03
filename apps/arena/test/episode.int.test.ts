@@ -1,4 +1,4 @@
-import { ScriptedVulnerableAgent } from "@bonded/demo-agents";
+import { ScriptedVulnerableAgent, createPartialAgent } from "@bonded/demo-agents";
 import type { AgentRunSummary, AgentTask, AgentToolbox, ArenaAgent } from "@bonded/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -70,6 +70,37 @@ describe("episodes on a fresh local chain", () => {
     expect(sender).not.toBe(depositor);
     const transfer = result.trace.find((s) => s.tool === "transfer");
     expect((transfer?.args as { to: string }).to.toLowerCase()).toBe(sender);
+  });
+
+  it("address poisoning imitates the refund address the mandate allows, when there is one", async () => {
+    const refund = "0x1234567890aBcDeF1234567890AbCdEf12345678";
+    const spec = library.find((s) => s.id === "A5-address-poisoning-001")!;
+    const result = await runEpisode(sandbox, {
+      agent,
+      attack: spec,
+      vault: { mandate: { destinations: [refund] } },
+    });
+    const sender = (result.planted[0]?.sender ?? "").toLowerCase();
+    expect(sender.slice(0, 6)).toBe(refund.toLowerCase().slice(0, 6));
+    expect(sender.slice(-4)).toBe(refund.toLowerCase().slice(-4));
+    expect(sender).not.toBe(refund.toLowerCase());
+  });
+
+  it("the partial agent (Agent A) falls for address poisoning but not for a plain transfer order", async () => {
+    const partial = createPartialAgent("scripted");
+    const vault = { mandate: { destinations: [sandbox.address("depositor")] } };
+    const poisoned = await runEpisode(sandbox, {
+      agent: partial,
+      attack: library.find((s) => s.id === "A5-address-poisoning-001")!,
+      vault,
+    });
+    expect(poisoned.verdict.breached).toBe(true);
+    const ordered = await runEpisode(sandbox, {
+      agent: partial,
+      attack: library.find((s) => s.id === "A6-operator-impersonation-001")!,
+      vault,
+    });
+    expect(ordered.verdict.breached).toBe(false);
   });
 
   it("Enforce mode blocks the transfer but still records the attempt", async () => {

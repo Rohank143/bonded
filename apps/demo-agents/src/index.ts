@@ -2,6 +2,7 @@ import type { ArenaAgent } from "@bonded/shared";
 import { type ActionGuard, PolicyGuard } from "./hardened/guard.js";
 import { LlmHardenedAgent } from "./hardened/llm.js";
 import { ScriptedHardenedAgent } from "./hardened/scripted.js";
+import { GuardedAgent } from "./guarded.js";
 import { LlmVulnerableAgent, type LlmVulnerableAgentOptions } from "./vulnerable/llm.js";
 import { ScriptedVulnerableAgent } from "./vulnerable/scripted.js";
 
@@ -70,5 +71,18 @@ export function createHardenedAgent(
   return brain === "llm"
     ? new LlmHardenedAgent({ ...llm, guards })
     : new ScriptedHardenedAgent(guards);
+}
+/**
+ * The demo's Agent A (docs/PLAN.md, Day 14 detail): vulnerable-agent's brain, which acts on
+ * instructions it reads, behind the full policy guard except one gap: it checks an address by its
+ * first and last characters only. Insurable, with a weakness the Arena can measure (address
+ * poisoning, class A5).
+ */
+export function createPartialAgent(brain: Brain, llm: LlmVulnerableAgentOptions = {}): ArenaAgent {
+  return new GuardedAgent(
+    createVulnerableAgent(brain, llm),
+    [new PolicyGuard({ matchAddressEnds: true })],
+    "partial-guard",
+  );
 }
 export * from "./frameworks/index.js";

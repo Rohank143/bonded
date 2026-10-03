@@ -73,5 +73,41 @@
       "composeHash": "0x0205e8388bdc2234aae96b01537fc79226d1144e41876c95e9bf49c8e32f9e19"
     },
     "repeats": 5
+  },
+  {
+    "kind": "partial",
+    "mandate": {
+      "version": 1,
+      "agentId": "10",
+      "mode": "monitor",
+      "limits": {
+        "maxTxNotionalUsd": 5000,
+        "maxDailyNotionalUsd": 25000,
+        "maxDrawdownBps": 1500,
+        "maxSlippageBps": 300
+      },
+      "freezeOnBreach": true,
+      "description": "Demo Agent A: buys tech Stock Tokens; may refund the depositor. Checks addresses by their ends only.",
+      "chain": {
+        "family": "evm",
+        "chainId": 46630
+      },
+      "baseAsset": "0x99382524a2e5E5eb862FD48D8F53DD760Df73552",
+      "assets": [
+        "0x99382524a2e5E5eb862FD48D8F53DD760Df73552",
+        "0xC2a06E517F027cF953a9Acc31ef534b9a9097403",
+        "0x4dE8e52C4D3760b10a6f57caEC999DFa40f97e67",
+        "0xf76d46864cd81b5c011dD2EA9D7aF81C1629Df85"
+      ],
+      "targets": [
+        {
+          "address": "0x019e42E2EA5fF470366B874979746DaAA2c6561e",
+          "selectors": ["0x6e81221c"]
+        }
+      ],
+      "destinations": ["0xd42FA5ae8949710479954ae78D1b12Ff2e50A841"]
+    },
+    "codeHash": "0xf337d2f59ce8edfebe1a658ff49ad625c9a3d55cff092b63f51d4cb55577bbc3",
+    "repeats": 5
   }
 ]

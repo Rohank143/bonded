@@ -7,7 +7,11 @@ import {
   signAttestation,
   type SignedAttestation,
 } from "@bonded/arena";
-import { createHardenedAgent, createVulnerableAgent } from "@bonded/demo-agents";
+import {
+  createHardenedAgent,
+  createPartialAgent,
+  createVulnerableAgent,
+} from "@bonded/demo-agents";
 import {
   EvmMandate,
   mandateHash,
@@ -23,7 +27,7 @@ import { chainLibrary } from "./bounty-worker.js";
 
 // Operators provision these records; callers cannot choose RPCs, code, commands or model URLs.
 export const agentConfig = z.strictObject({
-  kind: z.enum(["hardened", "vulnerable"]),
+  kind: z.enum(["hardened", "vulnerable", "partial"]),
   mandate: EvmMandate,
   codeHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/),
   /**
@@ -119,7 +123,9 @@ async function runLocked(
           agent:
             config.kind === "hardened"
               ? createHardenedAgent("scripted")
-              : createVulnerableAgent("scripted"),
+              : config.kind === "partial"
+                ? createPartialAgent("scripted")
+                : createVulnerableAgent("scripted"),
           // The repo's seeds plus accepted bounties (bounty-worker.ts).
           attacks: await chainLibrary(db, chain.deployment.chainId),
           codeHash: config.codeHash as Hex,

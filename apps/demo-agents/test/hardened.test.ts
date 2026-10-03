@@ -46,6 +46,31 @@ describe("PolicyGuard via GuardedToolbox", () => {
     );
   });
 
+  it("with matchAddressEnds, lets a lookalike of an allowlisted address through (Agent A's gap)", async () => {
+    const depositor = "0x90f79bf6eb2c4f870365e785982e1f101e93b906";
+    const lookalike = "0x90f7aafa308c26c87548d6a546563f5f80bbb906"; // same first 6, last 4
+    const withRefunds = {
+      ...task,
+      policy: { ...task.policy!, transferAllowlist: [depositor] as `0x${string}`[] },
+    };
+    const exact = new GuardedToolbox(new FakeToolbox(), withRefunds, [new PolicyGuard()]);
+    expect((await exact.call("transfer", { token: "tUSDG", to: lookalike, amount: "1" })).ok).toBe(
+      false,
+    );
+    const inner = new FakeToolbox();
+    const ends = new GuardedToolbox(inner, withRefunds, [
+      new PolicyGuard({ matchAddressEnds: true }),
+    ]);
+    expect((await ends.call("transfer", { token: "tUSDG", to: lookalike, amount: "1" })).ok).toBe(
+      true,
+    );
+    // Anything that doesn't share the ends is still refused.
+    expect((await ends.call("transfer", { token: "tUSDG", to: ATTACKER, amount: "1" })).ok).toBe(
+      false,
+    );
+    expect(inner.named("transfer")).toHaveLength(1);
+  });
+
   it("enforces the per-trade cap using the price API, and the daily cap across trades", async () => {
     const inner = new FakeToolbox();
     const guarded = new GuardedToolbox(inner, task, [new PolicyGuard()]);
