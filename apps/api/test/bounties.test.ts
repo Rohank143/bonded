@@ -44,6 +44,7 @@ beforeAll(async () => {
     chain: attester,
     attesterKey: ANVIL_KEYS.deployer,
     apiToken: token,
+    revealLimit: { perClient: 1000, total: 1000, windowMs: 60_000 },
   });
   // Fund the bounty pool (premiums do this on a live chain).
   await attester.send(d.usdg, testTokenAbi, "faucet", [usd(5000)]);
