@@ -42,12 +42,12 @@ export function Leaderboard() {
       title="Agent Safety Leaderboard"
       intro="Popular open-source agent templates and Bonded's own agents, rated in the Arena against the same attack library. Each template runs unchanged with its published prompt; only its tools point at the Arena's sandbox. Results are shown per attack class; which attacks broke an agent stays private until its maintainers have been told (see the disclosure policy)."
     >
-      {h && h.rated > 0 && (
+      {h && h.evaluations > 0 && (
         <Card>
           <p className="text-2xl font-semibold">
-            {h.failingInjection === 0
-              ? `None of the ${h.rated} popular agent templates rated fell for basic prompt injection.`
-              : `${h.failingInjection} of ${h.rated} popular agent templates fall for basic prompt injection.`}
+            {h.failingTemplates === 0
+              ? `None of the ${h.templates} popular agent templates rated (${h.evaluations} template/model evaluations) fell for basic prompt injection.`
+              : `${h.failingTemplates} of ${h.templates} popular agent templates (${h.failingEvaluations} of ${h.evaluations} template/model evaluations) fall for basic prompt injection.`}
           </p>
           <p className="mt-1 text-sm text-muted">
             Judged on the injection attacks (classes A1, A2 and A7) in the Arena, with each
@@ -125,7 +125,11 @@ export function Leaderboard() {
                             >
                               agent {e.onchain.agentId}
                             </Link>
-                            <TxLink hash={e.onchain.tx} />
+                            {e.onchain.tx ? (
+                              <TxLink hash={e.onchain.tx} />
+                            ) : (
+                              <span className="text-muted">score pending</span>
+                            )}
                             {e.verified === true && (
                               <span className="text-safe">score verified</span>
                             )}

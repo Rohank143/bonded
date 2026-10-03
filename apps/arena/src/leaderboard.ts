@@ -1,6 +1,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type Attestation, Leaderboard, LeaderboardEntry } from "@bonded/shared";
+import { Attestation, Leaderboard, LeaderboardEntry } from "@bonded/shared";
+import { keccak256, stringToBytes } from "viem";
 import type { RatingReport } from "./rate.js";
 
 /** The published leaderboard (served by GET /leaderboard). */
@@ -20,6 +22,19 @@ export function writeLeaderboard(entries: LeaderboardEntry[], path = LEADERBOARD
 }
 
 /**
+ * Why a rating can't be published: it stopped early or had agent errors, so some attacks were
+ * never judged and its result would look cleaner than it is. Undefined if it can.
+ */
+export function unpublishableReason(report: RatingReport): string | undefined {
+  if (report.stoppedEarly) return `it stopped early (${report.stoppedEarly})`;
+  if (report.episodes.agentErrors > 0)
+    return `${report.episodes.agentErrors} episode(s) ended in an agent error`;
+  const errored = report.classes.filter((c) => c.agentErrors > 0).map((c) => c.class);
+  if (errored.length) return `agent errors in ${errored.join(", ")}`;
+  return undefined;
+}
+
+/**
  * A rating as a leaderboard entry: class-level results only. The report's worst-case list
  * (which seeds breached) and the traces stay out, per the disclosure policy.
  */
@@ -31,6 +46,8 @@ export function entryFromRating(
     "slug" | "name" | "kind" | "framework" | "model" | "onchain" | "disclosure"
   > & { template?: string },
 ): LeaderboardEntry {
+  const reason = unpublishableReason(report);
+  if (reason) throw new Error(`not publishable: ${reason}`);
   return LeaderboardEntry.parse({
     ...meta,
     ratedAt: report.startedAt,
@@ -59,11 +76,31 @@ export function upsertEntry(entries: LeaderboardEntry[], entry: LeaderboardEntry
   return [...entries.filter((e) => e.slug !== entry.slug), entry];
 }
 
-/** The attestation a rating signed, as the cross-poster reads it. */
-export function ratingAttestation(file: string): { attestation: Attestation; reportHash: string } {
-  const a = JSON.parse(readFileSync(file, "utf8")) as {
-    attestation: Attestation;
-    reportHash: string;
+/**
+ * A rating folder, checked before anything is published (docs/PLAN.md Section 8.6): the
+ * keccak256 of report.json's exact bytes must equal the attestation's report hash (top level
+ * and signed), the attestation must parse, and its score and expected loss must be the report's.
+ * A mismatched or edited folder throws.
+ */
+export function loadRating(dir: string): {
+  report: RatingReport;
+  attestation: Attestation;
+  reportHash: string;
+} {
+  const bytes = readFileSync(join(dir, "report.json"), "utf8");
+  const file = JSON.parse(readFileSync(join(dir, "attestation.json"), "utf8")) as {
+    attestation: unknown;
+    reportHash?: string;
   };
-  return { attestation: a.attestation, reportHash: a.reportHash };
+  const attestation = Attestation.parse(file.attestation);
+  const hash = keccak256(stringToBytes(bytes));
+  if (hash !== attestation.reportHash || hash !== file.reportHash)
+    throw new Error(`${dir}: report.json doesn't match the attestation's report hash`);
+  const report = JSON.parse(bytes) as RatingReport;
+  if (
+    report.scoring.score !== attestation.score ||
+    report.scoring.expectedLossBps !== attestation.expectedLossBps
+  )
+    throw new Error(`${dir}: the report's score or expected loss differs from the attestation`);
+  return { report, attestation, reportHash: hash };
 }

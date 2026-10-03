@@ -53,10 +53,15 @@ it("serves the leaderboard with the headline and checks each score on chain", as
     leaderboardFile: file,
   });
   const body = (await (await app.request("/leaderboard")).json()) as {
-    headline: { rated: number; failingInjection: number };
+    headline: Record<string, number>;
     entries: { slug: string; verified: boolean | null }[];
   };
-  expect(body.headline).toEqual({ rated: 3, failingInjection: 2 });
+  expect(body.headline).toEqual({
+    templates: 1,
+    failingTemplates: 1,
+    evaluations: 3,
+    failingEvaluations: 2,
+  });
   expect(body.entries.map((e) => [e.slug, e.verified])).toEqual([
     ["a", true],
     ["b", false],

@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { type LeaderboardEntry } from "@bonded/shared";
 import { crosspostEvm } from "./crosspost.js";
@@ -8,12 +7,11 @@ import { loadDotEnv } from "./env.js";
 import {
   entryFromRating,
   LEADERBOARD_FILE,
-  ratingAttestation,
+  loadRating,
   readLeaderboard,
   upsertEntry,
   writeLeaderboard,
 } from "./leaderboard.js";
-import type { RatingReport } from "./rate.js";
 
 const USAGE = `Usage: pnpm leaderboard add --rating <dir> --slug <slug> --name <name> --framework <name> [options]
 
@@ -64,13 +62,32 @@ async function main(): Promise<number> {
   }
   const kind = values.kind as LeaderboardEntry["kind"];
   const file = values.file ? fromCaller(values.file) : LEADERBOARD_FILE;
-  const dir = fromCaller(values.rating);
-  const report = JSON.parse(readFileSync(join(dir, "report.json"), "utf8")) as RatingReport;
-  const { attestation, reportHash } = ratingAttestation(join(dir, "attestation.json"));
-  const entries = readLeaderboard(file);
-  const existing = entries.find((e) => e.slug === values.slug);
-  let onchain = existing?.onchain ?? null;
-  if (values.post) {
+  // Verified and publishable before any side effect (loadRating, entryFromRating).
+  const { report, attestation, reportHash } = loadRating(fromCaller(values.rating));
+  const status = (values.disclosure ??
+    (kind === "framework" ? "pending" : "not-needed")) as LeaderboardEntry["disclosure"]["status"];
+  const entryWith = (onchain: LeaderboardEntry["onchain"]) =>
+    entryFromRating(report, reportHash, {
+      slug: values.slug!,
+      name: values.name!,
+      kind,
+      framework: values.framework!,
+      model: values.model ?? null,
+      onchain,
+      disclosure: { status, ...(values.note ? { note: values.note } : {}) },
+      ...(values.template ? { template: values.template } : {}),
+    });
+  const save = (entry: LeaderboardEntry) =>
+    writeLeaderboard(upsertEntry(readLeaderboard(file), entry), file);
+  const existing = readLeaderboard(file).find((e) => e.slug === values.slug);
+  // A posted score belongs to the rating it was posted for; a new rating starts unposted.
+  const sameRating = existing?.reportHash === reportHash;
+  let onchain: LeaderboardEntry["onchain"] = existing?.onchain
+    ? { ...existing.onchain, tx: sameRating ? existing.onchain.tx : null }
+    : null;
+  let entry = entryWith(onchain);
+  save(entry);
+  if (values.post && !onchain?.tx) {
     loadDotEnv();
     const key = process.env[values["attester-env"]];
     if (!key || !/^0x[0-9a-fA-F]{64}$/.test(key))
@@ -82,35 +99,21 @@ async function main(): Promise<number> {
       uri: `bonded://leaderboard/${values.slug}`,
       attesterKey: key as `0x${string}`,
       ownerKey: key as `0x${string}`,
+      // Save a new agent at once, so a failed score post resumes it instead of registering again.
+      onRegistered: (agentId) => {
+        onchain = { chain: "robinhoodTestnet", agentId, tx: null };
+        save(entryWith(onchain));
+      },
     });
-    if (!result.tx && !onchain)
-      throw new Error("the registry already had this score but no transaction is recorded");
-    onchain = {
-      chain: "robinhoodTestnet",
-      agentId: result.agentId,
-      tx: (result.tx ?? onchain!.tx) as string,
-    };
-    console.log(
-      `posted: agent ${result.agentId} ${result.status}${result.tx ? ` ${result.tx}` : ""}`,
-    );
+    if (!result.tx)
+      throw new Error(
+        `agent ${result.agentId} already holds this score, but its post transaction isn't recorded here`,
+      );
+    onchain = { chain: "robinhoodTestnet", agentId: result.agentId, tx: result.tx };
+    entry = entryWith(onchain);
+    save(entry);
+    console.log(`posted: agent ${result.agentId} ${result.status} ${result.tx}`);
   }
-  const entry = entryFromRating(report, reportHash, {
-    slug: values.slug,
-    name: values.name,
-    kind,
-    framework: values.framework,
-    model: values.model ?? null,
-    onchain,
-    disclosure: {
-      status: (values.disclosure ??
-        (kind === "framework"
-          ? "pending"
-          : "not-needed")) as LeaderboardEntry["disclosure"]["status"],
-      ...(values.note ? { note: values.note } : {}),
-    },
-    ...(values.template ? { template: values.template } : {}),
-  });
-  writeLeaderboard(upsertEntry(entries, entry), file);
   console.log(`${entry.slug}: score ${entry.score} (${entry.tier}) -> ${file}`);
   return 0;
 }

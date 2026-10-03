@@ -116,7 +116,7 @@ export interface LeaderboardRecord {
   episodes: { attacks: number; controls: number; controlBreaches: number };
   classes: { class: string; name: string; episodes: number; breaches: number }[];
   reportHash: string;
-  onchain: { chain: string; agentId: string; tx: string } | null;
+  onchain: { chain: string; agentId: string; tx: string | null } | null;
   disclosure: {
     status: "not-needed" | "pending" | "notified" | "published";
     notifiedAt?: string;

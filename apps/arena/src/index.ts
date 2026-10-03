@@ -93,7 +93,8 @@ export {
 export {
   entryFromRating,
   LEADERBOARD_FILE,
-  ratingAttestation,
+  loadRating,
+  unpublishableReason,
   readLeaderboard,
   upsertEntry,
   writeLeaderboard,

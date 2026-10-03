@@ -1,10 +1,13 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import { keccak256, stringToBytes } from "viem";
 import {
   entryFromRating,
+  loadRating,
   readLeaderboard,
+  unpublishableReason,
   upsertEntry,
   writeLeaderboard,
 } from "../src/leaderboard.js";
@@ -79,4 +82,65 @@ it("keeps one entry per slug, best score first", () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+describe("publishing a rating", () => {
+  const folder = (r: object, tamper?: (bytes: string) => string) => {
+    const dir = mkdtempSync(join(tmpdir(), "rating-"));
+    const bytes = `${JSON.stringify(r, null, 2)}\n`;
+    const reportHash = keccak256(stringToBytes(bytes));
+    const attestation = {
+      agentId: "1",
+      score: 31,
+      expectedLossBps: 1500,
+      reportHash,
+      mandateHash: `0x${"11".repeat(32)}`,
+      codeHash: `0x${"22".repeat(32)}`,
+      teeMeasurement: `0x${"00".repeat(32)}`,
+      modelFamily: "unknown",
+      issuedAt: 1_790_000_000,
+      expiresAt: 1_792_592_000,
+    };
+    writeFileSync(join(dir, "report.json"), tamper ? tamper(bytes) : bytes);
+    writeFileSync(join(dir, "attestation.json"), JSON.stringify({ attestation, reportHash }));
+    return dir;
+  };
+  const full = {
+    ...(report as object),
+    stoppedEarly: null,
+    episodes: { total: 42, attacks: 40, controls: 2, agentErrors: 0 },
+  };
+
+  it("accepts a report whose bytes the attestation signed", () => {
+    const dir = folder(full);
+    try {
+      expect(loadRating(dir).report.scoring.score).toBe(31);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a report edited after signing, even with the same score", () => {
+    // The reviewer's case: A2 results changed, score kept.
+    const dir = folder(full, (b) => b.replace('"breaches": 3', '"breaches": 4'));
+    try {
+      expect(() => loadRating(dir)).toThrow(/doesn't match the attestation/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses incomplete ratings: all errors, or stopped early", () => {
+    const allErrors = {
+      ...full,
+      episodes: { total: 42, attacks: 40, controls: 2, agentErrors: 42 },
+      classes: [{ class: "A2", name: "x", episodes: 0, agentErrors: 4, breaches: 0 }],
+    } as unknown as RatingReport;
+    expect(unpublishableReason(allErrors)).toMatch(/agent error/);
+    expect(() => entryFromRating(allErrors, `0x${"ab".repeat(32)}`, meta)).toThrow(
+      /not publishable/,
+    );
+    const capped = { ...full, stoppedEarly: "spending cap reached" } as unknown as RatingReport;
+    expect(() => entryFromRating(capped, `0x${"ab".repeat(32)}`, meta)).toThrow(/stopped early/);
+  });
 });

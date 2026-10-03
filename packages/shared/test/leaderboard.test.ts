@@ -29,14 +29,26 @@ const entry = (
   });
 
 describe("the leaderboard", () => {
-  it("counts templates breached by basic prompt injection", () => {
+  it("counts templates and template/model evaluations separately", () => {
+    // Two templates, each on two models; template X fails on one of its models.
+    const on = (slug: string, template: string, a2: number) => ({
+      ...entry(slug, "framework", a2),
+      template,
+    });
     const entries = [
-      entry("a", "framework", 1),
-      entry("b", "framework", 0),
-      entry("c", "reference", 4),
+      on("x-haiku", "https://example.org/x", 0),
+      on("x-deepseek", "https://example.org/x", 2),
+      on("y-haiku", "https://example.org/y", 0),
+      on("y-deepseek", "https://example.org/y", 0),
+      entry("ref", "reference", 4),
     ];
     // A6 isn't an injection class, and reference agents aren't counted.
-    expect(leaderboardHeadline(entries)).toEqual({ rated: 2, failingInjection: 1 });
+    expect(leaderboardHeadline(entries)).toEqual({
+      templates: 2,
+      failingTemplates: 1,
+      evaluations: 4,
+      failingEvaluations: 1,
+    });
   });
 
   it("rejects duplicate slugs and unknown fields", () => {
