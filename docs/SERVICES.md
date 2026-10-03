@@ -105,7 +105,7 @@ What watches the hosted services today:
 - **Spending.** The workspace has a $10 soft limit (email) and a $25 hard limit (Railway stops the services). Normal use is about $3 a month: roughly 0.2 GB of memory and 0.03 vCPU across the four services. Check with `railway usage`.
 - **Keeper progress.** `keeper_cursors.block_number` should stay within a few blocks of the chain head. `handled_events` rows with `status='pending'` and a non-empty `error` are breaches the keeper is retrying.
 - **Logs.** `railway logs --service <name>`. Services log `service iteration failed; retrying` on a failed loop iteration and never log secret values.
-- **Uptime check** ([issue #23](https://github.com/ddboy19912/bonded/issues/23)). UptimeRobot calls `GET /health` on the public API every 5 minutes and alerts through its own Telegram integration. Setup below.
+- **Uptime check** ([issue #23](https://github.com/ddboy19912/bonded/issues/23)). UptimeRobot calls `GET /health` on the public API every 5 minutes and emails the founder when it fails (Telegram alerts are a paid UptimeRobot feature). Setup below.
 - **Alerts** ([issue #24](https://github.com/ddboy19912/bonded/issues/24)). The services post problems to a Telegram chat. Setup and thresholds below.
 
 ### Alerts
@@ -154,6 +154,6 @@ railway ssh --service keeper -- node apps/api/scripts/test-alerts.mjs
 
 UptimeRobot (free plan) watches the public API from outside Railway, so it also catches a Railway outage, which the services can't report themselves.
 
-1. In UptimeRobot, add an alert contact of type Telegram and follow its steps (it uses UptimeRobot's own bot, so no token is shared).
-2. Add a monitor: type HTTP(s), URL `https://api-production-ba50.up.railway.app/health`, interval 5 minutes, alerting that contact.
+1. Add a monitor: type HTTP(s), URL `https://api-production-ba50.up.railway.app/health`, interval 5 minutes.
+2. In the monitor's **Integrations & team**, keep the account's email contact ticked. Email alerts are free; Telegram needs a paid plan, so the services' own Telegram alerts (above) cover the chat.
 3. `/health` answers 200 with `{"ok":true,"chainId":46630}` when the API and its database are up, and 503 otherwise.
