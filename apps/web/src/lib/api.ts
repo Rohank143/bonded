@@ -99,6 +99,23 @@ export interface SignedQuoteResponse {
   signature: `0x${string}`;
 }
 
+/** A community bounty as the API lists it: no payload, which stays private. */
+export interface BountyRecord {
+  submissionId: string;
+  hunter: string;
+  specUri: string;
+  attackId: string;
+  attackClass: string;
+  title: string;
+  surfaces: string[];
+  status: "validating" | "accepted" | "rejected" | "failed";
+  /** tUSDG base units. */
+  reward: string | null;
+  reason: string | null;
+  txHash: string | null;
+  createdAt: string;
+}
+
 export const api = {
   health: () => request<{ ok: boolean; chainId: number }>("/health"),
   score: (agentId: string) => request<ScoreRecord>(`/agents/${agentId}/score`),
@@ -108,4 +125,12 @@ export const api = {
     post<{ runId: string }>("/arena/runs", token, { agentId }),
   quote: (token: string, input: { agentId: string; vault: string; coverAmount: string }) =>
     post<SignedQuoteResponse>("/quotes", token, input),
+  bounties: () => request<BountyRecord[]>("/bounties"),
+  /** No operator token: the API checks the spec's hash against the revealed specURI. */
+  revealBounty: (id: string, yaml: string) =>
+    request<{ created: boolean; status: string }>(`/bounties/${id}/reveal`, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: yaml,
+    }),
 };
