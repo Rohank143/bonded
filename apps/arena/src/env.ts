@@ -2,12 +2,15 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
 
+/** Framework template agents (docs/PLAN.md Section 8.4); they always run a model. */
+export const FRAMEWORK_AGENTS = ["agentkit", "solana-agent-kit"];
+
 /** The repo root's .env, resolved from src/ or dist/ alike. */
 export const ROOT_ENV_FILE = fileURLToPath(new URL("../../../.env", import.meta.url));
 
 /**
- * True when an Arena run calls a language model: an LLM brain, the decision-model agent, or a
- * Sentinel guard. Only these need .env (for the API key); every other run ignores it.
+ * True when an Arena run calls a language model: an LLM brain, the decision-model agent, a
+ * framework template agent, or a Sentinel guard. Only these need .env (for the API key); every other run ignores it.
  */
 export function usesLanguageModel(options: {
   brain?: string;
@@ -15,7 +18,10 @@ export function usesLanguageModel(options: {
   "sentinel-model"?: string;
 }): boolean {
   return (
-    options.brain === "llm" || options.agent === "decision" || Boolean(options["sentinel-model"])
+    options.brain === "llm" ||
+    options.agent === "decision" ||
+    FRAMEWORK_AGENTS.includes(options.agent ?? "") ||
+    Boolean(options["sentinel-model"])
   );
 }
 
