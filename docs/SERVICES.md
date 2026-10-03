@@ -142,7 +142,7 @@ railway variables --service keeper --set-from-stdin TELEGRAM_BOT_TOKEN
 railway variables --service keeper --set TELEGRAM_CHAT_ID=<chat id>
 ```
 
-Like the Solana variables, these are set on Railway only; `.railway/railway.ts` doesn't list them, and an apply leaves them in place.
+`.railway/railway.ts` lists both on `api` and `keeper` with `preserve()`, so an apply keeps their values. To give `arena-worker` its own alerts, add the same two lines to it there too.
 
 4. Setting a variable redeploys the service, so each one posts "Started". To see one sample of every alert, marked TEST:
 
