@@ -67,6 +67,15 @@ it("serves the leaderboard with the headline and checks each score on chain", as
     ["b", false],
     ["c", null],
   ]);
+  // A second visit within the cache period reuses the answer instead of reading the chain.
+  let reads = 0;
+  const read = chain.read.readContract;
+  (chain.read as { readContract: unknown }).readContract = async (...args: unknown[]) => {
+    reads++;
+    return (read as (...a: unknown[]) => unknown)(...args);
+  };
+  expect((await app.request("/leaderboard")).status).toBe(200);
+  expect(reads).toBe(0);
 });
 
 it("keeps a registered entry pending until its post transaction is recorded", async () => {

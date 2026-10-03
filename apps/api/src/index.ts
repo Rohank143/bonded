@@ -11,6 +11,7 @@ import type { Hex } from "viem";
 import { issueQuote } from "./quotes.js";
 import { EventStreams } from "./events.js";
 import { teeQuoteBlock } from "./tee-watch.js";
+import { RateLimiter, clientAddress } from "./rate-limit.js";
 export { issueQuote } from "./quotes.js";
 /** A decimal id, in canonical form: "01" and "1" are the same agent, so they must be the same key. */
 const uint = z
@@ -33,6 +34,10 @@ export function createApi(options: {
   webOrigins?: readonly string[];
   /** The published leaderboard (default: config/leaderboard.json). */
   leaderboardFile?: string;
+  /** Limits on the public bounty reveal (default: 10 per client and 120 in all per 10 minutes). */
+  revealLimit?: ConstructorParameters<typeof RateLimiter>[0];
+  /** How long a leaderboard response is reused before the chain is read again. */
+  leaderboardCacheMs?: number;
 }) {
   const { db, chain } = options;
   if (options.apiToken.length < 24)
@@ -141,7 +146,13 @@ export function createApi(options: {
     });
   // Class-level results only (docs/disclosures). Each entry posted on this API's chain is checked
   // against the registry: `verified` means its current score has the same report hash.
+  // Each response reads the registry once per entry, so it is reused for a minute: a public page
+  // must not turn every visit into RPC calls.
+  const leaderboardCacheMs = options.leaderboardCacheMs ?? 60_000;
+  let leaderboardCache: { at: number; body: unknown } | undefined;
   app.get("/leaderboard", async (c) => {
+    if (leaderboardCache && Date.now() - leaderboardCache.at < leaderboardCacheMs)
+      return c.json(leaderboardCache.body);
     const entries = readLeaderboard(options.leaderboardFile);
     const checked = await Promise.all(
       entries.map(async (e) => {
@@ -167,11 +178,18 @@ export function createApi(options: {
         };
       }),
     );
-    return c.json({ headline: leaderboardHeadline(entries), entries: checked });
+    const body = { headline: leaderboardHeadline(entries), entries: checked };
+    leaderboardCache = { at: Date.now(), body };
+    return c.json(body);
   });
   // BountyBoard.Status: None, Committed, Revealed, Accepted, Rejected.
   const REVEALED = 2;
+  const revealLimit = new RateLimiter(
+    options.revealLimit ?? { perClient: 10, total: 120, windowMs: 10 * 60_000 },
+  );
   app.post("/bounties/:id/reveal", async (c) => {
+    if (!revealLimit.allow(clientAddress(c.req.raw.headers)))
+      return c.json({ error: "too many reveal requests; try again in a few minutes" }, 429);
     const id = uint.parse(c.req.param("id"));
     const yaml = await c.req.text();
     const submission = await chain.read
