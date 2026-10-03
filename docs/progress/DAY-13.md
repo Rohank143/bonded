@@ -23,14 +23,14 @@ Every PR has the full fresh-clone pipeline in its description.
 
 ## Founder steps
 
-- **Done:** the Telegram bot exists, and `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set on `api` and `keeper` (checked by name on Railway). The UptimeRobot monitor on the public API is live: HTTP check every 5 minutes, up 100% since it started.
-- **After #74 merges:** Railway redeploys `api` and `keeper`, and each posts "Started" to the chat. Then `railway ssh --service keeper -- node apps/api/scripts/test-alerts.mjs` sends one sample of every alert. That meets the "a test alert reaches Telegram" check.
-- **Issue #23** can close once UptimeRobot has sent one test alert to the chat (its "done when").
-- **Web deploy:** after #73 merges, `vercel --prod` from a clean clone of `main` (issue #65).
+- **Done:** the Telegram bot exists, and `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set on `api` and `keeper` (checked by name on Railway). The UptimeRobot monitor on the public API is live: HTTP check every 5 minutes, up 100% since it started. It alerts by email, because Telegram is a paid UptimeRobot feature; the services' own alerts cover the Telegram chat.
+- **Alerts verified (2026-10-03):** after #74 merged, `api` and `keeper` each posted "Started" to Telegram, and `test-alerts.mjs` on the hosted keeper delivered one sample of every alert. Issue #24 is closed.
+- **Vercel deploys from GitHub:** merging #70 to #75 deployed production automatically. Issue #65 is closed.
+- **Issue #23** (uptime check) is closed on the founder's call: the monitor is live with email alerts; no forced test alert was sent.
 
 ## Review asks
 
-- Merge order: #70, #71, #72, #73, #74 are independent and can merge in any order.
+- All Day 13 PRs (#70 to #75) are merged.
 - Agree with batching the contract fixes for mainnet rather than redeploying the testnets two days before submission.
 
 ## Next (Day 14)
