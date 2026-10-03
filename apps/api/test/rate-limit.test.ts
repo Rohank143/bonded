@@ -19,12 +19,15 @@ it("limits each client and all clients together, per window", () => {
   expect(limiter.allow("c")).toBe(true);
 });
 
-it("takes the client address the proxy recorded, not one the client sent", () => {
-  expect(clientAddress(headers({ "x-real-ip": "1.2.3.4", "x-forwarded-for": "9.9.9.9" }))).toBe(
-    "1.2.3.4",
-  );
-  // A forged first entry is ignored: the proxy appends the real address last.
-  expect(clientAddress(headers({ "x-forwarded-for": "6.6.6.6, 5.6.7.8" }))).toBe("5.6.7.8");
+it("takes the address Railway's edge put first in X-Forwarded-For", () => {
+  // Railway strips a client's own X-Forwarded-For, so the first entry is the connecting address;
+  // X-Real-IP can hold its CDN's address instead.
+  expect(
+    clientAddress(
+      headers({ "x-forwarded-for": "5.6.7.8, 100.64.0.2", "x-real-ip": "151.101.1.1" }),
+    ),
+  ).toBe("5.6.7.8");
+  expect(clientAddress(headers({ "x-real-ip": "1.2.3.4" }))).toBe("1.2.3.4");
   expect(clientAddress(headers({}))).toBe("unknown");
 });
 
@@ -52,7 +55,7 @@ it("answers 429 to a client that sends too many bounty reveals, before reading t
     app.request("/bounties/1/reveal", {
       method: "POST",
       body: "spec",
-      headers: { "x-real-ip": ip },
+      headers: { "x-forwarded-for": ip },
     });
   expect((await reveal("1.1.1.1")).status).toBe(404);
   expect((await reveal("1.1.1.1")).status).toBe(404);

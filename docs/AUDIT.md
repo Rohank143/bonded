@@ -68,13 +68,13 @@ Every contract on Robinhood testnet, Arbitrum Sepolia and Ethereum Sepolia is ow
 
 `POST /bounties/:id/reveal` needs no operator token and reads the chain on every request, so anyone could spend the API's RPC quota.
 
-- **Status: fixed** (branch `static-analysis`). A limit of 10 requests per client and 120 in total per 10 minutes, checked before any chain read; over the limit the API answers 429. The client address is taken from the proxy's `X-Real-IP` (or the last `X-Forwarded-For` entry), not from the parts a client can forge. The shared limit stops anyone getting around it by rotating addresses. Tested.
+- **Status: fixed** (this branch, `static-analysis`). A limit of 10 requests per client and 120 in total per 10 minutes, checked before any chain read; over the limit the API answers 429. The client address is the first `X-Forwarded-For` entry, which Railway's edge sets (it strips any value a client sends); `X-Real-IP` is only a fallback, because Railway sometimes fills it with its CDN's address. The shared limit stops anyone getting around it by rotating addresses. Tested.
 
 ### F-05 (Low) The leaderboard read the chain on every visit
 
 `GET /leaderboard` checks each entry against the registry: one RPC call per entry, per visit.
 
-- **Status: fixed** (branch `static-analysis`). The response is reused for 60 seconds. Tested.
+- **Status: fixed** (this branch, `static-analysis`). The response is reused for 60 seconds. Tested.
 
 ### F-06 (Low) ChainlinkOracle accepts a sequencer feed with `startedAt == 0`
 

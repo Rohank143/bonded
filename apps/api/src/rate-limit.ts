@@ -49,14 +49,13 @@ export class RateLimiter {
 }
 
 /**
- * The caller's address as Railway's edge proxy saw it. `X-Real-IP` is set by the proxy; failing
- * that, the last `X-Forwarded-For` entry is the one the proxy appended (earlier entries come from
- * the client and can be forged).
+ * The caller's address as Railway's edge proxy saw it. Railway strips any `X-Forwarded-For` a
+ * client sends and puts the connecting address first, so the first entry is the one to use;
+ * `X-Real-IP` is the fallback (Railway sometimes fills it with its CDN's address instead). Off
+ * Railway the header could be forged, which is why the limiter also has a shared limit.
  */
 export function clientAddress(headers: { get(name: string): string | null | undefined }): string {
-  const real = headers.get("x-real-ip")?.trim();
-  if (real) return real;
-  const forwarded = headers.get("x-forwarded-for");
-  const last = forwarded?.split(",").at(-1)?.trim();
-  return last || "unknown";
+  const first = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  if (first) return first;
+  return headers.get("x-real-ip")?.trim() || "unknown";
 }
