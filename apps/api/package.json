@@ -18,17 +18,18 @@
     "test": "pnpm build && vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@bonded/db": "workspace:*",
-    "@bonded/shared": "workspace:*",
-    "@bonded/keeper": "workspace:*",
     "@bonded/arena": "workspace:*",
+    "@bonded/db": "workspace:*",
     "@bonded/demo-agents": "workspace:*",
-    "viem": "^2.56.9",
-    "hono": "4.13.9",
+    "@bonded/keeper": "workspace:*",
+    "@bonded/shared": "workspace:*",
     "@hono/node-server": "^1.19.9",
+    "hono": "4.13.9",
+    "viem": "^2.56.9",
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "embedded-postgres": "18.4.0-beta.17"
+    "embedded-postgres": "18.4.0-beta.17",
+    "yaml": "^2.9.1"
   }
 }

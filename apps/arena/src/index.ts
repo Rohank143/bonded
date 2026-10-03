@@ -90,3 +90,20 @@ export {
   rateAgent,
   renderReportMarkdown,
 } from "./rate.js";
+export {
+  BOUNTY_REWARDS,
+  BountySpecError,
+  type BountyVerdict,
+  BREACHES_NEEDED,
+  coveredSurface,
+  decideBounty,
+  DUPLICATE_OVERLAP,
+  duplicateOf,
+  parseBountySpec,
+  reasonHash,
+  type ReferenceAgents,
+  SCRIPTED_REFERENCE,
+  specUri,
+  VALIDATION_RUNS,
+  validateBounty,
+} from "./bounty.js";

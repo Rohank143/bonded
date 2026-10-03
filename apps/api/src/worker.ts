@@ -3,7 +3,6 @@ import {
   Sandbox,
   rateAgent,
   attestTeeAgent,
-  loadAttackLibrary,
   signAttestation,
   type SignedAttestation,
 } from "@bonded/arena";
@@ -19,6 +18,7 @@ import { z } from "zod";
 import { getAbiItem, hashTypedData, type Hex } from "viem";
 import { attestationTypedData, bondedDomain } from "@bonded/shared";
 import type { ServiceChain } from "@bonded/keeper";
+import { chainLibrary } from "./bounty-worker.js";
 
 // Operators provision these records; callers cannot choose RPCs, code, commands or model URLs.
 export const agentConfig = z.strictObject({
@@ -119,7 +119,8 @@ async function runLocked(
             config.kind === "hardened"
               ? createHardenedAgent("scripted")
               : createVulnerableAgent("scripted"),
-          attacks: await loadAttackLibrary(),
+          // The repo's seeds plus accepted bounties (bounty-worker.ts).
+          attacks: await chainLibrary(db, chain.deployment.chainId),
           codeHash: config.codeHash as Hex,
           ...(config.repeats ? { repeats: config.repeats } : {}),
           ...(tee ? { tee } : {}),

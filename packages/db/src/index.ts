@@ -21,6 +21,31 @@ export interface TeeCheckRow {
   verifiedAt: Date | null;
 }
 
+/** A bounty under validation, leased by one worker (migration 0006). */
+export interface BountyJob {
+  chainId: number;
+  submissionId: string;
+  token: string;
+  hunter: string;
+  spec: unknown;
+}
+
+/** A bounty as the public sees it: no payload, which stays private (docs/disclosures). */
+export interface BountySummary {
+  submissionId: string;
+  hunter: string;
+  specUri: string;
+  attackId: string;
+  attackClass: string;
+  title: string;
+  surfaces: string[];
+  status: string;
+  reward: string | null;
+  reason: string | null;
+  txHash: string | null;
+  createdAt: Date;
+}
+
 /** Raised when a caller tries to queue an agent outside the configured set. */
 export class AgentNotConfiguredError extends Error {}
 
@@ -57,6 +82,7 @@ export class Database {
       "0003_agent_availability.sql",
       "0004_tee_checks.sql",
       "0005_tee_rating_version.sql",
+      "0006_bounties.sql",
     ];
     await this.transaction(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(7001)");
@@ -317,6 +343,157 @@ export class Database {
         c,
       );
     });
+  }
+  /**
+   * Record a revealed bounty for validation. Idempotent: posting the same submission again
+   * returns its current status without queueing it twice.
+   */
+  async submitBounty(b: {
+    chainId: number;
+    submissionId: string;
+    hunter: string;
+    specUri: string;
+    specYaml: string;
+    spec: unknown;
+  }): Promise<{ created: boolean; status: string }> {
+    return this.transaction(async (c) => {
+      const r = await c.query(
+        `INSERT INTO bounties(chain_id,submission_id,hunter,spec_uri,spec_yaml,spec)
+        VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT (chain_id,submission_id) DO NOTHING RETURNING status`,
+        [b.chainId, b.submissionId, b.hunter, b.specUri, b.specYaml, json(b.spec)],
+      );
+      if (r.rowCount) {
+        await this.publish(
+          "bounty.revealed",
+          { chainId: b.chainId, submissionId: b.submissionId },
+          c,
+        );
+        return { created: true, status: r.rows[0].status as string };
+      }
+      const existing = await c.query(
+        "SELECT status FROM bounties WHERE chain_id=$1 AND submission_id=$2",
+        [b.chainId, b.submissionId],
+      );
+      return { created: false, status: existing.rows[0].status as string };
+    });
+  }
+  /** Fail bounties that errored three times, then lease one waiting for validation. */
+  async takeBounty(chainId: number): Promise<BountyJob | undefined> {
+    return this.transaction(async (c) => {
+      const failed = await c.query(
+        `UPDATE bounties SET status='failed',lease_until=NULL WHERE chain_id=$1 AND status='validating'
+          AND attempts>=3 AND (lease_until IS NULL OR lease_until<now()) RETURNING submission_id`,
+        [chainId],
+      );
+      for (const row of failed.rows)
+        await this.publish(
+          "bounty.failed",
+          { chainId, submissionId: String(row.submission_id) },
+          c,
+        );
+      const r = await c.query(
+        `UPDATE bounties SET token=$1,attempts=attempts+1,lease_until=now()+interval '60 seconds'
+        WHERE (chain_id,submission_id)=(SELECT chain_id,submission_id FROM bounties
+          WHERE chain_id=$2 AND status='validating' AND attempts<3 AND available_at<=now()
+            AND (lease_until IS NULL OR lease_until<now())
+          ORDER BY available_at FOR UPDATE SKIP LOCKED LIMIT 1)
+        RETURNING submission_id,token,hunter,spec`,
+        [randomUUID(), chainId],
+      );
+      const row = r.rows[0];
+      return row
+        ? {
+            chainId,
+            submissionId: String(row.submission_id),
+            token: row.token as string,
+            hunter: row.hunter as string,
+            spec: row.spec,
+          }
+        : undefined;
+    });
+  }
+  /** Extend a bounty lease this worker still holds. */
+  async renewBounty(job: BountyJob) {
+    const r = await this.pool.query(
+      `UPDATE bounties SET lease_until=now()+interval '60 seconds'
+      WHERE chain_id=$1 AND submission_id=$2 AND token=$3 AND status='validating' AND lease_until>now()`,
+      [job.chainId, job.submissionId, job.token],
+    );
+    if (!r.rowCount) throw new Error("bounty lease lost");
+  }
+  /** Record the decision, or schedule a retry after an error, if the lease still holds. */
+  async finishBounty(
+    job: BountyJob,
+    outcome:
+      { status: "accepted" | "rejected"; verdict: unknown; txHash: string } | { error: string },
+  ) {
+    await this.transaction(async (c) => {
+      const done = "status" in outcome;
+      const r = await c.query(
+        `UPDATE bounties SET status=$4,verdict=COALESCE($5::jsonb,verdict),tx_hash=COALESCE($6,tx_hash),
+          error=$7,lease_until=NULL,available_at=now()+interval '30 seconds'
+        WHERE chain_id=$1 AND submission_id=$2 AND token=$3 AND status='validating' AND lease_until>now()
+        RETURNING status`,
+        [
+          job.chainId,
+          job.submissionId,
+          job.token,
+          done ? outcome.status : "validating",
+          done ? json(outcome.verdict) : null,
+          done ? outcome.txHash : null,
+          done ? null : outcome.error,
+        ],
+      );
+      if (!r.rowCount) throw new Error("bounty lease lost");
+      await this.publish(
+        `bounty.${done ? outcome.status : "retry"}`,
+        { chainId: job.chainId, submissionId: job.submissionId },
+        c,
+      );
+    });
+  }
+  /** Every bounty on a chain, newest first, without payloads. */
+  async bounties(chainId: number): Promise<BountySummary[]> {
+    const r = await this.pool.query(
+      `SELECT submission_id,hunter,spec_uri,spec,status,verdict,tx_hash,created_at FROM bounties
+      WHERE chain_id=$1 ORDER BY created_at DESC`,
+      [chainId],
+    );
+    return r.rows.map((row) => {
+      const spec = row.spec as { id: string; class: string; title: string; surfaces: string[] };
+      const verdict = row.verdict as { reward?: string; reason?: string } | null;
+      return {
+        submissionId: String(row.submission_id),
+        hunter: row.hunter,
+        specUri: row.spec_uri,
+        attackId: spec.id,
+        attackClass: spec.class,
+        title: spec.title,
+        surfaces: spec.surfaces,
+        status: row.status,
+        reward: verdict?.reward ?? null,
+        reason: verdict?.reason ?? null,
+        txHash: row.tx_hash,
+        createdAt: row.created_at,
+      };
+    });
+  }
+  /** Accepted bounty specs, which join the attack library for this chain's ratings. */
+  async acceptedAttacks(chainId: number): Promise<unknown[]> {
+    const r = await this.pool.query(
+      "SELECT spec FROM bounties WHERE chain_id=$1 AND status='accepted' ORDER BY created_at",
+      [chainId],
+    );
+    return r.rows.map((row) => row.spec);
+  }
+  /** Queue a fresh rating of every enabled agent on a chain (after the library grows). */
+  async enqueueAll(chainId: number): Promise<string[]> {
+    const agents = await this.pool.query("SELECT id FROM agents WHERE chain_id=$1 AND enabled", [
+      chainId,
+    ]);
+    const ids: string[] = [];
+    for (const row of agents.rows) ids.push(await this.enqueue(row.id as string));
+    return ids;
   }
   /** Close idle clients and wait for borrowed clients to return. Drain streams first. */
   async close() {

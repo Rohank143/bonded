@@ -9,6 +9,7 @@ import { z } from "zod";
 import { createApi } from "./index.js";
 import { runTeeChecks, teeCheckInterval } from "./tee-watch.js";
 import { agentConfig, workOne } from "./worker.js";
+import { workBountyOne } from "./bounty-worker.js";
 
 loadDotEnv();
 /** Read a required variable without including its value in errors. */
@@ -119,6 +120,10 @@ if (role === "migrate") {
     // Separate account/nonce flow from the keeper, even in all mode.
     const worker = connectChain(deployment, rpc, key("ATTESTER_KEY"));
     tasks.push(loop(() => workOne(db, worker, rpc, key("ATTESTER_KEY")), 1000));
+    // Error names only: messages can carry the RPC URL and its key.
+    const bountyError = (e: unknown) =>
+      console.error("bounty validation failed:", e instanceof Error ? e.name : "unknown error");
+    tasks.push(loop(() => workBountyOne(db, worker, rpc, bountyError), 5000));
   }
   console.info(`Bonded service ready: ${role}`);
   if (!abort.signal.aborted)
