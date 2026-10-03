@@ -90,3 +90,11 @@ export {
   rateAgent,
   renderReportMarkdown,
 } from "./rate.js";
+export {
+  entryFromRating,
+  LEADERBOARD_FILE,
+  ratingAttestation,
+  readLeaderboard,
+  upsertEntry,
+  writeLeaderboard,
+} from "./leaderboard.js";

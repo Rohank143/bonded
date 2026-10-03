@@ -13,6 +13,7 @@ import { Vaults } from "./pages/Vaults";
 import { Vault } from "./pages/Vault";
 import { Underwrite } from "./pages/Underwrite";
 import { Claims } from "./pages/Claims";
+import { Leaderboard } from "./pages/Leaderboard";
 import "./index.css";
 
 const router = createBrowserRouter([
@@ -26,6 +27,7 @@ const router = createBrowserRouter([
       { path: "/vaults/:address", element: <Vault /> },
       { path: "/underwrite", element: <Underwrite /> },
       { path: "/claims", element: <Claims /> },
+      { path: "/leaderboard", element: <Leaderboard /> },
       { path: "*", element: <p className="text-sm text-muted">Page not found.</p> },
     ],
   },

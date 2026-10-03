@@ -4,7 +4,8 @@ import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { z } from "zod";
 import { Database, json, AgentNotConfiguredError } from "@bonded/db";
-import { QuoteError } from "@bonded/shared";
+import { QuoteError, bondedRegistryAbi, leaderboardHeadline } from "@bonded/shared";
+import { readLeaderboard } from "@bonded/arena";
 import type { ServiceChain } from "@bonded/keeper";
 import type { Hex } from "viem";
 import { issueQuote } from "./quotes.js";
@@ -30,6 +31,8 @@ export function createApi(options: {
   apiToken: string;
   /** Browser origins allowed to call the API, e.g. the web app's URL. Empty allows none. */
   webOrigins?: readonly string[];
+  /** The published leaderboard (default: config/leaderboard.json). */
+  leaderboardFile?: string;
 }) {
   const { db, chain } = options;
   if (options.apiToken.length < 24)
@@ -133,6 +136,36 @@ export function createApi(options: {
             );
       return c.json(row);
     });
+  // Class-level results only (docs/disclosures). Each entry posted on this API's chain is checked
+  // against the registry: `verified` means its current score has the same report hash.
+  app.get("/leaderboard", async (c) => {
+    const entries = readLeaderboard(options.leaderboardFile);
+    const checked = await Promise.all(
+      entries.map(async (e) => {
+        if (
+          !e.onchain ||
+          e.onchain.chain !== "robinhoodTestnet" ||
+          chain.deployment.chainId !== 46630
+        )
+          return { ...e, verified: null };
+        const s = await chain.read
+          .readContract({
+            address: chain.deployment.registry,
+            abi: bondedRegistryAbi,
+            functionName: "scoreOf",
+            args: [BigInt(e.onchain.agentId)],
+          })
+          .catch(() => undefined);
+        return {
+          ...e,
+          verified: s
+            ? s.reportHash.toLowerCase() === e.reportHash.toLowerCase() && s.score === e.score
+            : null,
+        };
+      }),
+    );
+    return c.json({ headline: leaderboardHeadline(entries), entries: checked });
+  });
   app.get("/events", async (c) => {
     const after = uint.parse(c.req.header("Last-Event-ID") ?? c.req.query("after") ?? "0");
     const runId = c.req.query("runId");

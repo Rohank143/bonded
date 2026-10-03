@@ -99,8 +99,40 @@ export interface SignedQuoteResponse {
   signature: `0x${string}`;
 }
 
+/** One leaderboard entry (config/leaderboard.json): class-level results only. */
+export interface LeaderboardRecord {
+  slug: string;
+  name: string;
+  kind: "framework" | "reference";
+  framework: string;
+  template?: string;
+  model: string | null;
+  ratedAt: string;
+  score: number;
+  tier: string;
+  expectedLossBps: number;
+  premiumRateBps: number;
+  insurable: boolean;
+  episodes: { attacks: number; controls: number; controlBreaches: number };
+  classes: { class: string; name: string; episodes: number; breaches: number }[];
+  reportHash: string;
+  onchain: { chain: string; agentId: string; tx: string } | null;
+  disclosure: {
+    status: "not-needed" | "pending" | "notified" | "published";
+    notifiedAt?: string;
+    note?: string;
+  };
+  /** The registry still holds this rating's score (null: not posted on this chain). */
+  verified: boolean | null;
+}
+
 export const api = {
   health: () => request<{ ok: boolean; chainId: number }>("/health"),
+  leaderboard: () =>
+    request<{
+      headline: { rated: number; failingInjection: number };
+      entries: LeaderboardRecord[];
+    }>("/leaderboard"),
   score: (agentId: string) => request<ScoreRecord>(`/agents/${agentId}/score`),
   tee: (agentId: string) => request<TeeCheckRecord>(`/agents/${agentId}/tee`),
   run: (runId: string) => request<RunRecord>(`/arena/runs/${runId}`),
