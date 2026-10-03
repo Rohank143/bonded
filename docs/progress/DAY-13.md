@@ -21,10 +21,11 @@ Every PR has the full fresh-clone pipeline in its description.
 - **One EOA owns every contract** (F-02). The plan's Section 17 says multisig; that is the mainnet target, listed in #67.
 - **Redeploy decision:** no finding forced one. The open contract fixes (F-01's check, F-03, F-06, F-07) are batched for the mainnet deployment and listed on [issue #67](https://github.com/ddboy19912/bonded/issues/67).
 
-## Not done (founder steps)
+## Founder steps
 
-- **Telegram bot and secrets** (plan items 13 and 14): create the bot, find the chat id with `apps/api/scripts/telegram-chat-id.mjs`, set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` on `api` and `keeper`, then run `test-alerts.mjs` on the keeper. Steps in docs/SERVICES.md and PR #74. The "test alert reaches Telegram" check is met after this.
-- **UptimeRobot monitor** on `/health` (docs/SERVICES.md, "Uptime check").
+- **Done:** the Telegram bot exists, and `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set on `api` and `keeper` (checked by name on Railway). The UptimeRobot monitor on the public API is live: HTTP check every 5 minutes, up 100% since it started.
+- **After #74 merges:** Railway redeploys `api` and `keeper`, and each posts "Started" to the chat. Then `railway ssh --service keeper -- node apps/api/scripts/test-alerts.mjs` sends one sample of every alert. That meets the "a test alert reaches Telegram" check.
+- **Issue #23** can close once UptimeRobot has sent one test alert to the chat (its "done when").
 - **Web deploy:** after #73 merges, `vercel --prod` from a clean clone of `main` (issue #65).
 
 ## Review asks
