@@ -52,7 +52,7 @@ it("the deployed TEE demo agent is agent 3, with a TEE entry, and agent 2 has no
   expect(configs.filter((c) => c.tee)).toHaveLength(1);
 });
 
-it("repeats is optional, a whole number from 1 to 10, and is set only for the TEE demo agent", () => {
+it("repeats is optional, a whole number from 1 to 10, and agent 2 keeps one run per seed", () => {
   const configs = z.array(agentConfig).parse(JSON.parse(read("config/agents.46630.json")));
   const base = JSON.parse(read("config/agents.46630.json"))[0];
   expect(agentConfig.parse(base).repeats).toBeUndefined();
@@ -63,4 +63,16 @@ it("repeats is optional, a whole number from 1 to 10, and is set only for the TE
   // Agent 2 stays at one run per seed: it is the Gate 1 breach demo and its evidence is pinned.
   expect(configs.find((c) => c.mandate.agentId === "2")?.repeats).toBeUndefined();
   expect(configs.find((c) => c.mandate.agentId === "3")?.repeats).toBe(5);
+});
+
+it("the demo's Agent A is agent 10: the partial agent, Monitor mode, refunds to the depositor only", () => {
+  const configs = z.array(agentConfig).parse(JSON.parse(read("config/agents.46630.json")));
+  const a = configs.find((c) => c.kind === "partial");
+  expect(a?.mandate.agentId).toBe("10");
+  expect(a?.mandate.mode).toBe("monitor");
+  expect(a?.mandate.freezeOnBreach).toBe(true);
+  // The one destination is what its weak address check trusts, and what address poisoning imitates.
+  expect(a?.mandate.destinations).toHaveLength(1);
+  expect(a?.repeats).toBe(5);
+  expect(configs.filter((c) => c.kind === "partial")).toHaveLength(1);
 });

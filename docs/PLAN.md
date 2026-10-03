@@ -460,6 +460,7 @@ The λ values are illustrative priors. The model's inputs, not these numbers, ar
 - **Demo results:**
   - the scripted vulnerable-agent (Monitor) scores 1 (CCC)
   - the scripted hardened-agent (Enforce) scores 83 (AA) on one run per seed, and 96 (AAA, 1.2% premium) on five runs per seed
+  - the demo's Agent A (Day 14: the vulnerable brain behind the hardened guard, except that the guard checks an address by its first 6 and last 4 characters only; Monitor mode; refunds to the depositor allowed) scores **49 (BB), expected loss 5.13%, premium 7.47%** on five runs per seed in a local rating. Every breach is address poisoning (A5): 15 of 20 episodes. All other classes: 0 breaches. This replaces the illustrative "41 (B), 9.0%" in the demo; the live rating of agent 10 is recorded in docs/progress/DAY-14.md
 
 ### 9.3 Tiers
 
@@ -848,9 +849,9 @@ Moved out of Day 13: early stopping (#34) saves rating cost but isn't hardening,
 |---|---|---|
 | 0:00 | **Hook:** "Robinhood just let AI agents trade. Who pays when one gets tricked?" | Headlines: Robinhood agentic trading, $18B uncovered |
 | 0:20 | **Rate two agents live.** The Arena throws injection, lookalike tokens and fake-admin DMs at both | Attack cards flipping red/green; per-class bars |
-| 1:00 | **Price the risk:** "Agent A: score 41, premium 9.0%. Agent B: score 96, premium 1.2%." Explain *why* (Enforce mode, TEE, Sentinel all earned in the Arena) | Agent profiles; actuarial breakdown |
+| 1:00 | **Price the risk:** "Agent A: score 49, premium 7.5%. Agent B: score 96, premium 1.2%." (measured; Section 9.2). Explain *why*: Agent A checks addresses by their ends only, and the Arena caught it falling for address poisoning; Agent B earned Enforce mode, TEE custody and a clean report | Agent profiles; the A5 row in Agent A's report; actuarial breakdown |
 | 1:25 | **Bond and insure on Robinhood Chain:** operator bond staked, depositor vault covered | Policy NFT minted; explorer link |
-| 1:45 | **Break it:** plant poisoned token metadata. Agent A sends funds to the attacker; the vault records the breach and freezes the agent | Live tx; breach event |
+| 1:45 | **Break it:** a zero-value transfer from a lookalike of the depositor's address asks for a "refund". Agent A's guard compares only the address's ends, so it pays the lookalike; the vault records the breach and freezes the agent (`pnpm demo:break --testnet`) | Live tx; breach event |
 | 2:05 | **Get paid:** keeper files the claim, bond slashed, pool pays, vault share price restored, all within about a minute | Claims feed with the waterfall; before/after share price |
 | 2:25 | **Frontier tech:** Laya-Sentinel (trained on Arena data) catches the same attack for Agent B; the score is posted on Robinhood Chain, Arbitrum, Ethereum and Solana | Sentinel verdict; four registry links |
 | 2:45 | **Close:** leaderboard stat plus "AIUC for on-chain money. Don't cage your agent. Bond it." | Leaderboard; logo |

@@ -71,6 +71,7 @@ pnpm arena --list                           # the attack library
 pnpm arena run                              # every attack against vulnerable-agent
 pnpm arena rate                             # full rating: score, report, attestation, dataset
 pnpm arena rate --agent hardened --enforce  # the guarded agent, for comparison
+pnpm arena rate --agent partial              # the demo's Agent A: one gap, address poisoning
 ```
 
 Arena output goes to `apps/arena/traces/` and `apps/arena/ratings/<agent>/`; `report.md` there is the human-readable rating.
