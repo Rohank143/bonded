@@ -59,7 +59,7 @@ export function Leaderboard() {
         </Card>
       )}
       <Card title="Rankings">
-        {board.isLoading && <Loading what="the leaderboard" />}
+        {board.isPending && !board.error && <Loading what="the leaderboard" />}
         <ErrorText error={board.error} />
         {board.data?.entries.length === 0 && (
           <p className="text-sm text-muted">No ratings published yet.</p>

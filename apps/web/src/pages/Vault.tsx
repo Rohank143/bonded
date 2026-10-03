@@ -6,6 +6,7 @@ import { coverManagerAbi, mandateVaultAbi, quoteMessage, testTokenAbi } from "@b
 import { deployment } from "../config";
 import { api, type SignedQuoteResponse } from "../lib/api";
 import { usePolicies } from "../lib/chain";
+import { isRpcUnavailable } from "../lib/errors";
 import { BREACH_TYPES, POLICY_STATUS, bps, parseUsd, usd, when } from "../lib/format";
 import {
   AddressLink,
@@ -13,6 +14,7 @@ import {
   Button,
   Card,
   ErrorText,
+  Unavailable,
   Grid,
   Input,
   Loading,
@@ -67,8 +69,24 @@ function VaultView({ vault }: { vault: Address }) {
   const policies = usePolicies(vault);
 
   if (reads.isLoading) return <Loading what="vault" />;
+  if (reads.isError || isRpcUnavailable(total?.error))
+    return (
+      <Page title="Vault">
+        <Unavailable error={reads.error ?? total?.error} onRetry={() => void reads.refetch()} />
+      </Page>
+    );
   if (total?.error)
-    return <Page title="Vault">This address is not a Bonded vault on this chain.</Page>;
+    return (
+      <Page title="Vault">
+        <p className="text-sm text-muted">
+          This address is not a Bonded vault on this chain. See the{" "}
+          <Link to="/vaults" className="text-accent hover:underline">
+            list of vaults
+          </Link>
+          .
+        </p>
+      </Page>
+    );
   const isGuardian = Boolean(
     user && guardian?.result && user.toLowerCase() === guardian.result.toLowerCase(),
   );

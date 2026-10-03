@@ -12,7 +12,7 @@ export function ConnectButton() {
   const { address, chainId, isConnected } = useAccount();
   const { connect, connectors, isPending, error } = useConnect();
   const { disconnect } = useDisconnect();
-  const { switchChain } = useSwitchChain();
+  const { switchChain, error: switchError } = useSwitchChain();
   if (!isConnected)
     return (
       <div className="flex items-center gap-2">
@@ -27,9 +27,12 @@ export function ConnectButton() {
     );
   if (chainId !== robinhoodTestnet.id)
     return (
-      <Button onClick={() => switchChain({ chainId: robinhoodTestnet.id })}>
-        Switch to Robinhood testnet
-      </Button>
+      <div className="flex flex-col items-end gap-1">
+        <Button onClick={() => switchChain({ chainId: robinhoodTestnet.id })}>
+          Switch to Robinhood testnet
+        </Button>
+        <ErrorText error={switchError} />
+      </div>
     );
   return (
     <Button kind="secondary" onClick={() => disconnect()}>

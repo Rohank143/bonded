@@ -3,8 +3,9 @@ import { useAccount, useReadContracts } from "wagmi";
 import type { Abi } from "viem";
 import { coverManagerAbi, coverPoolAbi, testTokenAbi } from "@bonded/shared";
 import { deployment, faucets } from "../config";
-import { bps, parseUsd, usd, when } from "../lib/format";
-import { Button, Card, Grid, Input, Loading, Page, Stat } from "../components/ui";
+import { bps, duration, parseUsd, usd, when } from "../lib/format";
+import { Button, Card, Grid, Input, Loading, Page, Stat, Unavailable } from "../components/ui";
+import { isRpcUnavailable } from "../lib/errors";
 import { useSend } from "../components/wallet";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -32,6 +33,15 @@ export function Underwrite() {
     query: { refetchInterval: 15_000 },
   });
   if (reads.isLoading) return <Loading what="pool" />;
+  if (reads.isError || isRpcUnavailable(reads.data?.find((r) => r.error)?.error))
+    return (
+      <Page title="Underwrite">
+        <Unavailable
+          error={reads.error ?? reads.data?.find((r) => r.error)?.error}
+          onRetry={() => void reads.refetch()}
+        />
+      </Page>
+    );
   const r = reads.data ?? [];
   const n = (i: number) => r[i]?.result as bigint | undefined;
   const [tvl, required, free, cooldown, cover, leverage, agentCap, familyCap] = [
@@ -63,7 +73,7 @@ export function Underwrite() {
           <dt className="text-muted">One model family at most</dt>
           <dd>{familyCap !== undefined ? `${bps(familyCap)} of pool assets` : "…"}</dd>
           <dt className="text-muted">Withdrawal cooldown</dt>
-          <dd>{cooldown !== undefined ? `${Number(cooldown) / 3600} hours` : "…"}</dd>
+          <dd>{cooldown !== undefined ? duration(cooldown) : "…"}</dd>
         </dl>
       </Card>
       {!user ? (

@@ -27,8 +27,15 @@ export function Landing() {
   const health = useQuery({ queryKey: ["health"], queryFn: api.health, refetchInterval: 30_000 });
   const [agents, vaults, tvl, cover] = reads.data ?? [];
   const paid = claims.data?.reduce((sum, c) => sum + c.payout, 0n) ?? 0n;
-  const show = (r: { result?: unknown } | undefined, f: (v: bigint) => string) =>
-    r?.result === undefined ? "…" : f(r.result as bigint);
+  // "unavailable" rather than a spinner that never ends when the chain or the API can't be read.
+  const show = (r: { result?: unknown; error?: unknown } | undefined, f: (v: bigint) => string) =>
+    r?.result !== undefined
+      ? f(r.result as bigint)
+      : reads.isError || r?.error
+        ? "unavailable"
+        : "…";
+  const fromClaims = (f: (c: NonNullable<typeof claims.data>) => string) =>
+    claims.data ? f(claims.data) : claims.isError ? "unavailable" : "…";
   return (
     <Page
       title="Insurance for AI trading agents"
@@ -40,8 +47,8 @@ export function Landing() {
           <Stat label="Mandate vaults" value={show(vaults, String)} />
           <Stat label="Cover pool" value={show(tvl, (v) => `$${usd(v, 0)}`)} hint="tUSDG" />
           <Stat label="Active cover" value={show(cover, (v) => `$${usd(v, 0)}`)} />
-          <Stat label="Claims paid" value={claims.data ? String(claims.data.length) : "…"} />
-          <Stat label="Paid out" value={claims.data ? `$${usd(paid, 0)}` : "…"} />
+          <Stat label="Claims paid" value={fromClaims((c) => String(c.length))} />
+          <Stat label="Paid out" value={fromClaims(() => `$${usd(paid, 0)}`)} />
           <Stat
             label="Services"
             value={health.isError ? "down" : health.data?.ok ? "online" : "…"}
@@ -51,11 +58,21 @@ export function Landing() {
       </Card>
       <div className="grid gap-4 sm:grid-cols-3">
         {[
+          [
+            "/leaderboard",
+            "Leaderboard",
+            "Popular open-source agents, rated against the same attacks.",
+          ],
           ["/arena", "Arena", "Watch attacks run against an agent, live."],
           ["/vaults", "Vaults", "Deposit, see cover and the breach log, buy cover."],
           ["/underwrite", "Underwrite", "Back the pool that pays claims and earn premiums."],
           ["/claims", "Claims", "Every automatic payout, with where the money came from."],
-          ["/agents/2", "Agent 2", "The Gate 1 agent: score, tier, report."],
+          ["/bounties", "Bounties", "Find an attack the library misses and get paid."],
+          [
+            "/agents/3",
+            "A rated agent",
+            "Agent 3: its score, tier, key custody and attack report.",
+          ],
         ].map(([to, name, text]) => (
           <Link key={to} to={to!} className="rounded-lg border border-line p-4 hover:border-accent">
             <div className="font-semibold">{name}</div>

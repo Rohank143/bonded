@@ -11,7 +11,7 @@ export function Claims() {
       intro="Claims are filed automatically by the keeper when a covered vault records a breach. The contract checks everything and pays: the operator's bond first, then the pool. The deductible is 10%."
     >
       <Card>
-        {claims.isLoading && <Loading what="claims" />}
+        {claims.isPending && !claims.error && <Loading what="claims" />}
         <ErrorText error={claims.error} />
         {claims.data?.length === 0 && <p className="text-sm text-muted">No claims paid yet.</p>}
         <ul className="flex flex-col gap-3">
@@ -53,7 +53,12 @@ export function Claims() {
                     <dd className="tabular-nums">${usd(w.fromPool)}</dd>
                   </div>
                   <div>
-                    <dt className="text-muted">Not paid</dt>
+                    <dt
+                      className="text-muted"
+                      title="The 10% deductible, and any loss above the cover"
+                    >
+                      Not covered
+                    </dt>
                     <dd className="tabular-nums">${usd(w.unpaid)}</dd>
                   </div>
                   <div>
