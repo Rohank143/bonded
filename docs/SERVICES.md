@@ -105,5 +105,55 @@ What watches the hosted services today:
 - **Spending.** The workspace has a $10 soft limit (email) and a $25 hard limit (Railway stops the services). Normal use is about $3 a month: roughly 0.2 GB of memory and 0.03 vCPU across the four services. Check with `railway usage`.
 - **Keeper progress.** `keeper_cursors.block_number` should stay within a few blocks of the chain head. `handled_events` rows with `status='pending'` and a non-empty `error` are breaches the keeper is retrying.
 - **Logs.** `railway logs --service <name>`. Services log `service iteration failed; retrying` on a failed loop iteration and never log secret values.
+- **Uptime check** ([issue #23](https://github.com/ddboy19912/bonded/issues/23)). UptimeRobot calls `GET /health` on the public API every 5 minutes and alerts through its own Telegram integration. Setup below.
+- **Alerts** ([issue #24](https://github.com/ddboy19912/bonded/issues/24)). The services post problems to a Telegram chat. Setup and thresholds below.
 
-Not yet in place: an external uptime check on the public `/health` URL, and alerts to a chat channel. These are tracked as [issue #23](https://github.com/ddboy19912/bonded/issues/23) and [issue #24](https://github.com/ddboy19912/bonded/issues/24), and in the Deferred work table in `docs/PLAN.md`.
+### Alerts
+
+The `api`, `keeper` and `arena-worker` services send operations alerts to one Telegram chat through a bot, using the Bot API. Alerts are off unless both `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set on a service. The code is `apps/api/src/alerts.ts`.
+
+| Alert | Sent by | When |
+|---|---|---|
+| Started | every service with the secrets | Once per start. A deploy or restart announces itself, which doubles as each service's test alert |
+| Crashed | every service with the secrets | An error would end the process. It alerts (waiting at most 5 seconds), then exits so Railway restarts it |
+| A loop keeps failing | every service with the secrets | 3 failed iterations in a row of a service loop (EVM or Solana keeper, TEE checks, rating or bounty worker, event retention, the watchdog). Another message when it works again |
+| Keeper lag | keeper | The keeper's scanned block is more than 10 minutes and more than 100 blocks behind the chain head. Both must hold, so a quiet chain doesn't alert |
+| Stuck claims | keeper | A breach has stayed `pending` with an error for 10 minutes (measured from when the keeper process first saw it failing, so a restart delays the alert rather than losing it) |
+| Failed rating, premium accrual, Solana claim or bounty validation | keeper | A `rating.failed`, `keeper.accrual_failed`, `solana.claim.failed` or `bounty.failed` event. Events from before the keeper started are not replayed |
+
+The keeper's checks run once a minute. Limits: the same alert is sent at most once every 30 minutes, and each service sends at most 20 messages an hour. Messages are built from fixed text and ids only: never error messages (which can carry the RPC URL and its key), secrets or attack payloads.
+
+Setup (founder action items 13 and 14 in `docs/PLAN.md`):
+
+1. Create a bot with @BotFather in Telegram and copy its token. Send the bot one message from the chat that should receive alerts.
+2. Find the chat id, with the token only in your shell. The script prints chat ids and names, never the token:
+
+```bash
+TELEGRAM_BOT_TOKEN=<token> node apps/api/scripts/telegram-chat-id.mjs
+```
+
+3. Set both secrets on `api` and `keeper` (and on `arena-worker`, optionally, for its crash and loop alerts; the keeper already reports failed ratings). Each command reads the value from stdin, so it stays out of shell history:
+
+```bash
+railway variables --service keeper --set-from-stdin TELEGRAM_BOT_TOKEN
+```
+
+```bash
+railway variables --service keeper --set TELEGRAM_CHAT_ID=<chat id>
+```
+
+`.railway/railway.ts` lists both on `api` and `keeper` with `preserve()`, so an apply keeps their values. To give `arena-worker` its own alerts, add the same two lines to it there too.
+
+4. Setting a variable redeploys the service, so each one posts "Started". To see one sample of every alert, marked TEST:
+
+```bash
+railway ssh --service keeper -- node apps/api/scripts/test-alerts.mjs
+```
+
+### Uptime check
+
+UptimeRobot (free plan) watches the public API from outside Railway, so it also catches a Railway outage, which the services can't report themselves.
+
+1. In UptimeRobot, add an alert contact of type Telegram and follow its steps (it uses UptimeRobot's own bot, so no token is shared).
+2. Add a monitor: type HTTP(s), URL `https://api-production-ba50.up.railway.app/health`, interval 5 minutes, alerting that contact.
+3. `/health` answers 200 with `{"ok":true,"chainId":46630}` when the API and its database are up, and 503 otherwise.
