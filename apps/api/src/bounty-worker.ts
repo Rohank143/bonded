@@ -9,7 +9,7 @@ import {
   coveredSurface,
   type BountyVerdict,
 } from "@bonded/arena";
-import { AttackSpec, bountyBoardAbi } from "@bonded/shared";
+import { AttackSpec, bondedRegistryAbi, bountyBoardAbi } from "@bonded/shared";
 import type { ServiceChain } from "@bonded/keeper";
 import { getAbiItem, type Hex } from "viem";
 
@@ -28,6 +28,19 @@ export async function chainLibrary(db: Database, chainId: number): Promise<Attac
   const accepted = (await db.acceptedAttacks(chainId)).map((s) => AttackSpec.parse(s));
   return [...loadAttackLibrary(), ...accepted];
 }
+
+/**
+ * Attesters judge bounties, so they can't claim one. BountyBoard doesn't check this on chain
+ * (docs/AUDIT.md), so the worker rejects such a submission without running the attack.
+ */
+export const ATTESTER_HUNTER_VERDICT: BountyVerdict = {
+  decision: "reject",
+  reward: "0",
+  reason: "the hunter is an attester; attesters judge bounties and can't claim them",
+  breaches: { undefended: 0, defended: 0 },
+  runs: 0,
+  newSurface: false,
+};
 
 // BountyBoard.Status: None, Committed, Revealed, Accepted, Rejected.
 const REVEALED = 2;
@@ -162,7 +175,21 @@ async function workLocked(
     let verdict = job.verdict as BountyVerdict | null;
     if (resendNonce !== undefined && !verdict)
       throw new Error("a pending send has no recorded verdict; awaiting the chain");
-    if (!verdict) {
+    // Checked on every fresh attempt, so an attester added after the reveal is caught too. A
+    // re-send keeps its recorded verdict: it must be the exact call its nonce may already carry.
+    const hunterIsAttester =
+      resendNonce === undefined &&
+      (await chain.read.readContract({
+        address: chain.deployment.registry,
+        abi: bondedRegistryAbi,
+        functionName: "isAttester",
+        args: [onChain.hunter],
+      }));
+    if (hunterIsAttester) {
+      verdict = ATTESTER_HUNTER_VERDICT;
+      await check();
+      await db.recordBountyVerdict(job, verdict);
+    } else if (!verdict) {
       const sandbox = await Sandbox.start({ forkUrl: rpcUrl, forkDeployment: chain.deployment });
       try {
         verdict = await validateBounty(sandbox, spec, library, { onRun: check });
@@ -175,7 +202,7 @@ async function workLocked(
     // The measured breaches are stable; eligibility isn't reserved by an unpaid approval.
     // Another accepted bounty may now cover it. Recheck only while the chain is Revealed, and
     // never for a re-send: it must be the exact call the pending nonce may already carry.
-    if (resendNonce === undefined) {
+    if (resendNonce === undefined && !hunterIsAttester) {
       verdict = decideBounty({
         duplicateOf: duplicateOf(spec, library),
         breaches: verdict.breaches,
