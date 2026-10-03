@@ -9,5 +9,16 @@
       "solanaDevnet": "2",
       "sepolia": "1"
     }
+  },
+  {
+    "home": {
+      "chain": "robinhoodTestnet",
+      "agentId": "3"
+    },
+    "links": {
+      "arbitrumSepolia": "2",
+      "sepolia": "2",
+      "solanaDevnet": "3"
+    }
   }
 ]

@@ -1,0 +1,41 @@
+{
+  "home": {
+    "chain": "robinhoodTestnet",
+    "agentId": "3"
+  },
+  "score": {
+    "agentId": "3",
+    "score": 96,
+    "expectedLossBps": 33,
+    "reportHash": "0xd23f5973b43411e1a846357c323122f3807893f236cbdfa255a01db01630e3a2",
+    "mandateHash": "0xc7cf8882c846645c02180c4756c221e30f4adf59691503ee67d3eb685c2eac47",
+    "codeHash": "0xd4f47556cb3c40c3547ea51e0152be194b98c879ddb6933d2d7f8229233185cc",
+    "teeMeasurement": "0xb933453b890e41dfef68870e96c97c19fce7078bce7bf6bc5dd7b0973fcc8f01",
+    "modelFamily": "unknown",
+    "issuedAt": 1790976165,
+    "expiresAt": 1793568165
+  },
+  "results": [
+    {
+      "chain": "arbitrumSepolia",
+      "agentId": "2",
+      "status": "posted",
+      "registeredNow": true,
+      "tx": "0xec0b67af4c615e2955071a882fd63d898c365f151725aa1067bd7ecf2f173bb8"
+    },
+    {
+      "chain": "sepolia",
+      "agentId": "2",
+      "status": "posted",
+      "registeredNow": true,
+      "tx": "0xdc0d129199cd342e07ec81c48e287e070f3a48fa0789fda5eabe03a3cee49770"
+    },
+    {
+      "chain": "solanaDevnet",
+      "agentId": "3",
+      "status": "posted",
+      "registeredNow": true,
+      "tx": "3a1hLimYpCgrNBmToTntRewtAXNXqhopfSwjLKbwUnBuFb5xe3ehxbc1D5vjXoMjVYsNdQDriGtPQrd8QznX3Tdo"
+    }
+  ]
+}

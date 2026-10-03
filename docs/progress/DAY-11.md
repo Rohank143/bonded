@@ -54,10 +54,14 @@ Created with `pnpm tee:seed`, from the founder's deployer wallet (`0xd42F…A841
 
 `scripts/rate-live-tee.sh 3` ran against the deployed API: 42 episodes, score **83 (AA), 2.56% premium**, TEE measurement `0xb933…8f01` posted on-chain (tx `0xb328ea00…c31f9`), report hash matching the on-chain `reportHash`, keeper check `verified`. One run per seed, so wider breach-rate bounds than the plan's five-run figure of 96 / 1.22%. Agent 3's config now sets `repeats: 5` (an optional per-agent field, 1 to 10, default 1) for the next rating.
 
+## Agent 3's TEE score on four chains (2026-10-03)
+
+`pnpm scores crosspost --agent 3` posted the five-run rating (score 96, expected loss 33 bps) to Arbitrum Sepolia (agent 2), Ethereum Sepolia (agent 2) and Solana devnet (agent 3). Read back on every chain, the score, report hash `0xd23f…e3a2`, code hash `0xd4f4…85cc` and TEE measurement `0xb933…8f01` are identical. Links are in `config/agent-links.json`, the raw result in [the evidence file](evidence/multichain-scores-agent3-tee.json).
+
 ## Not done
 
 - **The badge on the live testnet.** It needs a demo agent whose vault is run by the TEE's key and a rating job for it through the deployed API (docs/TEE.md, step 7). Nothing was posted to Robinhood testnet from here.
 - **Existing cover is never voided by a failed check**, only new quotes are refused (ADR-013).
 - **The Arena doesn't attack the live TEE agent.** It rates the code in its sandbox and verifies the live agent's proof. See ADR-012, decision 2.
 - **The TEE service doesn't operate a vault**, and what it attests is the deployed identity service, not the rated implementation (ADR-012). The discount is only earned for a vault whose execution key is the TEE's key, enforced at quote time (ADR-013, ADR-014).
-- **Ethereum Sepolia registry and 4-chain scores** were finished before Day 11 (the `multichain-scores` work) and are not part of this change.
+- **Ethereum Sepolia registry and the cross-chain tooling** were finished before Day 11 (the `multichain-scores` work).
