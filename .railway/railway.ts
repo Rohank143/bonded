@@ -43,12 +43,21 @@ export default defineRailway(() => {
       WEB_ORIGINS: "https://bonded-nu.vercel.app,http://localhost:5173",
       API_TOKEN: preserve(),
       ATTESTER_KEY: preserve(),
+      // Telegram alerts (docs/PLAN.md, Day 13 workstream 6): set by the founder, kept here.
+      TELEGRAM_BOT_TOKEN: preserve(),
+      TELEGRAM_CHAT_ID: preserve(),
     },
   });
   // The keeper and worker have no HTTP listener, so no health check.
   const keeper = service("keeper", {
     ...role({}),
-    env: { ...shared, ROLE: "keeper", KEEPER_KEY: preserve() },
+    env: {
+      ...shared,
+      ROLE: "keeper",
+      KEEPER_KEY: preserve(),
+      TELEGRAM_BOT_TOKEN: preserve(),
+      TELEGRAM_CHAT_ID: preserve(),
+    },
   });
   const arenaWorker = service("arena-worker", {
     ...role({}),
