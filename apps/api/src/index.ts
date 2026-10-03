@@ -151,10 +151,15 @@ export function createApi(options: {
       })
       .catch(() => undefined);
     if (!submission) return c.json({ error: "no such submission" }, 404);
-    if (submission.status !== REVEALED)
+    if (submission.status < REVEALED)
       return c.json({ error: "reveal the submission on BountyBoard first" }, 409);
     if (submission.specURI !== specUri(yaml))
       return c.json({ error: "the spec's sha256 doesn't match the revealed specURI" }, 400);
+    // A repeated post, even after settlement, returns the submission's status.
+    const known = await db.bountyStatus(chain.deployment.chainId, id);
+    if (known) return c.json({ created: false, status: known }, 200);
+    if (submission.status !== REVEALED)
+      return c.json({ error: "the submission was settled on chain without validation here" }, 409);
     let spec;
     try {
       spec = parseBountySpec(yaml);

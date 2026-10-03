@@ -16,6 +16,18 @@ export function commitmentOf(hunter: Address, specUri: string, salt: Hex): Hex {
   );
 }
 
+/** A salt is 32 bytes: 0x and 64 hex digits. */
+export const isSalt = (salt: string): salt is Hex => /^0x[0-9a-fA-F]{64}$/.test(salt);
+
+/** The commitment, or undefined while any input is missing or the salt is half-typed. */
+export function commitmentIfReady(
+  hunter: Address | undefined,
+  specUri: string | undefined,
+  salt: string,
+): Hex | undefined {
+  return hunter && specUri && isSalt(salt) ? commitmentOf(hunter, specUri, salt) : undefined;
+}
+
 /** A random 32-byte salt. */
 export function newSalt(): Hex {
   return bytesToHex(crypto.getRandomValues(new Uint8Array(32)));

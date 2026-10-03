@@ -24,7 +24,13 @@ export {
   type SandboxOptions,
   type SandboxRole,
 } from "./sandbox.js";
-export { describeOutcome, type EpisodeOutcome, episodeOutcome, summarise } from "./report.js";
+export {
+  describeOutcome,
+  type EpisodeOutcome,
+  episodeOutcome,
+  publicEpisode,
+  summarise,
+} from "./report.js";
 export { ArenaToolbox, type TraceStep } from "./toolbox.js";
 export {
   type AgentVault,
@@ -99,6 +105,7 @@ export {
   decideBounty,
   DUPLICATE_OVERLAP,
   duplicateOf,
+  SIMILAR_OVERLAP,
   parseBountySpec,
   reasonHash,
   type ReferenceAgents,

@@ -1,4 +1,4 @@
-import type { BountyJob, Database } from "@bonded/db";
+import type { Database } from "@bonded/db";
 import {
   Sandbox,
   loadAttackLibrary,
@@ -14,7 +14,9 @@ import { getAbiItem, type Hex } from "viem";
  * Validates revealed bounties (docs/PLAN.md Section 13.1): runs the spec against the reference
  * agents, then the attester accepts (paying the reward from BountyBoard) or rejects on chain. An
  * accepted spec joins the library and every enabled agent on the chain is queued for a fresh
- * rating, so premiums reprice against the new attack.
+ * rating in the same database transaction, so premiums reprice against the new attack. The
+ * verdict is stored before its transaction is sent; a retry reuses it, and a submission already
+ * settled on chain is recorded as the chain has it.
  */
 
 /** The library a chain rates against: the repo's seeds plus accepted bounties. */
@@ -63,69 +65,108 @@ async function workLocked(
   const chainId = chain.deployment.chainId;
   const job = await db.takeBounty(chainId);
   if (!job) return false;
-  try {
-    const spec = AttackSpec.parse(job.spec);
-    const library = await chainLibrary(db, chainId);
-    const sandbox = await Sandbox.start({ forkUrl: rpcUrl, forkDeployment: chain.deployment });
-    let verdict: BountyVerdict;
-    try {
-      verdict = await validateBounty(sandbox, spec, library, { onRun: () => db.renewBounty(job) });
-    } finally {
-      await sandbox.stop();
-    }
+  // A heartbeat like the rating worker's: an episode can run for minutes and a payout receipt
+  // can take longer than the 60-second lease. A lost lease stops the job at its next check.
+  let leaseError: unknown;
+  const heartbeat = setInterval(() => {
+    void db.renewBounty(job).catch((e: unknown) => {
+      leaseError = e;
+    });
+  }, 15_000);
+  const check = async () => {
+    if (leaseError) throw leaseError;
     await db.renewBounty(job);
-    const txHash = await settle(chain, job, verdict);
+  };
+  try {
+    const board = chain.deployment.bountyBoard;
+    const id = BigInt(job.submissionId);
+    const onChain = await chain.read.readContract({
+      address: board,
+      abi: bountyBoardAbi,
+      functionName: "getSubmission",
+      args: [id],
+    });
+    // Already settled (an earlier attempt sent it, then stopped): the chain decides the status
+    // and the reward, and nothing is recomputed against today's library.
+    if (onChain.status === ACCEPTED || onChain.status === REJECTED) {
+      const accepted = onChain.status === ACCEPTED;
+      const stored = job.verdict as BountyVerdict | null;
+      const verdict: BountyVerdict = {
+        ...(stored ?? {
+          reason: "recovered from the chain",
+          breaches: { undefended: 0, defended: 0 },
+          runs: 0,
+          newSurface: false,
+        }),
+        decision: accepted ? "accept" : "reject",
+        reward: onChain.reward.toString(),
+      };
+      await check();
+      await db.finishBounty(job, {
+        status: accepted ? "accepted" : "rejected",
+        verdict,
+        txHash: await settledTransaction(chain, id, accepted),
+      });
+      return true;
+    }
+    if (onChain.status !== REVEALED) throw new Error(`submission ${id} isn't revealed on chain`);
+    // Decide once. A stored verdict is what was about to be sent; reuse it.
+    let verdict = job.verdict as BountyVerdict | null;
+    if (!verdict) {
+      const spec = AttackSpec.parse(job.spec);
+      const library = await chainLibrary(db, chainId);
+      const sandbox = await Sandbox.start({ forkUrl: rpcUrl, forkDeployment: chain.deployment });
+      try {
+        verdict = await validateBounty(sandbox, spec, library, { onRun: check });
+      } finally {
+        await sandbox.stop();
+      }
+      await check();
+      await db.recordBountyVerdict(job, verdict);
+    }
+    await check();
+    const txHash =
+      verdict.decision === "accept"
+        ? await chain.send(board, bountyBoardAbi, "accept", [id, BigInt(verdict.reward)])
+        : await chain.send(board, bountyBoardAbi, "reject", [id, reasonHash(verdict.reason)]);
     await db.finishBounty(job, {
       status: verdict.decision === "accept" ? "accepted" : "rejected",
       verdict,
       txHash,
     });
-    if (verdict.decision === "accept") await db.enqueueAll(chainId);
   } catch (error) {
     onError?.(error);
     await db
       .finishBounty(job, { error: "validation failed; retry scheduled" })
       .catch((e: unknown) => onError?.(e));
+  } finally {
+    clearInterval(heartbeat);
   }
   return true;
 }
 
-/**
- * Send accept or reject, unless an earlier attempt already did: a retry recovers that
- * transaction from the board's events instead of sending a second one.
- */
-async function settle(chain: ServiceChain, job: BountyJob, verdict: BountyVerdict): Promise<Hex> {
-  const board = chain.deployment.bountyBoard;
-  const id = BigInt(job.submissionId);
-  const now = await chain.read.readContract({
-    address: board,
-    abi: bountyBoardAbi,
-    functionName: "getSubmission",
-    args: [id],
-  });
-  if (now.status === ACCEPTED || now.status === REJECTED) {
-    const range = {
-      address: board,
-      args: { id },
-      fromBlock: BigInt(chain.deployment.deployedAtBlock),
-      toBlock: "latest",
-      strict: true,
-    } as const;
-    const logs =
-      now.status === ACCEPTED
-        ? await chain.read.getLogs({
-            ...range,
-            event: getAbiItem({ abi: bountyBoardAbi, name: "Accepted" }),
-          })
-        : await chain.read.getLogs({
-            ...range,
-            event: getAbiItem({ abi: bountyBoardAbi, name: "Rejected" }),
-          });
-    if (!logs[0]) throw new Error(`submission ${id} is settled but its event wasn't found`);
-    return logs[0].transactionHash;
-  }
-  if (now.status !== REVEALED) throw new Error(`submission ${id} isn't revealed on chain`);
-  return verdict.decision === "accept"
-    ? chain.send(board, bountyBoardAbi, "accept", [id, BigInt(verdict.reward)])
-    : chain.send(board, bountyBoardAbi, "reject", [id, reasonHash(verdict.reason)]);
+/** The accept or reject transaction an earlier attempt sent, from the board's events. */
+async function settledTransaction(
+  chain: ServiceChain,
+  id: bigint,
+  accepted: boolean,
+): Promise<Hex> {
+  const range = {
+    address: chain.deployment.bountyBoard,
+    args: { id },
+    fromBlock: BigInt(chain.deployment.deployedAtBlock),
+    toBlock: "latest",
+    strict: true,
+  } as const;
+  const logs = accepted
+    ? await chain.read.getLogs({
+        ...range,
+        event: getAbiItem({ abi: bountyBoardAbi, name: "Accepted" }),
+      })
+    : await chain.read.getLogs({
+        ...range,
+        event: getAbiItem({ abi: bountyBoardAbi, name: "Rejected" }),
+      });
+  if (!logs[0]) throw new Error(`submission ${id} is settled but its event wasn't found`);
+  return logs[0].transactionHash;
 }

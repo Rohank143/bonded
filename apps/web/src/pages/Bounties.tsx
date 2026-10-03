@@ -5,7 +5,7 @@ import { getAbiItem, type Hex } from "viem";
 import { bountyBoardAbi, testTokenAbi } from "@bonded/shared";
 import { deployment } from "../config";
 import { api, type BountyRecord } from "../lib/api";
-import { commitmentOf, newSalt, specUriOf } from "../lib/bounty";
+import { commitmentIfReady, isSalt, newSalt, specUriOf } from "../lib/bounty";
 import { short, usd } from "../lib/format";
 import { useSend } from "../components/wallet";
 import { Badge, Button, Card, ErrorText, Input, Loading, Page, TxLink } from "../components/ui";
@@ -42,7 +42,7 @@ function useCommitId(commitment: Hex | undefined) {
 function Submit() {
   const { address } = useAccount();
   const [yaml, setYaml] = useState("");
-  const [salt, setSalt] = useState<Hex>(() => newSalt());
+  const [salt, setSalt] = useState<string>(() => newSalt());
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
   const spec = useQuery({
@@ -50,7 +50,9 @@ function Submit() {
     enabled: yaml.trim().length > 0,
     queryFn: () => specUriOf(yaml),
   });
-  const commitment = address && spec.data ? commitmentOf(address, spec.data, salt) : undefined;
+  // Never encode a half-typed salt: viem throws, which would take the page down.
+  const saltOk = isSalt(salt);
+  const commitment = commitmentIfReady(address, spec.data, salt);
   const committed = useCommitId(commitment);
   const id = committed.data;
   const onChain = useReadContract({
@@ -92,7 +94,12 @@ function Submit() {
         />
       </label>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <Input label="Salt (save it)" value={salt} onChange={(v) => setSalt(v as Hex)} />
+        <div className="flex flex-col gap-1">
+          <Input label="Salt (save it)" value={salt} onChange={setSalt} />
+          {!saltOk && (
+            <span className="text-xs text-breach">The salt must be 0x and 64 hex digits.</span>
+          )}
+        </div>
         <div className="flex flex-col gap-1 text-sm">
           <span className="text-muted">Spec URI</span>
           <span className="break-all font-mono text-xs">{spec.data ?? "—"}</span>
@@ -116,7 +123,7 @@ function Submit() {
           1. Commit
         </Button>
         <Button
-          disabled={busy || id === undefined || status !== 1}
+          disabled={busy || !saltOk || id === undefined || status !== 1}
           onClick={() =>
             void send([
               {
@@ -124,7 +131,7 @@ function Submit() {
                 address: deployment.bountyBoard,
                 abi: bountyBoardAbi,
                 functionName: "reveal",
-                args: [id!, spec.data!, salt],
+                args: [id!, spec.data!, salt as Hex],
               },
             ])
           }

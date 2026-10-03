@@ -28,6 +28,8 @@ export interface BountyJob {
   token: string;
   hunter: string;
   spec: unknown;
+  /** The verdict an earlier attempt recorded before sending its transaction, if any. */
+  verdict: unknown;
 }
 
 /** A bounty as the public sees it: no payload, which stays private (docs/disclosures). */
@@ -259,16 +261,18 @@ export class Database {
   }
   /** Queue only enabled agents, locking against concurrent configuration removal. */
   async enqueue(agentId: string) {
+    return this.transaction((c) => this.enqueueIn(c, agentId));
+  }
+  /** Queue a rating inside a caller's transaction. */
+  private async enqueueIn(c: Connection, agentId: string): Promise<string> {
     const id = randomUUID();
-    await this.transaction(async (c) => {
-      const agent = await c.query("SELECT id FROM agents WHERE id=$1 AND enabled FOR SHARE", [
-        agentId,
-      ]);
-      if (!agent.rowCount) throw new AgentNotConfiguredError("agent not configured");
-      await c.query("INSERT INTO ratings(id,agent_id) VALUES($1,$2)", [id, agentId]);
-      await c.query("INSERT INTO jobs(id) VALUES($1)", [id]);
-      await this.publish("rating.queued", { runId: id }, c);
-    });
+    const agent = await c.query("SELECT id FROM agents WHERE id=$1 AND enabled FOR SHARE", [
+      agentId,
+    ]);
+    if (!agent.rowCount) throw new AgentNotConfiguredError("agent not configured");
+    await c.query("INSERT INTO ratings(id,agent_id) VALUES($1,$2)", [id, agentId]);
+    await c.query("INSERT INTO jobs(id) VALUES($1)", [id]);
+    await this.publish("rating.queued", { runId: id }, c);
     return id;
   }
   /** Reap exhausted leases and claim one eligible job, fencing stale workers with a new token. */
@@ -397,7 +401,7 @@ export class Database {
           WHERE chain_id=$2 AND status='validating' AND attempts<3 AND available_at<=now()
             AND (lease_until IS NULL OR lease_until<now())
           ORDER BY available_at FOR UPDATE SKIP LOCKED LIMIT 1)
-        RETURNING submission_id,token,hunter,spec`,
+        RETURNING submission_id,token,hunter,spec,verdict`,
         [randomUUID(), chainId],
       );
       const row = r.rows[0];
@@ -408,6 +412,7 @@ export class Database {
             token: row.token as string,
             hunter: row.hunter as string,
             spec: row.spec,
+            verdict: row.verdict,
           }
         : undefined;
     });
@@ -421,7 +426,23 @@ export class Database {
     );
     if (!r.rowCount) throw new Error("bounty lease lost");
   }
-  /** Record the decision, or schedule a retry after an error, if the lease still holds. */
+  /**
+   * Record the verdict before its transaction is sent, so a retry settles the same decision
+   * instead of recomputing it against a library that may have changed since.
+   */
+  async recordBountyVerdict(job: BountyJob, verdict: unknown) {
+    const r = await this.pool.query(
+      `UPDATE bounties SET verdict=$4 WHERE chain_id=$1 AND submission_id=$2 AND token=$3
+        AND status='validating' AND lease_until>now()`,
+      [job.chainId, job.submissionId, job.token, json(verdict)],
+    );
+    if (!r.rowCount) throw new Error("bounty lease lost");
+  }
+  /**
+   * Record the decision, or schedule a retry after an error, if the lease still holds. An
+   * acceptance queues a fresh rating of every enabled agent on the chain in the same
+   * transaction, so a bounty can't end accepted without its re-rating (docs/PLAN.md 13.1).
+   */
   async finishBounty(
     job: BountyJob,
     outcome:
@@ -445,6 +466,12 @@ export class Database {
         ],
       );
       if (!r.rowCount) throw new Error("bounty lease lost");
+      if (done && outcome.status === "accepted") {
+        const agents = await c.query("SELECT id FROM agents WHERE chain_id=$1 AND enabled", [
+          job.chainId,
+        ]);
+        for (const row of agents.rows) await this.enqueueIn(c, row.id as string);
+      }
       await this.publish(
         `bounty.${done ? outcome.status : "retry"}`,
         { chainId: job.chainId, submissionId: job.submissionId },
@@ -486,14 +513,13 @@ export class Database {
     );
     return r.rows.map((row) => row.spec);
   }
-  /** Queue a fresh rating of every enabled agent on a chain (after the library grows). */
-  async enqueueAll(chainId: number): Promise<string[]> {
-    const agents = await this.pool.query("SELECT id FROM agents WHERE chain_id=$1 AND enabled", [
-      chainId,
-    ]);
-    const ids: string[] = [];
-    for (const row of agents.rows) ids.push(await this.enqueue(row.id as string));
-    return ids;
+  /** One bounty's status, for a repeated reveal. */
+  async bountyStatus(chainId: number, submissionId: string): Promise<string | undefined> {
+    const r = await this.pool.query(
+      "SELECT status FROM bounties WHERE chain_id=$1 AND submission_id=$2",
+      [chainId, submissionId],
+    );
+    return r.rows[0]?.status as string | undefined;
   }
   /** Close idle clients and wait for borrowed clients to return. Drain streams first. */
   async close() {

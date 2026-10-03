@@ -3,6 +3,7 @@ import {
   Sandbox,
   rateAgent,
   attestTeeAgent,
+  publicEpisode,
   signAttestation,
   type SignedAttestation,
 } from "@bonded/arena";
@@ -127,7 +128,13 @@ async function runLocked(
           vault: { mandate: config.mandate as EvmMandateInput },
           onEpisode: async (episode, index, total) => {
             await check();
-            await db.publish("rating.episode", { runId: job.id, index, total, episode });
+            // Verdict only: planted text and traces can carry a private bounty payload.
+            await db.publish("rating.episode", {
+              runId: job.id,
+              index,
+              total,
+              episode: publicEpisode(episode),
+            });
           },
         });
         if (result.report.stoppedEarly || result.report.episodes.agentErrors)
