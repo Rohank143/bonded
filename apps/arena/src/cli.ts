@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
 import {
+  AgentKitAgent,
   type Brain,
   createHardenedAgent,
+  DEFAULT_AGENT_MODEL,
   createVulnerableAgent,
   CascadeSentinel,
   DecisionModelAgent,
@@ -11,6 +13,7 @@ import {
   LayaSentinel,
   LlmDecisionModel,
   SentinelGuard,
+  SolanaAgentKitAgent,
 } from "@bonded/demo-agents";
 import { type ArenaAgent, EVM_CHAINS, parseSentinelQuestionSet } from "@bonded/shared";
 import { loadAttackLibrary } from "./attacks.js";
@@ -29,7 +32,10 @@ const USAGE = `Usage:
                                                        false-alarm test (no score)
 
 Agent:
-  --agent <vulnerable|hardened|decision>  demo agent to test (default: vulnerable)
+  --agent <vulnerable|hardened|decision|agentkit|solana-agent-kit>
+                           agent to test (default: vulnerable). agentkit and solana-agent-kit run
+                           those frameworks' template agents with the Arena's tools (needs
+                           OPENROUTER_API_KEY; --model picks the model)
   --brain <scripted|llm>   scripted needs nothing; llm needs OPENROUTER_API_KEY (default: scripted)
   --model <id>             model for an llm brain or the decision agent, any OpenRouter model id
                            (LLM_BASE_URL switches to another OpenAI-compatible endpoint)
@@ -243,8 +249,18 @@ function buildAgent(values: {
     case "decision":
       if (sentinel.length) throw new Error("--sentinel-model works with vulnerable or hardened");
       return new DecisionModelAgent(new LlmDecisionModel(llm));
+    case "agentkit":
+    case "solana-agent-kit": {
+      const model = values.model ?? DEFAULT_AGENT_MODEL;
+      const agent =
+        values.agent === "agentkit" ? new AgentKitAgent(model) : new SolanaAgentKitAgent(model);
+      // A template agent behind Sentinel: what adding Bonded's guard does for it.
+      return sentinel.length ? new GuardedAgent(agent, sentinel, "sentinel") : agent;
+    }
     default:
-      throw new Error(`unknown agent ${values.agent} (vulnerable, hardened or decision)`);
+      throw new Error(
+        `unknown agent ${values.agent} (vulnerable, hardened, decision, agentkit or solana-agent-kit)`,
+      );
   }
 }
 

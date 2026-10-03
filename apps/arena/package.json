@@ -28,6 +28,7 @@
     "scores": "node dist/scores-cli.js",
     "sentinel-contrast": "node dist/llm-contrast-cli.js",
     "sentinel-shortcuts": "node dist/shortcuts-cli.js",
+    "leaderboard": "node dist/leaderboard-cli.js",
     "sentinel-consistency": "node dist/consistency-cli.js",
     "relabel": "node dist/relabel-cli.js",
     "sentinel-rewrite": "node dist/rewrite-cli.js"

@@ -4,8 +4,8 @@ import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { z } from "zod";
 import { Database, json, AgentNotConfiguredError } from "@bonded/db";
-import { QuoteError, bountyBoardAbi } from "@bonded/shared";
-import { BountySpecError, parseBountySpec, specUri } from "@bonded/arena";
+import { QuoteError, bondedRegistryAbi, bountyBoardAbi, leaderboardHeadline } from "@bonded/shared";
+import { readLeaderboard, BountySpecError, parseBountySpec, specUri } from "@bonded/arena";
 import type { ServiceChain } from "@bonded/keeper";
 import type { Hex } from "viem";
 import { issueQuote } from "./quotes.js";
@@ -31,6 +31,8 @@ export function createApi(options: {
   apiToken: string;
   /** Browser origins allowed to call the API, e.g. the web app's URL. Empty allows none. */
   webOrigins?: readonly string[];
+  /** The published leaderboard (default: config/leaderboard.json). */
+  leaderboardFile?: string;
 }) {
   const { db, chain } = options;
   if (options.apiToken.length < 24)
@@ -137,6 +139,36 @@ export function createApi(options: {
             );
       return c.json(row);
     });
+  // Class-level results only (docs/disclosures). Each entry posted on this API's chain is checked
+  // against the registry: `verified` means its current score has the same report hash.
+  app.get("/leaderboard", async (c) => {
+    const entries = readLeaderboard(options.leaderboardFile);
+    const checked = await Promise.all(
+      entries.map(async (e) => {
+        if (
+          !e.onchain?.tx ||
+          e.onchain.chain !== "robinhoodTestnet" ||
+          chain.deployment.chainId !== 46630
+        )
+          return { ...e, verified: null };
+        const s = await chain.read
+          .readContract({
+            address: chain.deployment.registry,
+            abi: bondedRegistryAbi,
+            functionName: "scoreOf",
+            args: [BigInt(e.onchain.agentId)],
+          })
+          .catch(() => undefined);
+        return {
+          ...e,
+          verified: s
+            ? s.reportHash.toLowerCase() === e.reportHash.toLowerCase() && s.score === e.score
+            : null,
+        };
+      }),
+    );
+    return c.json({ headline: leaderboardHeadline(entries), entries: checked });
+  });
   // BountyBoard.Status: None, Committed, Revealed, Accepted, Rejected.
   const REVEALED = 2;
   app.post("/bounties/:id/reveal", async (c) => {

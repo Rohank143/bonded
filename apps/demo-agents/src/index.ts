@@ -71,3 +71,4 @@ export function createHardenedAgent(
     ? new LlmHardenedAgent({ ...llm, guards })
     : new ScriptedHardenedAgent(guards);
 }
+export * from "./frameworks/index.js";

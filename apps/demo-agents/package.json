@@ -23,6 +23,14 @@
   },
   "dependencies": {
     "@bonded/shared": "workspace:*",
-    "zod": "^4.6.5"
+    "@coinbase/agentkit": "0.10.4",
+    "@coinbase/agentkit-langchain": "0.3.0",
+    "@langchain/core": "^0.3.80",
+    "@langchain/langgraph": "^0.4.10",
+    "@langchain/openai": "^0.6.17",
+    "@solana/web3.js": "^1.99.0",
+    "solana-agent-kit": "2.0.10",
+    "zod": "^4.6.5",
+    "zod3": "npm:zod@3.25.76"
   }
 }

@@ -2,6 +2,7 @@ import { NavLink, Outlet } from "react-router";
 import { ConnectButton } from "./components/wallet";
 
 const links = [
+  ["/leaderboard", "Leaderboard"],
   ["/arena", "Arena"],
   ["/vaults", "Vaults"],
   ["/underwrite", "Underwrite"],

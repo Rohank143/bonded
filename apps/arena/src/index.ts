@@ -97,6 +97,15 @@ export {
   renderReportMarkdown,
 } from "./rate.js";
 export {
+  entryFromRating,
+  LEADERBOARD_FILE,
+  loadRating,
+  unpublishableReason,
+  readLeaderboard,
+  upsertEntry,
+  writeLeaderboard,
+} from "./leaderboard.js";
+export {
   BOUNTY_REWARDS,
   BountySpecError,
   type BountyVerdict,
