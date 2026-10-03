@@ -38,10 +38,25 @@ export function short(value: string, chars = 4): string {
 export const txUrl = (hash: string) => `${explorerUrl}/tx/${hash}`;
 export const addressUrl = (address: string) => `${explorerUrl}/address/${address}`;
 
-/** Unix seconds as a local date and time; 0 means "never". */
-export function when(seconds: number | bigint): string {
+/**
+ * Unix seconds as a local date and time with the month spelled out ("2 Nov 2026, 16:55"), so
+ * readers in different countries can't misread day and month; 0 means "never".
+ */
+export function when(seconds: number | bigint, locale?: string): string {
   const s = Number(seconds);
-  return s === 0 ? "never" : new Date(s * 1000).toLocaleString();
+  return s === 0
+    ? "never"
+    : new Date(s * 1000).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" });
+}
+
+/** A length of time in the largest whole unit, e.g. 604800 → "7 days", 5400 → "90 minutes". */
+export function duration(seconds: number | bigint): string {
+  const s = Number(seconds);
+  const unit = (n: number, name: string) => `${n} ${name}${n === 1 ? "" : "s"}`;
+  if (s > 0 && s % 86_400 === 0) return unit(s / 86_400, "day");
+  if (s > 0 && s % 3_600 === 0) return unit(s / 3_600, "hour");
+  if (s % 60 === 0) return unit(s / 60, "minute");
+  return unit(s, "second");
 }
 
 /** Tier letter for a registry score, or "unrated" when the agent has no score yet. */

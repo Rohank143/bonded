@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount, usePublicClient, useReadContract } from "wagmi";
 import { getAbiItem, type Hex } from "viem";
-import { bountyBoardAbi, testTokenAbi } from "@bonded/shared";
+import { BOUNTY_SPEC_EXAMPLE, bountyBoardAbi, testTokenAbi } from "@bonded/shared";
 import { deployment } from "../config";
 import { api, type BountyRecord } from "../lib/api";
 import { commitmentIfReady, isSalt, newSalt, specUriOf } from "../lib/bounty";
@@ -79,10 +79,17 @@ function Submit() {
   return (
     <Card title="Submit an attack">
       <p className="text-sm text-muted">
-        Write the attack in the library's YAML format (see <code>attacks/</code> in the repository).
-        Committing first timestamps it without revealing it, so nobody can copy it before you
-        reveal. Keep the salt: you need it to reveal.
+        Write the attack in the library's YAML format, or start from the example. Committing first
+        timestamps it without revealing it, so nobody can copy it before you reveal. Keep the salt:
+        you need it to reveal.
       </p>
+      {!yaml.trim() && (
+        <div className="mt-2">
+          <Button kind="secondary" onClick={() => setYaml(BOUNTY_SPEC_EXAMPLE)}>
+            Insert an example spec
+          </Button>
+        </div>
+      )}
       <label className="mt-3 flex flex-col gap-1 text-sm">
         <span className="text-muted">Attack spec (YAML)</span>
         <textarea
@@ -176,7 +183,7 @@ export function Bounties() {
       </Card>
       <Submit />
       <Card title="Submissions">
-        {list.isLoading && <Loading what="bounties" />}
+        {list.isPending && !list.error && <Loading what="bounties" />}
         <ErrorText error={list.error} />
         {list.data?.length === 0 && <p className="text-sm text-muted">No submissions yet.</p>}
         <ul className="flex flex-col gap-3">

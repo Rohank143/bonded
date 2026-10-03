@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bps, parseUsd, short, tierOf, usd } from "./format";
+import { bps, duration, parseUsd, short, tierOf, usd, when } from "./format";
 
 describe("usd", () => {
   it("formats 6-decimal amounts with grouping", () => {
@@ -30,4 +30,22 @@ it("formats basis points, short hex and tiers", () => {
   expect(short("0x0B2B5b9e914C949C14b41ADC002338877f0AA623")).toBe("0x0B2B…A623");
   expect(tierOf(56, 1n)).toBe("BB");
   expect(tierOf(0, 0n)).toBe("unrated");
+});
+
+describe("when", () => {
+  it("spells the month out, so day and month can't be swapped", () => {
+    expect(when(1_793_634_921, "en-GB")).toMatch(/^\d{1,2} Nov 2026, \d\d:\d\d$/);
+    expect(when(0)).toBe("never");
+  });
+});
+
+describe("duration", () => {
+  it("uses the largest whole unit", () => {
+    expect(duration(604_800)).toBe("7 days");
+    expect(duration(86_400n)).toBe("1 day");
+    expect(duration(7_200)).toBe("2 hours");
+    expect(duration(5_400)).toBe("90 minutes");
+    expect(duration(45)).toBe("45 seconds");
+    expect(duration(0)).toBe("0 minutes");
+  });
 });
