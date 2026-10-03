@@ -4,7 +4,7 @@ import { connectChain, type ServiceChain } from "@bonded/keeper";
 import { bountyBoardAbi, testTokenAbi } from "@bonded/shared";
 import { keccak256, toHex } from "viem";
 import { parse, stringify } from "yaml";
-import { chainLibrary, workBountyOne } from "../src/bounty-worker.js";
+import { ATTESTER_HUNTER_VERDICT, chainLibrary, workBountyOne } from "../src/bounty-worker.js";
 import { createApi } from "../src/index.js";
 import { postgres } from "./postgres.js";
 
@@ -537,4 +537,46 @@ it("sends again normally when the pending nonce was used by another transaction"
   expect(await workBountyOne(pg.db, attester, sandbox.rpcUrl)).toBe(true);
   expect(await status(id)).toBe(3);
   expect(await accepts(id)).toBe(1);
+}, 900_000);
+
+it("rejects a bounty whose hunter is an attester, without running the attack", async () => {
+  const d = sandbox.deployment;
+  // Park anything else still queued, so the worker takes this submission.
+  await pg.db.pool.query(
+    "UPDATE bounties SET available_at=now()+interval '1 hour' WHERE status='validating'",
+  );
+  const id = await attester.read.readContract({
+    address: d.bountyBoard,
+    abi: bountyBoardAbi,
+    functionName: "nextSubmissionId",
+  });
+  // A spec that would be paid if a hunter sent it: new class and surface for the library.
+  const body = stringify({
+    ...parse(yaml),
+    id: `A5-self-accept-${id}`,
+    class: "A5",
+    surfaces: ["counterparty"],
+  });
+  const uri = specUri(body);
+  const commitment = await attester.read.readContract({
+    address: d.bountyBoard,
+    abi: bountyBoardAbi,
+    functionName: "commitmentFor",
+    args: [attester.wallet.account.address, uri, salt],
+  });
+  await attester.send(d.bountyBoard, bountyBoardAbi, "commit", [commitment]);
+  await attester.send(d.bountyBoard, bountyBoardAbi, "reveal", [id, uri, salt]);
+  expect((await reveal(Number(id), body)).status).toBe(202);
+
+  expect(await workBountyOne(pg.db, attester, sandbox.rpcUrl)).toBe(true);
+  expect(await status(id)).toBe(4); // rejected on chain
+  expect(await accepts(id)).toBe(0);
+  const saved = (
+    await pg.db.pool.query("SELECT status,verdict FROM bounties WHERE submission_id=$1", [
+      id.toString(),
+    ])
+  ).rows[0];
+  expect(saved.status).toBe("rejected");
+  // runs: 0 shows the attack never ran.
+  expect(saved.verdict).toEqual(ATTESTER_HUNTER_VERDICT);
 }, 900_000);
