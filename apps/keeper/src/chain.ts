@@ -17,7 +17,10 @@ import type { EvmDeployment } from "@bonded/shared";
 
 /** Durable callers can track the uncertain interval around an RPC broadcast. */
 export interface SendLifecycle {
-  beforeBroadcast: () => Promise<void>;
+  /** Reuse this nonce (a retry of a send whose outcome is unknown); default: the next one. */
+  nonce?: number;
+  /** Called with the nonce the transaction will use, before it is broadcast. */
+  beforeBroadcast: (nonce: number) => Promise<void>;
   onBroadcast: (hash: Hex) => Promise<void>;
   onReverted: () => Promise<void>;
 }
@@ -68,10 +71,19 @@ export function connectChain(deployment: EvmDeployment, rpcUrl: string, key: Hex
             args,
             account: wallet.account,
           });
-          await lifecycle?.beforeBroadcast();
+          // A tracked send fixes its nonce first, so its caller can tell later whether it landed.
+          const nonce = lifecycle
+            ? (lifecycle.nonce ??
+              (await read.getTransactionCount({
+                address: wallet.account.address,
+                blockTag: "pending",
+              })))
+            : undefined;
+          if (lifecycle) await lifecycle.beforeBroadcast(nonce!);
           const hash = await wallet.writeContract({
             ...request,
             gas: (estimate * 12n) / 10n + 30000n,
+            ...(nonce === undefined ? {} : { nonce }),
           });
           await lifecycle?.onBroadcast(hash);
           const receipt = await read.waitForTransactionReceipt({ hash });
