@@ -27,6 +27,9 @@ export interface BountyJob {
   submissionId: string;
   token: string;
   hunter: string;
+  attempts: number;
+  broadcastPending: boolean;
+  pendingTxHash: string | null;
   spec: unknown;
   /** The verdict an earlier attempt recorded before sending its transaction, if any. */
   verdict: unknown;
@@ -85,6 +88,7 @@ export class Database {
       "0004_tee_checks.sql",
       "0005_tee_rating_version.sql",
       "0006_bounties.sql",
+      "0007_bounty_broadcasts.sql",
     ];
     await this.transaction(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(7001)");
@@ -381,27 +385,16 @@ export class Database {
       return { created: false, status: existing.rows[0].status as string };
     });
   }
-  /** Fail bounties that errored three times, then lease one waiting for validation. */
+  /** Lease a waiting bounty, including exhausted jobs that still need chain reconciliation. */
   async takeBounty(chainId: number): Promise<BountyJob | undefined> {
     return this.transaction(async (c) => {
-      const failed = await c.query(
-        `UPDATE bounties SET status='failed',lease_until=NULL WHERE chain_id=$1 AND status='validating'
-          AND attempts>=3 AND (lease_until IS NULL OR lease_until<now()) RETURNING submission_id`,
-        [chainId],
-      );
-      for (const row of failed.rows)
-        await this.publish(
-          "bounty.failed",
-          { chainId, submissionId: String(row.submission_id) },
-          c,
-        );
       const r = await c.query(
-        `UPDATE bounties SET token=$1,attempts=attempts+1,lease_until=now()+interval '60 seconds'
+        `UPDATE bounties SET token=$1,attempts=attempts+CASE WHEN broadcast_pending THEN 0 ELSE 1 END,lease_until=now()+interval '60 seconds'
         WHERE (chain_id,submission_id)=(SELECT chain_id,submission_id FROM bounties
-          WHERE chain_id=$2 AND status='validating' AND attempts<3 AND available_at<=now()
+          WHERE chain_id=$2 AND status='validating' AND available_at<=now()
             AND (lease_until IS NULL OR lease_until<now())
           ORDER BY available_at FOR UPDATE SKIP LOCKED LIMIT 1)
-        RETURNING submission_id,token,hunter,spec,verdict`,
+        RETURNING submission_id,token,hunter,spec,verdict,attempts,broadcast_pending,pending_tx_hash`,
         [randomUUID(), chainId],
       );
       const row = r.rows[0];
@@ -411,6 +404,9 @@ export class Database {
             submissionId: String(row.submission_id),
             token: row.token as string,
             hunter: row.hunter as string,
+            attempts: row.attempts as number,
+            broadcastPending: row.broadcast_pending as boolean,
+            pendingTxHash: row.pending_tx_hash as string | null,
             spec: row.spec,
             verdict: row.verdict,
           }
@@ -438,6 +434,15 @@ export class Database {
     );
     if (!r.rowCount) throw new Error("bounty lease lost");
   }
+  /** Persist send intent before broadcasting, its hash afterward, or a confirmed revert. */
+  async recordBountyBroadcast(job: BountyJob, pending: boolean, hash: string | null = null) {
+    const r = await this.pool.query(
+      `UPDATE bounties SET broadcast_pending=$4,pending_tx_hash=$5
+        WHERE chain_id=$1 AND submission_id=$2 AND token=$3 AND status='validating' AND lease_until>now()`,
+      [job.chainId, job.submissionId, job.token, pending, hash],
+    );
+    if (!r.rowCount) throw new Error("bounty lease lost");
+  }
   /**
    * Record the decision, or schedule a retry after an error, if the lease still holds. An
    * acceptance queues a fresh rating of every enabled agent on the chain in the same
@@ -446,23 +451,27 @@ export class Database {
   async finishBounty(
     job: BountyJob,
     outcome:
-      { status: "accepted" | "rejected"; verdict: unknown; txHash: string } | { error: string },
+      | { status: "accepted" | "rejected"; verdict: unknown; txHash: string }
+      | { error: string }
+      | { failed: string },
   ) {
     await this.transaction(async (c) => {
       const done = "status" in outcome;
       const r = await c.query(
         `UPDATE bounties SET status=$4,verdict=COALESCE($5::jsonb,verdict),tx_hash=COALESCE($6,tx_hash),
-          error=$7,lease_until=NULL,available_at=now()+interval '30 seconds'
+          error=$7,lease_until=NULL,available_at=now()+interval '30 seconds',
+          broadcast_pending=CASE WHEN $4='validating' THEN broadcast_pending ELSE false END,
+          pending_tx_hash=CASE WHEN $4='validating' THEN pending_tx_hash ELSE NULL END
         WHERE chain_id=$1 AND submission_id=$2 AND token=$3 AND status='validating' AND lease_until>now()
         RETURNING status`,
         [
           job.chainId,
           job.submissionId,
           job.token,
-          done ? outcome.status : "validating",
+          done ? outcome.status : "failed" in outcome ? "failed" : "validating",
           done ? json(outcome.verdict) : null,
           done ? outcome.txHash : null,
-          done ? null : outcome.error,
+          done ? null : "failed" in outcome ? outcome.failed : outcome.error,
         ],
       );
       if (!r.rowCount) throw new Error("bounty lease lost");
@@ -473,7 +482,7 @@ export class Database {
         for (const row of agents.rows) await this.enqueueIn(c, row.id as string);
       }
       await this.publish(
-        `bounty.${done ? outcome.status : "retry"}`,
+        `bounty.${done ? outcome.status : "failed" in outcome ? "failed" : "retry"}`,
         { chainId: job.chainId, submissionId: job.submissionId },
         c,
       );
@@ -504,6 +513,15 @@ export class Database {
         createdAt: row.created_at,
       };
     });
+  }
+  /** Accepted attacks plus uncertain acceptance broadcasts reserve bounty eligibility. */
+  async bountyValidationAttacks(chainId: number, submissionId: string): Promise<unknown[]> {
+    const r = await this.pool.query(
+      `SELECT spec FROM bounties WHERE chain_id=$1 AND submission_id<>$2 AND
+        (status='accepted' OR (status='validating' AND broadcast_pending AND verdict->>'decision'='accept'))`,
+      [chainId, submissionId],
+    );
+    return r.rows.map((row) => row.spec);
   }
   /** Accepted bounty specs, which join the attack library for this chain's ratings. */
   async acceptedAttacks(chainId: number): Promise<unknown[]> {

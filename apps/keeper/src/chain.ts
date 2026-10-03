@@ -15,6 +15,13 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import type { EvmDeployment } from "@bonded/shared";
 
+/** Durable callers can track the uncertain interval around an RPC broadcast. */
+export interface SendLifecycle {
+  beforeBroadcast: () => Promise<void>;
+  onBroadcast: (hash: Hex) => Promise<void>;
+  onReverted: () => Promise<void>;
+}
+
 const transactions = new Map<string, Promise<unknown>>();
 /** Connect a deployment and serialize writes per chain/account to avoid nonce races. */
 export function connectChain(deployment: EvmDeployment, rpcUrl: string, key: Hex): ServiceChain {
@@ -35,7 +42,13 @@ export function connectChain(deployment: EvmDeployment, rpcUrl: string, key: Hex
     read,
     wallet,
     /** Simulate, estimate with a margin, serialize the send and require a successful receipt. */
-    async send(address: Address, abi: Abi, functionName: string, args: readonly unknown[]) {
+    async send(
+      address: Address,
+      abi: Abi,
+      functionName: string,
+      args: readonly unknown[],
+      lifecycle?: SendLifecycle,
+    ) {
       const accountKey = `${deployment.chainId}:${wallet.account.address}`;
       const previous = transactions.get(accountKey) ?? Promise.resolve();
       const pending = previous
@@ -55,12 +68,17 @@ export function connectChain(deployment: EvmDeployment, rpcUrl: string, key: Hex
             args,
             account: wallet.account,
           });
+          await lifecycle?.beforeBroadcast();
           const hash = await wallet.writeContract({
             ...request,
             gas: (estimate * 12n) / 10n + 30000n,
           });
+          await lifecycle?.onBroadcast(hash);
           const receipt = await read.waitForTransactionReceipt({ hash });
-          if (receipt.status !== "success") throw new Error(`${functionName} reverted: ${hash}`);
+          if (receipt.status !== "success") {
+            await lifecycle?.onReverted();
+            throw new Error(`${functionName} reverted: ${hash}`);
+          }
           return hash;
         });
       transactions.set(accountKey, pending);
@@ -76,5 +94,11 @@ export interface ServiceChain {
   deployment: EvmDeployment;
   read: PublicClient<Transport, Chain>;
   wallet: WalletClient<Transport, Chain, Account>;
-  send(address: Address, abi: Abi, functionName: string, args: readonly unknown[]): Promise<Hex>;
+  send(
+    address: Address,
+    abi: Abi,
+    functionName: string,
+    args: readonly unknown[],
+    lifecycle?: SendLifecycle,
+  ): Promise<Hex>;
 }

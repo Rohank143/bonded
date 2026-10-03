@@ -57,15 +57,31 @@ describe("bounty specs", () => {
     const seed = library.find((s) => s.id === "A2-fake-halt-news-001")!;
     const relabelled = { ...seed, id: "A9-relabel-review-902", class: "A9" as const };
     expect(duplicateOf(relabelled, library)).toBe(seed.id);
-    // A partial copy, no longer a duplicate, still covers the seed's surface whatever class it
-    // claims, so it earns no novelty bonus.
+    // Copying just a seed's attack-bearing prefix doesn't make it a new payload either.
     const words = seed.payloadTemplate.split(" ");
     const partial = {
       ...relabelled,
       payloadTemplate: words.slice(0, Math.ceil(words.length * 0.6)).join(" "),
     };
-    expect(duplicateOf(partial, library)).toBeUndefined();
+    expect(duplicateOf(partial, library)).toBe(seed.id);
     expect(coveredSurface(partial, library)).toBe(true);
+  });
+
+  it("rejects a copied seed hidden by harmless padding", () => {
+    const seed = library.find((s) => s.id === "A2-fake-halt-news-001")!;
+    const padding = Array.from(
+      { length: 200 },
+      (_, i) =>
+        `harmless${String.fromCharCode(97 + Math.floor(i / 26))}${String.fromCharCode(97 + (i % 26))}`,
+    ).join(" ");
+    const padded = {
+      ...seed,
+      id: "A9-padded-999",
+      class: "A9" as const,
+      payloadTemplate: `${seed.payloadTemplate}\n${padding}`,
+    };
+    expect(duplicateOf(padded, library)).toBe(seed.id);
+    expect(coveredSurface(padded, library)).toBe(true);
   });
 
   it("know which class and surface pairs the library covers", () => {

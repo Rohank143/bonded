@@ -121,6 +121,8 @@ export const bounties = pgTable(
     status: text().notNull().default("validating"),
     verdict: jsonb(),
     txHash: text("tx_hash"),
+    broadcastPending: boolean("broadcast_pending").notNull().default(false),
+    pendingTxHash: text("pending_tx_hash"),
     error: text(),
     attempts: integer().notNull().default(0),
     token: uuid(),

@@ -4,6 +4,9 @@ import {
   loadAttackLibrary,
   reasonHash,
   validateBounty,
+  decideBounty,
+  duplicateOf,
+  coveredSurface,
   type BountyVerdict,
 } from "@bonded/arena";
 import { AttackSpec, bountyBoardAbi } from "@bonded/shared";
@@ -15,7 +18,8 @@ import { getAbiItem, type Hex } from "viem";
  * agents, then the attester accepts (paying the reward from BountyBoard) or rejects on chain. An
  * accepted spec joins the library and every enabled agent on the chain is queued for a fresh
  * rating in the same database transaction, so premiums reprice against the new attack. The
- * verdict is stored before its transaction is sent; a retry reuses it, and a submission already
+ * measurements are stored before sending and reused on retry; unpaid approvals recheck
+ * duplicate eligibility, and a submission already
  * settled on chain is recorded as the chain has it.
  */
 
@@ -110,11 +114,38 @@ async function workLocked(
       return true;
     }
     if (onChain.status !== REVEALED) throw new Error(`submission ${id} isn't revealed on chain`);
-    // Decide once. A stored verdict is what was about to be sent; reuse it.
+    // Never fail or resend while a previous broadcast could still mine. A known reverted
+    // receipt is safe to retry; missing hashes/receipts remain reconcilable even after the cap.
+    if (job.broadcastPending) {
+      if (!job.pendingTxHash)
+        throw new Error("broadcast outcome unknown; awaiting chain reconciliation");
+      const receipt = await chain.read.getTransactionReceipt({ hash: job.pendingTxHash as Hex });
+      if (receipt.status === "success")
+        throw new Error("broadcast mined; awaiting updated submission state");
+      await check();
+      await db.recordBountyBroadcast(job, false);
+      throw new Error("prior broadcast reverted; scheduling the next sending attempt");
+    }
+    // Exhaustion limits validation and sending, never reconciliation of a mined payout.
+    if (job.attempts > 3) {
+      await check();
+      await db.finishBounty(job, {
+        failed: "validation failed after three attempts; chain still revealed",
+      });
+      return true;
+    }
+    // Measure once. Reuse recorded breaches and check current payout eligibility below.
+    const spec = AttackSpec.parse(job.spec);
+    // A pending accept reserves its attack until the chain resolves it, preventing two
+    // nonce-ordered payouts for the same payload. Ratings still use accepted attacks only.
+    const library = [
+      ...loadAttackLibrary(),
+      ...(await db.bountyValidationAttacks(chainId, job.submissionId)).map((s) =>
+        AttackSpec.parse(s),
+      ),
+    ];
     let verdict = job.verdict as BountyVerdict | null;
     if (!verdict) {
-      const spec = AttackSpec.parse(job.spec);
-      const library = await chainLibrary(db, chainId);
       const sandbox = await Sandbox.start({ forkUrl: rpcUrl, forkDeployment: chain.deployment });
       try {
         verdict = await validateBounty(sandbox, spec, library, { onRun: check });
@@ -124,11 +155,35 @@ async function workLocked(
       await check();
       await db.recordBountyVerdict(job, verdict);
     }
+    // The measured breaches are stable; eligibility isn't reserved by an unpaid approval.
+    // Another accepted bounty may now cover it. Recheck only while the chain is Revealed.
+    verdict = decideBounty({
+      duplicateOf: duplicateOf(spec, library),
+      breaches: verdict.breaches,
+      newSurface: !coveredSurface(spec, library),
+      runs: verdict.runs,
+    });
+    await check();
+    await db.recordBountyVerdict(job, verdict);
+    const lifecycle = {
+      beforeBroadcast: async () => {
+        await check();
+        await db.recordBountyBroadcast(job, true);
+      },
+      onBroadcast: (hash: Hex) => db.recordBountyBroadcast(job, true, hash),
+      onReverted: () => db.recordBountyBroadcast(job, false),
+    };
     await check();
     const txHash =
       verdict.decision === "accept"
-        ? await chain.send(board, bountyBoardAbi, "accept", [id, BigInt(verdict.reward)])
-        : await chain.send(board, bountyBoardAbi, "reject", [id, reasonHash(verdict.reason)]);
+        ? await chain.send(board, bountyBoardAbi, "accept", [id, BigInt(verdict.reward)], lifecycle)
+        : await chain.send(
+            board,
+            bountyBoardAbi,
+            "reject",
+            [id, reasonHash(verdict.reason)],
+            lifecycle,
+          );
     await db.finishBounty(job, {
       status: verdict.decision === "accept" ? "accepted" : "rejected",
       verdict,

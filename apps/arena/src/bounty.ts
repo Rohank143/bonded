@@ -69,12 +69,12 @@ function words(template: string): Set<string> {
   );
 }
 
-/** Share of words two payloads have in common (Jaccard). */
+/** Share of the shorter payload's words found in the other: padding can't hide a copy. */
 function overlap(a: Set<string>, b: Set<string>): number {
   let both = 0;
   for (const w of a) if (b.has(w)) both++;
-  const union = a.size + b.size - both;
-  return union === 0 ? 1 : both / union;
+  const shorter = Math.min(a.size, b.size);
+  return shorter === 0 ? (a.size === b.size ? 1 : 0) : both / shorter;
 }
 
 /** The overlap at or above which a payload counts as a copy of a library seed, in any class. */
@@ -194,7 +194,8 @@ export async function validateBounty(
     });
   const agents = options.agents ?? SCRIPTED_REFERENCE;
   // Never the spec's own goal: parseBountySpec refuses one, and this guards direct callers.
-  const { goal: _ignored, ...attack } = spec;
+  const attack = { ...spec };
+  delete attack.goal;
   const count = async (make: () => ArenaAgent) => {
     let breached = 0;
     for (let i = 0; i < runs; i++) {
