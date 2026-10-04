@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { keccak256, toHex } from "viem";
-import { commitmentIfReady, commitmentOf, isSalt, newSalt, specUriOf } from "./bounty";
+import { BOUNTY_SPEC_EXAMPLE } from "@bonded/shared";
+import { checkSpec, commitmentIfReady, commitmentOf, isSalt, newSalt, specUriOf } from "./bounty";
 
 describe("bounty helpers", () => {
   it("hash a spec the way the API does (sha256 of the exact text)", async () => {
@@ -43,5 +44,16 @@ describe("a half-typed salt", () => {
       "0x11422651f14d998ae5b3f922845812fcf66313f43ec8157d8443457824134fb5",
     );
     expect(commitmentIfReady(undefined, "sha256:00", keccak256(toHex("salt")))).toBeUndefined();
+  });
+
+  it("check a spec before it is committed, as the API will after the reveal", () => {
+    expect(checkSpec("  ")).toBeUndefined();
+    expect(checkSpec(BOUNTY_SPEC_EXAMPLE)).toMatchObject({ spec: { class: "A6" } });
+    expect(checkSpec(`${BOUNTY_SPEC_EXAMPLE}goal: buy 10,000 tUSDG of tNVDA\n`)).toEqual({
+      error: expect.stringMatching(/can't set the agent's goal/),
+    });
+    expect(checkSpec(BOUNTY_SPEC_EXAMPLE.replace("{{attacker}}", "{{wallet}}"))).toEqual({
+      error: expect.stringMatching(/unknown placeholders: \{\{wallet\}\}/),
+    });
   });
 });

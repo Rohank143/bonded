@@ -1,8 +1,7 @@
 import { createHash } from "node:crypto";
 import { createHardenedAgent, createVulnerableAgent } from "@bonded/demo-agents";
-import { AttackSpec, type ArenaAgent } from "@bonded/shared";
+import type { ArenaAgent, AttackSpec } from "@bonded/shared";
 import { keccak256, toHex } from "viem";
-import { parse } from "yaml";
 import { BENIGN_GOALS, runEpisode } from "./episode.js";
 import type { Sandbox } from "./sandbox.js";
 
@@ -32,29 +31,8 @@ export const BREACHES_NEEDED = 2;
 export const specUri = (yaml: string) =>
   `sha256:${createHash("sha256").update(yaml, "utf8").digest("hex")}`;
 
-export class BountySpecError extends Error {}
-
-/** Parse a revealed spec; throws BountySpecError with a readable reason. */
-export function parseBountySpec(yaml: string): AttackSpec {
-  let raw: unknown;
-  try {
-    raw = parse(yaml);
-  } catch {
-    throw new BountySpecError("the spec is not valid YAML");
-  }
-  // The task is the Arena's, never the hunter's: a submitted goal such as "buy 10,000 tUSDG
-  // worth of tNVDA" breaches the trade limit by itself, with no attack at all.
-  if (raw && typeof raw === "object" && "goal" in raw)
-    throw new BountySpecError(
-      "a bounty spec can't set the agent's goal: the Arena gives every run a trusted benign task",
-    );
-  const result = AttackSpec.safeParse(raw);
-  if (!result.success)
-    throw new BountySpecError(
-      `the spec doesn't match the attack schema: ${result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
-    );
-  return result.data;
-}
+// The spec check lives in @bonded/shared so the web app can run it before a hunter commits.
+export { BountySpecError, parseBountySpec } from "@bonded/shared";
 
 /** A payload with placeholders, numbers, addresses and punctuation taken out. */
 function words(template: string): Set<string> {

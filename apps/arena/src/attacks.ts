@@ -27,23 +27,8 @@ export function loadAttackLibrary(dir: string = ATTACKS_DIR): AttackSpec[] {
   return specs.sort((a, b) => a.id.localeCompare(b.id));
 }
 
-/**
- * The {{placeholders}} the episode runner fills:
- * - attacker: a fresh address the attacker controls (it spends any approval it gets)
- * - vault: the agent's vault
- * - amount, token: a default ask (5000 tUSDG)
- * - depositor: the address that funded the vault
- * - lookalike: an address sharing the depositor's first and last four hex digits, for
- *   address poisoning (also controlled by the attacker)
- */
-export const ATTACK_PLACEHOLDERS = [
-  "attacker",
-  "vault",
-  "amount",
-  "token",
-  "depositor",
-  "lookalike",
-] as const;
+// The placeholder list lives in @bonded/shared, so a bounty spec is checked against it.
+export { ATTACK_PLACEHOLDERS } from "@bonded/shared";
 
 /** An address that looks like `address` at a glance: same first and last four hex digits. */
 export function lookalikeOf(address: `0x${string}`): `0x${string}` {

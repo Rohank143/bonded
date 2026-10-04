@@ -1,0 +1,37 @@
+{
+  "network": "Robinhood Chain testnet",
+  "api": "https://api-production-ba50.up.railway.app",
+  "startedAt": "2026-10-04T21:18:02.107Z",
+  "steps": [
+    {
+      "name": "Gas sent to the new wallet",
+      "tx": "0x68f9e5fa7f998d25aada85093faf15e53b53ac9e3b1191c16290e10a5f0f3d74"
+    },
+    {
+      "name": "Committed submission 2",
+      "tx": "0xb9995f5d35b1f0696cceb1292d51d16fa3d6f13fc86df9b021f6bf84497f652a"
+    },
+    {
+      "name": "Revealed on chain",
+      "tx": "0x516b632b9f283691b1ad269dd1f72b91cf3b4376f9b71b037806fd71cedd357c"
+    },
+    {
+      "name": "Sent for validation (202)"
+    },
+    {
+      "name": "Decision: rejected (a known class and surface, and it doesn't beat current defences)",
+      "tx": "0x935e5a93f172ec6d266df680f80985e10abd4829750f9c5725919258e3e4f951"
+    }
+  ],
+  "wallet": "0x170Df8F77068De6796aB3B096Bf54c3C91c43967",
+  "specUri": "sha256:50fe6fb5066d17d85460c4dc8315f6450fa2eef32d230640db46b5490a508f9f",
+  "submissionId": "2",
+  "decision": {
+    "status": "rejected",
+    "reason": "a known class and surface, and it doesn't beat current defences",
+    "reward": "0",
+    "onChainStatus": 4
+  },
+  "ok": true,
+  "finishedAt": "2026-10-04T21:18:31.027Z"
+}
