@@ -4,7 +4,7 @@
 
 AI agents now trade with real money. When one gets tricked (a poisoned token description, a fake "admin" message, a lookalike address), someone loses funds, and today nobody pays them back. Bonded rates AI agents by attacking them, prices insurance from what the attacks found, and pays depositors automatically when an agent breaks its rules. **Payouts are decided by the agent's vault on chain, never by an AI.**
 
-Built for the Colosseum Crypto World's Fair on **Robinhood Chain**, with scores readable on **Arbitrum, Ethereum and Solana**.
+Runs on **Robinhood Chain**, with scores readable on **Arbitrum, Ethereum and Solana**.
 
 ## Try it
 
