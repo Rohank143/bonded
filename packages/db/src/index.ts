@@ -199,14 +199,35 @@ export class Database {
         }
       | undefined;
   }
-  /** Ratings of self-serve agents on a chain since a time, for the daily cap. */
-  async userRatingsSince(chainId: number, since: Date): Promise<number> {
-    const r = await this.pool.query(
-      `SELECT count(*)::int AS n FROM ratings r JOIN agents a ON a.id=r.agent_id
-       WHERE a.chain_id=$1 AND a.source='user' AND r.created_at>=$2`,
-      [chainId, since],
-    );
-    return r.rows[0].n as number;
+  /**
+   * Queue a self-serve rating if both quotas allow it: none for this agent within `perAgentMs`,
+   * and fewer than `dailyCap` self-serve ratings on the chain in the last 24 hours. The checks and
+   * the insert run in one transaction under a per-chain lock, so parallel requests can't all see
+   * the same allowance.
+   */
+  async enqueueUserRating(
+    id: string,
+    chainId: number,
+    quota: { nowMs: number; perAgentMs: number; dailyCap: number },
+  ): Promise<{ runId: string } | { refused: "hourly"; nextAt: Date } | { refused: "daily" }> {
+    return this.transaction(async (c) => {
+      await c.query("SELECT pg_advisory_xact_lock(7006,$1)", [chainId]);
+      const last = (
+        await c.query("SELECT max(created_at) AS t FROM ratings WHERE agent_id=$1", [id])
+      ).rows[0].t as Date | null;
+      if (last && quota.nowMs - last.getTime() < quota.perAgentMs)
+        return { refused: "hourly", nextAt: new Date(last.getTime() + quota.perAgentMs) };
+      const today = (
+        await c.query(
+          `SELECT count(*)::int AS n FROM ratings r JOIN agents a ON a.id=r.agent_id
+           WHERE a.chain_id=$1 AND a.source='user' AND r.created_at>=$2`,
+          [chainId, new Date(quota.nowMs - 86_400_000)],
+        )
+      ).rows[0].n as number;
+      if (today >= quota.dailyCap) return { refused: "daily" };
+      // Stamped with the same clock the quotas use, so the next check compares like with like.
+      return { runId: await this.enqueueIn(c, id, new Date(quota.nowMs)) };
+    });
   }
   /**
    * Store a live check only if its observed rating is still current. Custody evidence and failures
@@ -314,13 +335,17 @@ export class Database {
     return this.transaction((c) => this.enqueueIn(c, agentId));
   }
   /** Queue a rating inside a caller's transaction. */
-  private async enqueueIn(c: Connection, agentId: string): Promise<string> {
+  private async enqueueIn(c: Connection, agentId: string, createdAt?: Date): Promise<string> {
     const id = randomUUID();
     const agent = await c.query("SELECT id FROM agents WHERE id=$1 AND enabled FOR SHARE", [
       agentId,
     ]);
     if (!agent.rowCount) throw new AgentNotConfiguredError("agent not configured");
-    await c.query("INSERT INTO ratings(id,agent_id) VALUES($1,$2)", [id, agentId]);
+    await c.query("INSERT INTO ratings(id,agent_id,created_at) VALUES($1,$2,coalesce($3,now()))", [
+      id,
+      agentId,
+      createdAt ?? null,
+    ]);
     await c.query("INSERT INTO jobs(id) VALUES($1)", [id]);
     await this.publish("rating.queued", { runId: id }, c);
     return id;

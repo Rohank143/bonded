@@ -1,7 +1,16 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { ANVIL_KEYS, Sandbox, createAgentVault, type AgentVault } from "@bonded/arena";
 import { connectChain, type ServiceChain } from "@bonded/keeper";
-import { mandateHash, selfServeMessage, type SelfServeRequest } from "@bonded/shared";
+import {
+  bondedRegistryAbi,
+  mandateHash,
+  mandateVaultFactoryAbi,
+  selfServeMessage,
+  toEvmMandateParams,
+  type EvmMandate,
+  type SelfServeRequest,
+} from "@bonded/shared";
+import { parseEventLogs } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { createApi } from "../src/index.js";
 import { postgres } from "./postgres.js";
@@ -165,4 +174,103 @@ it("quotes need no operator token, but cover is capped without it", async () => 
     coverAmount: (1_000n * 1_000_000n).toString(),
   });
   expect(within.status).not.toBe(401);
+}, 120_000);
+
+/**
+ * A vault whose creation carried the hash of one mandate but enforces another: the factory
+ * accepts both from the caller, so only the creation call shows what the vault really enforces.
+ */
+async function vaultWithMismatch(change: (m: EvmMandate) => EvmMandate) {
+  const op = connectChain(sandbox.deployment, sandbox.rpcUrl, ANVIL_KEYS.operator);
+  const d = sandbox.deployment;
+  const reg = await op.read.waitForTransactionReceipt({
+    hash: await op.send(d.registry, bondedRegistryAbi, "register", ["ipfs://x"]),
+  });
+  const agentId = parseEventLogs({
+    abi: bondedRegistryAbi,
+    logs: reg.logs,
+    eventName: "Registered",
+  })[0]!.args.agentId;
+  const enforced = { ...vault.mandate, agentId: agentId.toString() };
+  const claimed = change(enforced);
+  // What the vault enforces: `enforced`; what its hash says: `claimed`.
+  const params = { ...toEvmMandateParams(enforced), mandateHash: mandateHash(claimed) };
+  const made = await op.read.waitForTransactionReceipt({
+    hash: await op.send(d.factory, mandateVaultFactoryAbi, "createVault", [
+      params,
+      op.wallet.account.address,
+      op.wallet.account.address,
+      agentId,
+      "m",
+      "M",
+    ]),
+  });
+  const address = parseEventLogs({
+    abi: mandateVaultFactoryAbi,
+    logs: made.logs,
+    eventName: "VaultCreated",
+  })[0]!.args.vault;
+  return { v: { address, agentId, mandate: enforced }, claimed };
+}
+
+it("refuses a vault whose real rules differ from the mandate its hash names", async () => {
+  for (const [label, change] of [
+    ["mode", (m: EvmMandate) => ({ ...m, mode: "enforce" as const })],
+    [
+      "maxTxNotionalUsd6",
+      (m: EvmMandate) => ({ ...m, limits: { ...m.limits, maxTxNotionalUsd: 1 } }),
+    ],
+    ["destinations", (m: EvmMandate) => ({ ...m, destinations: [owner.address] })],
+  ] as const) {
+    const { v, claimed } = await vaultWithMismatch(change);
+    const res = await register(v, { mandate: claimed });
+    expect(res.status, label).toBe(400);
+    expect((await bodyOf(res)).error, label).toMatch(
+      new RegExp(`enforces different rules from this mandate \\(.*${label}`),
+    );
+  }
+}, 120_000);
+
+it("parallel rating requests queue at most one, for one agent and across agents", async () => {
+  const fourth = await createAgentVault(sandbox);
+  const fifth = await createAgentVault(sandbox);
+  const sixth = await createAgentVault(sandbox);
+  for (const v of [fourth, fifth, sixth]) expect((await register(v)).status).toBe(201);
+  // A fresh day for this app instance, with room for exactly two more ratings.
+  clock += 25 * 3_600_000;
+  const parallelApp = createApi({
+    db: pg.db,
+    chain,
+    attesterKey: ANVIL_KEYS.deployer,
+    apiToken: "test-api-token-at-least-24-characters",
+    selfServe: {
+      dailyRatings: 2,
+      requests: { perClient: 1000, total: 1000, windowMs: 60_000 },
+      now: () => clock,
+    },
+  });
+  const rateOn = async (v: AgentVault) => {
+    const timestamp = now();
+    const agentId = v.agentId.toString();
+    const signature = await sign({
+      action: "rate",
+      chainId: sandbox.deployment.chainId,
+      agentId,
+      timestamp,
+    });
+    return (
+      await parallelApp.request(`/self/agents/${agentId}/rate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ timestamp, signature }),
+      })
+    ).status;
+  };
+  // The same agent, four times at once: one is queued.
+  const same = await Promise.all([1, 2, 3, 4].map(() => rateOn(fourth)));
+  expect(same.filter((s) => s === 202)).toHaveLength(1);
+  // One daily slot left, two agents at once: one is queued.
+  const across = await Promise.all([fifth, sixth].map(rateOn));
+  expect(across.filter((s) => s === 202)).toHaveLength(1);
+  expect(across.filter((s) => s === 429)).toHaveLength(1);
 }, 120_000);

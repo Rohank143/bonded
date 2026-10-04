@@ -10,11 +10,20 @@ import {
   SELF_SERVE_KINDS,
   SELF_SERVE_MAX_AGE_SECONDS,
   selfServeMessage,
+  toEvmMandateParams,
+  type EvmMandate as EvmMandateType,
   type SelfServeKind,
   type SelfServeRequest,
 } from "@bonded/shared";
 import type { ServiceChain } from "@bonded/keeper";
-import { keccak256, recoverMessageAddress, stringToBytes, type Hex } from "viem";
+import {
+  decodeFunctionData,
+  getAbiItem,
+  keccak256,
+  recoverMessageAddress,
+  stringToBytes,
+  type Hex,
+} from "viem";
 import { RateLimiter, clientAddress } from "./rate-limit.js";
 
 /**
@@ -98,6 +107,53 @@ export function selfServeRoutes(
     }).catch(() => undefined);
     if (!recovered) throw new Refused(400, "the signature is not valid");
     return recovered.toLowerCase();
+  }
+
+  /**
+   * Whether the vault was created with exactly this mandate's enforced parameters. A matching
+   * mandate hash isn't enough: the factory takes the hash and the parameters separately, so a
+   * vault can carry the hash of one mandate while enforcing another (mode, limits, allowlists).
+   * The creation call is the complete record of what the vault enforces, since its rules can't
+   * change afterwards, so it is decoded and compared field by field.
+   */
+  async function createdWith(vault: Hex, mandate: EvmMandateType): Promise<string | undefined> {
+    const [log] = await chain.read.getLogs({
+      address: d.factory,
+      event: getAbiItem({ abi: mandateVaultFactoryAbi, name: "VaultCreated" }),
+      args: { vault },
+      fromBlock: BigInt(d.deployedAtBlock),
+      toBlock: "latest",
+      strict: true,
+    });
+    if (!log) return "the vault's creation wasn't found";
+    const tx = await chain.read.getTransaction({ hash: log.transactionHash });
+    if (tx.to?.toLowerCase() !== d.factory.toLowerCase())
+      return "create the vault by calling the factory directly, so its parameters can be checked";
+    let call;
+    try {
+      call = decodeFunctionData({ abi: mandateVaultFactoryAbi, data: tx.input });
+    } catch {
+      return "the vault's creation call couldn't be read";
+    }
+    if (call.functionName !== "createVault") return "the vault's creation call couldn't be read";
+    const norm = (v: unknown): unknown =>
+      typeof v === "string"
+        ? v.toLowerCase()
+        : typeof v === "bigint"
+          ? v.toString()
+          : Array.isArray(v)
+            ? v.map(norm)
+            : v && typeof v === "object"
+              ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, norm(x)]))
+              : v;
+    const expected = toEvmMandateParams(mandate);
+    const actual = call.args[0] as Record<string, unknown>;
+    const mismatched = (Object.keys(expected) as (keyof typeof expected)[]).filter(
+      (k) => JSON.stringify(norm(expected[k])) !== JSON.stringify(norm(actual[k])),
+    );
+    return mismatched.length
+      ? `the vault enforces different rules from this mandate (${mismatched.join(", ")})`
+      : undefined;
   }
 
   const ownerOf = async (agentId: string) =>
@@ -198,6 +254,8 @@ export function selfServeRoutes(
         throw new Refused(403, "only the vault's guardian can register it");
       if (onchainHash?.toLowerCase() !== hash.toLowerCase())
         throw new Refused(400, "the mandate doesn't match the vault's on-chain mandate");
+      const mismatch = await createdWith(vault, input.mandate);
+      if (mismatch) throw new Refused(400, mismatch);
       const stored = await db.upsertUserAgent(d.chainId, input.agentId, who, {
         kind: input.kind,
         mandate: input.mandate,
@@ -227,17 +285,19 @@ export function selfServeRoutes(
       // can only be rated by its new owner.
       if ((await ownerOf(agentId)) !== who)
         throw new Refused(403, "only the agent's owner can ask for a rating");
-      const last = record.last_rating_at?.getTime();
-      if (last && now() - last < limits.perAgentMs)
+      const queued = await db.enqueueUserRating(rowId(agentId), d.chainId, {
+        nowMs: now(),
+        perAgentMs: limits.perAgentMs,
+        dailyCap: limits.dailyRatings,
+      });
+      if ("refused" in queued)
         throw new Refused(
           429,
-          `one rating an hour per agent; next at ${new Date(last + limits.perAgentMs).toISOString()}`,
+          queued.refused === "hourly"
+            ? `one rating an hour per agent; next at ${queued.nextAt.toISOString()}`
+            : "today's self-serve ratings are used up; try again tomorrow",
         );
-      if (
-        (await db.userRatingsSince(d.chainId, new Date(now() - 86_400_000))) >= limits.dailyRatings
-      )
-        throw new Refused(429, "today's self-serve ratings are used up; try again tomorrow");
-      return c.json({ runId: await db.enqueue(rowId(agentId)) }, 202);
+      return c.json({ runId: queued.runId }, 202);
     }),
   );
 }
