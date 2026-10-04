@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useAccount, useSignMessage } from "wagmi";
 import { SELF_SERVE_KIND_LABELS, type SelfServeKind } from "@bonded/shared";
 import { deployment } from "../config";
@@ -8,6 +8,7 @@ import { api } from "../lib/api";
 import { recallAgent } from "../lib/onboarding";
 import { registerForRatings, requestRating } from "../lib/self-serve";
 import { when } from "../lib/format";
+import { useRatingRun } from "../lib/rating-run";
 import { Badge, Button, Card, ErrorText } from "./ui";
 
 /**
@@ -17,7 +18,6 @@ import { Badge, Button, Card, ErrorText } from "./ui";
 export function OwnerTools({ agentId, owner }: { agentId: string; owner?: string }) {
   const { address } = useAccount();
   const { signMessageAsync } = useSignMessage();
-  const queryClient = useQueryClient();
   const [runId, setRunId] = useState<string>();
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
@@ -27,20 +27,7 @@ export function OwnerTools({ agentId, owner }: { agentId: string; owner?: string
     queryFn: () => api.selfAgent(agentId),
     enabled: isOwner,
   });
-  const run = useQuery({
-    queryKey: ["run", runId],
-    queryFn: () => api.run(runId!),
-    enabled: Boolean(runId),
-    refetchInterval: (q) => {
-      const status = q.state.data?.status;
-      if (status === "done" || status === "failed") {
-        // The new score is on chain: refresh the profile's reads.
-        void queryClient.invalidateQueries();
-        return false;
-      }
-      return 5000;
-    },
-  });
+  const run = useRatingRun(runId);
   if (!isOwner) return null;
   const remembered = recallAgent(deployment.chainId, agentId);
   const record = self.data;
