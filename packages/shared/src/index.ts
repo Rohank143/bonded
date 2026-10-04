@@ -15,3 +15,4 @@ export * from "./sentinel.js";
 export * from "./tee.js";
 export * from "./leaderboard.js";
 export * from "./bounty-example.js";
+export * from "./self-serve.js";

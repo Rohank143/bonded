@@ -76,7 +76,7 @@ afterAll(async () => {
 });
 it("health, authentication, input validation and missing resources", async () => {
   expect((await app.request("/health")).status).toBe(200);
-  expect((await app.request("/quotes", { method: "POST" })).status).toBe(401);
+  expect((await app.request("/arena/runs", { method: "POST" })).status).toBe(401);
   expect((await post("/quotes", { coverAmount: "-1" })).status).toBe(400);
   expect((await app.request(`/arena/runs/${randomUUID()}`)).status).toBe(404);
 });

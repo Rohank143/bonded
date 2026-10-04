@@ -92,6 +92,7 @@ export class Database {
       "0006_bounties.sql",
       "0007_bounty_broadcasts.sql",
       "0008_bounty_nonce.sql",
+      "0009_self_serve_agents.sql",
     ];
     await this.transaction(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(7001)");
@@ -141,13 +142,15 @@ export class Database {
     await this.transaction(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(7005,$1)", [chainId]);
       const ids = agents.map((agent) => `${chainId}:${agent.agentId}`);
+      // The file is the complete set of operator agents; agents registered by their owners
+      // (source 'user') are not the file's to remove.
       await c.query(
-        "UPDATE agents SET enabled=false WHERE chain_id=$1 AND NOT (id=ANY($2::text[]))",
+        "UPDATE agents SET enabled=false WHERE chain_id=$1 AND source='operator' AND NOT (id=ANY($2::text[]))",
         [chainId, ids],
       );
       for (const agent of agents)
         await c.query(
-          "INSERT INTO agents(id,chain_id,agent_id,config,enabled) VALUES($1,$2,$3,$4,true) ON CONFLICT(id) DO UPDATE SET config=$4,enabled=true",
+          "INSERT INTO agents(id,chain_id,agent_id,config,enabled) VALUES($1,$2,$3,$4,true) ON CONFLICT(id) DO UPDATE SET config=$4,enabled=true,source='operator',owner=NULL",
           [`${chainId}:${agent.agentId}`, chainId, agent.agentId, json(agent.config)],
         );
       const cancelled = await c.query(
@@ -164,6 +167,46 @@ export class Database {
         await this.publish("rating.failed", { runId: row.id }, c);
       }
     });
+  }
+  /**
+   * Store an agent registered by its owner (self-serve). Returns false, changing nothing, if the
+   * operator already configures this agent: the operator's config wins.
+   */
+  async upsertUserAgent(chainId: number, agentId: string, owner: string, config: unknown) {
+    const r = await this.pool.query(
+      `INSERT INTO agents(id,chain_id,agent_id,config,enabled,source,owner) VALUES($1,$2,$3,$4,true,'user',$5)
+       ON CONFLICT(id) DO UPDATE SET config=$4,enabled=true,owner=$5 WHERE agents.source='user'
+       RETURNING id`,
+      [`${chainId}:${agentId}`, chainId, agentId, json(config), owner.toLowerCase()],
+    );
+    return r.rowCount === 1;
+  }
+  /** An agent's row: where its config came from, its owner and config, and its latest rating. */
+  async agentRecord(id: string) {
+    const r = await this.pool.query(
+      `SELECT a.source,a.owner,a.config,a.enabled,
+        (SELECT max(created_at) FROM ratings WHERE agent_id=a.id) AS last_rating_at
+       FROM agents a WHERE a.id=$1`,
+      [id],
+    );
+    return r.rows[0] as
+      | {
+          source: "operator" | "user";
+          owner: string | null;
+          config: unknown;
+          enabled: boolean;
+          last_rating_at: Date | null;
+        }
+      | undefined;
+  }
+  /** Ratings of self-serve agents on a chain since a time, for the daily cap. */
+  async userRatingsSince(chainId: number, since: Date): Promise<number> {
+    const r = await this.pool.query(
+      `SELECT count(*)::int AS n FROM ratings r JOIN agents a ON a.id=r.agent_id
+       WHERE a.chain_id=$1 AND a.source='user' AND r.created_at>=$2`,
+      [chainId, since],
+    );
+    return r.rows[0].n as number;
   }
   /**
    * Store a live check only if its observed rating is still current. Custody evidence and failures
