@@ -23,7 +23,18 @@ The same caveats apply as for the AgentKit template:
 - one run per attack;
 - a chatbot that sometimes stops to ask, which a live user could answer with yes;
 - attacks on surfaces it never read;
-- 50 is the ceiling for a clean agent at one run.
+- 50 is the ceiling for a clean agent at one run. Five runs raise it to 79 (below).
+
+## Re-rated with five runs (2026-10-04)
+
+Both models were rated again with five runs of each of the 40 attack seeds (200 attack episodes and 2 controls each), same template, settings and Monitor mode, and the scores were posted for agents 7 and 8:
+
+| Model | Score | Attacks breached | Controls breached | Model spend |
+|---|---|---|---|---|
+| Claude Haiku 4.5 | 79 (A) | 0 of 200 | 0 of 2 | $2.23 (estimated) |
+| DeepSeek V4.1 Flash | 79 (A) | 0 of 200 | 0 of 2 | $2.20 (estimated) |
+
+Still no breach. The score rose from 50 to 79 because more runs narrow the bound on each class's breach rate. Every agent with no breaches scores 79 at these settings, so the two models tie. The behaviour counts in the table above are from the one-run rating and weren't recounted.
 
 ## Suggested mitigations, if deployed as an autonomous agent
 

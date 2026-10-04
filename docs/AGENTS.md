@@ -45,13 +45,13 @@ All on Robinhood Chain testnet (chain 46630). Scores are what the registry holds
 | **1** | The first deployment check (Day 4) | n/a | n/a | Monitor | unrated | That the contracts work end to end |
 | **2** | Gate 1 agent | Hardened (script) | Policy | Monitor, key on the operator's server | 51 (BB) | A clean agent whose score is held down by uncertainty: one run per attack, and an operator-held key ([ADR-014](decisions/014-key-custody-in-the-score.md)) |
 | **3** | **Agent B** in the demo | Hardened (script) | Policy | **Enforce**, key generated inside a **TEE** ([docs/TEE.md](TEE.md)) | 96 (AAA) | Best practice: five runs per attack, no breaches, verified key custody |
-| **4, 5** | Coinbase AgentKit LangChain chatbot, unchanged | Claude Haiku 4.5 / DeepSeek V4.1 Flash | None | Monitor | 50 (BB) | Real open-source agents ([leaderboard](https://bonded-nu.vercel.app/leaderboard), [disclosures](disclosures/README.md)) |
-| **6** | Bonded hardened agent, as a leaderboard reference | Hardened (script) | Policy | Monitor | 50 (BB) | The same agent as 2, rated like the templates |
-| **7, 8** | Solana Agent Kit LangGraph example, unchanged | Claude Haiku 4.5 / DeepSeek V4.1 Flash | None | Monitor | 50 (BB) | Real open-source agents |
+| **4, 5** | Coinbase AgentKit LangChain chatbot, unchanged | Claude Haiku 4.5 / DeepSeek V4.1 Flash | None | Monitor | 79 (A) | Real open-source agents ([leaderboard](https://bonded-nu.vercel.app/leaderboard), [disclosures](disclosures/README.md)) |
+| **6** | Bonded hardened agent, as a leaderboard reference | Hardened (script) | Policy | Monitor | 79 (A) | The same agent as 2, rated like the templates |
+| **7, 8** | Solana Agent Kit LangGraph example, unchanged | Claude Haiku 4.5 / DeepSeek V4.1 Flash | None | Monitor | 79 (A) | Real open-source agents |
 | **9** | Bonded vulnerable agent, as a leaderboard reference | Vulnerable (script) | None | Monitor | 1 (CCC), uninsurable | What falling for everything looks like |
 | **10** | **Agent A** in the demo (Day 14) | Vulnerable (script) | Policy, **with one gap**: it compares an address by its first 6 and last 4 characters only | Monitor; refunds to the depositor allowed | 49 (BB) | An insurable agent with one measured weakness, which the demo then exploits |
 
-Why several agents score about 50: with one run per attack, an agent with no breaches can't score above about 50, because the 90% upper bound on its breach rate is still wide. Five runs tighten it: the same hardened agent scores 96 with five runs and Enforce mode. The leaderboard notes this next to its results.
+Why agent 2 scores about 50: with one run per attack, an agent with no breaches can't score above about 50, because the 90% upper bound on its breach rate is still wide. Five runs tighten it: in Monitor mode with an operator-held key, a clean agent scores 79 with five runs (the leaderboard agents since 2026-10-04), and the hardened agent scores 96 with five runs, Enforce mode and a verified TEE key. Agents with no breaches still tie with each other at the same settings: the score separates agents by what breaches them.
 
 ### Agent A, in detail
 
