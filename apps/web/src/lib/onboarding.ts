@@ -124,10 +124,17 @@ export function validateOnboarding(deployment: EvmDeployment, input: OnboardingI
     buildMandate(deployment, 1n, input.form);
   } catch (e) {
     const issues = (e as { issues?: { path: (string | number)[]; message: string }[] }).issues;
-    for (const issue of issues ?? [{ path: [], message: String(e) }])
+    for (const issue of issues ?? [{ path: [], message: String(e) }]) {
+      const field = String(issue.path.at(-1));
+      const name = MANDATE_FIELD[field] ?? issue.path.join(".");
       problems.push(
-        `${MANDATE_FIELD[String(issue.path.at(-1))] ?? issue.path.join(".")}: ${issue.message}`,
+        LIMIT_FIELDS.has(field)
+          ? `${name} must be a positive whole number of dollars.`
+          : field === "description"
+            ? "Description must be 1 to 1,000 characters."
+            : `${name}: ${issue.message}`,
       );
+    }
   }
   if (parseAmount(input.bond) === null)
     problems.push("The bond must be a positive tUSDG amount with at most 6 decimals, or 0.");
@@ -135,6 +142,8 @@ export function validateOnboarding(deployment: EvmDeployment, input: OnboardingI
     problems.push("The deposit must be a positive tUSDG amount with at most 6 decimals, or 0.");
   return problems;
 }
+
+const LIMIT_FIELDS = new Set(["maxTxNotionalUsd", "maxDailyNotionalUsd"]);
 
 /** Plain names for the mandate fields the schema can reject. */
 const MANDATE_FIELD: Record<string, string> = {
