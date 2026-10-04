@@ -41,9 +41,9 @@ How the parts fit together: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). What e
 
 ## What you can do today
 
-- **Anyone, in the web app** (with a browser wallet on Robinhood testnet): browse agents, scores, reports, the leaderboard and claims; get test tUSDG; deposit into a vault; underwrite the cover pool; submit a bounty attack.
+- **Anyone, in the web app** (with a browser wallet on Robinhood testnet): onboard an agent (register it, create its vault, stake a bond); rate it with one of Bonded's built-in agent designs against your vault; buy cover; simulate a breach and watch the claim pay; deposit; underwrite the cover pool; submit a bounty attack; browse agents, scores, reports, the leaderboard and claims.
 - **Anyone, locally:** run the whole loop with `pnpm demo`, or rate the built-in agents with `pnpm arena rate`.
-- **Not self-serve yet:** registering an agent, rating it and buying cover are done by Bonded's scripts and operator. Doing them from the web app is next; rating your own agent's code and bringing your own TEE come after. Details: [What works today and what's coming](docs/AGENTS.md#what-works-today-and-whats-coming).
+- **Not yet:** rating your own agent's code ([issue #84](https://github.com/ddboy19912/bonded/issues/84)) and bringing your own TEE ([issue #85](https://github.com/ddboy19912/bonded/issues/85)). Details: [What works today and what's coming](docs/AGENTS.md#what-works-today-and-whats-coming).
 
 ## Results (measured, with their assumptions)
 

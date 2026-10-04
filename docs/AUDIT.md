@@ -11,7 +11,7 @@ This is the internal audit note Section 17 asks for. It covers the EVM contracts
 | Severity | Found | Fixed | Fixed off chain, contract fix at next deploy | Accepted for testnet, fix before mainnet |
 |---|---|---|---|---|
 | High | 0 | | | |
-| Medium | 2 | | 1 (F-01) | 1 (F-02) |
+| Medium | 3 | | 2 (F-01, F-10) | 1 (F-02) |
 | Low | 4 | 2 (F-04, F-05) | | 2 (F-03, F-06) |
 | Informational | 3 | | | 3 (F-07 to F-09) |
 
@@ -95,6 +95,14 @@ On testnets the owner sets every price, and losses are priced with them. This is
 ### F-09 (Informational) The keeper stops on a deep chain reorganisation
 
 It waits for an operator instead of recovering. Tracked in [issue #25](https://github.com/ddboy19912/bonded/issues/25), needed before mainnet.
+
+### F-10 (Medium) A vault's mandate hash doesn't prove the rules it enforces
+
+Found in the review of the self-serve work (PR #89). `MandateVaultFactory.createVault` takes the mandate hash and the enforced parameters (mode, assets, targets, destinations, limits) as separate inputs, and nothing checks that the hash is of those parameters. A vault can therefore carry the hash of an Enforce mandate with tight limits while enforcing Monitor with loose ones. `CoverManager` checks only the hash against the quote, so cover could be priced from a rating of rules the vault doesn't enforce.
+
+- **Who could exploit it:** whoever creates the vault, which is the operator who buys the cover: the party the rating is meant to judge.
+- **Status: fixed off chain.** Self-serve registration decodes the vault's creation call and refuses a mandate whose parameters differ in any field. The operator's own agents (`config/agents.46630.json`) are created by our scripts with matching parameters.
+- **Contract fix at the next deployment (#67):** the factory computes the mandate commitment on chain from the parameters it actually stores (a hash of the ABI-encoded enforced parameters, with the descriptive JSON kept off chain), and ratings, quotes and cover use that commitment.
 
 ## Slither triage
 

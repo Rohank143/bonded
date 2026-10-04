@@ -7,6 +7,7 @@ import { ApiError, api } from "../lib/api";
 import { liveCheckView, teeView } from "../lib/tee";
 import { isRpcUnavailable } from "../lib/errors";
 import { apiLookups, isRegistered } from "../lib/agent";
+import { OwnerTools } from "../components/owner-tools";
 import { bps, usd, when } from "../lib/format";
 import {
   AddressLink,
@@ -212,6 +213,8 @@ export function Agent() {
           <ErrorText error={score.error} />
         )}
       </Card>
+
+      <OwnerTools agentId={id} owner={owner?.result} />
 
       {report && (
         <Card title="Attack classes">

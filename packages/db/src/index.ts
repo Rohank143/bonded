@@ -92,6 +92,7 @@ export class Database {
       "0006_bounties.sql",
       "0007_bounty_broadcasts.sql",
       "0008_bounty_nonce.sql",
+      "0009_self_serve_agents.sql",
     ];
     await this.transaction(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(7001)");
@@ -141,13 +142,15 @@ export class Database {
     await this.transaction(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(7005,$1)", [chainId]);
       const ids = agents.map((agent) => `${chainId}:${agent.agentId}`);
+      // The file is the complete set of operator agents; agents registered by their owners
+      // (source 'user') are not the file's to remove.
       await c.query(
-        "UPDATE agents SET enabled=false WHERE chain_id=$1 AND NOT (id=ANY($2::text[]))",
+        "UPDATE agents SET enabled=false WHERE chain_id=$1 AND source='operator' AND NOT (id=ANY($2::text[]))",
         [chainId, ids],
       );
       for (const agent of agents)
         await c.query(
-          "INSERT INTO agents(id,chain_id,agent_id,config,enabled) VALUES($1,$2,$3,$4,true) ON CONFLICT(id) DO UPDATE SET config=$4,enabled=true",
+          "INSERT INTO agents(id,chain_id,agent_id,config,enabled) VALUES($1,$2,$3,$4,true) ON CONFLICT(id) DO UPDATE SET config=$4,enabled=true,source='operator',owner=NULL",
           [`${chainId}:${agent.agentId}`, chainId, agent.agentId, json(agent.config)],
         );
       const cancelled = await c.query(
@@ -163,6 +166,67 @@ export class Database {
         );
         await this.publish("rating.failed", { runId: row.id }, c);
       }
+    });
+  }
+  /**
+   * Store an agent registered by its owner (self-serve). Returns false, changing nothing, if the
+   * operator already configures this agent: the operator's config wins.
+   */
+  async upsertUserAgent(chainId: number, agentId: string, owner: string, config: unknown) {
+    const r = await this.pool.query(
+      `INSERT INTO agents(id,chain_id,agent_id,config,enabled,source,owner) VALUES($1,$2,$3,$4,true,'user',$5)
+       ON CONFLICT(id) DO UPDATE SET config=$4,enabled=true,owner=$5 WHERE agents.source='user'
+       RETURNING id`,
+      [`${chainId}:${agentId}`, chainId, agentId, json(config), owner.toLowerCase()],
+    );
+    return r.rowCount === 1;
+  }
+  /** An agent's row: where its config came from, its owner and config, and its latest rating. */
+  async agentRecord(id: string) {
+    const r = await this.pool.query(
+      `SELECT a.source,a.owner,a.config,a.enabled,
+        (SELECT max(created_at) FROM ratings WHERE agent_id=a.id) AS last_rating_at
+       FROM agents a WHERE a.id=$1`,
+      [id],
+    );
+    return r.rows[0] as
+      | {
+          source: "operator" | "user";
+          owner: string | null;
+          config: unknown;
+          enabled: boolean;
+          last_rating_at: Date | null;
+        }
+      | undefined;
+  }
+  /**
+   * Queue a self-serve rating if both quotas allow it: none for this agent within `perAgentMs`,
+   * and fewer than `dailyCap` self-serve ratings on the chain in the last 24 hours. The checks and
+   * the insert run in one transaction under a per-chain lock, so parallel requests can't all see
+   * the same allowance.
+   */
+  async enqueueUserRating(
+    id: string,
+    chainId: number,
+    quota: { nowMs: number; perAgentMs: number; dailyCap: number },
+  ): Promise<{ runId: string } | { refused: "hourly"; nextAt: Date } | { refused: "daily" }> {
+    return this.transaction(async (c) => {
+      await c.query("SELECT pg_advisory_xact_lock(7006,$1)", [chainId]);
+      const last = (
+        await c.query("SELECT max(created_at) AS t FROM ratings WHERE agent_id=$1", [id])
+      ).rows[0].t as Date | null;
+      if (last && quota.nowMs - last.getTime() < quota.perAgentMs)
+        return { refused: "hourly", nextAt: new Date(last.getTime() + quota.perAgentMs) };
+      const today = (
+        await c.query(
+          `SELECT count(*)::int AS n FROM ratings r JOIN agents a ON a.id=r.agent_id
+           WHERE a.chain_id=$1 AND a.source='user' AND r.created_at>=$2`,
+          [chainId, new Date(quota.nowMs - 86_400_000)],
+        )
+      ).rows[0].n as number;
+      if (today >= quota.dailyCap) return { refused: "daily" };
+      // Stamped with the same clock the quotas use, so the next check compares like with like.
+      return { runId: await this.enqueueIn(c, id, new Date(quota.nowMs)) };
     });
   }
   /**
@@ -271,13 +335,17 @@ export class Database {
     return this.transaction((c) => this.enqueueIn(c, agentId));
   }
   /** Queue a rating inside a caller's transaction. */
-  private async enqueueIn(c: Connection, agentId: string): Promise<string> {
+  private async enqueueIn(c: Connection, agentId: string, createdAt?: Date): Promise<string> {
     const id = randomUUID();
     const agent = await c.query("SELECT id FROM agents WHERE id=$1 AND enabled FOR SHARE", [
       agentId,
     ]);
     if (!agent.rowCount) throw new AgentNotConfiguredError("agent not configured");
-    await c.query("INSERT INTO ratings(id,agent_id) VALUES($1,$2)", [id, agentId]);
+    await c.query("INSERT INTO ratings(id,agent_id,created_at) VALUES($1,$2,coalesce($3,now()))", [
+      id,
+      agentId,
+      createdAt ?? null,
+    ]);
     await c.query("INSERT INTO jobs(id) VALUES($1)", [id]);
     await this.publish("rating.queued", { runId: id }, c);
     return id;

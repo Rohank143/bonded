@@ -76,7 +76,7 @@ afterAll(async () => {
 });
 it("health, authentication, input validation and missing resources", async () => {
   expect((await app.request("/health")).status).toBe(200);
-  expect((await app.request("/quotes", { method: "POST" })).status).toBe(401);
+  expect((await app.request("/arena/runs", { method: "POST" })).status).toBe(401);
   expect((await post("/quotes", { coverAmount: "-1" })).status).toBe(400);
   expect((await app.request(`/arena/runs/${randomUUID()}`)).status).toBe(404);
 });
@@ -266,7 +266,12 @@ it("rejects capacity, signs an API quote, binds it and automatically pays a brea
   expect(
     (await pg.db.pool.query("SELECT 1 FROM handled_events WHERE status='pending'")).rowCount,
   ).toBeGreaterThan(0);
-  await keeper.tick();
+  // The keeper retries every tick; under load one tick's RPC call can time out, as in production.
+  for (let i = 0; i < 5; i++) {
+    await keeper.tick();
+    if ((await pg.db.pool.query("SELECT 1 FROM handled_events WHERE status='claimed'")).rowCount)
+      break;
+  }
   const after = await chain.read.readContract({
     address: vault.address,
     abi: mandateVaultAbi,

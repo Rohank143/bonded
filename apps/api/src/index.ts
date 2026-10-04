@@ -4,7 +4,13 @@ import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { z } from "zod";
 import { Database, json, AgentNotConfiguredError } from "@bonded/db";
-import { QuoteError, bondedRegistryAbi, bountyBoardAbi, leaderboardHeadline } from "@bonded/shared";
+import {
+  QuoteError,
+  SELF_SERVE_MAX_COVER_USD,
+  bondedRegistryAbi,
+  bountyBoardAbi,
+  leaderboardHeadline,
+} from "@bonded/shared";
 import { readLeaderboard, BountySpecError, parseBountySpec, specUri } from "@bonded/arena";
 import type { ServiceChain } from "@bonded/keeper";
 import type { Hex } from "viem";
@@ -12,6 +18,7 @@ import { issueQuote } from "./quotes.js";
 import { EventStreams } from "./events.js";
 import { teeQuoteBlock } from "./tee-watch.js";
 import { RateLimiter, clientAddress } from "./rate-limit.js";
+import { selfServeRoutes, type SelfServeLimits } from "./self-serve.js";
 export { issueQuote } from "./quotes.js";
 /** A decimal id, in canonical form: "01" and "1" are the same agent, so they must be the same key. */
 const uint = z
@@ -38,6 +45,8 @@ export function createApi(options: {
   revealLimit?: ConstructorParameters<typeof RateLimiter>[0];
   /** How long a leaderboard response is reused before the chain is read again. */
   leaderboardCacheMs?: number;
+  /** Limits on self-serve ratings and quotes without the operator token (see self-serve.ts). */
+  selfServe?: Partial<SelfServeLimits>;
 }) {
   const { db, chain } = options;
   if (options.apiToken.length < 24)
@@ -56,16 +65,22 @@ export function createApi(options: {
     }),
   );
   app.use("*", bodyLimit({ maxSize: 16384 }));
-  // A bounty reveal needs no operator token: the hunter posts the spec, and the hash check
-  // against the chain's revealed specURI is what authenticates it.
-  const PUBLIC_POST = /^\/bounties\/\d{1,78}\/reveal$/;
+  // POSTs that need no operator token: a bounty reveal (the hash check against the chain's
+  // revealed specURI authenticates it), self-serve requests (signed by the agent's owner) and
+  // quotes (capped without the token; buyCover checks the guardian on chain).
+  const PUBLIC_POST = /^\/(bounties\/\d{1,78}\/reveal|self\/agents(\/\d{1,78}\/rate)?|quotes)$/;
+  const hasToken = (header: string | undefined) => {
+    const token = Buffer.from(header ?? "");
+    const expected = Buffer.from(`Bearer ${options.apiToken}`);
+    return token.length === expected.length && timingSafeEqual(token, expected);
+  };
   app.use("*", async (c, next) => {
-    if (c.req.method === "POST" && !PUBLIC_POST.test(c.req.path)) {
-      const token = Buffer.from(c.req.header("Authorization") ?? "");
-      const expected = Buffer.from(`Bearer ${options.apiToken}`);
-      if (token.length !== expected.length || !timingSafeEqual(token, expected))
-        return c.json({ error: "unauthorized" }, 401);
-    }
+    if (
+      c.req.method === "POST" &&
+      !PUBLIC_POST.test(c.req.path) &&
+      !hasToken(c.req.header("Authorization"))
+    )
+      return c.json({ error: "unauthorized" }, 401);
     await next();
   });
   app.onError((e, c) => {
@@ -93,8 +108,22 @@ export function createApi(options: {
     const check = await db.teeCheck(`${chain.deployment.chainId}:${id}`);
     return check ? c.json(check) : c.json({ error: "no TEE check for this agent" }, 404);
   });
+  // Without the operator token, a quote is capped (testnet) and rate-limited, so one user can't
+  // take the pool's whole capacity or flood the signer.
+  const quoteLimit = new RateLimiter({ perClient: 20, total: 300, windowMs: 10 * 60_000 });
   app.post("/quotes", async (c) => {
     const input = quoteInput.parse(await c.req.json());
+    if (!hasToken(c.req.header("Authorization"))) {
+      if (!quoteLimit.allow(clientAddress(c.req.raw.headers)))
+        return c.json({ error: "too many quote requests; try again in a few minutes" }, 429);
+      if (BigInt(input.coverAmount) > BigInt(SELF_SERVE_MAX_COVER_USD) * 1_000_000n)
+        return c.json(
+          {
+            error: `cover is capped at ${SELF_SERVE_MAX_COVER_USD.toLocaleString("en-US")} tUSDG on testnet`,
+          },
+          400,
+        );
+    }
     // New cover for an agent with TEE custody needs the vault's key to be the TEE's key and no
     // outstanding failure (ADR-013, ADR-014). Decided against the same block the quote is built at.
     const teeRow = await db.teeCheck(`${chain.deployment.chainId}:${input.agentId}`);
@@ -228,6 +257,7 @@ export function createApi(options: {
     return c.json(result, result.created ? 202 : 200);
   });
   app.get("/bounties", async (c) => c.json(await db.bounties(chain.deployment.chainId)));
+  selfServeRoutes(app, { db, chain, ...(options.selfServe ? { limits: options.selfServe } : {}) });
   app.get("/events", async (c) => {
     const after = uint.parse(c.req.header("Last-Event-ID") ?? c.req.query("after") ?? "0");
     const runId = c.req.query("runId");

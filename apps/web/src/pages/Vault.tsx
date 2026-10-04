@@ -1,8 +1,14 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router";
 import { useAccount, useReadContract, useReadContracts } from "wagmi";
-import { isAddress, type Abi, type Address } from "viem";
-import { coverManagerAbi, mandateVaultAbi, quoteMessage, testTokenAbi } from "@bonded/shared";
+import { encodeFunctionData, isAddress, type Abi, type Address } from "viem";
+import {
+  SELF_SERVE_MAX_COVER_USD,
+  coverManagerAbi,
+  mandateVaultAbi,
+  quoteMessage,
+  testTokenAbi,
+} from "@bonded/shared";
 import { deployment } from "../config";
 import { api, type SignedQuoteResponse } from "../lib/api";
 import { usePolicies } from "../lib/chain";
@@ -21,7 +27,7 @@ import {
   Page,
   Stat,
 } from "../components/ui";
-import { OperatorTokenField, useOperatorToken, useSend } from "../components/wallet";
+import { useSend } from "../components/wallet";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 
@@ -52,10 +58,11 @@ function VaultView({ vault }: { vault: Address }) {
         args: [vault],
       },
       { address: deployment.usdg, abi: testTokenAbi, functionName: "balanceOf", args: [who] },
+      { ...v, functionName: "mode" },
     ],
     query: { refetchInterval: 15_000 },
   });
-  const [total, frozen, agentId, guardian, agent, count, withdrawable, , activeId, wallet] =
+  const [total, frozen, agentId, guardian, agent, count, withdrawable, , activeId, wallet, mode] =
     reads.data ?? [];
   const breachCount = Number(count?.result ?? 0n);
   const breaches = useReadContracts({
@@ -181,6 +188,15 @@ function VaultView({ vault }: { vault: Address }) {
         isGuardian={isGuardian}
         hasActive={Boolean(activeId?.result)}
       />
+      {isGuardian && Boolean(frozen?.result) && <Unfreeze vault={vault} />}
+      {user && agent?.result && user.toLowerCase() === agent.result.toLowerCase() && (
+        <SimulateBreach
+          vault={vault}
+          frozen={Boolean(frozen?.result)}
+          monitor={mode?.result === 0}
+          covered={Boolean(activeId?.result)}
+        />
+      )}
     </Page>
   );
 }
@@ -321,7 +337,6 @@ function BuyCover(props: {
   isGuardian: boolean;
   hasActive: boolean;
 }) {
-  const { token } = useOperatorToken();
   const [amount, setAmount] = useState("");
   const [quote, setQuote] = useState<SignedQuoteResponse>();
   const [quoteError, setQuoteError] = useState<unknown>(null);
@@ -335,7 +350,7 @@ function BuyCover(props: {
     setQuote(undefined);
     try {
       setQuote(
-        await api.quote(token, {
+        await api.quote({
           agentId: props.agentId.toString(),
           vault: props.vault,
           coverAmount: cover.toString(),
@@ -364,21 +379,21 @@ function BuyCover(props: {
     <Card title="Buy cover">
       <p className="mb-3 text-sm text-muted">
         The API signs a quote priced from the agent's on-chain score and bond. Only the vault's
-        guardian, who must also own the agent, can bind it. The premium streams from the vault.
+        guardian, who must also own the agent, can bind it. The premium streams from the vault. On
+        testnet, cover is capped at {SELF_SERVE_MAX_COVER_USD.toLocaleString("en-US")} tUSDG.
       </p>
       {props.hasActive ? (
         <p className="text-sm text-muted">This vault already has an active policy.</p>
       ) : (
         <div className="flex flex-col gap-3">
-          <div className="grid gap-3 sm:grid-cols-[1fr_10rem_auto] sm:items-end">
-            <OperatorTokenField />
+          <div className="grid gap-3 sm:grid-cols-[10rem_auto] sm:items-end">
             <Input
               label="Cover (tUSDG)"
               value={amount}
               onChange={(a) => (setAmount(a), setQuote(undefined))}
               placeholder="20000"
             />
-            <Button disabled={!token || !cover || quoting} onClick={getQuote}>
+            <Button disabled={!cover || quoting} onClick={getQuote}>
               {quoting ? "Pricing…" : "Get quote"}
             </Button>
           </div>
@@ -401,6 +416,94 @@ function BuyCover(props: {
           {tx.view}
         </div>
       )}
+    </Card>
+  );
+}
+
+/** The guardian lets a frozen agent act again, e.g. after a claim has been paid. */
+function Unfreeze({ vault }: { vault: Address }) {
+  const tx = useSend();
+  return (
+    <Card title="Agent frozen">
+      <p className="mb-3 text-sm text-muted">
+        A breach froze this vault's agent. As the guardian you can let it act again; any open claim
+        is unaffected.
+      </p>
+      <Button
+        disabled={tx.busy}
+        onClick={() =>
+          tx.send([
+            {
+              address: vault,
+              abi: mandateVaultAbi as Abi,
+              functionName: "unfreeze",
+              args: [],
+              label: "Unfreeze the agent",
+            },
+          ])
+        }
+      >
+        Unfreeze the agent
+      </Button>
+      {tx.view}
+    </Card>
+  );
+}
+
+/** Where a simulated breach sends funds: the standard burn address, outside any mandate. */
+const BURN = "0x000000000000000000000000000000000000dEaD";
+
+/**
+ * For testers whose wallet is the vault's agent key: send tUSDG out of the mandate, so the vault
+ * records a breach and the keeper files the claim, exactly as if the agent had been tricked.
+ */
+function SimulateBreach(props: {
+  vault: Address;
+  frozen: boolean;
+  monitor: boolean;
+  covered: boolean;
+}) {
+  const [amount, setAmount] = useState("1000");
+  const tx = useSend();
+  const value = parseUsd(amount);
+  const breach = () =>
+    value &&
+    tx.send([
+      {
+        address: props.vault,
+        abi: mandateVaultAbi as Abi,
+        functionName: "execute",
+        args: [
+          deployment.usdg,
+          encodeFunctionData({ abi: testTokenAbi, functionName: "transfer", args: [BURN, value] }),
+        ],
+        label: "Send tUSDG outside the mandate",
+      },
+    ]);
+  return (
+    <Card title="Simulate a breach (testing)">
+      <p className="mb-3 text-sm text-muted">
+        Your wallet is this vault's agent key, so you can act as a tricked agent: send tUSDG to the
+        burn address, which no mandate allows. The vault records a breach and freezes the agent.
+        {props.monitor
+          ? props.covered
+            ? " With cover active, the keeper files the claim within a minute: the operator's bond pays first, then the pool."
+            : " Buy cover first if you want to see a claim paid."
+          : " This vault is in Enforce mode, so the transfer is blocked: the breach is recorded with no loss, and nothing is claimed."}
+      </p>
+      {props.frozen ? (
+        <p className="text-sm text-muted">
+          The agent is frozen after a breach. The guardian can unfreeze it above.
+        </p>
+      ) : (
+        <div className="flex flex-wrap items-end gap-2">
+          <Input label="Amount (tUSDG)" value={amount} onChange={setAmount} />
+          <Button kind="secondary" disabled={!value || tx.busy} onClick={breach}>
+            Simulate the breach
+          </Button>
+        </div>
+      )}
+      {tx.view}
     </Card>
   );
 }
