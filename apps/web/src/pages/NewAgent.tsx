@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { useAccount, useSignMessage, useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
-import { isAddress, parseEventLogs, type Abi, type Address, type Hex } from "viem";
+import { parseEventLogs, type Abi, type Address, type Hex } from "viem";
 import {
   SELF_SERVE_KINDS,
   SELF_SERVE_KIND_LABELS,
@@ -16,8 +16,21 @@ import {
 } from "@bonded/shared";
 import { deployment, robinhoodTestnet } from "../config";
 import { wagmiConfig } from "../wagmi";
-import { parseUsd } from "../lib/format";
-import { MANDATE_TOKENS, buildMandate, rememberAgent, type MandateToken } from "../lib/onboarding";
+import {
+  MANDATE_TOKENS,
+  ONBOARDING_STEPS,
+  buildMandate,
+  loadProgress,
+  nextStep,
+  parseAmount,
+  rememberAgent,
+  saveProgress,
+  validateOnboarding,
+  type MandateForm,
+  type MandateToken,
+  type OnboardingProgress,
+  type OnboardingStep,
+} from "../lib/onboarding";
 import { registerForRatings } from "../lib/self-serve";
 import { Button, Card, ErrorText, Input, Page, TxLink } from "../components/ui";
 
@@ -57,120 +70,200 @@ export function NewAgent() {
   const [busy, setBusy] = useState(false);
 
   const refundAddress = refund.trim() || user || "";
-  const key = selfAgent ? user : agentKey.trim();
-  const bondValue = parseUsd(bond) ?? 0n;
-  const depositValue = parseUsd(deposit) ?? 0n;
-  const problems = [
-    !isConnected && "Connect a wallet first.",
-    refundAddress && !isAddress(refundAddress) && "The refund address isn't an address.",
-    (!key || !isAddress(key)) && "The agent key must be an address.",
-    !(Number(maxTx) > 0 && Number(maxDaily) >= Number(maxTx)) &&
-      "Limits must be positive, with the daily limit at least the per-trade limit.",
-    !description.trim() && "Describe the agent in a line.",
-  ].filter(Boolean) as string[];
+  const key = (selfAgent ? user : agentKey.trim()) ?? "";
+  const form: MandateForm = {
+    mode,
+    tokens,
+    destinations: refundAddress ? [refundAddress] : [],
+    maxTxUsd: Number(maxTx),
+    maxDailyUsd: Number(maxDaily),
+    maxDrawdownPct: 15,
+    maxSlippagePct: 3,
+    description: description.trim(),
+  };
+  // Everything is checked before the first transaction, so a bad field can't leave a half-made
+  // agent behind or silently skip a funding step.
+  const problems = validateOnboarding(deployment, {
+    connected: isConnected,
+    form,
+    agentKey: key,
+    bond,
+    deposit,
+  });
+  const saved = user ? loadProgress(deployment.chainId, user) : undefined;
+  const unfinished = saved && nextStep(saved) ? saved : undefined;
 
-  async function send(index: number, call: Parameters<typeof writeContractAsync>[0]) {
-    setSteps((s) => s.map((step, i) => (i === index ? { ...step, state: "active" } : step)));
+  const showSteps = (done: OnboardingStep[], hashes: Partial<Record<OnboardingStep, Hex>> = {}) =>
+    setSteps(
+      ONBOARDING_STEPS.map((step, i) => ({
+        label: STEPS[i]!,
+        state: done.includes(step) ? "done" : "waiting",
+        ...(hashes[step] ? { hash: hashes[step] } : {}),
+      })),
+    );
+  const mark = (step: OnboardingStep, state: Step["state"], hash?: Hex) =>
+    setSteps((s) =>
+      s.map((row, i) =>
+        ONBOARDING_STEPS[i] === step ? { ...row, state, ...(hash ? { hash } : {}) } : row,
+      ),
+    );
+  async function send(step: OnboardingStep, call: Parameters<typeof writeContractAsync>[0]) {
+    mark(step, "active");
     const hash = await writeContractAsync({ ...call, chainId: robinhoodTestnet.id } as never);
     const receipt = await waitForTransactionReceipt(wagmiConfig, { hash });
-    if (receipt.status !== "success") throw new Error(`${STEPS[index]} failed`);
-    setSteps((s) => s.map((step, i) => (i === index ? { ...step, state: "done", hash } : step)));
+    if (receipt.status !== "success")
+      throw new Error(`${STEPS[ONBOARDING_STEPS.indexOf(step)]} failed`);
+    mark(step, "active", hash);
     return receipt;
   }
-  const mark = (index: number, state: Step["state"]) =>
-    setSteps((s) => s.map((step, i) => (i === index ? { ...step, state } : step)));
 
-  async function onboard() {
-    if (!user || !key) return;
+  /**
+   * Runs every step not yet done for `progress`, saving it after each one, so a rejected prompt
+   * or a reload resumes here instead of registering another agent.
+   */
+  async function run(progress: OnboardingProgress) {
+    if (!user) return;
     setBusy(true);
     setError(null);
-    setSteps(STEPS.map((label) => ({ label, state: "waiting" })));
+    showSteps(progress.done);
+    const save = (p: OnboardingProgress) => saveProgress(deployment.chainId, user, p);
+    const finish = (step: OnboardingStep) => {
+      progress = { ...progress, done: [...progress.done, step] };
+      save(progress);
+      mark(step, "done");
+    };
+    const bondValue = parseAmount(progress.bond)!;
+    const depositValue = parseAmount(progress.deposit)!;
     try {
-      const registered = await send(0, {
-        address: deployment.registry,
-        abi: bondedRegistryAbi as Abi,
-        functionName: "register",
-        args: ["ipfs://bonded/self-serve"],
-      });
-      const agentId = (
-        parseEventLogs({
-          abi: bondedRegistryAbi,
-          logs: registered.logs,
-          eventName: "Registered",
-        })[0]?.args as { agentId: bigint }
-      ).agentId;
-      const mandate = buildMandate(deployment, agentId, {
-        mode,
-        tokens,
-        destinations: refundAddress ? [refundAddress] : [],
-        maxTxUsd: Number(maxTx),
-        maxDailyUsd: Number(maxDaily),
-        maxDrawdownPct: 15,
-        maxSlippagePct: 3,
-        description: description.trim(),
-      });
-      const made = await send(1, {
-        address: deployment.factory,
-        abi: mandateVaultFactoryAbi as Abi,
-        functionName: "createVault",
-        args: [toEvmMandateParams(mandate), key, user, agentId, `Agent ${agentId} vault`, "BVLT"],
-      });
-      const vault = (
-        parseEventLogs({
-          abi: mandateVaultFactoryAbi,
-          logs: made.logs,
-          eventName: "VaultCreated",
-        })[0]?.args as { vault: Address }
-      ).vault;
-      // Remembered at once, so registration for ratings can be retried from the agent's page.
-      rememberAgent(deployment.chainId, agentId.toString(), { vault, kind, mandate });
+      if (!progress.done.includes("register")) {
+        const registered = await send("register", {
+          address: deployment.registry,
+          abi: bondedRegistryAbi as Abi,
+          functionName: "register",
+          args: ["ipfs://bonded/self-serve"],
+        });
+        const agentId = (
+          parseEventLogs({
+            abi: bondedRegistryAbi,
+            logs: registered.logs,
+            eventName: "Registered",
+          })[0]?.args as { agentId: bigint }
+        ).agentId;
+        // The mandate is frozen here, with the agent id, and reused by every later step.
+        const mandate = buildMandate(deployment, agentId, progress.form);
+        progress = { ...progress, agentId: agentId.toString(), mandate };
+        finish("register");
+      }
+      const agentId = BigInt(progress.agentId!);
+      const mandate = progress.mandate!;
+      if (!progress.done.includes("vault")) {
+        const made = await send("vault", {
+          address: deployment.factory,
+          abi: mandateVaultFactoryAbi as Abi,
+          functionName: "createVault",
+          args: [
+            toEvmMandateParams(mandate),
+            progress.agentKey,
+            user,
+            agentId,
+            `Agent ${agentId} vault`,
+            "BVLT",
+          ],
+        });
+        const vault = (
+          parseEventLogs({
+            abi: mandateVaultFactoryAbi,
+            logs: made.logs,
+            eventName: "VaultCreated",
+          })[0]?.args as { vault: Address }
+        ).vault;
+        progress = { ...progress, vault };
+        rememberAgent(deployment.chainId, agentId.toString(), {
+          vault,
+          kind: progress.kind,
+          mandate,
+        });
+        finish("vault");
+      }
+      const vault = progress.vault as Address;
       setCreated({ agentId, vault });
-      const needed = bondValue + depositValue;
-      if (needed > 0n)
-        await send(2, {
-          address: deployment.usdg,
-          abi: testTokenAbi as Abi,
-          functionName: "faucet",
-          args: [needed],
+      if (!progress.done.includes("faucet")) {
+        const needed = (progress.done.includes("bond") ? 0n : bondValue) + depositValue;
+        if (needed > 0n)
+          await send("faucet", {
+            address: deployment.usdg,
+            abi: testTokenAbi as Abi,
+            functionName: "faucet",
+            args: [needed],
+          });
+        finish("faucet");
+      }
+      if (!progress.done.includes("bond")) {
+        if (bondValue > 0n) {
+          await send("bond", {
+            address: deployment.usdg,
+            abi: testTokenAbi as Abi,
+            functionName: "approve",
+            args: [deployment.bond, bondValue],
+          });
+          await send("bond", {
+            address: deployment.bond,
+            abi: operatorBondAbi as Abi,
+            functionName: "stake",
+            args: [agentId, bondValue],
+          });
+        }
+        finish("bond");
+      }
+      if (!progress.done.includes("deposit")) {
+        if (depositValue > 0n) {
+          await send("deposit", {
+            address: deployment.usdg,
+            abi: testTokenAbi as Abi,
+            functionName: "approve",
+            args: [vault, depositValue],
+          });
+          await send("deposit", {
+            address: vault,
+            abi: mandateVaultAbi as Abi,
+            functionName: "deposit",
+            args: [depositValue, user],
+          });
+        }
+        finish("deposit");
+      }
+      if (!progress.done.includes("ratings")) {
+        mark("ratings", "active");
+        await registerForRatings(signMessageAsync, agentId.toString(), {
+          vault,
+          kind: progress.kind,
+          mandate,
         });
-      else mark(2, "done");
-      if (bondValue > 0n) {
-        await send(3, {
-          address: deployment.usdg,
-          abi: testTokenAbi as Abi,
-          functionName: "approve",
-          args: [deployment.bond, bondValue],
-        });
-        await send(3, {
-          address: deployment.bond,
-          abi: operatorBondAbi as Abi,
-          functionName: "stake",
-          args: [agentId, bondValue],
-        });
-      } else mark(3, "done");
-      if (depositValue > 0n) {
-        await send(4, {
-          address: deployment.usdg,
-          abi: testTokenAbi as Abi,
-          functionName: "approve",
-          args: [vault, depositValue],
-        });
-        await send(4, {
-          address: vault,
-          abi: mandateVaultAbi as Abi,
-          functionName: "deposit",
-          args: [depositValue, user],
-        });
-      } else mark(4, "done");
-      mark(5, "active");
-      await registerForRatings(signMessageAsync, agentId.toString(), { vault, kind, mandate });
-      mark(5, "done");
+        finish("ratings");
+      }
+      saveProgress(deployment.chainId, user, null);
     } catch (e) {
       setError(e);
     } finally {
       setBusy(false);
     }
   }
+
+  const start = () =>
+    run({
+      kind,
+      form,
+      agentKey: key,
+      bond: bond.trim() || "0",
+      deposit: deposit.trim() || "0",
+      done: [],
+    });
+  const startOver = () => {
+    if (user) saveProgress(deployment.chainId, user, null);
+    setSteps([]);
+    setCreated(undefined);
+    setError(null);
+  };
 
   const toggle = (t: MandateToken) =>
     setTokens((list) => (list.includes(t) ? list.filter((x) => x !== t) : [...list, t]));
@@ -286,6 +379,21 @@ export function NewAgent() {
       </Card>
 
       <Card title="Create">
+        {unfinished && !busy && (
+          <div className="mb-4 flex flex-col gap-2 rounded-md border border-line p-3 text-sm">
+            <p>
+              You have an unfinished onboarding
+              {unfinished.agentId ? ` of agent ${unfinished.agentId}` : ""}: next step,{" "}
+              {STEPS[ONBOARDING_STEPS.indexOf(nextStep(unfinished)!)]?.toLowerCase()}.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => run(unfinished)}>Resume onboarding</Button>
+              <Button kind="secondary" onClick={startOver}>
+                Start a new agent instead
+              </Button>
+            </div>
+          </div>
+        )}
         {problems.length > 0 && (
           <ul className="mb-3 list-disc pl-5 text-sm text-muted">
             {problems.map((p) => (
@@ -293,7 +401,7 @@ export function NewAgent() {
             ))}
           </ul>
         )}
-        <Button disabled={busy || problems.length > 0} onClick={onboard}>
+        <Button disabled={busy || problems.length > 0 || Boolean(unfinished)} onClick={start}>
           {busy ? "Working…" : "Onboard the agent"}
         </Button>
         <p className="mt-2 text-xs text-muted">

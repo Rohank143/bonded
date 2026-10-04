@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { mandateHash, toEvmMandateParams } from "@bonded/shared";
-import { buildMandate, recallAgent, rememberAgent } from "./onboarding";
+import {
+  ONBOARDING_STEPS,
+  buildMandate,
+  loadProgress,
+  nextStep,
+  parseAmount,
+  recallAgent,
+  rememberAgent,
+  saveProgress,
+  validateOnboarding,
+} from "./onboarding";
 import { deployment } from "../config";
 
 const form = {
@@ -48,5 +58,74 @@ describe("remember and recall", () => {
       mandate,
     });
     expect(recallAgent(deployment.chainId, "13")).toBeUndefined();
+  });
+});
+
+describe("validateOnboarding", () => {
+  const input = {
+    connected: true,
+    form,
+    agentKey: "0xd42FA5ae8949710479954ae78D1b12Ff2e50A841",
+    bond: "4000",
+    deposit: "50000",
+  };
+  it("accepts a complete form", () => {
+    expect(validateOnboarding(deployment, input)).toEqual([]);
+  });
+  it("rejects decimal and infinite limits, as the mandate schema will", () => {
+    expect(
+      validateOnboarding(deployment, { ...input, form: { ...form, maxTxUsd: 5000.5 } }).join(" "),
+    ).toMatch(/Per-trade limit/);
+    const infinite = { ...form, maxTxUsd: Infinity, maxDailyUsd: Infinity };
+    expect(validateOnboarding(deployment, { ...input, form: infinite }).join(" ")).toMatch(
+      /Per-trade limit|Daily limit/,
+    );
+  });
+  it("rejects a description over 1,000 characters", () => {
+    const long = { ...form, description: "x".repeat(1001) };
+    expect(validateOnboarding(deployment, { ...input, form: long }).join(" ")).toMatch(
+      /Description/,
+    );
+  });
+  it("rejects funding typos instead of treating them as zero, and allows an explicit zero", () => {
+    for (const bad of ["abc", "-5", "1.0000001"])
+      expect(validateOnboarding(deployment, { ...input, bond: bad }).join(" ")).toMatch(/bond/);
+    expect(validateOnboarding(deployment, { ...input, deposit: "nope" }).join(" ")).toMatch(
+      /deposit/,
+    );
+    expect(validateOnboarding(deployment, { ...input, bond: "0", deposit: "" })).toEqual([]);
+    expect(parseAmount("0")).toBe(0n);
+    expect(parseAmount("abc")).toBeNull();
+  });
+  it("rejects a bad agent key and a daily limit below the per-trade limit", () => {
+    expect(validateOnboarding(deployment, { ...input, agentKey: "me" }).join(" ")).toMatch(
+      /agent key/,
+    );
+    const low = { ...form, maxDailyUsd: 100 };
+    expect(validateOnboarding(deployment, { ...input, form: low }).join(" ")).toMatch(
+      /daily limit/,
+    );
+  });
+});
+
+describe("onboarding progress", () => {
+  it("resumes from the first unfinished step and can be cleared", () => {
+    const wallet = "0xAbC0000000000000000000000000000000000001";
+    saveProgress(deployment.chainId, wallet, {
+      kind: "partial",
+      form,
+      agentKey: wallet,
+      bond: "4000",
+      deposit: "50000",
+      agentId: "7",
+      vault: "0xvault",
+      done: ["register", "vault", "faucet"],
+    });
+    const p = loadProgress(deployment.chainId, wallet)!;
+    expect(p.agentId).toBe("7");
+    expect(nextStep(p)).toBe("bond");
+    expect(nextStep({ ...p, done: [...ONBOARDING_STEPS] })).toBeUndefined();
+    saveProgress(deployment.chainId, wallet, null);
+    expect(loadProgress(deployment.chainId, wallet)).toBeUndefined();
   });
 });
