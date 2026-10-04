@@ -14,7 +14,8 @@
 //   4. Break it: a lookalike of Agent A's depositor asks for a "refund". Agent A's own brain pays
 //      it, the vault records the breach and freezes, and the keeper files the claim: bond first,
 //      then the pool.
-//   5. The web app runs against this chain, so you can click through the result.
+//   5. The web app runs against this chain, so you can click through the result, or onboard,
+//      rate, insure and breach an agent of your own (the rating worker keeps running).
 // Everything is local and disappears when you stop it (Ctrl-C).
 import process from "node:process";
 import console from "node:console";
@@ -338,6 +339,17 @@ try {
         `premium ${(signed.quote.premiumRateBps / 100).toFixed(2)}% a year after the bond discount`,
     );
   }
+
+  // From here the rating worker keeps running, so ratings asked for in the web app (self-serve
+  // onboarding) are picked up while the demo runs.
+  loops.push(
+    (async () => {
+      while (!stopping) {
+        await workOne(db, chain, rpc, key, () => {}).catch(() => {});
+        await delay(2000);
+      }
+    })(),
+  );
 
   say('Break it: a lookalike of Agent A\'s depositor asks for a "refund"');
   const bondBefore = await chain.read.readContract({
