@@ -1,3 +1,4 @@
+import type { SelfServeKind } from "@bonded/shared";
 import { apiUrl } from "../config";
 
 /** Error from the Bonded API, carrying its HTTP status and the API's error message. */
@@ -126,6 +127,18 @@ export interface LeaderboardRecord {
   verified: boolean | null;
 }
 
+/** An agent's self-serve registration, as GET /self/agents/:id reports it. */
+export type SelfAgentRecord =
+  | { registered: false }
+  | {
+      registered: true;
+      source: "operator" | "user";
+      kind: string;
+      owner: string | null;
+      lastRatingAt: string | null;
+      nextRatingAt: string | null;
+    };
+
 /** A community bounty as the API lists it: no payload, which stays private. */
 export interface BountyRecord {
   submissionId: string;
@@ -160,8 +173,36 @@ export const api = {
   run: (runId: string) => request<RunRecord>(`/arena/runs/${runId}`),
   startRun: (token: string, agentId: string) =>
     post<{ runId: string }>("/arena/runs", token, { agentId }),
-  quote: (token: string, input: { agentId: string; vault: string; coverAmount: string }) =>
-    post<SignedQuoteResponse>("/quotes", token, input),
+  /** No operator token needed; without one the API caps cover at 20,000 tUSDG (testnet). */
+  quote: (input: { agentId: string; vault: string; coverAmount: string }) =>
+    request<SignedQuoteResponse>("/quotes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  /** Whether an agent is registered for self-serve ratings (docs/AGENTS.md). */
+  selfAgent: (agentId: string) => request<SelfAgentRecord>(`/self/agents/${agentId}`),
+  /** Register an agent for ratings; the owner's wallet signed the request. */
+  registerSelfAgent: (input: {
+    agentId: string;
+    vault: string;
+    kind: SelfServeKind;
+    mandate: unknown;
+    timestamp: number;
+    signature: string;
+  }) =>
+    request<{ registered: boolean }>("/self/agents", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  /** Ask for a rating of a self-serve agent; the owner's wallet signed the request. */
+  rateSelfAgent: (agentId: string, input: { timestamp: number; signature: string }) =>
+    request<{ runId: string }>(`/self/agents/${agentId}/rate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
   bounties: () => request<BountyRecord[]>("/bounties"),
   /** No operator token: the API checks the spec's hash against the revealed specURI. */
   revealBounty: (id: string, yaml: string) =>

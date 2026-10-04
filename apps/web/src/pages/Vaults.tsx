@@ -10,7 +10,13 @@ export function Vaults() {
       title="Mandate vaults"
       intro="A vault holds an agent's funds and enforces its mandate on chain: allowed tokens, contracts, limits. Every breach is recorded here, and that record is what pays claims."
     >
-      <Card>
+      <Card
+        actions={
+          <Link to="/agents/new" className="text-sm text-accent hover:underline">
+            Onboard an agent →
+          </Link>
+        }
+      >
         {vaults.isPending && !vaults.error && <Loading what="vaults" />}
         <ErrorText error={vaults.error} />
         {vaults.data?.length === 0 && <p className="text-sm text-muted">No vaults yet.</p>}

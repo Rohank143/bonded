@@ -16,6 +16,7 @@ import { Claims } from "./pages/Claims";
 import { Leaderboard } from "./pages/Leaderboard";
 import { Bounties } from "./pages/Bounties";
 import { NotFound } from "./pages/NotFound";
+import { NewAgent } from "./pages/NewAgent";
 import "./index.css";
 
 const router = createBrowserRouter([
@@ -24,6 +25,7 @@ const router = createBrowserRouter([
     children: [
       { path: "/", element: <Landing /> },
       { path: "/arena", element: <Arena /> },
+      { path: "/agents/new", element: <NewAgent /> },
       { path: "/agents/:id", element: <Agent /> },
       { path: "/vaults", element: <Vaults /> },
       { path: "/vaults/:address", element: <Vault /> },
