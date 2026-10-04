@@ -26,6 +26,7 @@ import { createServer } from "node:net";
 import { randomBytes } from "node:crypto";
 import { parseArgs } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
+import { clearTimeout, setTimeout } from "node:timers";
 import EmbeddedPostgres from "embedded-postgres";
 import { serve } from "@hono/node-server";
 import { Sandbox, ANVIL_KEYS, loadAttackLibrary, runLiveAttack } from "@bonded/arena";
@@ -94,7 +95,7 @@ async function stop(code = 0) {
   if (stopping) return;
   stopping = true;
   for (const step of [
-    () => web?.kill(),
+    () => web?.pid && process.kill(-web.pid, "SIGTERM"),
     () => new Promise((resolve) => (server ? server.close(() => resolve()) : resolve())),
     () => db?.close(),
     () => pg?.stop(),
@@ -112,7 +113,23 @@ async function stop(code = 0) {
 process.once("SIGINT", () => void stop(0));
 process.once("SIGTERM", () => void stop(0));
 
+/** True if nothing on this machine is listening on `port` (any interface). */
+const portIsFree = (port) =>
+  new Promise((resolve) => {
+    const s = createServer();
+    s.once("error", () => resolve(false));
+    s.listen(port, () => s.close(() => resolve(true)));
+  });
+
 try {
+  // Fail before starting anything if a port the demo needs is taken.
+  for (const [name, port] of [
+    ["--api-port", values["api-port"]],
+    ...(values["no-web"] ? [] : [["--web-port", values["web-port"]]]),
+  ])
+    if (!(await portIsFree(Number(port))))
+      throw new Error(`port ${port} is already in use; free it or pass ${name} <another port>`);
+
   say("Starting a local chain and deploying the contracts");
   sandbox = await Sandbox.start();
   const d = sandbox.deployment;
@@ -375,7 +392,9 @@ try {
     "pnpm",
     ["--filter", "@bonded/web", "exec", "vite", "--port", values["web-port"], "--strictPort"],
     {
-      stdio: ["ignore", "ignore", "inherit"],
+      stdio: ["ignore", "pipe", "pipe"],
+      // Its own process group, so stopping kills Vite too, not just the pnpm wrapper.
+      detached: true,
       env: {
         ...process.env,
         VITE_DEPLOYMENT_JSON: JSON.stringify(d),
@@ -384,7 +403,38 @@ try {
       },
     },
   );
-  await delay(3000);
+  // Advertise the URLs only once this Vite instance says it is serving on our port; if it exits
+  // first (e.g. the port was taken after the check above), stop everything.
+  await new Promise((resolve, reject) => {
+    let output = "";
+    const timer = setTimeout(
+      () => reject(new Error("the web app did not start within 60 s")),
+      60_000,
+    );
+    const onData = (chunk) => {
+      output += chunk;
+      if (output.includes(`localhost:${values["web-port"]}`)) {
+        clearTimeout(timer);
+        resolve();
+      }
+    };
+    web.stdout.on("data", onData);
+    web.stderr.on("data", onData);
+    web.once("error", (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
+    web.once("exit", (code) => {
+      clearTimeout(timer);
+      reject(new Error(`the web app exited (code ${code}): ${output.trim().split("\n").at(-1)}`));
+    });
+  });
+  web.removeAllListeners("exit");
+  web.once("exit", (code) => {
+    if (stopping) return;
+    console.error(`\nThe web app stopped (code ${code}); stopping the demo.`);
+    void stop(1);
+  });
   console.log(`  Web app:       ${webOrigin}`);
   console.log(`  Agent A:       ${webOrigin}/agents/${agentA.agentId}`);
   console.log(`  Agent B:       ${webOrigin}/agents/${agentB.agentId}`);

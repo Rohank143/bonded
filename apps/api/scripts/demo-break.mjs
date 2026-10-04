@@ -7,10 +7,11 @@
 //   pnpm demo:break            run the break and wait for the keeper's claim
 //   pnpm demo:break -- --wait  only wait for (and record) the claim of the last take
 //   pnpm demo:break -- --reset re-arm for another take: unfreeze, top up the bond and the vault,
-//                              and buy cover again if the policy has ended
+//                              and renew the cover if it has ended or can't pay the next claim
 //
-// Sends real testnet transactions. Signs as the agent with DEMO_AGENT_KEY and, for --reset, as the
-// operator with DEPLOYER_PRIVATE_KEY (both from .env, never printed). Evidence goes to
+// Sends real testnet transactions. A take signs as the agent with DEMO_AGENT_KEY; --reset signs as
+// the operator with DEPLOYER_PRIVATE_KEY and asks the API for a quote with API_TOKEN (all from .env,
+// never printed). --wait only reads, so it needs no key. Evidence goes to
 // artifacts/demo-break-testnet.json.
 import process from "node:process";
 import console from "node:console";
@@ -32,15 +33,17 @@ import {
   quoteMessage,
   testTokenAbi,
 } from "@bonded/shared";
-import { formatUnits, getAbiItem } from "viem";
+import { createPublicClient, formatUnits, getAbiItem, http } from "viem";
+import { coverageProblem, quoteApiUrl } from "../dist/demo-checks.js";
 
 const RPC = EVM_CHAINS.robinhoodTestnet.rpcUrl;
 const EXPLORER = EVM_CHAINS.robinhoodTestnet.explorerUrl;
-const API = process.env.BONDED_API_URL ?? "https://api-production-ba50.up.railway.app";
 const ATTACK = "A5-address-poisoning-001";
 const BOND = 4_000_000_000n; // 4,000 tUSDG: tier BB's 20% of 20,000 cover
 const DEPOSIT = 50_000_000_000n;
 const COVER = 20_000_000_000n;
+/** The take's loss is 5,000; the claim pays it minus the 10% deductible. */
+const PAYOUT = 4_500_000_000n;
 const OUTPUT = "artifacts/demo-break-testnet.json";
 
 const reset = process.argv.includes("--reset");
@@ -49,6 +52,8 @@ const usd = (v) =>
 const tx = (hash) => `${EXPLORER}/tx/${hash}`;
 
 loadDotEnv();
+// After loading .env, so an endpoint set only there is used.
+const API = quoteApiUrl(process.env);
 const d = parseEvmDeployment(await readFile("contracts/evm/deployments/46630.json", "utf8"), 46630);
 const entry = JSON.parse(await readFile("config/agents.46630.json", "utf8")).find(
   (e) => e.kind === "partial",
@@ -62,8 +67,8 @@ const keyOf = (name) => {
   if (!raw) throw new Error(`${name} is required (in .env)`);
   return raw.startsWith("0x") ? raw : `0x${raw}`;
 };
-const operator = connectChain(d, RPC, keyOf("DEPLOYER_PRIVATE_KEY"));
-const read = operator.read;
+// Reading needs no key; the operator and agent keys are loaded only by the steps that sign.
+const read = createPublicClient({ transport: http(RPC) });
 if ((await read.getChainId()) !== 46630) throw new Error("testnet only");
 
 // Agent A's vault: the factory's VaultCreated event for its agent id.
@@ -94,8 +99,18 @@ const activePolicy = () =>
     functionName: "activePolicyOf",
     args: [vault],
   });
+const policyOf = (id) =>
+  read.readContract({
+    address: d.coverManager,
+    abi: coverManagerAbi,
+    functionName: "getPolicy",
+    args: [id],
+  });
+const chainNow = async () => (await read.getBlock()).timestamp;
+let operatorChain;
+const operator = () => (operatorChain ??= connectChain(d, RPC, keyOf("DEPLOYER_PRIVATE_KEY")));
 const send = async (address, abi, name, args) => {
-  const hash = await operator.send(address, abi, name, args);
+  const hash = await operator().send(address, abi, name, args);
   await read.waitForTransactionReceipt({ hash, confirmations: 2 });
   console.log(`  ${name}: ${tx(hash)}`);
   return hash;
@@ -119,10 +134,25 @@ if (reset) {
     await send(d.usdg, testTokenAbi, "approve", [vault, DEPOSIT - vaultBalance]);
     await send(vault, mandateVaultAbi, "deposit", [
       DEPOSIT - vaultBalance,
-      operator.wallet.account.address,
+      operator().wallet.account.address,
     ]);
   }
-  if ((await activePolicy()) === 0n) {
+  // Close a policy whose time is up (accrue expires or lapses it), and end one that can't pay
+  // another full claim, so the take below is covered in full.
+  let policyId = await activePolicy();
+  if (policyId !== 0n) {
+    await send(d.coverManager, coverManagerAbi, "accrue", [policyId]);
+    policyId = await activePolicy();
+  }
+  if (policyId !== 0n && coverageProblem(await policyOf(policyId), await chainNow(), PAYOUT)) {
+    console.log(
+      `  policy ${policyId}: ${coverageProblem(await policyOf(policyId), await chainNow(), PAYOUT)}; replacing it`,
+    );
+    if ((await policyOf(policyId)).coveredFrom <= (await chainNow()))
+      await send(d.coverManager, coverManagerAbi, "cancel", [policyId]);
+    policyId = await activePolicy();
+  }
+  if (policyId === 0n) {
     const res = await fetch(`${API}/quotes`, {
       method: "POST",
       headers: {
@@ -138,10 +168,14 @@ if (reset) {
       signed.signature,
     ]);
   }
+  policyId = await activePolicy();
+  const policy = await policyOf(policyId);
+  const problem = coverageProblem(policy, await chainNow(), PAYOUT);
   console.log(
-    `Ready: bond ${usd(await bondOf())}, vault ${usd(await balanceOf(vault))}, policy ${await activePolicy()}.`,
+    `${problem ? "Not ready yet" : "Ready"}: bond ${usd(await bondOf())}, vault ${usd(await balanceOf(vault))}, ` +
+      `policy ${policyId} with ${usd(policy.remainingCover)} of cover left${problem ? ` (${problem})` : ""}.`,
   );
-  process.exit(0);
+  process.exit(problem ? 1 : 0);
 }
 
 const TAKE = "artifacts/demo-break-take.json";
@@ -165,6 +199,9 @@ if (process.argv.includes("--wait")) {
     throw new Error("Agent A is frozen from an earlier take: run with --reset first");
   const policyId = await activePolicy();
   if (policyId === 0n) throw new Error("Agent A has no active cover: run with --reset first");
+  const problem = coverageProblem(await policyOf(policyId), await chainNow(), PAYOUT);
+  if (problem)
+    throw new Error(`the breach wouldn't be paid in full: ${problem}. Run with --reset first`);
 
   const agentChain = connectChain(d, RPC, keyOf("DEMO_AGENT_KEY"));
   const start = await read.getBlockNumber();

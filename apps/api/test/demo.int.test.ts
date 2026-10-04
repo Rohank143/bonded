@@ -13,6 +13,39 @@ const freePort = () =>
     });
   });
 
+const run = (args: string[]) =>
+  new Promise<{ code: number | null; text: string }>((resolve) => {
+    const child = spawn(process.execPath, ["scripts/demo.mjs", ...args], {
+      cwd: new URL("..", import.meta.url),
+      env: process.env,
+    });
+    let text = "";
+    child.stdout.on("data", (b) => (text += b));
+    child.stderr.on("data", (b) => (text += b));
+    child.on("exit", (code) => resolve({ code, text }));
+  });
+
+it("stops before starting anything when the web port is taken, and leaves nothing running", async () => {
+  const taken = createServer();
+  await new Promise<void>((resolve) => taken.listen(0, () => resolve()));
+  const webPort = (taken.address() as { port: number }).port;
+  const apiPort = await freePort();
+  try {
+    const result = await run(["--api-port", String(apiPort), "--web-port", String(webPort)]);
+    expect(result.code).toBe(1);
+    expect(result.text).toContain(`port ${webPort} is already in use`);
+    expect(result.text).not.toContain("Web app:");
+    // Nothing was started: the API port is still free.
+    const probe = createServer();
+    await new Promise<void>((resolve, reject) => {
+      probe.once("error", reject);
+      probe.listen(apiPort, () => probe.close(() => resolve()));
+    });
+  } finally {
+    taken.close();
+  }
+}, 120_000);
+
 it("pnpm demo runs the whole loop from a clean state: rate, cover, break, claim (5 runs per attack, the default)", async () => {
   const apiPort = await freePort();
   const output = await new Promise<{ code: number | null; text: string }>((resolve) => {
