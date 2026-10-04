@@ -1,6 +1,6 @@
 # Internal audit note (Day 13)
 
-This is the internal audit note Section 17 asks for before submission. It covers the EVM contracts, the Solana programs, and the off-chain services and web app. It is an in-house review by the team and Claude, **not an external audit**. Read it as "what we checked, what we found, and what is still open".
+This is the internal audit note Section 17 asks for. It covers the EVM contracts, the Solana programs, and the off-chain services and web app. It is an in-house review by the team and Claude, **not an external audit**. Read it as "what we checked, what we found, and what is still open".
 
 - **Date:** 2026-10-03 (build Day 13)
 - **Code reviewed:** `main` at `016f29a`, plus the Day 13 branches named below
@@ -149,4 +149,18 @@ It waits for an operator instead of recovering. Tracked in [issue #25](https://g
 
 ## Redeploy decision
 
-The plan says a contract-level BountyBoard check ships only if this review forced a redeploy anyway. It didn't: there is no high-severity finding, and every open contract finding (F-01's contract check, F-03, F-06, F-07, and the IDisputePayer cosmetic) needs a deployment that would change every testnet address, the recorded evidence and the scores on four chains, two days before submission. They are batched for the next deployment, which is the mainnet one (#67).
+The plan says a contract-level BountyBoard check ships only if this review forced a redeploy anyway. It didn't: there is no high-severity finding, and every open contract finding (F-01's contract check, F-03, F-06, F-07, and the IDisputePayer cosmetic) needs a deployment that would change every testnet address, the recorded evidence and the scores on four chains. They are batched for the next deployment, which is the mainnet one (#67).
+
+## Secret scan of the history (Day 14)
+
+The whole git history was scanned for secrets.
+
+| Check | Result |
+|---|---|
+| gitleaks 8.30.1, every branch and tag plus GitHub's pull-request refs (66), all commits | 12 findings, all false positives: anvil's published test keys (in tests and the local demo script), public test addresses named `KEY` in the TEE tests, a tokenizer file's SHA-256 and an attack id. Fingerprints are in `.gitleaksignore`, so a new scan reports none |
+| Token formats gitleaks may not know (Telegram bot tokens, Hugging Face, OpenRouter, Anthropic, GitHub, Railway, private-key blocks), across all history | None |
+| Secret files ever committed (`.env`, `.env.local`, keys, `.pem`) | None. Only `.env.example` files, with empty values or local defaults |
+
+Run it again with `gitleaks git --log-opts="--all" .`; it should report "no leaks found".
+
+The code is under the MIT licence (`LICENSE`); `SECURITY.md` says how to report a vulnerability.
