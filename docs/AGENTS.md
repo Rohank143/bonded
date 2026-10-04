@@ -78,14 +78,26 @@ Its live rating (2026-10-04, five runs per attack, 205 attack episodes including
 
 On the hosted services, the arena worker rates the agents listed in `config/agents.46630.json` (see `docs/SERVICES.md`); accepted bounty attacks join the library and trigger re-ratings ([docs/BOUNTIES.md](BOUNTIES.md)).
 
-## Rating your own agent
+## What works today and what's coming
 
-| Your agent | How to plug it in |
+| | Today | Next | Later |
+|---|---|---|---|
+| **Rate an agent** | Bonded rates the agents listed in its config (agents 2, 3 and 10) and the leaderboard agents. Anyone can run the same ratings locally with `pnpm demo` or `pnpm arena rate` | **Rate your vault:** an agent's owner picks one of Bonded's built-in agent designs (vulnerable, partial or hardened) and has it rated against their own vault and mandate from the web app, with no operator token | **Rate your own agent:** first open-source templates with your own prompt and model, then your own agent connecting to the Arena from wherever it runs ([issue #84](https://github.com/ddboy19912/bonded/issues/84)) |
+| **Register an agent and create a vault** | By script (`pnpm demo:seed-agent`, `pnpm tee:seed`) | From the web app, with your wallet | |
+| **Buy cover** | The vault's guardian buys with a quote that Bonded's operator requests | The vault's guardian gets the quote and buys from the web app | |
+| **TEE key custody** | Agent 3, run by Bonded with Bonded's identity service (`services/tee-agent`), added by Bonded | | **Bring your own TEE:** run it yourself, register it yourself, with your own code verified ([issue #85](https://github.com/ddboy19912/bonded/issues/85)) |
+| **Deposit, underwrite, bounties** | From the web app, with a browser wallet on Robinhood testnet | | |
+
+How agents can plug into the Arena (plan Section 8.4):
+
+| Your agent | Status |
 |---|---|
-| Written against Bonded's SDK | Implement `ArenaAgent`; its tools are routed through the sandbox |
-| A black box | Planned (Section 8.4), not built yet: point its RPC URL, data API URLs and session key at the sandbox |
-| Built on a framework | Adapters exist for Coinbase AgentKit and Solana Agent Kit (`apps/demo-agents/src/frameworks/`); the template runs unchanged with only its tools pointed at the Arena |
-| A decision model (Laya or similar) | `DecisionModelAgent` wraps a typed decision model in a trading loop |
+| Written against Bonded's SDK (`ArenaAgent`; its tools are routed through the sandbox) | Works today, for code that runs in the Arena |
+| Built on Coinbase AgentKit or Solana Agent Kit (`apps/demo-agents/src/frameworks/`; the template runs unchanged with only its tools pointed at the Arena) | Works today for the published templates; your own prompt and model are coming ([issue #84](https://github.com/ddboy19912/bonded/issues/84)) |
+| A decision model such as Laya (`DecisionModelAgent` wraps it in a trading loop) | Works today |
+| A black box running on your own servers (point its RPC, data and tool endpoints and session key at a per-episode sandbox) | Not built yet ([issue #84](https://github.com/ddboy19912/bonded/issues/84)) |
+
+A rating never needs Bonded's TEE: it runs in the Arena on the rating worker. Only an agent that keeps its key in a TEE needs that TEE online while it is rated, so the TEE can prove which code holds the key.
 
 Try the built-in agents locally, with no keys:
 

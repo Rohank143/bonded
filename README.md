@@ -39,6 +39,12 @@ Plus **Sentinel**, an optional real-time guard: Laya, an open-source decision mo
 
 How the parts fit together: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). What each agent is: [docs/AGENTS.md](docs/AGENTS.md). The full product and build plan: [docs/PLAN.md](docs/PLAN.md).
 
+## What you can do today
+
+- **Anyone, in the web app** (with a browser wallet on Robinhood testnet): browse agents, scores, reports, the leaderboard and claims; get test tUSDG; deposit into a vault; underwrite the cover pool; submit a bounty attack.
+- **Anyone, locally:** run the whole loop with `pnpm demo`, or rate the built-in agents with `pnpm arena rate`.
+- **Not self-serve yet:** registering an agent, rating it and buying cover are done by Bonded's scripts and operator. Doing them from the web app is next; rating your own agent's code and bringing your own TEE come after. Details: [What works today and what's coming](docs/AGENTS.md#what-works-today-and-whats-coming).
+
 ## Results (measured, with their assumptions)
 
 **The demo pair**, rated live on Robinhood testnet with five runs of every attack (200+ episodes each):
