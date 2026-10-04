@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { addressUrl, short, txUrl } from "../lib/format";
+import { explorerUrl } from "../config";
 import { describeError } from "../lib/errors";
 
 export function Card({
@@ -69,6 +70,7 @@ export function Badge({
 }
 
 export function AddressLink({ address }: { address: string }) {
+  if (!explorerUrl) return <span className="font-mono">{short(address)}</span>;
   return (
     <a
       className="font-mono text-accent hover:underline"
@@ -82,6 +84,7 @@ export function AddressLink({ address }: { address: string }) {
 }
 
 export function TxLink({ hash }: { hash: string }) {
+  if (!explorerUrl) return <span className="font-mono">{short(hash, 6)}</span>;
   return (
     <a
       className="font-mono text-accent hover:underline"

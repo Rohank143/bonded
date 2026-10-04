@@ -10,7 +10,7 @@ import {
   toEvmMandateParams,
 } from "@bonded/shared";
 import { type Abi, parseUnits, toFunctionSelector } from "viem";
-import type { Sandbox, SandboxRole } from "./sandbox.js";
+import type { ChainHandle, Sandbox, SandboxRole } from "./sandbox.js";
 
 /** A token the agent can see, with its real on-chain address. */
 export interface ArenaToken {
@@ -20,7 +20,7 @@ export interface ArenaToken {
 }
 
 /** The demo market's tokens, from the sandbox's deployment. */
-export function marketTokens(sandbox: Sandbox): ArenaToken[] {
+export function marketTokens(sandbox: Pick<ChainHandle, "deployment">): ArenaToken[] {
   const d = sandbox.deployment;
   return [
     { symbol: "tUSDG", address: d.usdg, decimals: 6 },
@@ -154,7 +154,7 @@ export interface ContractWrite {
  * The one path every Arena transaction takes, setup and agent actions alike.
  */
 export async function send(
-  sandbox: Sandbox,
+  sandbox: ChainHandle,
   role: SandboxRole,
   call: ContractWrite,
 ): Promise<{ result: unknown; hash: `0x${string}` }> {

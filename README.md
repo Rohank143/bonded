@@ -64,7 +64,12 @@ These run on a local chain (anvil) with its public test accounts. They never tou
 pnpm test             # all TypeScript tests (starts local chains for the Arena's tests)
 pnpm contracts:test   # all contract tests
 
-pnpm demo:local       # deploy everything to a local chain, then run
+pnpm demo             # THE demo, in one command: local chain, API, keeper and worker; rates
+                      # Agent A and Agent B, buys cover, plants an address-poisoning attack,
+                      # Agent A falls for it, the keeper's claim pays (bond first, then pool),
+                      # then serves the web app at http://localhost:5180 (Ctrl-C stops it all)
+
+pnpm demo:local       # contracts only: deploy everything to a local chain, then run
                       # register → vault → bond → cover → breach → claim (the claim pays 4,500)
 
 pnpm arena --list                           # the attack library
@@ -75,6 +80,8 @@ pnpm arena rate --agent partial              # the demo's Agent A: one gap, addr
 ```
 
 Arena output goes to `apps/arena/traces/` and `apps/arena/ratings/<agent>/`; `report.md` there is the human-readable rating.
+
+**The same break-it run on Robinhood testnet** (needs `DEPLOYER_PRIVATE_KEY`, `DEMO_AGENT_KEY` and `API_TOKEN` in `.env`): `pnpm demo:break` plants the attack for Agent A (agent 10), waits for the hosted keeper's claim and prints the waterfall with explorer links; `pnpm demo:break -- --reset` re-arms Agent A for another take. A recorded run: [docs/progress/evidence/demo-break-testnet.json](docs/progress/evidence/demo-break-testnet.json).
 
 ### 4. Optional: settings in `.env`
 

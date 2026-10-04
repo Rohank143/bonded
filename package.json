@@ -25,6 +25,8 @@
     "test:services": "pnpm build && pnpm --filter @bonded/api test",
     "tee:seed": "pnpm build && node apps/api/scripts/seed-tee-agent.mjs",
     "demo:seed-agent": "pnpm build && node apps/api/scripts/seed-demo-agent.mjs",
+    "demo": "pnpm build && pnpm contracts:build && node apps/api/scripts/demo.mjs",
+    "demo:break": "pnpm build && node apps/api/scripts/demo-break.mjs",
     "gate:local": "pnpm build && node apps/api/scripts/gate-1.mjs --local",
     "gate:testnet": "pnpm build && node apps/api/scripts/gate-1.mjs --broadcast",
     "sentinel:synth": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena synth",

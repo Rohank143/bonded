@@ -34,6 +34,14 @@ export const ANVIL_KEYS = {
 } as const;
 export type SandboxRole = keyof typeof ANVIL_KEYS;
 
+/**
+ * What the agent's tools need from a chain: its deployment, a reader and the agent's wallet. A
+ * sandbox is one; a live chain (testnet, for the demo's break-it run) can be another.
+ */
+export type ChainHandle = Pick<Sandbox, "deployment" | "publicClient"> & {
+  wallet(role: SandboxRole): ReturnType<Sandbox["wallet"]>;
+};
+
 export interface SandboxOptions {
   /**
    * RPC of a live chain to fork (e.g. Robinhood Chain testnet). The sandbox then attaches to
