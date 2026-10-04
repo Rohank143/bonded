@@ -1,0 +1,14 @@
+# Reviewed gitleaks false positives (Day 14, see docs/AUDIT.md, "Public repository"): anvil's
+# published test keys, public test addresses, a tokenizer file's SHA-256 and an attack id.
+5ea71786c3cc2c244281510c0d3ffa4487776183:apps/api/test/tee-watch.test.ts:generic-api-key:87
+b6c12016351444b2b742c6bd2ba945649bcb84f2:apps/api/test/seed-tee-agent.int.test.ts:generic-api-key:10
+34af9db3bb3c46631a7a21b740294bd4a6f7582b:apps/api/test/tee-watch.int.test.ts:generic-api-key:222
+34af9db3bb3c46631a7a21b740294bd4a6f7582b:apps/api/test/tee-watch.int.test.ts:generic-api-key:223
+34af9db3bb3c46631a7a21b740294bd4a6f7582b:apps/api/test/tee-watch.int.test.ts:generic-api-key:267
+34af9db3bb3c46631a7a21b740294bd4a6f7582b:apps/api/test/tee-watch.int.test.ts:generic-api-key:268
+5a9644892632d5e2ee6159ff0466cf302983c79d:docs/progress/evidence/sentinel-second-audit-v2.json:generic-api-key:4456
+43da37da64a812c41ee4407738742b65412e5021:packages/shared/test/quote.test.ts:generic-api-key:15
+43da37da64a812c41ee4407738742b65412e5021:packages/shared/test/quote.test.ts:generic-api-key:16
+5a9644892632d5e2ee6159ff0466cf302983c79d:docs/progress/evidence/sentinel-second-audit-v1.json:generic-api-key:4728
+3a2ca7e17d98f2afbcc4321c8fb9e176e39a61b5:apps/arena/test/world.test.ts:generic-api-key:56
+3dcf5ca3a923e00eb4a55d2a7944f1727a91c6fd:contracts/evm/script/local-demo.sh:generic-api-key:7
