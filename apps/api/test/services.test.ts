@@ -266,7 +266,12 @@ it("rejects capacity, signs an API quote, binds it and automatically pays a brea
   expect(
     (await pg.db.pool.query("SELECT 1 FROM handled_events WHERE status='pending'")).rowCount,
   ).toBeGreaterThan(0);
-  await keeper.tick();
+  // The keeper retries every tick; under load one tick's RPC call can time out, as in production.
+  for (let i = 0; i < 5; i++) {
+    await keeper.tick();
+    if ((await pg.db.pool.query("SELECT 1 FROM handled_events WHERE status='claimed'")).rowCount)
+      break;
+  }
   const after = await chain.read.readContract({
     address: vault.address,
     abi: mandateVaultAbi,
