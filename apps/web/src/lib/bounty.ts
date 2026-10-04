@@ -1,3 +1,4 @@
+import { parseBountySpec, type AttackSpec } from "@bonded/shared";
 import { bytesToHex, encodeAbiParameters, keccak256, type Address, type Hex } from "viem";
 
 /** BountyBoard's specURI for an attack's YAML: its sha256, as the API checks it. */
@@ -35,3 +36,16 @@ export function newSalt(): Hex {
 
 /** BountyBoard.Status, in order. */
 export const BOUNTY_STATUS = ["None", "Committed", "Revealed", "Accepted", "Rejected"] as const;
+
+/**
+ * The API's own spec check, run before committing: once committed a spec can't change, so a spec
+ * the API would refuse is caught while it can still be fixed. Undefined while the box is empty.
+ */
+export function checkSpec(yaml: string): { spec: AttackSpec } | { error: string } | undefined {
+  if (!yaml.trim()) return undefined;
+  try {
+    return { spec: parseBountySpec(yaml) };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+}
