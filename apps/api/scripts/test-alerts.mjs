@@ -17,6 +17,8 @@ const samples = {
   started: "Started on chain 46630.",
   crash: "Crashed (Error). Railway restarts it up to 10 times.",
   loop: "The EVM keeper has failed 3 times in a row (TypeError). It keeps retrying.",
+  "keeper-gas":
+    "The keeper's wallet 0x0000000000000000000000000000000000000000 is low on gas: 0.0001 ETH. Claims and premium accruals fail without it; send it test ETH.",
   "keeper-lag":
     "The keeper is 12 minutes behind the chain head (block 100 of 900). New breaches aren't being claimed.",
   "stuck-claims":

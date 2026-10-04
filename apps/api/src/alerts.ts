@@ -1,5 +1,6 @@
 import type { Database } from "@bonded/db";
 import type { ServiceChain } from "@bonded/keeper";
+import { formatEther } from "viem";
 
 /**
  * Operations alerts to a Telegram chat (issue #24, docs/SERVICES.md "Alerts"): crashes, failing
@@ -145,6 +146,11 @@ export interface WatchdogOptions {
   maxLagMs?: number;
   /** ...and more than this many blocks behind (default 100), so an idle chain doesn't alert. */
   maxLagBlocks?: bigint;
+  /**
+   * Alert when the keeper's own wallet holds less gas than this, in wei (default 0.002 ETH,
+   * a few dozen claims). Without gas every claim fails and retries; Day 14 found that the hard way.
+   */
+  minGasWei?: bigint;
   /** Alert when a breach has been pending with an error for this long (default 10 minutes). */
   stuckClaimMs?: number;
   now?: () => number;
@@ -167,6 +173,7 @@ export class Watchdog {
   ) {}
 
   async check(): Promise<void> {
+    await this.checkGas();
     await this.checkLag();
     await this.checkStuckClaims();
     await this.checkFailureEvents();
@@ -174,6 +181,18 @@ export class Watchdog {
 
   private now() {
     return (this.options.now ?? Date.now)();
+  }
+
+  private async checkGas() {
+    const address = this.chain.wallet.account.address;
+    const balance = await this.chain.read.getBalance({ address });
+    const min = this.options.minGasWei ?? 2_000_000_000_000_000n;
+    if (balance < min) {
+      await this.alerter.alert(
+        "keeper-gas",
+        `The keeper's wallet ${address} is low on gas: ${formatEther(balance)} ETH. Claims and premium accruals fail without it; send it test ETH.`,
+      );
+    } else this.alerter.reset("keeper-gas");
   }
 
   private async checkLag() {

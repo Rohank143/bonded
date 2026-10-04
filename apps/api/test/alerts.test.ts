@@ -104,9 +104,12 @@ it("watches keeper lag, stuck claims and failure events", async () => {
   const db = pg.db;
   let now = 0;
   const blocks = { head: 1000n, headTime: 10_000n, scannedTime: 10_000n };
+  let gas = 10n ** 18n;
   const chain = {
     deployment: { chainId: 46630 },
+    wallet: { account: { address: "0x35AC3B9747B665cdE03b2600c0db55ffD9864681" } },
     read: {
+      getBalance: async () => gas,
       getBlock: async (args?: { blockNumber: bigint }) =>
         args
           ? { number: args.blockNumber, timestamp: blocks.scannedTime }
@@ -164,11 +167,23 @@ it("watches keeper lag, stuck claims and failure events", async () => {
     "[keeper] Premium accrual failed (chainId 46630, policyId 3).",
   ]);
   expect(sent.join()).not.toContain("attacker");
+  sent.length = 0;
+
+  // A keeper wallet running out of gas: every claim would fail, so it alerts.
+  gas = 2_292_384_876_000n; // what the hosted keeper held on Day 14
+  await watchdog.check();
+  expect(sent).toEqual([
+    "[keeper] The keeper's wallet 0x35AC3B9747B665cdE03b2600c0db55ffD9864681 is low on gas: 0.000002292384876 ETH. Claims and premium accruals fail without it; send it test ETH.",
+  ]);
 });
 
 it("starts from the newest event, so a restart doesn't replay old failures", async () => {
   await pg.db.publish("rating.failed", { runId: "old" });
-  const chain = { deployment: { chainId: 1 }, read: {} } as unknown as ServiceChain;
+  const chain = {
+    deployment: { chainId: 1 },
+    wallet: { account: { address: "0x0000000000000000000000000000000000000001" } },
+    read: { getBalance: async () => 10n ** 18n },
+  } as unknown as ServiceChain;
   const { sent, sink } = recorder();
   const watchdog = new Watchdog(pg.db, chain, new Alerter(sink, { source: "keeper" }));
   await watchdog.check();

@@ -117,6 +117,7 @@ The `api`, `keeper` and `arena-worker` services send operations alerts to one Te
 | Started | every service with the secrets | Once per start. A deploy or restart announces itself, which doubles as each service's test alert |
 | Crashed | every service with the secrets | An error would end the process. It alerts (waiting at most 5 seconds), then exits so Railway restarts it |
 | A loop keeps failing | every service with the secrets | 3 failed iterations in a row of a service loop (EVM or Solana keeper, TEE checks, rating or bounty worker, event retention, the watchdog). Another message when it works again |
+| Keeper out of gas | keeper | The keeper's own wallet holds less than 0.002 ETH. Without gas every claim and premium accrual fails and retries |
 | Keeper lag | keeper | The keeper's scanned block is more than 10 minutes and more than 100 blocks behind the chain head. Both must hold, so a quiet chain doesn't alert |
 | Stuck claims | keeper | A breach has stayed `pending` with an error for 10 minutes (measured from when the keeper process first saw it failing, so a restart delays the alert rather than losing it) |
 | Failed rating, premium accrual, Solana claim or bounty validation | keeper | A `rating.failed`, `keeper.accrual_failed`, `solana.claim.failed` or `bounty.failed` event. Events from before the keeper started are not replayed |
