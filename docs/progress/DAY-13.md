@@ -31,7 +31,7 @@ Every PR has the full fresh-clone pipeline in its description.
 ## Review asks
 
 - All Day 13 PRs (#70 to #75) are merged.
-- Agree with batching the contract fixes for mainnet rather than redeploying the testnets two days before submission.
+- Agree with batching the contract fixes for mainnet rather than redeploying the testnets now, which would change every address and the recorded evidence.
 
 ## Next (Day 14)
 

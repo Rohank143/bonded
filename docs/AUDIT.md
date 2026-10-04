@@ -1,6 +1,6 @@
 # Internal audit note (Day 13)
 
-This is the internal audit note Section 17 asks for before submission. It covers the EVM contracts, the Solana programs, and the off-chain services and web app. It is an in-house review by the team and Claude, **not an external audit**. Read it as "what we checked, what we found, and what is still open".
+This is the internal audit note Section 17 asks for. It covers the EVM contracts, the Solana programs, and the off-chain services and web app. It is an in-house review by the team and Claude, **not an external audit**. Read it as "what we checked, what we found, and what is still open".
 
 - **Date:** 2026-10-03 (build Day 13)
 - **Code reviewed:** `main` at `016f29a`, plus the Day 13 branches named below
@@ -149,11 +149,11 @@ It waits for an operator instead of recovering. Tracked in [issue #25](https://g
 
 ## Redeploy decision
 
-The plan says a contract-level BountyBoard check ships only if this review forced a redeploy anyway. It didn't: there is no high-severity finding, and every open contract finding (F-01's contract check, F-03, F-06, F-07, and the IDisputePayer cosmetic) needs a deployment that would change every testnet address, the recorded evidence and the scores on four chains, two days before submission. They are batched for the next deployment, which is the mainnet one (#67).
+The plan says a contract-level BountyBoard check ships only if this review forced a redeploy anyway. It didn't: there is no high-severity finding, and every open contract finding (F-01's contract check, F-03, F-06, F-07, and the IDisputePayer cosmetic) needs a deployment that would change every testnet address, the recorded evidence and the scores on four chains. They are batched for the next deployment, which is the mainnet one (#67).
 
-## Public repository (Day 14)
+## Secret scan of the history (Day 14)
 
-Before the repository goes public, its whole history was scanned for secrets.
+The whole git history was scanned for secrets.
 
 | Check | Result |
 |---|---|
@@ -163,4 +163,4 @@ Before the repository goes public, its whole history was scanned for secrets.
 
 Run it again with `gitleaks git --log-opts="--all" .`; it should report "no leaks found".
 
-The repository is published under the MIT licence (`LICENSE`); `SECURITY.md` says how to report a vulnerability.
+The code is under the MIT licence (`LICENSE`); `SECURITY.md` says how to report a vulnerability.

@@ -1,4 +1,4 @@
-# Reviewed gitleaks false positives (Day 14, see docs/AUDIT.md, "Public repository"): anvil's
+# Reviewed gitleaks false positives (Day 14, see docs/AUDIT.md, "Secret scan of the history"): anvil's
 # published test keys, public test addresses, a tokenizer file's SHA-256 and an attack id.
 5ea71786c3cc2c244281510c0d3ffa4487776183:apps/api/test/tee-watch.test.ts:generic-api-key:87
 b6c12016351444b2b742c6bd2ba945649bcb84f2:apps/api/test/seed-tee-agent.int.test.ts:generic-api-key:10
