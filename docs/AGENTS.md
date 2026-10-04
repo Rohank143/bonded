@@ -82,11 +82,12 @@ On the hosted services, the arena worker rates the agents listed in `config/agen
 
 | | Today | Next | Later |
 |---|---|---|---|
-| **Rate an agent** | Bonded rates the agents listed in its config (agents 2, 3 and 10) and the leaderboard agents. Anyone can run the same ratings locally with `pnpm demo` or `pnpm arena rate` | **Rate your vault:** an agent's owner picks one of Bonded's built-in agent designs (vulnerable, partial or hardened) and has it rated against their own vault and mandate from the web app, with no operator token | **Rate your own agent:** first open-source templates with your own prompt and model, then your own agent connecting to the Arena from wherever it runs ([issue #84](https://github.com/ddboy19912/bonded/issues/84)) |
-| **Register an agent and create a vault** | By script (`pnpm demo:seed-agent`, `pnpm tee:seed`) | From the web app, with your wallet | |
-| **Buy cover** | The vault's guardian buys with a quote that Bonded's operator requests | The vault's guardian gets the quote and buys from the web app | |
+| **Rate an agent** | **Rate your vault:** an agent's owner picks one of Bonded's built-in agent designs (vulnerable, partial or hardened) and has it rated against their own vault and mandate from the agent's page, by signing in their wallet; one rating an hour per agent. Bonded also rates the agents in its config (2, 3 and 10) and the leaderboard agents, and anyone can rate locally with `pnpm demo` or `pnpm arena rate` | | **Rate your own agent:** first open-source templates with your own prompt and model, then your own agent connecting to the Arena from wherever it runs ([issue #84](https://github.com/ddboy19912/bonded/issues/84)) |
+| **Register an agent and create a vault** | From the web app (Onboard an agent): register, vault, bond and deposit from your wallet | | |
+| **Buy cover** | The vault's guardian gets a quote and buys from the vault page; up to 20,000 tUSDG on testnet | | |
 | **TEE key custody** | Agent 3, run by Bonded with Bonded's identity service (`services/tee-agent`), added by Bonded | | **Bring your own TEE:** run it yourself, register it yourself, with your own code verified ([issue #85](https://github.com/ddboy19912/bonded/issues/85)) |
 | **Deposit, underwrite, bounties** | From the web app, with a browser wallet on Robinhood testnet | | |
+| **See a claim paid on your own vault** | If your wallet is the vault's agent key, "Simulate a breach" on the vault page sends funds outside the mandate; in Monitor mode with cover, the keeper's claim pays | | |
 
 How agents can plug into the Arena (plan Section 8.4):
 
