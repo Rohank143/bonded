@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from "react-router";
 import { ConnectButton } from "./components/wallet";
+import { isLocal } from "./config";
 
 const links = [
   ["/leaderboard", "Leaderboard"],
@@ -36,7 +37,8 @@ export function Layout() {
         <Outlet />
       </main>
       <footer className="border-t border-line py-4 text-xs text-muted">
-        Robinhood Chain testnet. Test tokens only; nothing here has real value.
+        {isLocal ? "Local demo chain" : "Robinhood Chain testnet"}. Test tokens only; nothing here
+        has real value.
       </footer>
     </div>
   );

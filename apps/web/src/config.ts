@@ -2,20 +2,30 @@ import { defineChain } from "viem";
 import { EVM_CHAINS, parseEvmDeployment } from "@bonded/shared";
 import deploymentJson from "../../../contracts/evm/deployments/46630.json?raw";
 
-/** The Robinhood Chain testnet deployment the hosted services use (Day 4, ADR-004). */
-export const deployment = parseEvmDeployment(deploymentJson, 46630);
+/**
+ * `pnpm demo` serves the app against its own local chain: it passes that deployment in
+ * VITE_DEPLOYMENT_JSON (with VITE_RPC_URL and VITE_API_URL). Otherwise it is the Robinhood Chain
+ * testnet deployment the hosted services use (Day 4, ADR-004).
+ */
+const localDeployment = import.meta.env.VITE_DEPLOYMENT_JSON as string | undefined;
+export const isLocal = Boolean(localDeployment);
+export const deployment = localDeployment
+  ? parseEvmDeployment(localDeployment)
+  : parseEvmDeployment(deploymentJson, 46630);
 
 const facts = EVM_CHAINS.robinhoodTestnet;
+export const networkName = isLocal ? "the local demo chain" : "Robinhood Chain testnet";
 export const rpcUrl = import.meta.env.VITE_RPC_URL || facts.rpcUrl;
-export const explorerUrl = facts.explorerUrl;
+/** Empty on the local chain, which has no explorer: links then show as plain text. */
+export const explorerUrl = isLocal ? "" : facts.explorerUrl;
 export const faucets = facts.faucets;
 
 export const robinhoodTestnet = defineChain({
-  id: facts.chainId,
-  name: facts.name,
+  id: deployment.chainId,
+  name: isLocal ? "Bonded local demo" : facts.name,
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
   rpcUrls: { default: { http: [rpcUrl] } },
-  blockExplorers: { default: { name: "Explorer", url: explorerUrl } },
+  ...(explorerUrl ? { blockExplorers: { default: { name: "Explorer", url: explorerUrl } } } : {}),
   testnet: true,
 });
 

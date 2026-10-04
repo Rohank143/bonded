@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAccount, useConnect, useDisconnect, useSwitchChain, useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
 import type { Abi, Hex } from "viem";
-import { robinhoodTestnet } from "../config";
+import { networkName, robinhoodTestnet } from "../config";
 import { short } from "../lib/format";
 import { wagmiConfig } from "../wagmi";
 import { Button, ErrorText, Input, TxLink } from "./ui";
@@ -29,7 +29,7 @@ export function ConnectButton() {
     return (
       <div className="flex flex-col items-end gap-1">
         <Button onClick={() => switchChain({ chainId: robinhoodTestnet.id })}>
-          Switch to Robinhood testnet
+          Switch to {networkName}
         </Button>
         <ErrorText error={switchError} />
       </div>

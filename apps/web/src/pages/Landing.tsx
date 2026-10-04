@@ -7,7 +7,7 @@ import {
   coverPoolAbi,
   mandateVaultFactoryAbi,
 } from "@bonded/shared";
-import { deployment } from "../config";
+import { deployment, isLocal, networkName } from "../config";
 import { api } from "../lib/api";
 import { useClaims } from "../lib/chain";
 import { usd } from "../lib/format";
@@ -41,7 +41,7 @@ export function Landing() {
       title="Insurance for AI trading agents"
       intro="Bonded red-teams an agent in the Arena, publishes a safety score on chain, prices cover from that score, and pays automatically when the agent breaks its mandate. Payouts are decided by the vault's on-chain breach log, never by an AI."
     >
-      <Card title="Live on Robinhood Chain testnet">
+      <Card title={`Live on ${networkName}`}>
         <Grid>
           <Stat label="Agents registered" value={show(agents, String)} />
           <Stat label="Mandate vaults" value={show(vaults, String)} />
@@ -68,11 +68,13 @@ export function Landing() {
           ["/underwrite", "Underwrite", "Back the pool that pays claims and earn premiums."],
           ["/claims", "Claims", "Every automatic payout, with where the money came from."],
           ["/bounties", "Bounties", "Find an attack the library misses and get paid."],
-          [
-            "/agents/3",
-            "A rated agent",
-            "Agent 3: its score, tier, key custody and attack report.",
-          ],
+          isLocal
+            ? ["/agents/1", "Agent A", "Its score, its one weakness, and the claim it caused."]
+            : [
+                "/agents/3",
+                "A rated agent",
+                "Agent 3: its score, tier, key custody and attack report.",
+              ],
         ].map(([to, name, text]) => (
           <Link key={to} to={to!} className="rounded-lg border border-line p-4 hover:border-accent">
             <div className="font-semibold">{name}</div>
