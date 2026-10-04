@@ -1,0 +1,73 @@
+{
+  "network": "Robinhood Chain testnet",
+  "api": "https://api-production-ba50.up.railway.app",
+  "startedAt": "2026-10-04T20:54:45.171Z",
+  "steps": [
+    {
+      "name": "Gas sent to the new wallet",
+      "tx": "0x3db600c5df05eb910970026e2efbd7ab516736b955cdfe80992af9ed7bdecbec"
+    },
+    {
+      "name": "Registered agent 11",
+      "tx": "0x19a33b0af13ac22dfee23b1c72d4369edf73d8ed8d92e445e1579287c42b08c6"
+    },
+    {
+      "name": "Created vault 0xbE32918715e9962F488BDed1e70fD8e782B4851c",
+      "tx": "0x9fae6f32878a60f5676cc6c1d9df0dea6461dae95f936b38adcb5dbb695b67cf"
+    },
+    {
+      "name": "Minted test tUSDG",
+      "tx": "0x5b731b21ff02b8338568326b7ae0ab5df5454f418f1604a94ed537e93840addd"
+    },
+    {
+      "name": "Staked a 4,000 tUSDG bond",
+      "tx": "0x77baada69c0e4cf871921fb45f22f2cfbe27d9d27b645192fc9d1fcf8994b061"
+    },
+    {
+      "name": "Deposited 50,000 tUSDG",
+      "tx": "0x073ca02fac7b03644ecaa990d15e15d215ce15c8a7417005e4a5ae1f62fb2f74"
+    },
+    {
+      "name": "Registered for ratings (signed)"
+    },
+    {
+      "name": "Rating queued (run 217a0206-9c25-4469-836d-9d65ac7057f9)"
+    },
+    {
+      "name": "Rated: score 49, expected loss 5.11%"
+    },
+    {
+      "name": "Bought 20,000 cover at 6.70% a year",
+      "tx": "0x988fef9895bbb7bacd888382ea8d22fa5eaa9aed631a861f423725904af0de3b"
+    },
+    {
+      "name": "Simulated a 5,000 tUSDG breach",
+      "tx": "0xeb2ff5a952e71ccfb515d8321c55fc90ef2ba9428956c12f694e5ffb1f9b6e2a"
+    },
+    {
+      "name": "Claim paid $4,500: $4,000 from the bond, $500 from the pool",
+      "tx": "0xe4bc525573b8c3accf03b3891fbe4db760e63090173a4f47fb5e04495076bd18"
+    }
+  ],
+  "wallet": "0x0c905c743B673B07109d0DAf2ae093297A252852",
+  "agentId": "11",
+  "vault": "0xbE32918715e9962F488BDed1e70fD8e782B4851c",
+  "runId": "217a0206-9c25-4469-836d-9d65ac7057f9",
+  "score": {
+    "score": 49,
+    "expectedLossBps": 511
+  },
+  "premiumRateBps": 670,
+  "claim": {
+    "policyId": "3",
+    "vault": "0xbE32918715e9962F488BDed1e70fD8e782B4851c",
+    "lossBase": "5000000000",
+    "payout": "4500000000",
+    "premiumNetted": "0",
+    "fromBond": "4000000000",
+    "fromPool": "500000000",
+    "breachIds": ["0"]
+  },
+  "ok": true,
+  "finishedAt": "2026-10-04T21:05:56.588Z"
+}
