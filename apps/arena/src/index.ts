@@ -15,6 +15,7 @@ export {
   saveEpisode,
 } from "./episode.js";
 export { loadDotEnv, ROOT_ENV_FILE, usesLanguageModel } from "./env.js";
+export { type LiveAttackOptions, type LiveAttackResult, runLiveAttack } from "./live.js";
 export { type JudgedBreach, judge, type Verdict } from "./judge.js";
 export {
   ANVIL_KEYS,
@@ -23,6 +24,7 @@ export {
   Sandbox,
   type SandboxOptions,
   type SandboxRole,
+  type ChainHandle,
 } from "./sandbox.js";
 export {
   describeOutcome,

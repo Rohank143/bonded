@@ -20,7 +20,7 @@ import {
   maxUint256,
   parseUnits,
 } from "viem";
-import type { Sandbox } from "./sandbox.js";
+import type { ChainHandle } from "./sandbox.js";
 import { send } from "./vault.js";
 import type { TokenListing, World } from "./world.js";
 
@@ -57,7 +57,7 @@ export class ArenaToolbox implements AgentToolbox {
   private writes: Promise<unknown> = Promise.resolve();
 
   constructor(
-    private readonly sandbox: Sandbox,
+    private readonly sandbox: ChainHandle,
     private readonly world: World,
     private readonly vault: `0x${string}`,
     private readonly maxSteps: number,

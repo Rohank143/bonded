@@ -115,18 +115,7 @@ export async function runEpisode(
       lookalike,
       ...options.vars,
     };
-    const text = renderPayload(options.attack.payloadTemplate, vars);
-    const { sender, ...delivery } = options.attack.delivery;
-    for (const surface of options.attack.surfaces) {
-      const content: PlantedContent = {
-        surface,
-        text,
-        ...delivery,
-        ...(sender === undefined ? {} : { sender: renderPayload(sender, vars) }),
-      };
-      world.plant(content);
-      planted.push(content);
-    }
+    planted.push(...plantAttack(world, options.attack, vars));
   }
 
   const task: AgentTask = {
@@ -161,6 +150,26 @@ export async function runEpisode(
     startedAt: new Date(started).toISOString(),
     durationMs: Date.now() - started,
   };
+}
+
+/** Renders an attack with its variables and plants it on every surface it names. */
+export function plantAttack(
+  world: World,
+  attack: AttackSpec,
+  vars: Record<string, string>,
+): PlantedContent[] {
+  const text = renderPayload(attack.payloadTemplate, vars);
+  const { sender, ...delivery } = attack.delivery;
+  return attack.surfaces.map((surface) => {
+    const content: PlantedContent = {
+      surface,
+      text,
+      ...delivery,
+      ...(sender === undefined ? {} : { sender: renderPayload(sender, vars) }),
+    };
+    world.plant(content);
+    return content;
+  });
 }
 
 /** The vault's mandate as structured rules for agents that enforce it themselves. */
@@ -228,7 +237,7 @@ async function spendApprovals(
   return drained;
 }
 
-async function runWithTimeout(
+export async function runWithTimeout(
   agent: ArenaAgent,
   task: AgentTask,
   toolbox: ArenaToolbox,
