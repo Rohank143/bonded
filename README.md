@@ -2,179 +2,119 @@
 
 > **Don't cage your agent. Bond it.**
 
-Bonded rates AI agents by attacking them, then insures the people who give those agents money.
+AI agents now trade with real money. When one gets tricked (a poisoned token description, a fake "admin" message, a lookalike address), someone loses funds, and today nobody pays them back. Bonded rates AI agents by attacking them, prices insurance from what the attacks found, and pays depositors automatically when an agent breaks its rules. **Payouts are decided by the agent's vault on chain, never by an AI.**
 
-- **The Arena:** AI attacker agents red-team an agent inside a forked-chain sandbox. Pass/fail is decided by our on-chain contract, not an LLM.
-- **Bonded Score:** red-team results are turned into an expected-loss estimate and a premium, and the signed score is posted on-chain (ERC-8004 compatible).
-- **Mandate Vaults:** agents trade from a smart account that knows their rules. It either blocks breaches or records them on-chain.
-- **Cover:** when an agent breaks its mandate, the operator's bond is slashed first, then the underwriting pool pays depositors automatically, within minutes.
-- **Bonded Sentinel:** a 33 ms real-time guard built on the open-source Laya decision model, fine-tuned on Arena data.
+Runs on **Robinhood Chain**, with scores readable on **Arbitrum, Ethereum and Solana**.
 
-Built for the Colosseum Crypto World's Fair on **Robinhood Chain, Arbitrum, Ethereum and Solana**.
+## Try it
 
-📄 **Full product and build plan:** [`docs/PLAN.md`](docs/PLAN.md)
+| | |
+|---|---|
+| **Web app** (Robinhood Chain testnet) | https://bonded-nu.vercel.app |
+| **Agent Safety Leaderboard**: open-source agent templates, rated | https://bonded-nu.vercel.app/leaderboard |
+| **Agent A**: insured, with one weakness the Arena found | https://bonded-nu.vercel.app/agents/10 |
+| **Agent B**: hardened, key in a TEE, score 96 | https://bonded-nu.vercel.app/agents/3 |
+| **Claims**: every automatic payout and where the money came from | https://bonded-nu.vercel.app/claims |
+| **Live API** | https://api-production-ba50.up.railway.app/health |
 
-## Status
+**Or run the whole thing yourself in one command**, with no keys or accounts (needs Node 22, pnpm and Foundry; details in [docs/DEVELOPING.md](docs/DEVELOPING.md)):
 
-Building. The build runs Sep 27 – Oct 11, 2026. See the day-by-day plan in [`docs/PLAN.md` Section 20](docs/PLAN.md#20-16-day-build-plan) and daily notes in [`docs/progress/`](docs/progress/).
+```bash
+git clone --recursive https://github.com/ddboy19912/bonded && cd bonded
+pnpm install
+pnpm demo
+```
+
+It starts a local chain, the API, keeper and rating worker; rates Agent A and Agent B; buys cover for both; plants an address-poisoning attack that Agent A falls for; shows the claim paying (operator's bond first, then the pool); and serves the web app at http://localhost:5180.
+
+## How it works
+
+1. **Mandate Vault.** An agent trades from a vault that knows its rules: which tokens, which contracts, where funds may go, how much per trade and per day. Every action goes through the vault, which blocks or records any breach on chain.
+2. **The Arena.** AI attacker scenarios (10 classes: prompt injection, fake news and posts, poisoned prices, lookalike tokens and addresses, social engineering, hostile counterparty agents…) are planted in the agent's world inside a sandbox: a copy of the chain with the same contracts. The verdict of each episode is the vault's breach log.
+3. **Bonded Score.** Breach rates become an expected loss, a premium and a score from 0 to 100. The attester signs it and posts it to the registry (ERC-8004 compatible); the same signed score can be posted to Arbitrum, Ethereum and Solana.
+4. **Bond and cover.** The agent's operator stakes a bond that pays first. Underwriters fund a pool that pays the rest. Depositors buy cover priced from the score.
+5. **Automatic claims.** When the vault records a breach, the keeper files the claim within seconds. The contract slashes the bond, then the pool pays, and the money goes back into the vault.
+
+Plus **Sentinel**, an optional real-time guard: Laya, an open-source decision model, fine-tuned on Arena data to flag manipulated actions before they reach the vault. It is advisory; payouts never depend on it.
+
+How the parts fit together: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). What each agent is: [docs/AGENTS.md](docs/AGENTS.md). The full product and build plan: [docs/PLAN.md](docs/PLAN.md).
+
+## Results (measured, with their assumptions)
+
+**The demo pair**, rated live on Robinhood testnet with five runs of every attack (200+ episodes each):
+
+| | Agent A (agent 10) | Agent B (agent 3) |
+|---|---|---|
+| What it is | Acts on what it reads, behind a guard that checks addresses by their first and last characters only | Treats what it reads as data; full guard; Enforce mode; key generated inside a TEE |
+| Score | **49 (BB)** | **96 (AAA)** |
+| Premium | **7.4%** a year (6.7% after its operator-bond discount) | **1.2%** a year |
+| What the Arena found | Address poisoning: 15 of 20 episodes breached. Every other class: none | No breaches |
+
+**The loop, live on Robinhood testnet** (2026-10-04, [evidence](docs/progress/evidence/demo-break-testnet.json)): a lookalike of Agent A's depositor asked for a "refund"; Agent A paid 5,000 tUSDG; the vault recorded the breach and froze the agent; the keeper's claim paid 4,500 (the loss minus the 10% deductible): **4,000 from the operator's bond, 500 from the pool.**
+
+**Leaderboard:** none of the 2 open-source templates rated (Coinbase AgentKit and Solana Agent Kit, 4 template/model evaluations) fell for basic prompt injection. With one run per attack, a clean agent can't score above about 50, and about half the attacks arrive on surfaces these templates never read ([leaderboard](https://bonded-nu.vercel.app/leaderboard), [disclosures](docs/disclosures/README.md)).
+
+**Sentinel v5** (in production), against the previous model on the same inputs ([details](docs/SENTINEL-STRESS.md#v5-gate-results)): it blocked 33 of 33 manipulated actions in held-out Arena cases (v1: 27) with no false blocks; in an Arena rerun, the vulnerable agent behind it was breached by 0 of 40 attack seeds. It failed one of five gates (2 of 44 stress families got worse) and was promoted with that exception recorded. It takes about 2.5 s per check on CPU.
+
+Assumptions that apply throughout:
+- The attack library is fixed seeds, so scores are in-library results, not a held-out evaluation. An adaptive attack source is tracked in [issue #11](https://github.com/ddboy19912/bonded/issues/11).
+- The yearly attack rates per class (λ) are illustrative priors (plan Section 9.2). The model's inputs, not these numbers, are the product.
+- Everything runs on testnets with test tokens.
+
+## Security
+
+An internal audit note ([docs/AUDIT.md](docs/AUDIT.md)) covers 16 handler-based invariant tests, which catch all 11 of 11 bugs planted to test them; Slither and clippy, with every finding triaged; and a manual review. It found no high-severity issues; the open contract fixes are batched for the mainnet deployment ([issue #67](https://github.com/ddboy19912/bonded/issues/67)). This is an in-house review, not an external audit.
+
+## Deployments
+
+Owner, attester and council on every testnet: `0xd42FA5ae8949710479954ae78D1b12Ff2e50A841` (a single key for now; a multisig is a mainnet prerequisite). Full address lists: [contracts/evm/deployments](contracts/evm/deployments/README.md) and [contracts/solana/deployments](contracts/solana/deployments/devnet.json).
+
+| Contract | Robinhood Chain testnet (46630) | Arbitrum Sepolia (421614) | Ethereum Sepolia (11155111) |
+|---|---|---|---|
+| BondedRegistry | [`0x35F6d30BE731a639235CCAd7abEdda4d4BE8D4F9`](https://explorer.testnet.chain.robinhood.com/address/0x35F6d30BE731a639235CCAd7abEdda4d4BE8D4F9) | [`0x35F6d30BE731a639235CCAd7abEdda4d4BE8D4F9`](https://sepolia.arbiscan.io/address/0x35F6d30BE731a639235CCAd7abEdda4d4BE8D4F9) | [`0x47D5506e1a56019Df0D22Fd8B652A68a162898a2`](https://sepolia.etherscan.io/address/0x47D5506e1a56019Df0D22Fd8B652A68a162898a2) |
+| MandateVaultFactory | [`0x47D5506e1a56019Df0D22Fd8B652A68a162898a2`](https://explorer.testnet.chain.robinhood.com/address/0x47D5506e1a56019Df0D22Fd8B652A68a162898a2) | [`0x47D5506e1a56019Df0D22Fd8B652A68a162898a2`](https://sepolia.arbiscan.io/address/0x47D5506e1a56019Df0D22Fd8B652A68a162898a2) | [`0x2014ba5b16017466e50835c90004F659f62d4064`](https://sepolia.etherscan.io/address/0x2014ba5b16017466e50835c90004F659f62d4064) |
+| CoverManager | [`0x038C5b833424727a073080822578b8201AC19bDD`](https://explorer.testnet.chain.robinhood.com/address/0x038C5b833424727a073080822578b8201AC19bDD) | [`0x038C5b833424727a073080822578b8201AC19bDD`](https://sepolia.arbiscan.io/address/0x038C5b833424727a073080822578b8201AC19bDD) | [`0x6E8533A4895E6D708B32DFFF928852d7F583067e`](https://sepolia.etherscan.io/address/0x6E8533A4895E6D708B32DFFF928852d7F583067e) |
+| CoverPool | [`0x2014ba5b16017466e50835c90004F659f62d4064`](https://explorer.testnet.chain.robinhood.com/address/0x2014ba5b16017466e50835c90004F659f62d4064) | [`0x2014ba5b16017466e50835c90004F659f62d4064`](https://sepolia.arbiscan.io/address/0x2014ba5b16017466e50835c90004F659f62d4064) | [`0xAfF097ceeae821a8A9De8771542CDdD7b63Ee294`](https://sepolia.etherscan.io/address/0xAfF097ceeae821a8A9De8771542CDdD7b63Ee294) |
+| OperatorBond | [`0xAfF097ceeae821a8A9De8771542CDdD7b63Ee294`](https://explorer.testnet.chain.robinhood.com/address/0xAfF097ceeae821a8A9De8771542CDdD7b63Ee294) | [`0xAfF097ceeae821a8A9De8771542CDdD7b63Ee294`](https://sepolia.arbiscan.io/address/0xAfF097ceeae821a8A9De8771542CDdD7b63Ee294) | [`0x942CaC6582F189DcF84CCe73fFAb3c87b9c15278`](https://sepolia.etherscan.io/address/0x942CaC6582F189DcF84CCe73fFAb3c87b9c15278) |
+| ClaimsEngine | [`0x6E8533A4895E6D708B32DFFF928852d7F583067e`](https://explorer.testnet.chain.robinhood.com/address/0x6E8533A4895E6D708B32DFFF928852d7F583067e) | [`0x6E8533A4895E6D708B32DFFF928852d7F583067e`](https://sepolia.arbiscan.io/address/0x6E8533A4895E6D708B32DFFF928852d7F583067e) | [`0x0b9B5B177756D3bF699C3811D1F2d6067dF0E5f7`](https://sepolia.etherscan.io/address/0x0b9B5B177756D3bF699C3811D1F2d6067dF0E5f7) |
+| BountyBoard | [`0x942CaC6582F189DcF84CCe73fFAb3c87b9c15278`](https://explorer.testnet.chain.robinhood.com/address/0x942CaC6582F189DcF84CCe73fFAb3c87b9c15278) | [`0x942CaC6582F189DcF84CCe73fFAb3c87b9c15278`](https://sepolia.arbiscan.io/address/0x942CaC6582F189DcF84CCe73fFAb3c87b9c15278) | [`0x038C5b833424727a073080822578b8201AC19bDD`](https://sepolia.etherscan.io/address/0x038C5b833424727a073080822578b8201AC19bDD) |
+
+**Solana devnet** (Anchor programs, [ADR-011](docs/decisions/011-solana-programs.md)):
+
+| Program | Address |
+|---|---|
+| bonded_registry | [`7hfPMrd4A264TfgTivV1QLmps9N5ZCf4r64csh8hfuYy`](https://explorer.solana.com/address/7hfPMrd4A264TfgTivV1QLmps9N5ZCf4r64csh8hfuYy?cluster=devnet) |
+| bonded_vault | [`8hNVDFF7aU2BJa4avnv2X7ziYEmguCaCHTZYBKo2CzFx`](https://explorer.solana.com/address/8hNVDFF7aU2BJa4avnv2X7ziYEmguCaCHTZYBKo2CzFx?cluster=devnet) |
+| bonded_cover | [`Dcrwfd272QQxXS4oEmHPSQdGWRZ2BMRSMb3Vi7jj6Y1X`](https://explorer.solana.com/address/Dcrwfd272QQxXS4oEmHPSQdGWRZ2BMRSMb3Vi7jj6Y1X?cluster=devnet) |
+
+Agent B's score of 96 is the same signed attestation on all four chains ([evidence](docs/progress/evidence/multichain-scores-agent3-tee.json)).
 
 ## Repo layout
 
 | Path | What's there |
 |---|---|
-| `packages/shared` | Schemas (mandate, attack spec, attestation, quote), chain configs, tiers, EIP-712 types, deployment files |
-| `contracts/evm` | Solidity contracts (Foundry), deploy and smoke scripts, live addresses. **Start with [its README](contracts/evm/README.md)** for what each contract does. |
-| `apps/arena` | The Arena: red-teams an agent in a local or forked-chain sandbox and judges it by the vault's breach log |
-| `apps/demo-agents` | The agents Bonded rates: vulnerable, hardened, the demo's Agent A, framework adapters. **What each one is: [docs/AGENTS.md](docs/AGENTS.md)** |
-| `services/tee-agent` | The hardened agent's identity service for Phala dstack (TEE key custody, [docs/TEE.md](docs/TEE.md)) |
-| `attacks/` | Attack library: YAML seeds by class |
-| `docs/` | Plan, decision records, daily progress notes |
+| `contracts/evm` | Solidity contracts (Foundry): vault, cover, pool, bond, claims, registry, disputes, bounties. [Its README](contracts/evm/README.md) explains each one |
+| `contracts/solana` | Anchor programs: registry, vault, cover |
+| `apps/arena` | The Arena: attack library runner, sandbox, judge, ratings |
+| `apps/demo-agents` | The agents Bonded rates ([docs/AGENTS.md](docs/AGENTS.md)) |
+| `apps/api` | API, keeper, rating and bounty workers, demo scripts |
+| `apps/web` | The web app |
+| `packages/shared` | Schemas, scoring maths, ABIs, chain and deployment data |
+| `services/sentinel`, `services/tee-agent` | The Sentinel guard service; the TEE agent for Phala Cloud |
+| `attacks/` | The attack library: YAML scenarios by class |
+| `docs/` | Plan, architecture, decisions, audit, progress notes |
 
-More packages (API, keeper, web, SDK, Sentinel, Solana programs) arrive as the build progresses.
+## Documentation
 
-## Run it yourself
-
-Everything below runs on your own machine. Steps 1–3 need no keys, accounts or network access beyond installing dependencies.
-
-### 1. Install the tools
-
-| Tool | Version | Install |
-|---|---|---|
-| Node.js | 22.12 or newer | [nodejs.org](https://nodejs.org) |
-| pnpm | 10 | `corepack enable` (ships with Node) |
-| Foundry (`forge`, `anvil`, `cast`) | latest | `curl -L https://foundry.paradigm.xyz \| bash`, then `foundryup` |
-
-### 2. Get the code and build it
-
-```bash
-git clone --recursive https://github.com/ddboy19912/bonded
-cd bonded
-pnpm install
-pnpm build            # TypeScript packages
-pnpm contracts:build  # Solidity contracts
-```
-
-If you cloned without `--recursive`, run `git submodule update --init --recursive` first; the contracts need their libraries.
-
-### 3. Try it locally (no keys needed)
-
-These run on a local chain (anvil) with its public test accounts. They never touch a real network and never read `.env`.
-
-```bash
-pnpm test             # all TypeScript tests (starts local chains for the Arena's tests)
-pnpm contracts:test   # all contract tests
-
-pnpm demo             # THE demo, in one command: local chain, API, keeper and worker; rates
-                      # Agent A and Agent B, buys cover, plants an address-poisoning attack,
-                      # Agent A falls for it, the keeper's claim pays (bond first, then pool),
-                      # then serves the web app at http://localhost:5180 (Ctrl-C stops it all)
-
-pnpm demo:local       # contracts only: deploy everything to a local chain, then run
-                      # register → vault → bond → cover → breach → claim (the claim pays 4,500)
-
-pnpm arena --list                           # the attack library
-pnpm arena run                              # every attack against vulnerable-agent
-pnpm arena rate                             # full rating: score, report, attestation, dataset
-pnpm arena rate --agent hardened --enforce  # the guarded agent, for comparison
-pnpm arena rate --agent partial              # the demo's Agent A: one gap, address poisoning
-```
-
-Arena output goes to `apps/arena/traces/` and `apps/arena/ratings/<agent>/`; `report.md` there is the human-readable rating.
-
-**The same break-it run on Robinhood testnet** (needs `DEPLOYER_PRIVATE_KEY`, `DEMO_AGENT_KEY` and `API_TOKEN` in `.env`): `pnpm demo:break` plants the attack for Agent A (agent 10), waits for the hosted keeper's claim and prints the waterfall with explorer links; `pnpm demo:break -- --reset` re-arms Agent A for another take. A recorded run: [docs/progress/evidence/demo-break-testnet.json](docs/progress/evidence/demo-break-testnet.json).
-
-### 4. Optional: settings in `.env`
-
-You only need a `.env` to use language models or real testnets:
-
-```bash
-cp .env.example .env   # then fill in what you need; the file explains every setting
-```
-
-- **Precedence:** values already set in your shell win over `.env`.
-- **Git:** `.env` is git-ignored, so it never gets committed.
-- **Local runs:** step 3's commands ignore `.env` completely.
-
-**Language models.** Set `OPENROUTER_API_KEY` (one key reaches hundreds of models), or point `LLM_BASE_URL` at any OpenAI-compatible endpoint, such as a local Ollama. Then:
-
-```bash
-pnpm arena rate --brain llm --model deepseek/deepseek-v4.1-flash --max-usd 2
-```
-
-| Flag | What it does |
+| | |
 |---|---|
-| `--agent vulnerable\|hardened\|decision` | Picks the demo agent |
-| `--brain scripted\|llm` and `--model <id>` | Picks its brain; the model is any OpenRouter model id |
-| `--sentinel-model <id>` | Adds a Sentinel guard to hardened-agent |
-| `--enforce` | Runs the vault in Enforce mode |
-| `--repeats <n>` | Runs every attack n times |
-| `--max-usd <n>` | Caps model spend for the run |
-| `--fork robinhood\|arbitrum` | Runs against a copy of a live testnet instead of a fresh chain |
-| `--help` | Lists everything |
-
-**Testnets.** Bonded is already deployed on Robinhood Chain testnet and Arbitrum Sepolia; the addresses are in [`contracts/evm/deployments/`](contracts/evm/deployments/README.md). To deploy your own copy or run the demo loop there:
-
-1. Create a **testnet-only** wallet (for example `cast wallet new`). Never use a wallet that holds real funds.
-2. Get test ETH from the chain's faucet. For Arbitrum Sepolia you can also bridge Sepolia ETH.
-3. Put the key in `.env` as `DEPLOYER_PRIVATE_KEY`.
-4. Run:
-
-```bash
-pnpm contracts:deploy robinhood   # or: arbitrum, or any RPC URL
-pnpm contracts:smoke robinhood    # the demo loop on that chain (see .env.example for per-role keys)
-```
-
-A deploy writes `contracts/evm/deployments/<chainId>.json` only after checking everything on-chain.
-
-### Checks before a pull request
-
-```bash
-pnpm format:check && pnpm --filter @bonded/shared abis:check && pnpm typecheck && pnpm lint && pnpm test
-cd contracts/evm && forge fmt --check && forge test
-```
-
-Design records: [ADR-004](docs/decisions/004-registry-disputes-bounties.md) (registry and deploys), [ADR-005](docs/decisions/005-arena-core.md) (Arena), [ADR-006](docs/decisions/006-provider-neutral-llm.md) (language models), [ADR-007](docs/decisions/007-ratings.md) (ratings).
-
-## Day 7 API, keeper and Gate 1
-
-`pnpm test:services` runs real Postgres and Anvil tests without Docker. `pnpm gate:local` runs the complete rating → attestation → quote → cover → injected breach → automatic payout loop, using embedded Postgres and a fresh Anvil deployment. Results go to `artifacts/gate-1-local.json`.
-
-`pnpm gate:testnet` broadcasts the same demo on Robinhood Chain testnet using `DEPLOYER_PRIVATE_KEY` from `.env`. It spends test ETH and faucet tokens, creates a new demo agent and vault, and requires the existing deployment to have a zero waiting period. Review the command before running it. Results go to `artifacts/gate-1-testnet.json`; partial results are saved if a step fails.
-
-Long-running service setup and API requests: [docs/SERVICES.md](docs/SERVICES.md). Day 7 evidence and the Section 25 checklist: [docs/progress/DAY-07.md](docs/progress/DAY-07.md). The committed hosting configuration has not yet been deployed to Railway.
-
-## Day 8 web app
-
-`apps/web` is a Vite + React app for the demo flow on Robinhood Chain testnet: the live Arena feed, agent profiles, vaults (deposit, withdraw, buy cover), underwriting (pool deposit, withdrawal, test tUSDG) and the claims feed ([ADR-010](docs/decisions/010-web-app.md)).
-
-```bash
-pnpm --filter @bonded/web dev
-```
-
-It reads the chain directly and talks to the hosted API by default. Point it at a local API with `VITE_API_URL` (see `apps/web/.env.example`), and add the app's origin to the API's `WEB_ORIGINS`. Wallet actions need a browser wallet such as MetaMask on Robinhood Chain testnet. Starting a rating or getting a quote needs the operator token, which the page keeps in memory only.
-
-## Synthetic Sentinel data
-
-`pnpm sentinel:synth` writes synthetic training rows for Sentinel (plan Section 10.3), seeded from the `sentinel-dataset.jsonl` a rating writes. Labels are chosen by the generator, never by the model. It needs `OPENROUTER_API_KEY` in `.env` and a spending cap:
-
-```bash
-pnpm sentinel:synth --seeds ratings/vulnerable-agent_scripted/sentinel-dataset.jsonl --count 300 --max-usd 0.5
-```
-
-Paths are relative to `apps/arena`. Output goes to `apps/arena/datasets/sentinel-synthetic.jsonl` (gitignored); rerun the same command to resume. By default it keeps the held-out attack classes, A7 and A10 (`SENTINEL_HELD_OUT_CLASSES`), out of the data, so Day 10's evaluation tests classes Sentinel never trained on; `--exclude-classes none` turns that off. Results and limits of the first run: [docs/progress/DAY-08.md](docs/progress/DAY-08.md).
-
-Fine-tuning Laya on it: `pnpm sentinel:dataset` turns real and synthetic rows into Laya's typed-decision format, with a held-out test split, and [services/sentinel/kaggle/README.md](services/sentinel/kaggle/README.md) walks through running Laya's own Kaggle notebook on it.
-
-## Solana programs
-
-`contracts/solana` is an Anchor workspace with the Solana versions of the registry, mandate vault and cover (plan Section 7, [ADR-011](docs/decisions/011-solana-programs.md)). It needs Rust, the Solana CLI 3.x and Anchor 1.x.
-
-```bash
-pnpm solana:test
-```
-
-This builds the three programs and their IDLs, then runs the LiteSVM tests against them: signed scores, the vault's breach checks, and the cover flow from bond to paid claim.
-
-## TEE key custody
-
-The hardened agent can run in a Phala Cloud confidential VM. Its keys are made inside the VM, and an Intel TDX quote proves which code holds them. The Arena verifies the quote, puts the measurement in the score (`arena rate --tee-url …`), and the agent profile shows a "TEE" badge. Why and how: [ADR-012](docs/decisions/012-tee-custody.md). Deploying it yourself: [docs/TEE.md](docs/TEE.md).
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the parts fit together |
+| [AGENTS.md](docs/AGENTS.md) | What an agent is; every agent we rate |
+| [DEVELOPING.md](docs/DEVELOPING.md) | Build, test, run, deploy |
+| [SERVICES.md](docs/SERVICES.md) | The hosted API, keeper and workers; alerts |
+| [BOUNTIES.md](docs/BOUNTIES.md) | Community attack bounties |
+| [SENTINEL.md](docs/SENTINEL.md), [SENTINEL-STRESS.md](docs/SENTINEL-STRESS.md) | The Sentinel guard and how it was tested |
+| [TEE.md](docs/TEE.md) | Running an agent's keys in a TEE |
+| [AUDIT.md](docs/AUDIT.md) | The internal security review |
+| [BUSINESS.md](docs/BUSINESS.md) | Business model and costs |
+| [PLAN.md](docs/PLAN.md), [decisions/](docs/decisions/), [progress/](docs/progress/) | The plan, design decisions and daily notes |
