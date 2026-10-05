@@ -58,6 +58,7 @@ export function Landing() {
       </Card>
       <div className="grid gap-4 sm:grid-cols-3">
         {[
+          ["/agents", "Agents", "Browse registered agents, open their pages or create your own."],
           [
             "/leaderboard",
             "Leaderboard",

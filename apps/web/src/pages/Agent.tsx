@@ -88,10 +88,10 @@ export function Agent() {
       <Page title={`Agent ${id}`}>
         <p className="text-sm text-muted">
           No agent {id} is registered on this chain. See the{" "}
-          <Link to="/leaderboard" className="text-accent hover:underline">
-            leaderboard
+          <Link to="/agents" className="text-accent hover:underline">
+            agents directory
           </Link>{" "}
-          for rated agents.
+          for registered agents.
         </p>
       </Page>
     );
@@ -102,6 +102,9 @@ export function Agent() {
       title={`Agent ${id}`}
       intro="The score is the latest attestation in BondedRegistry. Cover is priced from it."
     >
+      <Link to="/agents" className="w-fit text-sm text-accent hover:underline">
+        ← Back to agents
+      </Link>
       <Card title="Bonded Score">
         {rated && a ? (
           <Grid>

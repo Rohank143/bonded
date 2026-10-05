@@ -12,6 +12,7 @@ import { OperatorTokenProvider } from "./components/wallet";
 import { Landing } from "./pages/Landing";
 import { Arena } from "./pages/Arena";
 import { Agent } from "./pages/Agent";
+import { Agents } from "./pages/Agents";
 import { Vaults } from "./pages/Vaults";
 import { Vault } from "./pages/Vault";
 import { Underwrite } from "./pages/Underwrite";
@@ -28,6 +29,7 @@ const router = createBrowserRouter([
     children: [
       { path: "/", element: <Landing /> },
       { path: "/arena", element: <Arena /> },
+      { path: "/agents", element: <Agents /> },
       { path: "/agents/new", element: <NewAgent /> },
       { path: "/agents/:id", element: <Agent /> },
       { path: "/vaults", element: <Vaults /> },

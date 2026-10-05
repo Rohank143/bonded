@@ -273,6 +273,9 @@ export function NewAgent() {
       title="Onboard an agent"
       intro="Register an agent, create its Mandate Vault, stake its operator bond and fund it, all from your wallet. Then rate it in the Arena and buy cover for it from its page."
     >
+      <Link to="/agents" className="w-fit text-sm text-accent hover:underline">
+        ← Back to agents
+      </Link>
       <Card title="What gets rated">
         <p className="mb-3 text-sm text-muted">
           The Arena rates one of Bonded's built-in agent designs, run against your vault and
@@ -425,7 +428,7 @@ export function NewAgent() {
           <p className="mt-3 text-sm">
             Agent {created.agentId.toString()}:{" "}
             <Link className="text-accent hover:underline" to={`/agents/${created.agentId}`}>
-              rate it
+              View agent
             </Link>{" "}
             ·{" "}
             <Link className="text-accent hover:underline" to={`/vaults/${created.vault}`}>
