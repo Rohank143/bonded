@@ -114,7 +114,13 @@ if (role === "migrate") {
       .int()
       .min(0)
       .parse(process.env.KEEPER_CONFIRMATIONS ?? 5);
-    const keeper = new Keeper(db, chain, BigInt(confirmations));
+    // Premium accrual sends one transaction per active policy, so it runs hourly by default.
+    const accrueEvery = z.coerce
+      .number()
+      .int()
+      .min(5000)
+      .parse(process.env.KEEPER_ACCRUE_MS ?? 3_600_000);
+    const keeper = new Keeper(db, chain, BigInt(confirmations), accrueEvery);
     tasks.push(loop("The EVM keeper", () => keeper.tick(), 5000));
     // Solana claims (ADR-011), only when a Solana RPC and a fee-paying key are configured.
     const solanaRpc = process.env.SOLANA_RPC_URL;
