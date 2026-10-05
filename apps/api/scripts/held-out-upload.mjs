@@ -15,6 +15,8 @@ import { quoteApiUrl } from "../dist/demo-checks.js";
 
 const { fetch } = globalThis;
 const { values } = parseArgs({
+  // pnpm passes the "--" separator through (pnpm heldout:upload -- --dir ...).
+  args: process.argv.slice(2).filter((a) => a !== "--"),
   options: { dir: { type: "string" }, "retire-after": { type: "string" } },
 });
 if (!values.dir) {

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -20,15 +20,20 @@ OPENROUTER_API_KEY in .env and anvil (Foundry).
   --max-usd <n>     stop once model spend reaches this (required)
   --per-class <n>   keep at most this many per class (default: 2)
   --model <id>      any OpenRouter model id (default: deepseek/deepseek-v4.1-flash)
-  --out <dir>       where to write them (default: ~/.config/bonded/held-out/<today>)`;
+  --classes <list>  only draft from seeds of these classes, e.g. A1,A3 (default: all)
+  --out <dir>       where to write them (default: ~/.config/bonded/held-out/<today>). Attacks
+                    already there count toward --per-class, so a rerun only fills the gaps`;
 
 async function main(): Promise<number> {
   const { values } = parseArgs({
+    // pnpm passes the "--" separator through (pnpm heldout:generate -- --max-usd 2).
+    args: process.argv.slice(2).filter((a) => a !== "--"),
     options: {
       "max-usd": { type: "string" },
       "per-class": { type: "string", default: "2" },
       model: { type: "string", default: "deepseek/deepseek-v4.1-flash" },
       out: { type: "string" },
+      classes: { type: "string" },
       help: { type: "boolean", default: false },
     },
   });
@@ -44,6 +49,9 @@ async function main(): Promise<number> {
       join(homedir(), ".config", "bonded", "held-out", new Date().toISOString().slice(0, 10)),
   );
   const library = loadAttackLibrary();
+  const existing = existsSync(out) ? loadAttackLibrary(out) : [];
+  const classes = values.classes?.split(",").map((c) => c.trim());
+  const seeds = classes ? library.filter((s) => classes.includes(s.class)) : library;
   const sandbox = await Sandbox.start();
   try {
     const result = await generateHeldOut({
@@ -51,7 +59,8 @@ async function main(): Promise<number> {
       model: values.model,
       sandbox,
       library,
-      seeds: library,
+      seeds,
+      existing,
       perClass,
       maxUsd,
       onCandidate: (c) =>
@@ -64,17 +73,17 @@ async function main(): Promise<number> {
       writeFileSync(join(out, `${spec.id}.yaml`), stringify(spec), { mode: 0o600 });
     // The summary has no payloads, so it can be shared or quoted.
     writeFileSync(
-      join(out, "summary.json"),
+      // One summary per run, so a rerun that fills gaps keeps the earlier run's record.
+      join(out, `summary-${new Date().toISOString().replace(/[:.]/g, "-")}.json`),
       `${JSON.stringify(
         {
           generatedAt: new Date().toISOString(),
           model: values.model,
-          kept: result.kept.length,
+          kept: existing.length + result.kept.length,
           byClass: Object.fromEntries(
-            [...new Set(result.kept.map((k) => k.class))].map((c) => [
-              c,
-              result.kept.filter((k) => k.class === c).length,
-            ]),
+            [...new Set([...existing, ...result.kept].map((k) => k.class))]
+              .sort()
+              .map((c) => [c, [...existing, ...result.kept].filter((k) => k.class === c).length]),
           ),
           candidates: result.candidates.map(({ seed, kept, reason, breaches }) => ({
             seed,
