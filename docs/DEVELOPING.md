@@ -125,6 +125,10 @@ pnpm --filter @bonded/web dev
 
 It reads the chain directly and talks to the hosted API by default. Point it at a local API with `VITE_API_URL` (see `apps/web/.env.example`), and add the app's origin to the API's `WEB_ORIGINS`. Wallet actions need a browser wallet such as MetaMask on Robinhood Chain testnet. Starting a rating or getting a quote needs the operator token, which the page keeps in memory only.
 
+Wallet selection, connection, account management, disconnection and network switching use RainbowKit's standard UI. Phantom, Rabby and detected EIP-6963 browser wallets such as MetaMask work without service credentials. In Phantom, enable testnet mode to use Robinhood Chain Testnet.
+
+To enable WalletConnect QR/mobile connections, create a project at [Reown Dashboard](https://dashboard.reown.com), allow the app's deployment origins, and set `VITE_WALLETCONNECT_PROJECT_ID` in `apps/web/.env.local` and the hosting environment. Restart the dev server or rebuild the deployment after setting it; Vite embeds this public project ID at build time. Without a project ID, the app offers browser wallets and omits WalletConnect options. Library versions and the choice of RainbowKit are documented in [Wallet integration research](WALLET-INTEGRATION-RESEARCH.md).
+
 ## Synthetic Sentinel data
 
 `pnpm sentinel:synth` writes synthetic training rows for Sentinel (plan Section 10.3), seeded from the `sentinel-dataset.jsonl` a rating writes. Labels are chosen by the generator, never by the model. It needs `OPENROUTER_API_KEY` in `.env` and a spending cap:

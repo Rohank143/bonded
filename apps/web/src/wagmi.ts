@@ -1,11 +1,37 @@
+import { connectorsForWallets } from "@rainbow-me/rainbowkit";
+import {
+  injectedWallet,
+  metaMaskWallet,
+  phantomWallet,
+  rabbyWallet,
+  rainbowWallet,
+  walletConnectWallet,
+} from "@rainbow-me/rainbowkit/wallets";
 import { createConfig, http } from "wagmi";
-import { injected } from "wagmi/connectors/injected";
 import { robinhoodTestnet, rpcUrl } from "./config";
 
-/** Browser wallets only (MetaMask, Rabby and similar). Reads go through the configured RPC. */
+const projectId =
+  (import.meta.env.VITE_WALLETCONNECT_PROJECT_ID as string | undefined)?.trim() ?? "";
+const connectors = connectorsForWallets(
+  [
+    {
+      groupName: "Wallets",
+      wallets: [
+        phantomWallet,
+        rabbyWallet,
+        ...(projectId ? [metaMaskWallet, rainbowWallet, walletConnectWallet] : []),
+        injectedWallet,
+      ],
+    },
+  ],
+  // Injected wallets do not use a project ID. QR/mobile connectors require a real one.
+  { appName: "Bonded", projectId },
+);
+
+/** RainbowKit owns wallet selection and connection. Reads use the configured chain RPC. */
 export const wagmiConfig = createConfig({
   chains: [robinhoodTestnet],
-  connectors: [injected()],
+  connectors,
   transports: { [robinhoodTestnet.id]: http(rpcUrl) },
 });
 
