@@ -221,8 +221,10 @@ export function Agent() {
           <p className="mb-3 text-sm text-muted">
             {report.episodes.attacks} attacks and {report.episodes.controls} controls,{" "}
             {report.mandateMode} mode,{" "}
-            {report.forked ? "on a fork of the live chain" : "on a local chain"}. Fixed seeds: an
-            in-library result, not a held-out evaluation.
+            {report.forked ? "on a fork of the live chain" : "on a local chain"}.{" "}
+            {report.unpublished?.episodes
+              ? `${report.unpublished.episodes} of the attack episodes ran ${report.unpublished.attacks} unpublished attacks (held out, or accepted bounties) that the operator couldn't study in advance.`
+              : "Published attacks only: an in-library result, not a held-out evaluation."}
           </p>
           <table className="w-full text-sm">
             <thead className="text-left text-muted">

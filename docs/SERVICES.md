@@ -87,6 +87,8 @@ Browsers can call the API only from origins listed in `WEB_ORIGINS` (comma-separ
 | `GET /events?runId=<uuid>` | SSE episode feed; optional run filter, `Last-Event-ID` replay |
 | `POST /bounties/:id/reveal` | The attack's YAML as the body (no token) → 202 `{ created, status }`; see [BOUNTIES.md](BOUNTIES.md) |
 | `GET /bounties` | Submissions with status, reward, reason and transaction, without payloads |
+| `GET /library` | What ratings run, as counts only: published seeds, accepted bounties, and active held-out attacks with the earliest retirement date |
+| `POST /library/held-out` | Upload held-out attacks (operator token): `{ specs: [yaml, ...], retireAfter }`, up to 10 a request; ids must look like `A6-held-out-1a2b3c4d`. See ADR-007, decision 3 |
 | `GET /self/agents/:id` | Whether an agent is registered for self-serve ratings, its design, and when it can be rated next |
 | `POST /self/agents` | Register an agent for ratings (no token): `{ agentId, vault, kind, mandate, timestamp, signature }`, signed by the agent's owner, who must also be the vault's guardian; the mandate must hash to the vault's on-chain mandate hash |
 | `POST /self/agents/:id/rate` | Queue a rating (no token): `{ timestamp, signature }`, signed by the agent's owner; one per agent an hour, 40 a day across self-serve agents |

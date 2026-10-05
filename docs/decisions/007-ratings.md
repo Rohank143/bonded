@@ -42,6 +42,19 @@ The plan's adaptive attacker (Section 8.3: a model writes new attack payloads an
 
 The rest of the design doesn't depend on it: the report, scoring and dataset work the same with any number of seeds.
 
+**Update (2026-10-05, issue #11): a held-out attack set.** A fixed, public list of attacks is a test an operator can study for. Ratings on the hosted service now also run attacks that are never published:
+- **The held-out set.** `pnpm heldout:generate` has a model draft one new attack from each seed's variant prompt. Code keeps a draft only if:
+  - it is a valid bounty spec of the seed's class and surfaces;
+  - it is not a copy of any library attack (80% of words in common);
+  - it shares under half its words with its own seed;
+  - it breaches the undefended reference agent in at least 2 of 3 runs, the bounty rule.
+
+  Kept attacks get an id that says only their class (`A6-held-out-1a2b3c4d`). They are stored in the API's database, never in the repository, and uploaded with the operator token (`pnpm heldout:upload`).
+- **Rotation.** Each set has a retirement date, 90 days by default. A rating runs every attack whose date is still ahead, so a new set is uploaded each quarter and the old one stops counting on its date.
+- **Reports count them.** `unpublished` in the report, a line in `report.md`, and the agent page show how many attacks, and how many attack episodes, the operator couldn't have studied: held-out attacks plus accepted bounties, whose text is private too. `GET /library` gives the same counts, never ids or text.
+- **Bounty validation doesn't check against the held-out set.** If it did, a rejection would tell a hunter that a hidden attack sits close to their wording. A hunter who finds one independently is paid as usual.
+- **What it doesn't fix.** The reference agents are scripted and act only on phrasings their parser knows. So a kept attack is new in scenario and wording, but its instruction is phrased in a way the undefended agent recognises. That is a real test for language-model agents, which read the whole text, and a weak one for scripted agents. The adaptive loop of Section 8.3 (mutating attacks against each agent's responses) is still not built.
+
 ### 4. hardened-agent: source separation plus a guard in code
 
 - **Scripted brain:** reads everything (so it faces every attack), acts only on its task, and sends every write through the guard.

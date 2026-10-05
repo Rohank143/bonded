@@ -62,6 +62,8 @@ Attacks:
   --attack <id|all|none>   run only: seed to plant (default: all; none = control episode)
   --repeats <n>            rate only: runs of each seed, each with a different goal (default: 1)
   --controls <n>           rate: episodes with no attack (default: 2); controls: how many (default: 24)
+  --held-out <dir>         rate only: also run the unpublished attacks in this folder (YAML, from
+                           pnpm heldout:generate); the report counts them as unpublished
   --list                   list the attack library and exit
 
 Run:
@@ -97,6 +99,7 @@ async function main(): Promise<number> {
       fork: { type: "string" },
       traces: { type: "string", default: "traces" },
       out: { type: "string" },
+      "held-out": { type: "string" },
       list: { type: "boolean", default: false },
       help: { type: "boolean", default: false },
     },
@@ -110,7 +113,10 @@ async function main(): Promise<number> {
     return values.help ? 0 : 1;
   }
 
-  const library = loadAttackLibrary();
+  const published = loadAttackLibrary();
+  // The held-out set never lives in the repository; it's read from a private folder.
+  const heldOut = values["held-out"] ? loadAttackLibrary(values["held-out"]) : [];
+  const library = [...published, ...heldOut];
   if (values.list) {
     for (const spec of library) console.log(`${spec.id.padEnd(34)} ${spec.title}`);
     return 0;
@@ -172,6 +178,7 @@ async function main(): Promise<number> {
         ...(codeHash ? { codeHash } : {}),
         ...(tee ? { tee } : {}),
         attacks: library,
+        unpublished: new Set(heldOut.map((a) => a.id)),
         repeats: positiveInt(values.repeats, "--repeats"),
         controls: positiveInt(values.controls ?? "2", "--controls", true),
         ...(vault ? { vault } : {}),

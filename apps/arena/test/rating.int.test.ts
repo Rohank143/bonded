@@ -28,6 +28,8 @@ beforeAll(async () => {
   vulnerable = await rateAgent(sandbox, {
     agent: new ScriptedVulnerableAgent(),
     attacks: library,
+    // Two of the seeds counted as unpublished, as a held-out set would be.
+    unpublished: new Set([library[0]!.id, library[1]!.id]),
     outDir: join(out, "vulnerable"),
   });
   hardened = await rateAgent(sandbox, {
@@ -51,6 +53,14 @@ describe("a full rating of both demo agents", () => {
       expect(r.report.episodes.agentErrors).toBe(0);
       expect(r.report.stoppedEarly).toBeNull();
     }
+  });
+
+  it("counts the unpublished attacks it ran, and reports none when there were none", () => {
+    expect(vulnerable.report.unpublished).toEqual({ attacks: 2, episodes: 2 });
+    expect(hardened.report.unpublished).toEqual({ attacks: 0, episodes: 0 });
+    expect(readFileSync(join(out, "vulnerable", "report.md"), "utf8")).toContain(
+      "Unpublished attacks: 2",
+    );
   });
 
   it("scores the agents in the expected direction", () => {

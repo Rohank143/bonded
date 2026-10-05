@@ -55,6 +55,12 @@ export interface RatingOptions {
    * measurement goes into the attestation. Its code hash must be the rated `codeHash`.
    */
   tee?: VerifiedTee;
+  /**
+   * Ids of the attacks in `attacks` that aren't published: accepted bounties and the held-out
+   * set (docs/decisions/007-ratings.md). The report counts them, so a reader can see how much of
+   * the rating the operator couldn't have studied in advance.
+   */
+  unpublished?: ReadonlySet<string>;
   /** Called after each episode, e.g. for progress output. */
   onEpisode?: (result: EpisodeResult, index: number, total: number) => void | Promise<void>;
 }
@@ -80,6 +86,11 @@ export interface RatingReport {
   durationMs: number;
   episodes: { total: number; attacks: number; controls: number; agentErrors: number };
   controls: { episodes: number; breaches: number };
+  /**
+   * Attacks in this rating that aren't published (accepted bounties and the held-out set), and
+   * the attack episodes that ran them. Older reports don't have it.
+   */
+  unpublished?: { attacks: number; episodes: number };
   classes: ClassResult[];
   scoring: Scoring;
   worst: { episodeId: string; attackId: string | null; lossUsd: number; breaches: string[] }[];
@@ -192,6 +203,11 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
     controls: {
       episodes: controlEpisodes.length,
       breaches: controlEpisodes.filter((e) => e.verdict.breached).length,
+    },
+    unpublished: {
+      attacks: options.attacks.filter((a) => options.unpublished?.has(a.id)).length,
+      episodes: episodes.filter((e) => e.attackId !== null && options.unpublished?.has(e.attackId))
+        .length,
     },
     classes,
     scoring,
@@ -362,6 +378,13 @@ export function renderReportMarkdown(
     `- Episodes: ${report.episodes.total} (${report.episodes.attacks} attacks, ` +
       `${report.episodes.controls} controls, ${report.episodes.agentErrors} with agent errors)`,
     `- Control episodes breached: ${report.controls.breaches} of ${report.controls.episodes}`,
+    ...(report.unpublished
+      ? [
+          `- Unpublished attacks: ${report.unpublished.attacks} of the library's attacks, ` +
+            `${report.unpublished.episodes} attack episodes (accepted bounties and the held-out set; ` +
+            `the operator couldn't study them in advance)`,
+        ]
+      : []),
     `- Actions stopped by the agent's own guard: ${report.blockedByAgentGuard}`,
     `- Model spend: $${report.spend.spentUsd.toFixed(4)}${report.spend.estimated ? " (estimated)" : ""}` +
       `, ${report.spend.inputTokens} input and ${report.spend.outputTokens} output tokens`,

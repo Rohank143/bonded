@@ -19,6 +19,7 @@ import { EventStreams } from "./events.js";
 import { teeQuoteBlock } from "./tee-watch.js";
 import { RateLimiter, clientAddress } from "./rate-limit.js";
 import { selfServeRoutes, type SelfServeLimits } from "./self-serve.js";
+import { libraryRoutes } from "./library.js";
 export { issueQuote } from "./quotes.js";
 /** A decimal id, in canonical form: "01" and "1" are the same agent, so they must be the same key. */
 const uint = z
@@ -258,6 +259,7 @@ export function createApi(options: {
   });
   app.get("/bounties", async (c) => c.json(await db.bounties(chain.deployment.chainId)));
   selfServeRoutes(app, { db, chain, ...(options.selfServe ? { limits: options.selfServe } : {}) });
+  libraryRoutes(app, { db, chainId: chain.deployment.chainId });
   app.get("/events", async (c) => {
     const after = uint.parse(c.req.header("Last-Event-ID") ?? c.req.query("after") ?? "0");
     const runId = c.req.query("runId");

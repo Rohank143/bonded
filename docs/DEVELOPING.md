@@ -113,6 +113,11 @@ Design records: [ADR-004](decisions/004-registry-disputes-bounties.md) (registry
 
 `pnpm gate:testnet` broadcasts the same demo on Robinhood Chain testnet using `DEPLOYER_PRIVATE_KEY` from `.env`. It spends test ETH and faucet tokens, creates a new demo agent and vault, and requires the existing deployment to have a zero waiting period. Review the command before running it. Results go to `artifacts/gate-1-testnet.json`; partial results are saved if a step fails.
 
+**The held-out attack set** (ADR-007, decision 3). It needs `OPENROUTER_API_KEY` in `.env`, and `API_TOKEN` for the upload:
+- `pnpm heldout:generate -- --max-usd 2` drafts new attacks and keeps those that pass the checks. They're written as YAML to `~/.config/bonded/held-out/<date>`, outside the repository; keep that folder private.
+- `pnpm heldout:upload -- --dir <that folder>` sends them to the hosted API with a 90-day retirement date.
+- `arena rate --held-out <that folder>` includes them in a local rating, as the leaderboard ratings do.
+
 Long-running service setup and API requests: [docs/SERVICES.md](SERVICES.md). Day 7 evidence and the Section 25 checklist: [docs/progress/DAY-07.md](progress/DAY-07.md).
 
 ## Web app
