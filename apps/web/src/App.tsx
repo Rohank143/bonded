@@ -3,6 +3,7 @@ import { ConnectButton } from "./components/wallet";
 import { isLocal } from "./config";
 
 const links = [
+  ["/agents", "Agents"],
   ["/leaderboard", "Leaderboard"],
   ["/arena", "Arena"],
   ["/vaults", "Vaults"],

@@ -63,6 +63,7 @@ export function Landing() {
             "Leaderboard",
             "Popular open-source agents, rated against the same attacks.",
           ],
+          ["/agents", "Agents", "Every registered agent, its score and its vault."],
           ["/agents/new", "Onboard an agent", "Register it, give it a vault and a bond, rate it."],
           ["/arena", "Arena", "Watch attacks run against an agent, live."],
           ["/vaults", "Vaults", "Deposit, see cover and the breach log, buy cover."],
