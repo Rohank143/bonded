@@ -17,7 +17,12 @@ export class Keeper {
     readonly db: Database,
     readonly chain: ServiceChain,
     readonly confirmations = 5n,
-    readonly accrueIntervalMs = 60_000,
+    /**
+     * How often to accrue every active policy's premium. Each accrual is a transaction, so this
+     * sets most of the keeper's gas use. Claims, cancellations and new cover accrue on chain when
+     * they happen, so this only keeps the pool's income and lapses current between those.
+     */
+    readonly accrueIntervalMs = 60 * 60_000,
   ) {}
   /** Index a confirmed batch, accrue policies independently, then retry saved breaches. */
   async tick() {

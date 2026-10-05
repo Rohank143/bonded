@@ -288,6 +288,36 @@ it("rejects capacity, signs an API quote, binds it and automatically pays a brea
   );
   expect((await pg.db.pool.query("SELECT * FROM keeper_cursors")).rowCount).toBe(1);
 });
+it("accrues premiums once per interval, not on every tick", async () => {
+  // The claim above left an active policy; each accrual is one keeper transaction.
+  const sent: string[] = [];
+  const counting = (intervalMs: number) =>
+    new Keeper(
+      pg.db,
+      {
+        ...chain,
+        send: async (address, abi, name, args) => {
+          sent.push(name as string);
+          return chain.send(address, abi, name, args);
+        },
+      },
+      0n,
+      intervalMs,
+    );
+  const accruals = () => sent.filter((n) => n === "accrue").length;
+  const hourly = counting(60 * 60_000);
+  await hourly.tick();
+  const first = accruals();
+  expect(first).toBeGreaterThan(0);
+  await hourly.tick();
+  await hourly.tick();
+  expect(accruals()).toBe(first);
+  // With no wait, every tick accrues again.
+  const eager = counting(0);
+  await eager.tick();
+  await eager.tick();
+  expect(accruals()).toBe(first * 3);
+});
 it("leases exclusively, recovers crashed jobs and fences an old worker", async () => {
   const id = `${chain.deployment.chainId}:${vault.agentId}`;
   await pg.db.pool.query("INSERT INTO agents VALUES($1,$2,$3,$4)", [
