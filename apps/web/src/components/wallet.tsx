@@ -1,43 +1,21 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useAccount, useConnect, useDisconnect, useSwitchChain, useWriteContract } from "wagmi";
+import { ConnectButton as RainbowKitConnectButton } from "@rainbow-me/rainbowkit";
+import { useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
 import type { Abi, Hex } from "viem";
-import { networkName, robinhoodTestnet } from "../config";
-import { short } from "../lib/format";
+import { robinhoodTestnet } from "../config";
 import { wagmiConfig } from "../wagmi";
-import { Button, ErrorText, Input, TxLink } from "./ui";
+import { ErrorText, Input, TxLink } from "./ui";
 
 export function ConnectButton() {
-  const { address, chainId, isConnected } = useAccount();
-  const { connect, connectors, isPending, error } = useConnect();
-  const { disconnect } = useDisconnect();
-  const { switchChain, error: switchError } = useSwitchChain();
-  if (!isConnected)
-    return (
-      <div className="flex items-center gap-2">
-        <Button
-          disabled={isPending || !connectors[0]}
-          onClick={() => connectors[0] && connect({ connector: connectors[0] })}
-        >
-          {isPending ? "Connecting…" : "Connect wallet"}
-        </Button>
-        <ErrorText error={error} />
-      </div>
-    );
-  if (chainId !== robinhoodTestnet.id)
-    return (
-      <div className="flex flex-col items-end gap-1">
-        <Button onClick={() => switchChain({ chainId: robinhoodTestnet.id })}>
-          Switch to {networkName}
-        </Button>
-        <ErrorText error={switchError} />
-      </div>
-    );
   return (
-    <Button kind="secondary" onClick={() => disconnect()}>
-      {short(address ?? "")}
-    </Button>
+    <RainbowKitConnectButton
+      label="Connect wallet"
+      accountStatus="address"
+      chainStatus="name"
+      showBalance={false}
+    />
   );
 }
 
