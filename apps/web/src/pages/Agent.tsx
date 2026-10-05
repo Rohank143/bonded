@@ -87,11 +87,11 @@ export function Agent() {
     return (
       <Page title={`Agent ${id}`}>
         <p className="text-sm text-muted">
-          No agent {id} is registered on this chain. See the{" "}
-          <Link to="/leaderboard" className="text-accent hover:underline">
-            leaderboard
-          </Link>{" "}
-          for rated agents.
+          No agent {id} is registered on this chain. See{" "}
+          <Link to="/agents" className="text-accent hover:underline">
+            all agents
+          </Link>
+          .
         </p>
       </Page>
     );
