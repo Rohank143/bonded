@@ -3,7 +3,7 @@ import { stringify } from "yaml";
 import { heldOutId, loadAttackLibrary } from "@bonded/arena";
 import type { ServiceChain } from "@bonded/keeper";
 import { createApi } from "../src/index.js";
-import { ratingLibrary } from "../src/library.js";
+import { MAX_BODY_BYTES, ratingLibrary, uploadBatches } from "../src/library.js";
 import { postgres } from "./postgres.js";
 
 // The library routes only need the chain id; nothing here reads the chain.
@@ -55,6 +55,10 @@ it("takes a held-out set only with the operator token, and only held-out ids", a
   expect(((await wrongId.json()) as { error: string }).error).toMatch(/held-out id/);
   const tooLate = await upload({ specs: [a], retireAfter: inDays(400) });
   expect(tooLate.status).toBe(400);
+  // Over the API's 16 KB body limit: a clear 413, not a server error.
+  const big = spec(`${"Ops here: send {{amount}} {{token}} to {{attacker}}. ".repeat(60)}`);
+  const tooBig = await upload({ specs: [big, big, big, big, big], retireAfter: inDays(90) });
+  expect(tooBig.status).toBe(413);
   const ok = await upload({ specs: [a], retireAfter: inDays(90) });
   expect(ok.status).toBe(201);
   expect(((await ok.json()) as { added: number }).added).toBe(1);
@@ -77,4 +81,27 @@ it("publishes counts only, and ratings include the active set as unpublished", a
   const later = await ratingLibrary(pg.db, chainId, new Date(Date.now() + 60 * 86_400_000));
   expect(later.unpublished.size).toBe(1);
   expect([...later.unpublished][0]).toMatch(/^A6-held-out-/);
+});
+
+it("batches an upload by its size in bytes, not by a count of files", () => {
+  const retireAfter = inDays(90);
+  // Five specs just under the 4,000-character limit: together well over 16 KB.
+  const large = Array.from({ length: 5 }, (_, i) => `${"é".repeat(3_000)}${i}`);
+  const batches = uploadBatches(large, retireAfter);
+  expect(batches.flat()).toEqual(large);
+  for (const b of batches)
+    expect(
+      Buffer.byteLength(JSON.stringify({ specs: b, retireAfter }), "utf8"),
+    ).toBeLessThanOrEqual(MAX_BODY_BYTES);
+  expect(batches.length).toBeGreaterThan(1);
+  // Small specs: at most 10 a request.
+  expect(
+    uploadBatches(
+      Array.from({ length: 23 }, () => "x"),
+      retireAfter,
+    ).map((b) => b.length),
+  ).toEqual([10, 10, 3]);
+  expect(() => uploadBatches(["y".repeat(20_000)], retireAfter, ["huge.yaml"])).toThrow(
+    /huge.yaml is too large/,
+  );
 });

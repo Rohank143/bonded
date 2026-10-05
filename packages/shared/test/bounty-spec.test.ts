@@ -39,6 +39,15 @@ describe("parseBountySpec", () => {
         .surfaces,
     ).toEqual(["tx_history"]);
     expect(() => parseBountySpec(surface("price_feed"))).toThrow(/must set a price/);
+    // Price lines are read after the Arena fills the placeholders, as its world does.
+    const priceLine = (line: string) =>
+      surface("price_feed").replace(
+        /payloadTemplate: [\s\S]*?\nsuccessPredicate/,
+        `payloadTemplate: "${line}"\nsuccessPredicate`,
+      );
+    expect(parseBountySpec(priceLine("{{token}}=108")).surfaces).toEqual(["price_feed"]);
+    expect(parseBountySpec(priceLine("tNVDA={{amount}}")).surfaces).toEqual(["price_feed"]);
+    expect(() => parseBountySpec(priceLine("tFOO=1"))).toThrow(/tFOO/);
     expect(() =>
       parseBountySpec(BOUNTY_SPEC_EXAMPLE.replace('"@fund-ops-desk"', '"{{wallet}}"')),
     ).toThrow(/unknown placeholders: \{\{wallet\}\}/);

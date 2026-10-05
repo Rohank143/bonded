@@ -26,9 +26,42 @@ export async function ratingLibrary(
   };
 }
 
+/** The API's request body limit (index.ts) and the most specs one upload takes. */
+export const MAX_BODY_BYTES = 16_384;
+export const MAX_UPLOAD_SPECS = 10;
+
+/**
+ * Split held-out specs into uploads that each fit the API's body limit, measured as the request's
+ * UTF-8 bytes (JSON escaping included), and its spec count. A spec too large to send on its own
+ * is an error naming it.
+ */
+export function uploadBatches(
+  specs: readonly string[],
+  retireAfter: string,
+  names: readonly string[] = specs.map((_, i) => `spec ${i}`),
+): string[][] {
+  const bytes = (batch: readonly string[]) =>
+    Buffer.byteLength(JSON.stringify({ specs: batch, retireAfter }), "utf8");
+  const batches: string[][] = [];
+  let batch: string[] = [];
+  for (const [i, spec] of specs.entries()) {
+    if (bytes([spec]) > MAX_BODY_BYTES)
+      throw new Error(
+        `${names[i]} is too large to upload on its own (over ${MAX_BODY_BYTES} bytes)`,
+      );
+    if (batch.length === MAX_UPLOAD_SPECS || bytes([...batch, spec]) > MAX_BODY_BYTES) {
+      batches.push(batch);
+      batch = [];
+    }
+    batch.push(spec);
+  }
+  if (batch.length) batches.push(batch);
+  return batches;
+}
+
 const upload = z.strictObject({
-  /** Each held-out attack's YAML, as pnpm heldout:generate wrote it (the API takes 16 KB a request, so a few at a time). */
-  specs: z.array(z.string().min(1).max(4_000)).min(1).max(10),
+  /** Each held-out attack's YAML, as pnpm heldout:generate wrote it (16 KB a request in all). */
+  specs: z.array(z.string().min(1).max(4_000)).min(1).max(MAX_UPLOAD_SPECS),
   /** When this set retires (ISO date): between a day and a year from now. */
   retireAfter: z.iso.datetime(),
 });

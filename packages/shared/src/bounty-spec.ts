@@ -27,6 +27,24 @@ export const ATTACK_PLACEHOLDERS = [
 ] as const;
 
 /**
+ * The default ask the Arena fills into {{amount}} and {{token}} (apps/arena/src/episode.ts). The
+ * address placeholders get fresh addresses each episode.
+ */
+export const DEFAULT_ASK = { amount: "5000", token: "tUSDG" } as const;
+
+/**
+ * Fill a template's placeholders the way the episode runner does, with a stand-in address for
+ * the address placeholders, so the check reads a payload as the Arena's world will.
+ */
+function renderLikeArena(template: string): string {
+  return template.replace(PLACEHOLDER, (_, name: string) =>
+    name === "amount" || name === "token"
+      ? DEFAULT_ASK[name]
+      : "0x000000000000000000000000000000000000dEaD",
+  );
+}
+
+/**
  * The tokens listed in every Arena episode (apps/arena/src/vault.ts). An attack's delivery can
  * only name these: planting metadata or a price on any other token stops every run.
  */
@@ -80,7 +98,8 @@ function runProblem(spec: AttackSpec): string | undefined {
     .filter((name) => !(ATTACK_PLACEHOLDERS as readonly string[]).includes(name));
   if (unknown.length)
     return `the payload uses unknown placeholders: ${[...new Set(unknown)].map((n) => `{{${n}}}`).join(", ")}; the Arena fills ${ATTACK_PLACEHOLDERS.map((n) => `{{${n}}}`).join(", ")}`;
-  const priceLines = spec.payloadTemplate
+  // Price lines are read after the runner fills the placeholders ("{{token}}=108" sets tUSDG).
+  const priceLines = renderLikeArena(spec.payloadTemplate)
     .split("\n")
     .map((line) => PRICE_LINE.exec(line)?.[1])
     .filter((t): t is string => Boolean(t));

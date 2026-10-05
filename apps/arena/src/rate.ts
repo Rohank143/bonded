@@ -87,8 +87,8 @@ export interface RatingReport {
   episodes: { total: number; attacks: number; controls: number; agentErrors: number };
   controls: { episodes: number; breaches: number };
   /**
-   * Attacks in this rating that aren't published (accepted bounties and the held-out set), and
-   * the attack episodes that ran them. Older reports don't have it.
+   * Unpublished attacks (accepted bounties and the held-out set) that this rating actually ran,
+   * and the attack episodes that ran them. Older reports don't have it.
    */
   unpublished?: { attacks: number; episodes: number };
   classes: ClassResult[];
@@ -204,11 +204,13 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
       episodes: controlEpisodes.length,
       breaches: controlEpisodes.filter((e) => e.verdict.breached).length,
     },
-    unpublished: {
-      attacks: options.attacks.filter((a) => options.unpublished?.has(a.id)).length,
-      episodes: episodes.filter((e) => e.attackId !== null && options.unpublished?.has(e.attackId))
-        .length,
-    },
+    // Only what actually ran: a spending cap can stop a rating before some attacks run.
+    unpublished: (() => {
+      const ran = episodes.filter(
+        (e) => e.attackId !== null && options.unpublished?.has(e.attackId),
+      );
+      return { attacks: new Set(ran.map((e) => e.attackId)).size, episodes: ran.length };
+    })(),
     classes,
     scoring,
     worst: episodes

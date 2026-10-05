@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { loadDotEnv } from "@bonded/arena";
 import { quoteApiUrl } from "../dist/demo-checks.js";
+import { uploadBatches } from "../dist/library.js";
 
 const { fetch } = globalThis;
 const { values } = parseArgs({
@@ -30,18 +31,26 @@ const retireAfter = new Date(values["retire-after"] ?? Date.now() + 90 * 86_400_
 const files = (await readdir(values.dir)).filter((f) => /\.ya?ml$/.test(f)).sort();
 if (files.length === 0) throw new Error(`no YAML files in ${values.dir}`);
 const specs = await Promise.all(files.map((f) => readFile(join(values.dir, f), "utf8")));
+
+// The API takes 16 KB a request and 10 specs at most: batches by the request's real size.
+const bodyOf = (batch) => JSON.stringify({ specs: batch, retireAfter });
+const batches = uploadBatches(specs, retireAfter, files);
+
 let added = 0;
-for (let i = 0; i < specs.length; i += 5) {
+for (const [n, part] of batches.entries()) {
   const res = await fetch(`${API}/library/held-out`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${process.env.API_TOKEN}`,
     },
-    body: JSON.stringify({ specs: specs.slice(i, i + 5), retireAfter }),
+    body: bodyOf(part),
   });
   const body = await res.json();
-  if (!res.ok) throw new Error(`upload refused at file ${i}: ${body.error ?? res.status}`);
+  if (!res.ok)
+    throw new Error(
+      `upload refused in batch ${n + 1} of ${batches.length}: ${body.error ?? res.status}`,
+    );
   added += body.added;
 }
 const library = await (await fetch(`${API}/library`)).json();
