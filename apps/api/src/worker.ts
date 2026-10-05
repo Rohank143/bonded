@@ -23,7 +23,7 @@ import { z } from "zod";
 import { getAbiItem, hashTypedData, type Hex } from "viem";
 import { attestationTypedData, bondedDomain } from "@bonded/shared";
 import type { ServiceChain } from "@bonded/keeper";
-import { chainLibrary } from "./bounty-worker.js";
+import { ratingLibrary } from "./library.js";
 
 // Operators provision these records; callers cannot choose RPCs, code, commands or model URLs.
 export const agentConfig = z.strictObject({
@@ -117,6 +117,8 @@ async function runLocked(
           })
         : undefined;
       await check();
+      // The published seeds, accepted bounties and the active held-out set (library.ts).
+      const library = await ratingLibrary(db, chain.deployment.chainId);
       const sandbox = await Sandbox.start({ forkUrl: rpcUrl, forkDeployment: chain.deployment });
       try {
         const result = await rateAgent(sandbox, {
@@ -126,8 +128,8 @@ async function runLocked(
               : config.kind === "partial"
                 ? createPartialAgent("scripted")
                 : createVulnerableAgent("scripted"),
-          // The repo's seeds plus accepted bounties (bounty-worker.ts).
-          attacks: await chainLibrary(db, chain.deployment.chainId),
+          attacks: library.attacks,
+          unpublished: library.unpublished,
           codeHash: config.codeHash as Hex,
           ...(config.repeats ? { repeats: config.repeats } : {}),
           ...(tee ? { tee } : {}),

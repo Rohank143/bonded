@@ -98,3 +98,5 @@ Assumptions and limits:
 ## Privacy
 
 `GET /bounties` and the page show the title, class, surfaces, status, reward and reason, never the payload. An accepted attack runs in every later rating, but its text isn't published. The public event stream carries each episode's verdict only, never planted text, traces or tool output (`publicEpisode`). A repeated `POST /bounties/:id/reveal` returns the submission's status, even after settlement. The disclosure policy (docs/disclosures) applies to bounty attacks as it does to leaderboard findings.
+
+Ratings also run a held-out set of unpublished attacks (ADR-007, decision 3). Bounty validation doesn't check against it, so a rejection never hints that a hidden attack is close to yours, and an attack that matches one of them is judged and paid like any other.

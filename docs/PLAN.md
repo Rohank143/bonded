@@ -389,7 +389,12 @@ Each seed is a YAML spec: `id`, `class`, `surfaces`, `payload_template`, `succes
 - **Budget per rating:** about 200 episodes (about 20 per class) plus about 40 adaptive follow-ups on the weakest classes.
 - **Guardrails:** attacks only ever target sandboxed forks with test funds, never live systems.
 
-**Status (ADR-007):** the model-driven attacker that writes and adapts new payloads is not built. Ratings run the hand-written seeds, each repeatable under different benign goals (`--repeats`), and community bounties (Section 13) grow the library.
+**Status (ADR-007):** the adaptive loop that mutates attacks against an agent's responses is not built. Ratings run three kinds of attack:
+- the hand-written seeds, each repeatable under different benign goals (`--repeats`);
+- accepted community bounties (Section 13);
+- since 2026-10-05, a **held-out set**: model-drafted attacks that passed the bounty checks, are kept out of the repository, and rotate every 90 days (issue #11).
+
+Reports say how many attacks the operator couldn't have studied in advance.
 
 ### 8.4 Target adapters (how any agent plugs in)
 
@@ -844,7 +849,7 @@ Founder actions on Day 14: post the bounty announcement; fill in the team slide.
 
 | Item | Deferred on | Needed by | Tracking |
 |---|---|---|---|
-| Adaptive or held-out attack source, so ratings include attacks the operator couldn't study in advance (Section 8.3) | Day 6 (ADR-007, decision 3) | Before scores price real (non-testnet) cover. Not needed for the demo or the gates | [Issue #11](https://github.com/ddboy19912/bonded/issues/11) |
+| Adaptive or held-out attack source, so ratings include attacks the operator couldn't study in advance (Section 8.3) | Day 6 (ADR-007, decision 3) | Before scores price real (non-testnet) cover. Not needed for the demo or the gates | Held-out set done 2026-10-05 ([issue #11](https://github.com/ddboy19912/bonded/issues/11)); the adaptive loop is still open |
 | Laya adapter behind the `DecisionModel` interface (Section 10) | Day 6 (ADR-007, decision 5). Hugging Face is blocked in the cloud environment | Day 10: the Sentinel service, evaluation and the Arena re-run | [Issue #12](https://github.com/ddboy19912/bonded/issues/12) |
 | Quote signing | Day 6 | Day 7, with `buyCover` | Done on Day 7 ([PR #17](https://github.com/ddboy19912/bonded/pull/17)) |
 | External uptime check on the public API `/health` | Day 7 | Day 13 (hardening), before the demo is recorded against the hosted API | [Issue #23](https://github.com/ddboy19912/bonded/issues/23) |

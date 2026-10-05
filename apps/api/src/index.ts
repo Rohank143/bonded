@@ -19,6 +19,7 @@ import { EventStreams } from "./events.js";
 import { teeQuoteBlock } from "./tee-watch.js";
 import { RateLimiter, clientAddress } from "./rate-limit.js";
 import { selfServeRoutes, type SelfServeLimits } from "./self-serve.js";
+import { libraryRoutes, MAX_BODY_BYTES } from "./library.js";
 export { issueQuote } from "./quotes.js";
 /** A decimal id, in canonical form: "01" and "1" are the same agent, so they must be the same key. */
 const uint = z
@@ -64,7 +65,13 @@ export function createApi(options: {
       maxAge: 600,
     }),
   );
-  app.use("*", bodyLimit({ maxSize: 16384 }));
+  app.use(
+    "*",
+    bodyLimit({
+      maxSize: MAX_BODY_BYTES,
+      onError: (c) => c.json({ error: "the request body is over 16 KB" }, 413),
+    }),
+  );
   // POSTs that need no operator token: a bounty reveal (the hash check against the chain's
   // revealed specURI authenticates it), self-serve requests (signed by the agent's owner) and
   // quotes (capped without the token; buyCover checks the guardian on chain).
@@ -258,6 +265,7 @@ export function createApi(options: {
   });
   app.get("/bounties", async (c) => c.json(await db.bounties(chain.deployment.chainId)));
   selfServeRoutes(app, { db, chain, ...(options.selfServe ? { limits: options.selfServe } : {}) });
+  libraryRoutes(app, { db, chainId: chain.deployment.chainId });
   app.get("/events", async (c) => {
     const after = uint.parse(c.req.header("Last-Event-ID") ?? c.req.query("after") ?? "0");
     const runId = c.req.query("runId");

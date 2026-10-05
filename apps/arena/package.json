@@ -29,6 +29,7 @@
     "sentinel-contrast": "node dist/llm-contrast-cli.js",
     "sentinel-shortcuts": "node dist/shortcuts-cli.js",
     "leaderboard": "node dist/leaderboard-cli.js",
+    "heldout": "node dist/held-out-cli.js",
     "sentinel-consistency": "node dist/consistency-cli.js",
     "relabel": "node dist/relabel-cli.js",
     "sentinel-rewrite": "node dist/rewrite-cli.js"

@@ -56,6 +56,9 @@ function overlap(a: Set<string>, b: Set<string>): number {
 }
 
 /** The overlap at or above which a payload counts as a copy of a library seed, in any class. */
+/** Share of the shorter payload's words found in the other (placeholders and numbers ignored). */
+export const payloadOverlap = (a: string, b: string) => overlap(words(a), words(b));
+
 export const DUPLICATE_OVERLAP = 0.8;
 /**
  * The overlap at or above which a seed on the same surface counts as the same kind of attack,

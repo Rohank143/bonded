@@ -93,6 +93,7 @@ export class Database {
       "0007_bounty_broadcasts.sql",
       "0008_bounty_nonce.sql",
       "0009_self_serve_agents.sql",
+      "0010_held_out_attacks.sql",
     ];
     await this.transaction(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(7001)");
@@ -609,6 +610,44 @@ export class Database {
       [chainId],
     );
     return r.rows.map((row) => row.spec);
+  }
+  /**
+   * Add or replace held-out attacks for a chain (an upload of a new set). Specs keep their id;
+   * uploading the same id again replaces its spec and retirement date.
+   */
+  async addHeldOutAttacks(
+    chainId: number,
+    specs: { id: string }[],
+    retireAfter: Date,
+  ): Promise<number> {
+    await this.transaction(async (c) => {
+      for (const spec of specs)
+        await c.query(
+          `INSERT INTO held_out_attacks (chain_id, attack_id, spec, retire_after) VALUES ($1,$2,$3,$4)
+          ON CONFLICT (chain_id, attack_id) DO UPDATE SET spec=EXCLUDED.spec, retire_after=EXCLUDED.retire_after`,
+          [chainId, spec.id, JSON.stringify(spec), retireAfter],
+        );
+    });
+    return specs.length;
+  }
+  /** Held-out attacks not yet retired at `now`: these join every rating on the chain. */
+  async activeHeldOutAttacks(chainId: number, now = new Date()): Promise<unknown[]> {
+    const r = await this.pool.query(
+      "SELECT spec FROM held_out_attacks WHERE chain_id=$1 AND retire_after>$2 ORDER BY attack_id",
+      [chainId, now],
+    );
+    return r.rows.map((row) => row.spec);
+  }
+  /** How many held-out attacks are active, and when the first of them retires. No payloads. */
+  async heldOutSummary(
+    chainId: number,
+    now = new Date(),
+  ): Promise<{ active: number; retiresFrom: Date | null }> {
+    const r = await this.pool.query(
+      "SELECT count(*)::int AS active, min(retire_after) AS retires_from FROM held_out_attacks WHERE chain_id=$1 AND retire_after>$2",
+      [chainId, now],
+    );
+    return { active: r.rows[0].active, retiresFrom: r.rows[0].retires_from };
   }
   /** One bounty's status, for a repeated reveal. */
   async bountyStatus(chainId: number, submissionId: string): Promise<string | undefined> {

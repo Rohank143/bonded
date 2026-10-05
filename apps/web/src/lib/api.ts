@@ -69,6 +69,8 @@ export interface Report {
   scoring: { score: number; tier: string };
   episodes: { total: number; attacks: number; controls: number; agentErrors: number };
   controls: { episodes: number; breaches: number };
+  /** Accepted bounties and held-out attacks in the rating; older reports don't have it. */
+  unpublished?: { attacks: number; episodes: number };
   /** Set when the agent proved it runs in a TEE; reports from before Day 11 don't have it. */
   tee?: {
     measurement: `0x${string}`;

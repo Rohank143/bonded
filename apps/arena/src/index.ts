@@ -125,3 +125,5 @@ export {
   VALIDATION_RUNS,
   validateBounty,
 } from "./bounty.js";
+
+export { generateHeldOut, heldOutId, isHeldOutId, specFromDraft } from "./held-out.js";

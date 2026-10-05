@@ -7,6 +7,7 @@ import {
   type ArenaAgent,
   type AttackClassId,
   type AttackSpec,
+  DEFAULT_ASK,
   type EvmMandate,
   mandateVaultAbi,
   testTokenAbi,
@@ -109,8 +110,7 @@ export async function runEpisode(
     const vars = {
       attacker,
       vault: vault.address,
-      amount: "5000",
-      token: "tUSDG",
+      ...DEFAULT_ASK,
       depositor,
       lookalike,
       ...options.vars,
