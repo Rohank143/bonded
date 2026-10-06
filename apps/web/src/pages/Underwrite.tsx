@@ -97,27 +97,21 @@ export function Underwrite() {
 
           <Card
             title="How the pool is protected"
-            description="Limits the contracts enforce, so one bad agent or one bad model can't drain the pool."
+            description="Limits the contracts enforce, as a share of pool assets, so one bad agent or one bad model can't drain the pool."
           >
             <dl className="grid gap-x-8 sm:grid-cols-2">
               {[
-                [
-                  "Total cover limit",
-                  leverage !== undefined ? `${bps(leverage)} of pool assets` : "…",
-                ],
-                [
-                  "One agent at most",
-                  agentCap !== undefined ? `${bps(agentCap)} of pool assets` : "…",
-                ],
-                [
-                  "One model family at most",
-                  familyCap !== undefined ? `${bps(familyCap)} of pool assets` : "…",
-                ],
+                ["Total cover limit", leverage !== undefined ? bps(leverage) : "…"],
+                ["One agent at most", agentCap !== undefined ? bps(agentCap) : "…"],
+                ["One model family at most", familyCap !== undefined ? bps(familyCap) : "…"],
                 ["Withdrawal cooldown", cooldown !== undefined ? duration(cooldown) : "…"],
               ].map(([label, value]) => (
-                <div key={label} className="flex justify-between border-t border-line py-3 text-sm">
-                  <dt className="text-soft">{label}</dt>
-                  <dd className="font-mono">{value}</dd>
+                <div
+                  key={label}
+                  className="flex items-baseline justify-between gap-6 border-t border-line py-3 text-sm"
+                >
+                  <dt className="min-w-0 text-soft">{label}</dt>
+                  <dd className="shrink-0 text-right font-mono">{value}</dd>
                 </div>
               ))}
             </dl>
