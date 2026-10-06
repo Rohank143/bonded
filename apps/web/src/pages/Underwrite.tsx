@@ -4,8 +4,8 @@ import type { Abi } from "viem";
 import { coverManagerAbi, coverPoolAbi, testTokenAbi } from "@bonded/shared";
 import { deployment, faucets } from "../config";
 import { bps, duration, parseUsd, usd, when } from "../lib/format";
-import { Button, Card, Grid, Input, Loading, Page, Stat, Unavailable } from "../components/ui";
 import { isRpcUnavailable } from "../lib/errors";
+import { Button, Card, Input, Loading, Page, Term, Unavailable, linkClass } from "../components/ui";
 import { useSend } from "../components/wallet";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -32,10 +32,17 @@ export function Underwrite() {
     ],
     query: { refetchInterval: 15_000 },
   });
-  if (reads.isLoading) return <Loading what="pool" />;
+  if (reads.isLoading)
+    return (
+      <Page title="Cover pool">
+        <Card>
+          <Loading what="the pool" lines={4} />
+        </Card>
+      </Page>
+    );
   if (reads.isError || isRpcUnavailable(reads.data?.find((r) => r.error)?.error))
     return (
-      <Page title="Underwrite">
+      <Page title="Cover pool">
         <Unavailable
           error={reads.error ?? reads.data?.find((r) => r.error)?.error}
           onRetry={() => void reads.refetch()}
@@ -47,60 +54,103 @@ export function Underwrite() {
   const [tvl, required, free, cooldown, cover, leverage, agentCap, familyCap] = [
     0, 1, 2, 3, 4, 5, 6, 7,
   ].map(n);
-  const shares = n(8);
-  const redeemable = n(9);
-  const request = r[10]?.result as readonly [bigint, bigint] | undefined;
-  const wallet = n(11);
   const utilisation = tvl && cover !== undefined && tvl > 0n ? Number((cover * 10_000n) / tvl) : 0;
   const $ = (v?: bigint) => (v === undefined ? "…" : `$${usd(v, 0)}`);
   return (
     <Page
-      title="Underwrite"
-      intro="The cover pool pays whatever the operator's bond doesn't cover on a claim. Underwriters earn 80% of premiums. Withdrawals wait a cooldown and can only use capital not backing active cover."
+      eyebrow="For underwriters"
+      title="Cover pool"
+      intro="Back the pool that pays claims, and earn 80% of every premium."
     >
-      <Card title="Cover pool">
-        <Grid>
-          <Stat label="Pool assets" value={$(tvl)} hint="tUSDG" />
-          <Stat label="Active cover" value={$(cover)} hint={`${bps(utilisation)} of pool`} />
-          <Stat label="Capital backing cover" value={$(required)} />
-          <Stat label="Free capital" value={$(free)} />
-        </Grid>
-        <dl className="mt-4 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[14rem_1fr]">
-          <dt className="text-muted">Total cover limit</dt>
-          <dd>{leverage !== undefined ? `${bps(leverage)} of pool assets` : "…"}</dd>
-          <dt className="text-muted">One agent at most</dt>
-          <dd>{agentCap !== undefined ? `${bps(agentCap)} of pool assets` : "…"}</dd>
-          <dt className="text-muted">One model family at most</dt>
-          <dd>{familyCap !== undefined ? `${bps(familyCap)} of pool assets` : "…"}</dd>
-          <dt className="text-muted">Withdrawal cooldown</dt>
-          <dd>{cooldown !== undefined ? duration(cooldown) : "…"}</dd>
-        </dl>
-      </Card>
-      {!user ? (
-        <Card title="Your position">
-          <p className="text-sm text-muted">
-            Connect a wallet to deposit, withdraw or get test tUSDG.
-          </p>
-        </Card>
-      ) : (
-        <Position wallet={wallet} shares={shares} redeemable={redeemable} request={request} />
-      )}
-      <p className="text-xs text-muted">
-        Testnet gas (ETH) comes from a public faucet:{" "}
-        {faucets.map((f, i) => (
-          <a
-            key={f}
-            href={f}
-            className="text-accent hover:underline"
-            target="_blank"
-            rel="noreferrer"
+      <div className="flex flex-wrap items-start gap-4">
+        <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-4">
+          <section className="panel bg-[radial-gradient(ellipse_at_0%_0%,rgb(29_78_216/.2),transparent_55%)] p-6 sm:p-7">
+            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                ["Pool assets", $(tvl), "tUSDG"],
+                ["Active cover", $(cover), `${bps(utilisation)} of the pool`],
+                ["Backing cover", $(required), "locked while cover runs"],
+                ["Free capital", $(free), "can be withdrawn"],
+              ].map(([label, value, hint]) => (
+                <div key={label} className="min-w-0">
+                  <p className="eyebrow">{label}</p>
+                  <p className="mt-2 truncate font-serif text-[40px] leading-none tabular-nums">
+                    {value}
+                  </p>
+                  <p className="mt-1.5 text-xs text-muted">{hint}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-7">
+              <div className="mb-1.5 flex justify-between text-xs text-muted">
+                <span>Active cover as a share of the pool</span>
+                <span className="tabular-nums">{bps(utilisation)}</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-white/[0.08]">
+                <div
+                  className="h-2 rounded-full bg-gradient-to-r from-brand to-[#9db5ff]"
+                  style={{ width: `${Math.min(utilisation / 100, 100)}%` }}
+                />
+              </div>
+            </div>
+          </section>
+
+          <Card
+            title="How the pool is protected"
+            description="Limits the contracts enforce, as a share of pool assets, so one bad agent or one bad model can't drain the pool."
           >
-            {i ? ", " : ""}
-            {new URL(f).hostname}
-          </a>
-        ))}
-        .
-      </p>
+            <dl className="grid gap-x-8 sm:grid-cols-2">
+              {[
+                ["Total cover limit", leverage !== undefined ? bps(leverage) : "…"],
+                ["One agent at most", agentCap !== undefined ? bps(agentCap) : "…"],
+                ["One model family at most", familyCap !== undefined ? bps(familyCap) : "…"],
+                ["Withdrawal cooldown", cooldown !== undefined ? duration(cooldown) : "…"],
+              ].map(([label, value]) => (
+                <div
+                  key={label}
+                  className="flex items-baseline justify-between gap-6 border-t border-line py-3 text-sm"
+                >
+                  <dt className="min-w-0 text-soft">{label}</dt>
+                  <dd className="shrink-0 text-right font-mono">{value}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="mt-4 text-sm leading-relaxed text-muted">
+              On a claim, the operator's <Term term="bond">bond</Term> pays first; the pool pays the
+              rest up to the cover. The <Term term="premium">premium</Term> streams in from each
+              covered vault, and 80% of it goes to underwriters.
+            </p>
+          </Card>
+        </div>
+
+        <div className="flex min-w-0 flex-[1_1_340px] flex-col gap-4 xl:sticky xl:top-24">
+          {!user ? (
+            <section className="panel border-accent/25 p-6">
+              <h2 className="text-lg font-bold">Your position</h2>
+              <p className="mt-2 text-sm text-muted">
+                Use Connect wallet at the top of the page to deposit, withdraw or get test tUSDG.
+              </p>
+            </section>
+          ) : (
+            <Position
+              wallet={n(11)}
+              shares={n(8)}
+              redeemable={n(9)}
+              request={r[10]?.result as readonly [bigint, bigint] | undefined}
+            />
+          )}
+          <p className="px-1 text-xs text-muted">
+            Need test ETH for gas? Use a public faucet:{" "}
+            {faucets.map((f, i) => (
+              <a key={f} href={f} className={linkClass} target="_blank" rel="noreferrer">
+                {i ? ", " : ""}
+                {new URL(f).hostname}
+              </a>
+            ))}
+            .
+          </p>
+        </div>
+      </div>
     </Page>
   );
 }
@@ -112,6 +162,7 @@ function Position(props: {
   request?: readonly [bigint, bigint];
 }) {
   const { address: user } = useAccount();
+  const [tab, setTab] = useState<"deposit" | "withdraw">("deposit");
   const [amount, setAmount] = useState("");
   const tx = useSend();
   const value = parseUsd(amount);
@@ -132,91 +183,143 @@ function Position(props: {
     ],
   });
   const [stake, requested] = (values.data ?? []).map((v) => v.result as bigint | undefined);
+  const over = value !== null && props.wallet !== undefined && value > props.wallet;
+  const unlocked = requestedShares > 0n && BigInt(Math.floor(Date.now() / 1000)) >= unlockAt;
   return (
-    <Card title="Your position">
-      <Grid>
-        <Stat
-          label="Wallet"
-          value={props.wallet !== undefined ? `$${usd(props.wallet)}` : "…"}
-          hint="tUSDG"
-        />
-        <Stat
-          label="Your stake"
-          value={stake !== undefined ? `$${usd(stake)}` : "…"}
-          hint="value of your pool shares"
-        />
-        <Stat
-          label="Withdrawable now"
-          value={props.redeemable !== undefined ? `$${usd(props.redeemable)}` : "…"}
-        />
-        <Stat
-          label="Withdrawal request"
-          value={
-            requestedShares > 0n ? (requested !== undefined ? `$${usd(requested)}` : "…") : "none"
-          }
-          hint={requestedShares > 0n ? `unlocks ${when(unlockAt)}` : undefined}
-        />
-      </Grid>
-      <div className="mt-4 flex flex-wrap items-end gap-2">
-        <Input label="Amount (tUSDG)" value={amount} onChange={setAmount} placeholder="10000" />
-        <Button
-          disabled={!value || tx.busy}
-          onClick={() =>
-            value &&
-            user &&
-            tx.send([
-              call(
-                "approve",
-                [deployment.pool, value],
-                "Approve tUSDG",
-                deployment.usdg,
-                testTokenAbi as Abi,
-              ),
-              call("deposit", [value, user], "Deposit"),
-            ])
-          }
-        >
-          Deposit
-        </Button>
-        <Button
-          kind="secondary"
-          disabled={!props.shares || tx.busy}
-          onClick={() =>
-            props.shares && tx.send([call("requestRedeem", [props.shares], "Request withdrawal")])
-          }
-        >
-          Request withdrawal of all shares
-        </Button>
-        <Button
-          kind="secondary"
-          disabled={!props.redeemable || tx.busy}
-          onClick={() =>
-            user &&
-            props.redeemable &&
-            tx.send([call("withdraw", [props.redeemable, user, user], "Withdraw")])
-          }
-        >
-          Withdraw available
-        </Button>
-        <Button
-          kind="secondary"
-          disabled={tx.busy}
-          onClick={() =>
-            tx.send([
-              call(
-                "faucet",
-                [10_000_000_000n],
-                "Get 10,000 tUSDG",
-                deployment.usdg,
-                testTokenAbi as Abi,
-              ),
-            ])
-          }
-        >
-          Get 10,000 test tUSDG
-        </Button>
+    <section className="panel border-accent/25 p-6">
+      <h2 className="text-lg font-bold">Your position</h2>
+      <dl className="mt-4 grid grid-cols-2 gap-3 rounded-2xl bg-white/[0.04] p-4 text-sm">
+        <div>
+          <dt className="text-xs text-muted">Your stake</dt>
+          <dd className="mt-0.5 font-semibold tabular-nums">
+            {stake !== undefined ? `$${usd(stake)}` : "…"}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted">In your wallet</dt>
+          <dd className="mt-0.5 font-semibold tabular-nums">
+            {props.wallet !== undefined ? `$${usd(props.wallet)}` : "…"}
+          </dd>
+        </div>
+      </dl>
+      <div className="mt-5 flex rounded-full bg-white/[0.06] p-1" role="tablist">
+        {(["deposit", "withdraw"] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            aria-selected={tab === t}
+            onClick={() => setTab(t)}
+            className={`h-9 flex-1 rounded-full text-sm font-semibold capitalize ${tab === t ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
+          >
+            {t}
+          </button>
+        ))}
       </div>
-      <div className="mt-2">{tx.view}</div>
-    </Card>
+      {tab === "deposit" ? (
+        <div className="mt-5 flex flex-col gap-3">
+          <Input
+            label="Amount"
+            value={amount}
+            onChange={setAmount}
+            placeholder="10,000"
+            inputMode="decimal"
+            suffix="tUSDG"
+            error={
+              amount && !value
+                ? "Enter a positive amount with at most 6 decimals."
+                : over
+                  ? "That's more than you have in your wallet."
+                  : null
+            }
+          />
+          <Button
+            disabled={!value || over || tx.busy}
+            loading={tx.busy}
+            onClick={() =>
+              value &&
+              user &&
+              void tx.send([
+                call(
+                  "approve",
+                  [deployment.pool, value],
+                  "Approve tUSDG",
+                  deployment.usdg,
+                  testTokenAbi as Abi,
+                ),
+                call("deposit", [value, user], "Deposit"),
+              ])
+            }
+          >
+            {value ? `Deposit ${usd(value)} tUSDG` : "Deposit"}
+          </Button>
+          <Button
+            kind="ghost"
+            disabled={tx.busy}
+            onClick={() =>
+              void tx.send([
+                call(
+                  "faucet",
+                  [10_000_000_000n],
+                  "Get 10,000 tUSDG",
+                  deployment.usdg,
+                  testTokenAbi as Abi,
+                ),
+              ])
+            }
+          >
+            Get 10,000 test tUSDG
+          </Button>
+        </div>
+      ) : (
+        <div className="mt-5 flex flex-col gap-3 text-sm">
+          <ol className="flex flex-col gap-3 text-muted">
+            <li>
+              <strong className="text-ink">1. Request.</strong> Ask to withdraw all your shares.
+              {requestedShares > 0n && (
+                <span className="mt-1 block text-soft">
+                  Requested {requested !== undefined ? `$${usd(requested)}` : "…"}, unlocks{" "}
+                  {when(unlockAt)}.
+                </span>
+              )}
+            </li>
+            <li>
+              <strong className="text-ink">2. Wait out the cooldown.</strong> Capital backing active
+              cover stays locked.
+            </li>
+            <li>
+              <strong className="text-ink">3. Withdraw</strong> what's free:{" "}
+              {props.redeemable !== undefined ? `$${usd(props.redeemable)}` : "…"} now.
+            </li>
+          </ol>
+          <Button
+            kind="secondary"
+            disabled={!props.shares || tx.busy}
+            onClick={() =>
+              props.shares &&
+              void tx.send([call("requestRedeem", [props.shares], "Request withdrawal")])
+            }
+          >
+            Request withdrawal of all shares
+          </Button>
+          <Button
+            disabled={!props.redeemable || tx.busy}
+            loading={tx.busy}
+            onClick={() =>
+              user &&
+              props.redeemable &&
+              void tx.send([call("withdraw", [props.redeemable, user, user], "Withdraw")])
+            }
+          >
+            {props.redeemable
+              ? `Withdraw $${usd(props.redeemable)}`
+              : unlocked
+                ? "Nothing free yet"
+                : "Withdraw available"}
+          </Button>
+        </div>
+      )}
+      <div className="mt-3">{tx.view}</div>
+    </section>
   );
 }

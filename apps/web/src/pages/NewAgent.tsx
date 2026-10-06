@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+import { TokenLogo } from "../components/token";
 import { Link } from "react-router";
 import { useAccount, useSignMessage, useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
@@ -32,7 +33,17 @@ import {
   type OnboardingStep,
 } from "../lib/onboarding";
 import { registerForRatings } from "../lib/self-serve";
-import { Button, Card, ErrorText, Input, Page, TxLink } from "../components/ui";
+import {
+  Button,
+  Card,
+  Choice,
+  ErrorText,
+  Input,
+  Page,
+  Term,
+  TxLink,
+  linkClass,
+} from "../components/ui";
 
 type Step = { label: string; state: "waiting" | "active" | "done"; hash?: Hex };
 
@@ -271,169 +282,275 @@ export function NewAgent() {
   return (
     <Page
       title="Onboard an agent"
-      intro="Register an agent, create its Mandate Vault, stake its operator bond and fund it, all from your wallet. Then rate it in the Arena and buy cover for it from its page."
+      eyebrow="For operators"
+      back={{ to: "/agents", label: "All agents" }}
+      intro="Register an agent, give it a vault and a bond, and fund it, all from your wallet. Then get it rated and buy cover from its page."
     >
-      <Card title="What gets rated">
-        <p className="mb-3 text-sm text-muted">
-          The Arena rates one of Bonded's built-in agent designs, run against your vault and
-          mandate. Rating your own agent's code is coming (
-          <a
-            className="text-accent hover:underline"
-            href="https://github.com/ddboy19912/bonded/issues/84"
-            target="_blank"
-            rel="noreferrer"
-          >
-            issue #84
-          </a>
-          ).
-        </p>
-        <div className="flex flex-col gap-2 text-sm">
-          {SELF_SERVE_KINDS.map((k) => (
-            <label key={k} className="flex items-start gap-2">
-              <input type="radio" checked={kind === k} onChange={() => setKind(k)} />
-              <span>{SELF_SERVE_KIND_LABELS[k]}</span>
-            </label>
-          ))}
-        </div>
-      </Card>
-
-      <Card title="Mandate">
-        <div className="flex flex-col gap-4 text-sm">
-          <div className="flex flex-col gap-1">
-            <span className="text-muted">Vault mode</span>
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                checked={mode === "monitor"}
-                onChange={() => setMode("monitor")}
-              />
-              Monitor: breaches go through and are recorded, so they can be claimed
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                checked={mode === "enforce"}
-                onChange={() => setMode("enforce")}
-              />
-              Enforce: breaches are blocked (and recorded); scores higher, but there's nothing to
-              claim
-            </label>
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-muted">Tokens it may hold (tUSDG always)</span>
-            <div className="flex flex-wrap gap-4">
-              {MANDATE_TOKENS.map((t) => (
-                <label key={t} className="flex items-center gap-2">
-                  <input type="checkbox" checked={tokens.includes(t)} onChange={() => toggle(t)} />
-                  {t}
-                </label>
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <div className="flex min-w-0 flex-col gap-6">
+          <StepCard n={1} title="What gets rated">
+            <p className="mb-4 text-sm text-muted">
+              The Arena rates one of Bonded's built-in agent designs, run against your vault and
+              mandate. Rating your own agent's code is coming (
+              <a
+                className={linkClass}
+                href="https://github.com/ddboy19912/bonded/issues/84"
+                target="_blank"
+                rel="noreferrer"
+              >
+                issue #84
+              </a>
+              ).
+            </p>
+            <div className="grid gap-2">
+              {SELF_SERVE_KINDS.map((k) => (
+                <Choice
+                  key={k}
+                  name="kind"
+                  checked={kind === k}
+                  onChange={() => setKind(k)}
+                  title={SELF_SERVE_KIND_LABELS[k]}
+                />
               ))}
             </div>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Input label="Per-trade limit (USD)" value={maxTx} onChange={setMaxTx} />
-            <Input label="Daily limit (USD)" value={maxDaily} onChange={setMaxDaily} />
-          </div>
-          <Input
-            label="Refund address the agent may send funds to (default: your wallet)"
-            value={refund}
-            onChange={setRefund}
-            placeholder={user ?? "0x…"}
-          />
-          <Input
-            label="Description (part of the mandate)"
-            value={description}
-            onChange={setDescription}
-          />
-        </div>
-      </Card>
+          </StepCard>
 
-      <Card title="Agent key, bond and deposit">
-        <div className="flex flex-col gap-4 text-sm">
-          <div className="flex flex-col gap-1">
-            <span className="text-muted">
-              The agent's key, the only key that can act for the vault
-            </span>
-            <label className="flex items-center gap-2">
-              <input type="radio" checked={selfAgent} onChange={() => setSelfAgent(true)} />
-              My wallet (for testing: lets you simulate a breach from the vault page)
-            </label>
-            <label className="flex items-center gap-2">
-              <input type="radio" checked={!selfAgent} onChange={() => setSelfAgent(false)} />
-              Another address (your agent's own key)
-            </label>
-            {!selfAgent && (
-              <Input label="Agent key address" value={agentKey} onChange={setAgentKey} />
-            )}
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Input label="Operator bond (tUSDG)" value={bond} onChange={setBond} />
-            <Input label="Deposit (tUSDG)" value={deposit} onChange={setDeposit} />
-          </div>
-          <p className="text-xs text-muted">
-            Cover needs a bond of 10% to 30% of the cover, depending on the score's tier: 4,000
-            covers 20,000 for tier BB. Test tUSDG is minted from the faucet as part of these steps;
-            you need a little test ETH for gas.
-          </p>
-        </div>
-      </Card>
-
-      <Card title="Create">
-        {unfinished && !busy && (
-          <div className="mb-4 flex flex-col gap-2 rounded-md border border-line p-3 text-sm">
-            <p>
-              You have an unfinished onboarding
-              {unfinished.agentId ? ` of agent ${unfinished.agentId}` : ""}: next step,{" "}
-              {STEPS[ONBOARDING_STEPS.indexOf(nextStep(unfinished)!)]?.toLowerCase()}.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={() => run(unfinished)}>Resume onboarding</Button>
-              <Button kind="secondary" onClick={startOver}>
-                Start a new agent instead
-              </Button>
+          <StepCard n={2} title={<Term term="mandate">Mandate</Term>}>
+            <div className="flex flex-col gap-5 text-sm">
+              <fieldset className="flex flex-col gap-2">
+                <legend className="mb-2 font-medium">Vault mode</legend>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Choice
+                    name="mode"
+                    checked={mode === "monitor"}
+                    onChange={() => setMode("monitor")}
+                    title="Monitor"
+                  >
+                    Breaches go through and are recorded, so they can be claimed.
+                  </Choice>
+                  <Choice
+                    name="mode"
+                    checked={mode === "enforce"}
+                    onChange={() => setMode("enforce")}
+                    title="Enforce"
+                  >
+                    Breaches are blocked (and recorded). Scores higher, but there's nothing to
+                    claim.
+                  </Choice>
+                </div>
+              </fieldset>
+              <fieldset>
+                <legend className="mb-2 font-medium">Tokens it may hold (tUSDG always)</legend>
+                <div className="flex flex-wrap gap-2">
+                  {MANDATE_TOKENS.map((t) => (
+                    <label
+                      key={t}
+                      className={`flex cursor-pointer items-center gap-2 rounded-full border py-1 pr-3.5 pl-1 font-mono text-xs has-focus-visible:ring-2 has-focus-visible:ring-accent ${tokens.includes(t) ? "border-accent/60 bg-accent-soft text-ink" : "border-line-strong text-muted opacity-60"}`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="sr-only"
+                        checked={tokens.includes(t)}
+                        onChange={() => toggle(t)}
+                      />
+                      <TokenLogo symbol={t} size={22} />
+                      {t}
+                      {tokens.includes(t) && <span className="text-accent">✓</span>}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Input
+                  label="Per-trade limit"
+                  value={maxTx}
+                  onChange={setMaxTx}
+                  inputMode="decimal"
+                  suffix="USD"
+                />
+                <Input
+                  label="Daily limit"
+                  value={maxDaily}
+                  onChange={setMaxDaily}
+                  inputMode="decimal"
+                  suffix="USD"
+                />
+              </div>
+              <Input
+                label="Refund address"
+                hint="The one address the agent may send funds to. Defaults to your wallet."
+                value={refund}
+                onChange={setRefund}
+                placeholder={user ?? "0x…"}
+              />
+              <Input
+                label="Description"
+                hint="Part of the mandate, so it's hashed on chain."
+                value={description}
+                onChange={setDescription}
+                mono={false}
+              />
             </div>
-          </div>
-        )}
-        {problems.length > 0 && (
-          <ul className="mb-3 list-disc pl-5 text-sm text-muted">
-            {problems.map((p) => (
-              <li key={p}>{p}</li>
-            ))}
-          </ul>
-        )}
-        <Button disabled={busy || problems.length > 0 || Boolean(unfinished)} onClick={start}>
-          {busy ? "Working…" : "Onboard the agent"}
-        </Button>
-        <p className="mt-2 text-xs text-muted">
-          About eight wallet confirmations, then one signature.
-        </p>
-        {steps.length > 0 && (
-          <ol className="mt-4 flex flex-col gap-1 text-sm">
-            {steps.map((s) => (
-              <li key={s.label} className="flex flex-wrap items-center gap-2">
-                <span className="w-5">
-                  {s.state === "done" ? "✓" : s.state === "active" ? "…" : "·"}
-                </span>
-                <span className={s.state === "waiting" ? "text-muted" : ""}>{s.label}</span>
-                {s.hash && <TxLink hash={s.hash} />}
-              </li>
-            ))}
-          </ol>
-        )}
-        <ErrorText error={error} />
-        {created && (
-          <p className="mt-3 text-sm">
-            Agent {created.agentId.toString()}:{" "}
-            <Link className="text-accent hover:underline" to={`/agents/${created.agentId}`}>
-              rate it
-            </Link>{" "}
-            ·{" "}
-            <Link className="text-accent hover:underline" to={`/vaults/${created.vault}`}>
-              its vault (deposits, cover{selfAgent ? ", simulate a breach" : ""})
-            </Link>
-          </p>
-        )}
-      </Card>
+          </StepCard>
+
+          <StepCard n={3} title="Agent key, bond and deposit">
+            <div className="flex flex-col gap-5 text-sm">
+              <fieldset>
+                <legend className="mb-2 font-medium">
+                  <Term term="agentKey">The agent's key</Term>, the only key that can act for the
+                  vault
+                </legend>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Choice
+                    name="key"
+                    checked={selfAgent}
+                    onChange={() => setSelfAgent(true)}
+                    title="My wallet"
+                  >
+                    For testing: lets you simulate a breach from the vault page.
+                  </Choice>
+                  <Choice
+                    name="key"
+                    checked={!selfAgent}
+                    onChange={() => setSelfAgent(false)}
+                    title="Another address"
+                  >
+                    Your agent's own key.
+                  </Choice>
+                </div>
+                {!selfAgent && (
+                  <div className="mt-3">
+                    <Input label="Agent key address" value={agentKey} onChange={setAgentKey} />
+                  </div>
+                )}
+              </fieldset>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Input
+                  label={<Term term="bond">Operator bond</Term>}
+                  value={bond}
+                  onChange={setBond}
+                  inputMode="decimal"
+                  suffix="tUSDG"
+                />
+                <Input
+                  label="Deposit"
+                  value={deposit}
+                  onChange={setDeposit}
+                  inputMode="decimal"
+                  suffix="tUSDG"
+                />
+              </div>
+              <p className="text-xs text-muted">
+                Cover needs a bond of 10% to 30% of the cover, depending on the score's tier: 4,000
+                covers 20,000 for tier BB. Test tUSDG is minted from the faucet as part of these
+                steps; you need a little test ETH for gas.
+              </p>
+            </div>
+          </StepCard>
+        </div>
+
+        <div className="min-w-0 lg:sticky lg:top-24">
+          <StepCard n={4} title="Create">
+            {unfinished && !busy && (
+              <div className="mb-4 flex flex-col gap-3 rounded-lg border border-warn/30 bg-warn-soft p-4 text-sm">
+                <p>
+                  You have an unfinished onboarding
+                  {unfinished.agentId ? ` of agent ${unfinished.agentId}` : ""}: next step,{" "}
+                  {STEPS[ONBOARDING_STEPS.indexOf(nextStep(unfinished)!)]?.toLowerCase()}.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => run(unfinished)}>
+                    Resume onboarding
+                  </Button>
+                  <Button size="sm" kind="secondary" onClick={startOver}>
+                    Start a new agent instead
+                  </Button>
+                </div>
+              </div>
+            )}
+            {problems.length > 0 && (
+              <ul className="mb-4 flex flex-col gap-1.5 text-sm text-muted">
+                {problems.map((p) => (
+                  <li key={p} className="flex gap-2">
+                    <span className="text-warn" aria-hidden>
+                      •
+                    </span>
+                    {p}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <Button
+              size="lg"
+              disabled={problems.length > 0 || Boolean(unfinished)}
+              loading={busy}
+              onClick={start}
+            >
+              {busy ? "Working…" : "Onboard the agent"}
+            </Button>
+            <p className="mt-2 text-xs text-muted">
+              About eight wallet confirmations, then one signature.
+            </p>
+            {steps.length > 0 && (
+              <ol className="mt-5 flex flex-col gap-2.5 border-t border-line pt-5 text-sm">
+                {steps.map((s) => (
+                  <li key={s.label} className="flex flex-wrap items-center gap-2.5">
+                    <span
+                      className={`flex size-5 items-center justify-center rounded-full text-[11px] ${
+                        s.state === "done"
+                          ? "bg-safe text-paper"
+                          : s.state === "active"
+                            ? "bg-brand text-white"
+                            : "bg-sunken text-muted"
+                      }`}
+                      aria-hidden
+                    >
+                      {s.state === "done" ? "✓" : s.state === "active" ? "…" : ""}
+                    </span>
+                    <span className={s.state === "waiting" ? "text-muted" : "font-medium"}>
+                      {s.label}
+                    </span>
+                    {s.hash && <TxLink hash={s.hash} />}
+                  </li>
+                ))}
+              </ol>
+            )}
+            <ErrorText error={error} />
+            {created && (
+              <div className="mt-4 rounded-lg border border-safe/30 bg-safe-soft p-4 text-sm">
+                <p className="font-medium">Agent {created.agentId.toString()} is set up.</p>
+                <p className="mt-1">
+                  <Link className={linkClass} to={`/agents/${created.agentId}`}>
+                    Rate it
+                  </Link>{" "}
+                  ·{" "}
+                  <Link className={linkClass} to={`/vaults/${created.vault}`}>
+                    Its vault (deposits, cover{selfAgent ? ", simulate a breach" : ""})
+                  </Link>
+                </p>
+              </div>
+            )}
+          </StepCard>
+        </div>
+      </div>
     </Page>
+  );
+}
+
+/** A numbered section of the onboarding form. */
+function StepCard({ n, title, children }: { n: number; title: ReactNode; children: ReactNode }) {
+  return (
+    <Card
+      title={
+        <span className="flex items-center gap-3">
+          <span className="flex size-7 items-center justify-center btn-brand rounded-full text-sm font-semibold text-on-brand">
+            {n}
+          </span>
+          {title}
+        </span>
+      }
+    >
+      {children}
+    </Card>
   );
 }
