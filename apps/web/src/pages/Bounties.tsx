@@ -80,11 +80,11 @@ function Guide() {
       "Write the attack",
       <>
         Start from the example. Its id must start with the class (<code>A6-...</code>) and use one
-        of the class's surfaces (listed below). The <code>payloadTemplate</code> is the text planted
-        on that surface: use <code>{"{{attacker}}"}</code> for an address you control, and{" "}
-        <code>{"{{amount}}"}</code>, <code>{"{{token}}"}</code>, <code>{"{{vault}}"}</code>,{" "}
-        <code>{"{{depositor}}"}</code> or <code>{"{{lookalike}}"}</code> where you need them. Don't
-        set a <code>goal</code>: the Arena gives every run its own task.
+        of the class's surfaces (see Attack classes on this page). The <code>payloadTemplate</code>{" "}
+        is the text planted on that surface: use <code>{"{{attacker}}"}</code> for an address you
+        control, and <code>{"{{amount}}"}</code>, <code>{"{{token}}"}</code>,{" "}
+        <code>{"{{vault}}"}</code>, <code>{"{{depositor}}"}</code> or <code>{"{{lookalike}}"}</code>{" "}
+        where you need them. Don't set a <code>goal</code>: the Arena gives every run its own task.
       </>,
     ],
     [
@@ -114,7 +114,7 @@ function Guide() {
     ],
   ];
   return (
-    <div className="flex flex-col gap-6 text-sm leading-relaxed">
+    <div className="text-sm leading-relaxed">
       <ol className="flex flex-col gap-4">
         {steps.map(([title, text], i) => (
           <li key={title} className="grid grid-cols-[32px_1fr] gap-3">
@@ -128,24 +128,41 @@ function Guide() {
           </li>
         ))}
       </ol>
-      <div>
-        <p className="eyebrow mb-2">Attack classes and their surfaces</p>
-        <div className="flex flex-col">
-          {Object.entries(ATTACK_CLASSES).map(([id, c]) => (
-            <div
-              key={id}
-              className="grid grid-cols-[40px_minmax(0,1fr)] gap-2 border-t border-line py-2 text-xs"
-            >
-              <span className="font-mono text-muted">{id}</span>
-              <span>
-                {c.name}
-                <span className="block font-mono text-muted">{c.surfaces.join(", ")}</span>
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
+  );
+}
+
+/**
+ * The ten attack classes and the surfaces each can be planted on. Kept on the page, apart from
+ * the step-by-step guide, because it's the reference you check while writing a spec.
+ */
+function AttackClasses() {
+  return (
+    <Card
+      title="Attack classes"
+      description="Every spec names one class and plants its text on one of that class's surfaces."
+    >
+      <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        {Object.entries(ATTACK_CLASSES).map(([id, c]) => (
+          <li key={id} className="flex flex-col rounded-2xl border border-line bg-white/[0.02] p-4">
+            <span className="w-fit rounded-md bg-white/[0.06] px-1.5 py-0.5 font-mono text-[11px] text-soft">
+              {id}
+            </span>
+            <span className="mt-2.5 text-sm leading-snug font-semibold">{c.name}</span>
+            <span className="mt-auto flex flex-wrap gap-1 pt-3">
+              {c.surfaces.map((s) => (
+                <span
+                  key={s}
+                  className="rounded border border-line-strong px-1.5 py-px font-mono text-[10.5px] text-muted"
+                >
+                  {s}
+                </span>
+              ))}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }
 
@@ -476,6 +493,7 @@ export function Bounties() {
           <p className="mt-1.5 text-xs text-muted">against the undefended agent</p>
         </div>
       </section>
+      <AttackClasses />
       <Submit />
       <Card
         title="Submissions"

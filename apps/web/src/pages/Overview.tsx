@@ -393,21 +393,21 @@ function AcrossBonded() {
           claims.data ? `${claims.data.length} claims, all automatic` : "",
         )}
       </section>
-      <section className="flex flex-wrap items-start gap-4">
-        <div className="panel min-w-0 flex-[999_1_460px] p-6">
+      <section className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="panel flex min-w-0 flex-col p-6 md:col-span-2 xl:col-span-1">
           <div className="flex items-center justify-between">
             <h3 className="text-[17px] font-bold">Top agents</h3>
             <Link to="/agents" className={`text-sm ${linkClass}`}>
               All agents →
             </Link>
           </div>
-          <div className="mt-2">
+          <div className="mt-2 flex flex-1 flex-col">
             {top.length === 0 && <Skeleton className="mt-3 h-40" />}
             {top.map((a, n) => (
               <Link
                 key={String(a.agentId)}
                 to={`/agents/${a.agentId}`}
-                className="grid grid-cols-[26px_minmax(0,1fr)_auto_auto] items-center gap-3.5 border-t border-white/[0.07] py-3.5 first:border-t-0"
+                className="-mx-2 grid grid-cols-[22px_minmax(0,1fr)_auto_auto] items-center gap-3 rounded-xl border-t border-white/[0.07] px-2 py-2.5 transition first:border-t-0 hover:bg-white/[0.035]"
               >
                 <span className="font-mono text-xs text-muted">
                   {String(n + 1).padStart(2, "0")}
@@ -418,78 +418,72 @@ function AcrossBonded() {
                     {a.vault ? `Vault ${short(a.vault)}` : "No vault yet"}
                   </span>
                 </span>
-                <span className="font-serif text-[28px]">{a.score!.score}</span>
+                <span className="font-serif text-[26px] leading-none">{a.score!.score}</span>
                 <TierBadge score={a.score!.score} />
               </Link>
             ))}
           </div>
         </div>
-        <div className="flex min-w-0 flex-[1_1_340px] flex-col gap-4">
-          <div className="panel p-6">
-            <div className="flex items-center justify-between">
-              <h3 className="flex items-center gap-2 text-[17px] font-bold">
-                <span className="size-[7px] rounded-full bg-breach-solid [animation:blink_1.4s_infinite]" />
-                Arena now
-              </h3>
-              <Link to="/arena" className={`text-sm ${linkClass}`}>
-                Watch →
-              </Link>
-            </div>
-            {feed.cards.length === 0 ? (
-              <p className="mt-3 text-sm text-muted">Waiting for the next episode…</p>
-            ) : (
-              feed.cards.slice(0, 4).map((c) => (
-                <div
-                  key={c.eventId}
-                  className="mt-1 flex items-center gap-3 border-t border-white/[0.07] py-2.5 text-sm first:border-t-0"
-                >
-                  <span
-                    className={`size-2 rounded-full ${c.breached ? "bg-breach-solid" : c.attackClass ? "bg-held" : "bg-[#5b6478]"}`}
-                  />
-                  <span className="w-8 font-mono text-xs text-muted">{c.attackClass ?? "—"}</span>
-                  <span className="min-w-0 flex-1 truncate">{c.attackId ?? "control"}</span>
-                  <Badge tone={c.breached ? "breach" : c.attackClass ? "brand" : "neutral"}>
-                    {c.breached ? "Breach" : c.attackClass ? "Held" : "Control"}
-                  </Badge>
-                </div>
-              ))
-            )}
+        <div className="panel flex min-w-0 flex-col p-6">
+          <div className="flex items-center justify-between">
+            <h3 className="flex items-center gap-2 text-[17px] font-bold">
+              <span className="size-[7px] rounded-full bg-breach-solid [animation:blink_1.4s_infinite]" />
+              Arena now
+            </h3>
+            <Link to="/arena" className={`text-sm ${linkClass}`}>
+              Watch →
+            </Link>
           </div>
-          <div className="panel p-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-[17px] font-bold">Latest claim</h3>
-              <Link to="/claims" className={`text-sm ${linkClass}`}>
-                All claims →
-              </Link>
-            </div>
-            {latest && w ? (
-              <>
-                <p className="mt-3 font-serif text-[40px] leading-none">
-                  ${usd(w.toVault, 0)} paid
-                </p>
-                <p className="mt-1.5 text-sm text-muted">
-                  to vault <span className="font-mono">{short(latest.vault)}</span>, no form filed
-                </p>
-                <div className="mt-3.5 flex h-2 gap-[3px] overflow-hidden rounded-md">
-                  <span
-                    className="bg-brand-bright"
-                    style={{ flex: Number(w.fromBond) || 0.0001 }}
-                  />
-                  <span className="bg-[#9db5ff]" style={{ flex: Number(w.fromPool) || 0.0001 }} />
-                  <span className="bg-white/15" style={{ flex: Number(w.unpaid) || 0.0001 }} />
-                </div>
-                <div className="mt-2 flex justify-between text-xs text-muted">
-                  <span>Bond ${usd(w.fromBond, 0)}</span>
-                  <span>Pool ${usd(w.fromPool, 0)}</span>
-                  <span>Not covered ${usd(w.unpaid, 0)}</span>
-                </div>
-              </>
-            ) : claims.data ? (
-              <p className="mt-3 text-sm text-muted">No claims yet.</p>
-            ) : (
-              <Skeleton className="mt-3 h-20" />
-            )}
+          {feed.cards.length === 0 ? (
+            <p className="mt-3 text-sm text-muted">Waiting for the next episode…</p>
+          ) : (
+            feed.cards.slice(0, 4).map((c) => (
+              <div
+                key={c.eventId}
+                className="flex items-center gap-3 border-t border-white/[0.07] py-2.5 text-sm first:border-t-0"
+              >
+                <span
+                  className={`size-2 rounded-full ${c.breached ? "bg-breach-solid" : c.attackClass ? "bg-held" : "bg-[#5b6478]"}`}
+                />
+                <span className="w-8 font-mono text-xs text-muted">{c.attackClass ?? "—"}</span>
+                <span className="min-w-0 flex-1 truncate">{c.attackId ?? "control"}</span>
+                <Badge tone={c.breached ? "breach" : c.attackClass ? "brand" : "neutral"}>
+                  {c.breached ? "Breach" : c.attackClass ? "Held" : "Control"}
+                </Badge>
+              </div>
+            ))
+          )}
+        </div>
+        <div className="panel flex min-w-0 flex-col p-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-[17px] font-bold">Latest claim</h3>
+            <Link to="/claims" className={`text-sm ${linkClass}`}>
+              All claims →
+            </Link>
           </div>
+          {latest && w ? (
+            <div className="mt-4 flex flex-1 flex-col">
+              <p className="font-serif text-[40px] leading-none">${usd(w.toVault, 0)} paid</p>
+              <p className="mt-1.5 text-sm text-muted">
+                to vault <span className="font-mono">{short(latest.vault)}</span>, no form filed
+              </p>
+              <p className="eyebrow mt-auto pt-6">How it was paid</p>
+              <div className="mt-3 flex h-2 gap-[3px] overflow-hidden rounded-md">
+                <span className="bg-brand-bright" style={{ flex: Number(w.fromBond) || 0.0001 }} />
+                <span className="bg-[#9db5ff]" style={{ flex: Number(w.fromPool) || 0.0001 }} />
+                <span className="bg-white/15" style={{ flex: Number(w.unpaid) || 0.0001 }} />
+              </div>
+              <div className="mt-2 flex justify-between text-xs text-muted">
+                <span>Bond ${usd(w.fromBond, 0)}</span>
+                <span>Pool ${usd(w.fromPool, 0)}</span>
+                <span>Not covered ${usd(w.unpaid, 0)}</span>
+              </div>
+            </div>
+          ) : claims.data ? (
+            <p className="mt-3 text-sm text-muted">No claims yet.</p>
+          ) : (
+            <Skeleton className="mt-3 h-20" />
+          )}
         </div>
       </section>
     </>

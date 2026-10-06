@@ -2,13 +2,13 @@ import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api, type LeaderboardRecord } from "../lib/api";
 import {
+  Badge,
   Card,
   EmptyState,
   ErrorText,
   Loading,
   Page,
   ScoreRing,
-  Table,
   TierBadge,
   Tooltip,
   TxLink,
@@ -18,26 +18,33 @@ import {
 const CLASSES = ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10"];
 const REPO = "https://github.com/ddboy19912/bonded/blob/main";
 
-/** Share of a class's episodes that breached, as a cell colour. */
-function Cell({ c }: { c?: LeaderboardRecord["classes"][number] }) {
-  if (!c || c.episodes === 0) return <td className="px-1 text-center text-muted">·</td>;
+/** One attack class as a small square, coloured by the share of its episodes that breached. */
+function Square({ cls, c }: { cls: string; c?: LeaderboardRecord["classes"][number] }) {
+  if (!c || c.episodes === 0)
+    return (
+      <Tooltip content={`${cls}: not run`}>
+        <span className="block size-5 rounded-[5px] border border-dashed border-line-strong" />
+      </Tooltip>
+    );
   const rate = c.breaches / c.episodes;
   const tone =
     rate === 0
-      ? "bg-accent-soft text-accent"
+      ? "bg-brand-bright/45 ring-1 ring-inset ring-brand-bright/70"
       : rate < 0.5
-        ? "bg-breach-soft text-breach"
-        : "bg-breach-solid text-paper";
+        ? "bg-breach/45 ring-1 ring-inset ring-breach/60"
+        : "bg-breach-solid";
   return (
-    <td className="px-1 text-center">
-      <Tooltip content={`${c.name}: ${c.breaches} of ${c.episodes} episodes breached`}>
-        <span
-          className={`inline-block min-w-11 rounded-lg px-1.5 py-1 font-mono text-[11px] font-medium tabular-nums ${tone}`}
-        >
-          {c.breaches}/{c.episodes}
-        </span>
-      </Tooltip>
-    </td>
+    <Tooltip content={`${cls} ${c.name}: ${c.breaches} of ${c.episodes} episodes breached`}>
+      <span className={`block size-5 rounded-[5px] ${tone}`} />
+    </Tooltip>
+  );
+}
+
+/** Totals across every attack class, for the one-line summary under the strip. */
+function totals(e: LeaderboardRecord) {
+  return e.classes.reduce(
+    (t, c) => ({ breaches: t.breaches + c.breaches, episodes: t.episodes + c.episodes }),
+    { breaches: 0, episodes: 0 },
   );
 }
 
@@ -98,15 +105,15 @@ export function Leaderboard() {
 
       <Card
         title="Rankings"
-        description="Each cell is breaches out of episodes for one attack class. Hover a cell for the class."
+        description="One square per attack class, A1 to A10. Hover a square for its breaches and episodes."
         actions={
           <div className="flex flex-wrap items-center gap-3.5 text-xs text-muted">
             <span className="inline-flex items-center gap-1.5">
-              <span className="size-2.5 rounded bg-accent-soft ring-1 ring-accent/40" /> held
+              <span className="size-2.5 rounded bg-brand-bright/45 ring-1 ring-brand-bright/70" />{" "}
+              held
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <span className="size-2.5 rounded bg-breach-soft ring-1 ring-breach/40" /> some
-              breached
+              <span className="size-2.5 rounded bg-breach/45 ring-1 ring-breach/60" /> some breached
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span className="size-2.5 rounded bg-breach-solid" /> half or more
@@ -118,76 +125,107 @@ export function Leaderboard() {
         <ErrorText error={board.error} />
         {board.data?.entries.length === 0 && <EmptyState title="No ratings published yet" />}
         {entries.length > 0 && (
-          <Table>
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Agent</th>
-                <th>Score</th>
-                {CLASSES.map((c) => (
-                  <th key={c} className="!text-center">
-                    {c}
-                  </th>
-                ))}
-                <th>On chain</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((e, i) => (
-                <tr key={e.slug}>
-                  <td className="font-mono text-xs text-muted">{i + 1}</td>
-                  <td className="min-w-60 pr-4">
-                    <div className="font-semibold">
-                      {e.template ? (
-                        <a
-                          href={e.template}
-                          className="hover:text-accent"
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          {e.name}
-                        </a>
-                      ) : (
-                        e.name
-                      )}
-                    </div>
-                    <div className="text-xs text-muted">
-                      {e.framework}
-                      {e.model ? ` · ${e.model}` : " · scripted"} ·{" "}
-                      {DISCLOSURE[e.disclosure.status]}
-                    </div>
-                  </td>
-                  <td className="pr-3">
-                    <span className="flex items-center gap-2">
-                      <span className="font-serif text-2xl leading-none">{e.score}</span>
-                      <TierBadge score={e.score} />
-                    </span>
-                  </td>
+          <div className="-mx-5 overflow-x-auto sm:-mx-6">
+            <div className="min-w-[860px]">
+              <div className="grid grid-cols-[40px_minmax(0,1fr)_120px_268px_150px] items-end gap-6 px-5 pb-3 text-[10.5px] font-medium tracking-[0.14em] text-muted uppercase sm:px-6">
+                <span>#</span>
+                <span>Agent</span>
+                <span>Score</span>
+                <span className="flex gap-1.5 tracking-normal normal-case">
                   {CLASSES.map((c) => (
-                    <Cell key={c} c={e.classes.find((x) => x.class === c)} />
+                    <span key={c} className="w-5 text-center font-mono text-[9px] tracking-tighter">
+                      {c}
+                    </span>
                   ))}
-                  <td className="pl-3 text-xs">
-                    {e.onchain ? (
-                      <span className="flex flex-col gap-0.5">
-                        <Link to={`/agents/${e.onchain.agentId}`} className={linkClass}>
-                          Agent {e.onchain.agentId}
-                        </Link>
-                        {e.onchain.tx ? (
-                          <TxLink hash={e.onchain.tx} />
-                        ) : (
-                          <span className="text-muted">score pending</span>
-                        )}
-                        {e.verified === true && <span className="text-safe">score verified</span>}
-                        {e.verified === false && <span className="text-muted">re-rated since</span>}
+                </span>
+                <span>On chain</span>
+              </div>
+              <ol>
+                {entries.map((e, i) => {
+                  const t = totals(e);
+                  return (
+                    <li
+                      key={e.slug}
+                      className="grid grid-cols-[40px_minmax(0,1fr)_120px_268px_150px] items-center gap-6 border-t border-line px-5 py-5 transition hover:bg-white/[0.025] sm:px-6"
+                    >
+                      <span className="font-mono text-xs text-muted">
+                        {String(i + 1).padStart(2, "0")}
                       </span>
-                    ) : (
-                      <span className="text-muted">not posted</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
+                      <span className="min-w-0">
+                        <span className="block truncate font-semibold">
+                          {e.template ? (
+                            <a
+                              href={e.template}
+                              className="hover:text-accent"
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {e.name}
+                            </a>
+                          ) : (
+                            e.name
+                          )}
+                        </span>
+                        <span className="mt-1 block truncate text-xs text-muted">
+                          {e.framework}
+                          {e.model ? ` · ${e.model}` : " · scripted"}
+                        </span>
+                        <span className="mt-1 block text-[11px] text-muted/80">
+                          {DISCLOSURE[e.disclosure.status]}
+                        </span>
+                      </span>
+                      <span className="flex items-center gap-2.5">
+                        <span className="font-serif text-3xl leading-none">{e.score}</span>
+                        <TierBadge score={e.score} />
+                      </span>
+                      <span>
+                        <span className="flex gap-1.5">
+                          {CLASSES.map((c) => (
+                            <Square key={c} cls={c} c={e.classes.find((x) => x.class === c)} />
+                          ))}
+                        </span>
+                        <span className="mt-2 block text-[11px] text-muted">
+                          {t.breaches === 0 ? (
+                            <>No breaches in {t.episodes} episodes</>
+                          ) : (
+                            <span className="text-breach">
+                              {t.breaches} {t.breaches === 1 ? "breach" : "breaches"} in{" "}
+                              {t.episodes} episodes
+                            </span>
+                          )}
+                        </span>
+                      </span>
+                      <span className="flex flex-col items-start gap-1.5 text-xs">
+                        {e.onchain ? (
+                          <>
+                            <Link to={`/agents/${e.onchain.agentId}`} className={linkClass}>
+                              Agent {e.onchain.agentId} →
+                            </Link>
+                            {e.verified === true ? (
+                              <Badge tone="safe" dot>
+                                Verified
+                              </Badge>
+                            ) : e.verified === false ? (
+                              <Badge>Re-rated since</Badge>
+                            ) : !e.onchain.tx ? (
+                              <Badge>Score pending</Badge>
+                            ) : null}
+                            {e.onchain.tx && (
+                              <span className="text-muted">
+                                tx <TxLink hash={e.onchain.tx} />
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-muted">Not posted</span>
+                        )}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
+          </div>
         )}
       </Card>
 

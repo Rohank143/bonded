@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useAccount } from "wagmi";
 import { useAgents } from "../lib/chain";
@@ -25,8 +24,14 @@ export function Agents() {
   const agents = useAgents();
   const navigate = useNavigate();
   const { address } = useAccount();
-  const [params] = useSearchParams();
-  const [show, setShow] = useState<Show>(params.get("mine") === "1" ? "mine" : "all");
+  // The tab lives in the address, so the sidebar's "Agents" and "Your agents" stay in step.
+  const [params, setParams] = useSearchParams();
+  const show: Show =
+    params.get("mine") === "1" ? "mine" : params.get("show") === "rated" ? "rated" : "all";
+  const setShow = (s: Show) =>
+    setParams(s === "mine" ? { mine: "1" } : s === "rated" ? { show: "rated" } : {}, {
+      replace: true,
+    });
   const now = BigInt(Math.floor(Date.now() / 1000));
   const isMine = (owner: string) =>
     Boolean(address) && owner.toLowerCase() === address!.toLowerCase();
