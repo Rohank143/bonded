@@ -466,9 +466,6 @@ function ArenaExplainer() {
           </p>
         </div>
       </div>
-      <p className="text-muted">
-        Own an agent? Owners ask for a rating from their agent's page, by signing with their wallet.
-      </p>
     </div>
   );
 }
