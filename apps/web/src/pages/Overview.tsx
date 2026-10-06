@@ -14,7 +14,6 @@ import { deployment } from "../config";
 import { useAgents, useClaims, useVaults, waterfall, type AgentRow } from "../lib/chain";
 import { useEpisodeFeed } from "../lib/events";
 import { short, usd } from "../lib/format";
-import { ConnectButton } from "../components/wallet";
 import { Badge, ScoreRing, Skeleton, TierBadge, buttonClass, linkClass } from "../components/ui";
 import { TokenLogo } from "../components/token";
 
@@ -62,12 +61,9 @@ function Welcome() {
         Trust an AI agent with money, with your losses covered.
       </h1>
       <p className="mt-4 max-w-xl text-muted">
-        Browse everything freely. Connect a wallet when you're ready to deposit, onboard an agent or
-        underwrite.
+        Browse everything freely. Use Connect wallet at the top when you're ready to deposit,
+        onboard an agent or underwrite.
       </p>
-      <div className="mt-6">
-        <ConnectButton />
-      </div>
       <div className="mt-8 grid gap-3.5 md:grid-cols-3">
         {paths.map((p) => (
           <Link
