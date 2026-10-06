@@ -82,7 +82,7 @@ export function Vaults() {
               <tr>
                 <th>Vault</th>
                 <th>Agent</th>
-                <th className="text-right">Assets</th>
+                <th className="!pr-10 !text-right">Assets</th>
                 <th>
                   <Term term="cover">Cover</Term>
                 </th>
@@ -123,15 +123,11 @@ export function Vaults() {
                         {score !== undefined && <TierBadge score={score} />}
                       </span>
                     </td>
-                    <td className="text-right font-mono tabular-nums">
+                    <td className="pr-10 text-right font-mono tabular-nums">
                       {assets !== undefined ? `$${usd(assets, 0)}` : "…"}
                     </td>
                     <td>
-                      {at(i, 2) ? (
-                        <Badge tone="brand">Covered</Badge>
-                      ) : (
-                        <span className="text-muted">None</span>
-                      )}
+                      {at(i, 2) ? <Badge tone="brand">Covered</Badge> : <Badge>No cover</Badge>}
                     </td>
                     <td>
                       {at(i, 1) === true ? (
