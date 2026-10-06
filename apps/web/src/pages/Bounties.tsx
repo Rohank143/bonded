@@ -8,16 +8,18 @@ import { api, type BountyRecord } from "../lib/api";
 import { checkSpec, commitmentIfReady, isSalt, newSalt, specUriOf } from "../lib/bounty";
 import { short, usd } from "../lib/format";
 import { useSend } from "../components/wallet";
+import { InfoPanel } from "../components/overlay";
+import { CodeEditor } from "../components/code-editor";
 import {
   Badge,
   Button,
   Card,
   EmptyState,
   ErrorText,
-  Input,
   Loading,
   Page,
   TxLink,
+  buttonClass,
   linkClass,
 } from "../components/ui";
 
@@ -52,9 +54,8 @@ function useCommitId(commitment: Hex | undefined) {
 
 const REPO = "https://github.com/ddboy19912/bonded/blob/main";
 
-/** The hunter's guide (docs/BOUNTIES.md), step by step, on the page where the steps happen. */
+/** The hunter's guide (docs/BOUNTIES.md), opened from a button when someone needs it. */
 function Guide() {
-  const [open, setOpen] = useState(0);
   const steps: [string, ReactNode][] = [
     [
       "Get set up",
@@ -79,8 +80,8 @@ function Guide() {
       "Write the attack",
       <>
         Start from the example. Its id must start with the class (<code>A6-...</code>) and use one
-        of the class's surfaces. The <code>payloadTemplate</code> is the text planted on that
-        surface: use <code>{"{{attacker}}"}</code> for an address you control, and{" "}
+        of the class's surfaces (listed below). The <code>payloadTemplate</code> is the text planted
+        on that surface: use <code>{"{{attacker}}"}</code> for an address you control, and{" "}
         <code>{"{{amount}}"}</code>, <code>{"{{token}}"}</code>, <code>{"{{vault}}"}</code>,{" "}
         <code>{"{{depositor}}"}</code> or <code>{"{{lookalike}}"}</code> where you need them. Don't
         set a <code>goal</code>: the Arena gives every run its own task.
@@ -106,72 +107,30 @@ function Guide() {
       "Commit",
       "The page checks your spec first; once committed it can't change. Save the salt: you need it to reveal.",
     ],
-    ["Reveal, then send for validation", "One click each, from the same wallet."],
+    ["Reveal, then validate", "One click each, from the same wallet."],
     [
       "Watch the result",
-      "Validation takes a few minutes. The result shows below with its reason, and a reward goes straight to your wallet.",
+      "Validation takes a few minutes. The result shows under Submissions with its reason, and a reward goes straight to your wallet.",
     ],
   ];
   return (
-    <Card
-      title="How to submit an attack"
-      description="Six steps. Open one at a time; the form on the right follows the same order."
-    >
-      <ol className="flex flex-col gap-2">
-        {steps.map(([title, text], i) => {
-          const isOpen = open === i;
-          return (
-            <li
-              key={title}
-              className={`rounded-2xl border transition ${isOpen ? "border-accent/30 bg-accent-soft" : "border-line hover:border-line-strong"}`}
-            >
-              <button
-                type="button"
-                aria-expanded={isOpen}
-                onClick={() => setOpen(isOpen ? -1 : i)}
-                className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm"
-              >
-                <span
-                  className={`flex size-7 shrink-0 items-center justify-center rounded-full font-mono text-xs ${isOpen ? "btn-brand text-on-brand" : "border border-line-strong text-muted"}`}
-                >
-                  {i + 1}
-                </span>
-                <strong className="flex-1 font-semibold">{title}</strong>
-                <svg
-                  viewBox="0 0 24 24"
-                  className={`size-4 text-muted transition ${isOpen ? "rotate-180" : ""}`}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  aria-hidden
-                >
-                  <path d="M6 9l6 6 6-6" />
-                </svg>
-              </button>
-              {isOpen && (
-                <div className="px-4 pb-4 pl-14 text-sm leading-relaxed text-muted [animation:rise_.25s_ease_both] [&_code]:rounded [&_code]:bg-white/[0.06] [&_code]:px-1 [&_code]:font-mono [&_code]:text-[12px] [&_code]:text-soft">
-                  {text}
-                  {i < steps.length - 1 && (
-                    <button
-                      type="button"
-                      onClick={() => setOpen(i + 1)}
-                      className="mt-3 block text-sm font-semibold text-accent hover:underline"
-                    >
-                      Next: {steps[i + 1]![0]} →
-                    </button>
-                  )}
-                </div>
-              )}
-            </li>
-          );
-        })}
+    <div className="flex flex-col gap-6 text-sm leading-relaxed">
+      <ol className="flex flex-col gap-4">
+        {steps.map(([title, text], i) => (
+          <li key={title} className="grid grid-cols-[32px_1fr] gap-3">
+            <span className="btn-brand flex size-8 items-center justify-center rounded-full font-mono text-xs text-on-brand">
+              {i + 1}
+            </span>
+            <span className="text-muted [&_code]:rounded [&_code]:bg-white/[0.06] [&_code]:px-1 [&_code]:font-mono [&_code]:text-[12px] [&_code]:text-soft">
+              <strong className="block text-ink">{title}</strong>
+              {text}
+            </span>
+          </li>
+        ))}
       </ol>
-      <details className="mt-5 rounded-2xl border border-line p-4">
-        <summary className="cursor-pointer text-sm font-semibold">
-          Attack classes and their surfaces
-        </summary>
-        <div className="mt-3 flex flex-col">
+      <div>
+        <p className="eyebrow mb-2">Attack classes and their surfaces</p>
+        <div className="flex flex-col">
           {Object.entries(ATTACK_CLASSES).map(([id, c]) => (
             <div
               key={id}
@@ -185,10 +144,45 @@ function Guide() {
             </div>
           ))}
         </div>
-      </details>
-    </Card>
+      </div>
+    </div>
   );
 }
+
+function GuideButton({ kind = "secondary" }: { kind?: "secondary" | "ghost" }) {
+  return (
+    <InfoPanel
+      title="How to submit an attack"
+      description="Six steps, from your first draft to a reward in your wallet."
+      trigger={
+        <button type="button" className={buttonClass(kind, kind === "ghost" ? "sm" : "md")}>
+          How to submit an attack
+        </button>
+      }
+    >
+      <Guide />
+    </InfoPanel>
+  );
+}
+
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void navigator.clipboard?.writeText(text);
+        setDone(true);
+        setTimeout(() => setDone(false), 1500);
+      }}
+      className="rounded-full px-2.5 py-1 text-xs font-semibold text-accent hover:bg-white/[0.06]"
+    >
+      {done ? "Copied" : label}
+    </button>
+  );
+}
+
+const STAGES = ["Write", "Commit", "Reveal", "Validate"] as const;
 
 function Submit() {
   const { address } = useAccount();
@@ -216,6 +210,7 @@ function Submit() {
   });
   const status = onChain.data?.status;
   const { send, busy, view } = useSend();
+  const valid = Boolean(check && "spec" in check);
 
   async function validate() {
     setError(null);
@@ -228,81 +223,39 @@ function Submit() {
     }
   }
 
-  const stage = id === undefined ? 1 : status === 1 ? 2 : status === 2 ? 3 : 4;
-  return (
-    <Card
-      title="Submit an attack"
-      description="Committing first timestamps your attack without revealing it, so nobody can copy it before you reveal."
-    >
-      <label className="flex flex-col gap-1.5 text-sm">
-        <span className="flex items-center justify-between font-medium text-soft">
-          Attack spec (YAML)
-          {!yaml.trim() && (
-            <Button kind="ghost" size="sm" onClick={() => setYaml(BOUNTY_SPEC_EXAMPLE)}>
-              Insert the example
-            </Button>
-          )}
-        </span>
-        <textarea
-          value={yaml}
-          onChange={(e) => setYaml(e.target.value)}
-          rows={13}
-          spellCheck={false}
-          className={`rounded-2xl border bg-black/30 p-4 font-mono text-xs leading-relaxed text-ink outline-none focus:border-accent focus:ring-3 focus:ring-accent/15 ${check && "error" in check ? "border-breach" : "border-line-strong"}`}
-        />
-      </label>
-      {check && "spec" in check && (
-        <p className="mt-2 text-xs text-safe">
-          ✓ Passes the API's checks: {check.spec.class} via {check.spec.surfaces.join(", ")}.
-        </p>
-      )}
-      {check && "error" in check && (
-        <p className="mt-2 text-xs text-breach">
-          Fix this before committing: {check.error}. A committed spec can't be edited.
-        </p>
-      )}
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <Input
-          label="Salt (save it)"
-          value={salt}
-          onChange={setSalt}
-          error={saltOk ? null : "The salt must be 0x and 64 hex digits."}
-        />
-        <div className="flex min-w-0 flex-col gap-1.5 text-sm">
-          <span className="font-medium text-soft">Spec URI</span>
-          <span className="font-mono text-xs break-all text-muted">{spec.data ?? "—"}</span>
-        </div>
-      </div>
-
-      {!address ? (
-        <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-line pt-5">
-          <span className="text-sm text-muted">
-            Use Connect wallet at the top of the page to commit, reveal and validate.
-          </span>
-        </div>
-      ) : (
-        <div className="mt-5 grid gap-2 border-t border-line pt-5 sm:grid-cols-3">
-          <Button
-            kind={stage === 1 ? "primary" : "secondary"}
-            disabled={!commitment || !(check && "spec" in check) || busy || id !== undefined}
-            onClick={() =>
-              void send([
-                {
-                  label: "Commit",
-                  address: deployment.bountyBoard,
-                  abi: bountyBoardAbi,
-                  functionName: "commit",
-                  args: [commitment!],
-                },
-              ])
-            }
-          >
-            1. Commit
-          </Button>
-          <Button
-            kind={stage === 2 ? "primary" : "secondary"}
-            disabled={busy || !saltOk || id === undefined || status !== 1}
-            onClick={() =>
+  // 0 write, 1 commit, 2 reveal, 3 validate, 4 sent
+  const stage = !valid
+    ? 0
+    : id === undefined || status === undefined
+      ? 1
+      : status === 1
+        ? 2
+        : status === 2 && !result
+          ? 3
+          : 4;
+  const next =
+    stage === 1
+      ? {
+          label: "Commit the attack",
+          hint: "Timestamps it on chain without revealing it.",
+          disabled: !commitment || busy || !saltOk || id !== undefined,
+          run: () =>
+            void send([
+              {
+                label: "Commit",
+                address: deployment.bountyBoard,
+                abi: bountyBoardAbi,
+                functionName: "commit",
+                args: [commitment!],
+              },
+            ]),
+        }
+      : stage === 2
+        ? {
+            label: "Reveal on chain",
+            hint: "Publishes the spec's address with your salt.",
+            disabled: busy || !saltOk,
+            run: () =>
               void send([
                 {
                   label: "Reveal",
@@ -311,30 +264,179 @@ function Submit() {
                   functionName: "reveal",
                   args: [id!, spec.data!, salt as Hex],
                 },
-              ])
+              ]),
+          }
+        : stage === 3
+          ? {
+              label: "Send for validation",
+              hint: "The Arena runs it against the reference agents.",
+              disabled: busy,
+              run: () => void validate(),
             }
-          >
-            2. Reveal
-          </Button>
-          <Button
-            kind={stage === 3 ? "primary" : "secondary"}
-            disabled={busy || status !== 2}
-            onClick={() => void validate()}
-          >
-            3. Validate
-          </Button>
+          : null;
+
+  return (
+    <section className="panel overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-line px-6 py-5">
+        <div>
+          <h2 className="text-lg font-bold">Submit an attack</h2>
+          <p className="mt-1 text-sm text-muted">
+            Committing first timestamps your attack without revealing it, so nobody can copy it.
+          </p>
         </div>
-      )}
-      {id !== undefined && (
-        <p className="mt-3 text-sm text-muted">
-          Submission {id.toString()} · on chain:{" "}
-          {["none", "committed", "revealed", "accepted", "rejected"][status ?? 0]}
-        </p>
-      )}
-      <div className="mt-2">{view}</div>
-      {result && <p className="mt-2 text-sm">{result}</p>}
-      <ErrorText error={error} />
-    </Card>
+        <GuideButton kind="ghost" />
+      </div>
+
+      <ol className="grid grid-cols-4 border-b border-line" aria-label="Progress">
+        {STAGES.map((label, i) => {
+          const done = stage > i;
+          const current = stage === i;
+          return (
+            <li
+              key={label}
+              className={`flex items-center gap-2.5 px-6 py-3.5 text-sm ${current ? "text-ink" : done ? "text-soft" : "text-muted"}`}
+            >
+              <span
+                className={`flex size-6 items-center justify-center rounded-full font-mono text-[11px] ${done ? "bg-safe text-paper" : current ? "btn-brand text-on-brand" : "border border-line-strong"}`}
+              >
+                {done ? "✓" : i + 1}
+              </span>
+              <span className={current ? "font-semibold" : ""}>{label}</span>
+            </li>
+          );
+        })}
+      </ol>
+
+      <div className="p-6">
+        <div className="overflow-hidden rounded-2xl border border-line-strong bg-black/40">
+          <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
+            <span className="flex items-center gap-2 font-mono text-xs text-soft">
+              <svg
+                viewBox="0 0 24 24"
+                className="size-3.5 text-muted"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                aria-hidden
+              >
+                <path d="M7 3h7l5 5v13H7zM14 3v5h5" />
+              </svg>
+              attack.yaml
+            </span>
+            <span className="flex gap-1">
+              {yaml.trim() ? (
+                <button
+                  type="button"
+                  onClick={() => setYaml("")}
+                  className="rounded-full px-2.5 py-1 text-xs font-semibold text-muted hover:bg-white/[0.06] hover:text-ink"
+                >
+                  Clear
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setYaml(BOUNTY_SPEC_EXAMPLE)}
+                  className="rounded-full px-2.5 py-1 text-xs font-semibold text-accent hover:bg-white/[0.06]"
+                >
+                  Insert the example
+                </button>
+              )}
+            </span>
+          </div>
+          <CodeEditor
+            value={yaml}
+            onChange={setYaml}
+            label="Attack spec in YAML"
+            placeholder="# Paste or write your attack spec here, or insert the example."
+            invalid={Boolean(check && "error" in check)}
+          />
+          <div
+            className={`flex items-center gap-2 border-t border-line px-4 py-2.5 font-mono text-xs ${!check ? "text-muted" : "spec" in check ? "text-safe" : "text-breach"}`}
+            role="status"
+          >
+            {!check
+              ? "Waiting for a spec"
+              : "spec" in check
+                ? `✓ Valid: ${check.spec.class} via ${check.spec.surfaces.join(", ")}`
+                : `✗ ${check.error}`}
+            <span className="ml-auto text-muted">
+              {yaml ? `${yaml.split("\n").length} lines` : ""}
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <div className="min-w-0 rounded-2xl border border-line p-4">
+            <div className="flex items-center justify-between">
+              <p className="eyebrow">Salt · save it to reveal</p>
+              <span className="flex">
+                <CopyButton text={salt} label="Copy" />
+                {id === undefined && (
+                  <button
+                    type="button"
+                    onClick={() => setSalt(newSalt())}
+                    className="rounded-full px-2.5 py-1 text-xs font-semibold text-muted hover:bg-white/[0.06] hover:text-ink"
+                  >
+                    New
+                  </button>
+                )}
+              </span>
+            </div>
+            <input
+              value={salt}
+              onChange={(e) => setSalt(e.target.value)}
+              aria-label="Salt"
+              spellCheck={false}
+              className={`mt-2 w-full truncate bg-transparent font-mono text-sm outline-none ${saltOk ? "text-soft" : "text-breach"}`}
+            />
+            {!saltOk && (
+              <p className="mt-1 text-xs text-breach">The salt must be 0x and 64 hex digits.</p>
+            )}
+          </div>
+          <div className="min-w-0 rounded-2xl border border-line p-4">
+            <div className="flex items-center justify-between">
+              <p className="eyebrow">Spec URI</p>
+              {spec.data && <CopyButton text={spec.data} label="Copy" />}
+            </div>
+            <p className="mt-2 truncate font-mono text-sm text-muted">
+              {spec.data ?? "Appears once the spec is valid"}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-4 border-t border-line bg-white/[0.02] px-6 py-5">
+        <div className="min-w-0 text-sm">
+          {!address ? (
+            <span className="text-muted">Use Connect wallet at the top of the page to submit.</span>
+          ) : stage === 0 ? (
+            <span className="text-muted">Write a valid spec to continue.</span>
+          ) : next ? (
+            <span className="text-muted">{next.hint}</span>
+          ) : (
+            <span className="text-safe">
+              {result ?? "Submitted. Watch for the result under Submissions."}
+            </span>
+          )}
+          {id !== undefined && (
+            <span className="block text-xs text-muted">
+              Submission {id.toString()} · on chain:{" "}
+              {["none", "committed", "revealed", "accepted", "rejected"][status ?? 0]}
+            </span>
+          )}
+        </div>
+        {next && (
+          <Button size="lg" disabled={!address || next.disabled} loading={busy} onClick={next.run}>
+            {next.label} →
+          </Button>
+        )}
+      </div>
+      <div className="px-6 pb-4 empty:hidden">
+        {view}
+        <ErrorText error={error} />
+      </div>
+    </section>
   );
 }
 
@@ -352,6 +454,9 @@ export function Bounties() {
       title="Bounties"
       intro="Find an attack our library misses and get paid. The Arena tests every submission against reference agents, and the reward follows a fixed rule. Accepted attacks join the library, and every agent is re-rated against them."
     >
+      <div className="-mt-1">
+        <GuideButton />
+      </div>
       <section className="grid gap-4 md:grid-cols-3">
         <div className="panel bg-[radial-gradient(ellipse_at_0%_0%,rgb(29_78_216/.22),transparent_60%)] p-6">
           <p className="eyebrow">Bounty pool</p>
@@ -371,10 +476,7 @@ export function Bounties() {
           <p className="mt-1.5 text-xs text-muted">against the undefended agent</p>
         </div>
       </section>
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
-        <Guide />
-        <Submit />
-      </div>
+      <Submit />
       <Card
         title="Submissions"
         actions={<span className="text-xs text-muted">Payloads stay private.</span>}
