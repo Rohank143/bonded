@@ -1,70 +1,60 @@
 @import "tailwindcss";
-@import "@fontsource-variable/inter/opsz.css";
+@import "@fontsource-variable/manrope/index.css";
+@import "@fontsource/instrument-serif/400.css";
+@import "@fontsource/instrument-serif/400-italic.css";
 @import "@fontsource-variable/jetbrains-mono/index.css";
 
 /*
- * Brand tokens. Blue, ink and paper come from the Bonded identity (output/brand/bonded-v1):
- * Blue #1D4ED8, Ink #0F1419, Paper #F7F6F2. `brand` is the solid blue for fills (buttons, the
- * logo); `accent` is the blue used for text and links, lighter in dark mode so it stays readable.
+ * Aurora tokens: the Bonded identity on a deep navy ground. Blue #1D4ED8, Ink #0F1419 and Paper
+ * #F7F6F2 come from the brand (output/brand/bonded-v1). The app is dark only: `paper` is the
+ * page background and `ink` the text colour, so class names read the same as before.
+ *
+ * Meaning of the colours: blue is the brand and "held" (the agent resisted); orange is the red
+ * team and "breach"; amber is a warning or a middling tier; green only means "valid".
  */
 @theme {
-  --color-paper: #f7f6f2;
-  --color-surface: #ffffff;
-  --color-sunken: #efede6;
-  --color-ink: #0f1419;
-  --color-muted: #5c6168;
-  --color-line: #e3e0d7;
-  --color-line-strong: #cfcbc0;
+  --color-paper: #05070d;
+  --color-surface: #0e1320;
+  --color-raised: #151b2b;
+  --color-sunken: #0a0e17;
+  --color-ink: #f4f6fb;
+  --color-soft: #c7d2ee;
+  --color-muted: #8d96ab;
+  --color-line: rgb(255 255 255 / 0.08);
+  --color-line-strong: rgb(255 255 255 / 0.16);
+
   --color-brand: #1d4ed8;
+  --color-brand-bright: #3c6bff;
   --color-brand-strong: #1e40af;
   --color-on-brand: #ffffff;
-  --color-accent: #1d4ed8;
-  --color-accent-soft: #e6ecfc;
-  --color-safe: #1a7f4b;
-  --color-safe-soft: #e3f3ea;
-  --color-breach: #b42318;
-  --color-breach-soft: #fbe9e7;
-  --color-warn: #a15c07;
-  --color-warn-soft: #fbf0dc;
+  --color-accent: #afc4ff;
+  --color-accent-soft: rgb(127 160 255 / 0.14);
+  --color-held: #7fa0ff;
 
-  --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --color-safe: #7ee2b0;
+  --color-safe-soft: rgb(76 195 138 / 0.14);
+  --color-breach: #ff9a80;
+  --color-breach-solid: #ff7a45;
+  --color-breach-soft: rgb(255 92 58 / 0.14);
+  --color-warn: #ffb347;
+  --color-warn-soft: rgb(255 179 71 / 0.14);
+
+  --font-sans: "Manrope Variable", "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Instrument Serif", Georgia, serif;
   --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
 
-  --radius-card: 0.875rem;
-  --shadow-card: 0 1px 2px rgb(15 20 25 / 0.04), 0 1px 1px rgb(15 20 25 / 0.03);
-  --shadow-raised: 0 8px 24px -8px rgb(15 20 25 / 0.12), 0 2px 4px rgb(15 20 25 / 0.04);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-paper: #0f1419;
-    --color-surface: #151b22;
-    --color-sunken: #0b0f13;
-    --color-ink: #f2f1ec;
-    --color-muted: #9aa1ab;
-    --color-line: #232a33;
-    --color-line-strong: #323b46;
-    --color-brand: #1d4ed8;
-    --color-brand-strong: #2a5ff0;
-    --color-on-brand: #ffffff;
-    --color-accent: #7b9bff;
-    --color-accent-soft: #17244a;
-    --color-safe: #4cc38a;
-    --color-safe-soft: #12291f;
-    --color-breach: #f6806f;
-    --color-breach-soft: #34171a;
-    --color-warn: #f0b45a;
-    --color-warn-soft: #2e2312;
-    --shadow-card: 0 0 0 1px rgb(255 255 255 / 0.02);
-    --shadow-raised: 0 12px 32px -12px rgb(0 0 0 / 0.6);
-  }
+  --radius-card: 1.375rem;
+  --shadow-card: inset 0 1px 0 rgb(255 255 255 / 0.04);
+  --shadow-raised: 0 30px 60px -20px rgb(0 0 0 / 0.7), inset 0 1px 0 rgb(255 255 255 / 0.06);
 }
 
 @layer base {
+  :root {
+    color-scheme: dark;
+  }
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    text-rendering: optimizeLegibility;
   }
   body {
     background: var(--color-paper);
@@ -74,14 +64,13 @@
   h1,
   h2,
   h3 {
-    letter-spacing: -0.02em;
     text-wrap: balance;
   }
   p {
     text-wrap: pretty;
   }
   ::selection {
-    background: color-mix(in srgb, var(--color-brand) 22%, transparent);
+    background: rgb(60 107 255 / 0.4);
   }
   :focus-visible {
     outline: 2px solid var(--color-accent);
@@ -89,6 +78,47 @@
   }
   input[type="checkbox"],
   input[type="radio"] {
-    accent-color: var(--color-brand);
+    accent-color: var(--color-brand-bright);
+  }
+}
+
+@layer components {
+  /* The glass panel every card sits on. */
+  .panel {
+    border-radius: var(--radius-card);
+    border: 1px solid var(--color-line);
+    background: linear-gradient(180deg, rgb(22 28 44 / 0.75), rgb(10 13 22 / 0.85));
+    box-shadow: var(--shadow-card);
+  }
+  /* Small uppercase label above a value. */
+  .eyebrow {
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
+  .btn-brand {
+    background: linear-gradient(180deg, var(--color-brand-bright), var(--color-brand));
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25);
+  }
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.3;
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
   }
 }
