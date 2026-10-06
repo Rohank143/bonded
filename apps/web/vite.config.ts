@@ -7,5 +7,7 @@ import tailwindcss from "@tailwindcss/vite";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: { port: 5173, fs: { allow: ["../.."] } },
-  test: { environment: "jsdom" },
+  // RainbowKit's modal is slow to render the first time under jsdom; when every package's tests
+  // run at once (pnpm test), the default 5 s timeout can run out.
+  test: { environment: "jsdom", testTimeout: 15_000 },
 });
