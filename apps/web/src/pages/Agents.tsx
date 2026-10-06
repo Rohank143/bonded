@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { useAccount } from "wagmi";
 import { tierForScore } from "@bonded/shared";
 import { useAgents } from "../lib/chain";
@@ -9,7 +9,8 @@ import { AddressLink, Badge, Card, ErrorText, Loading, Page } from "../component
 export function Agents() {
   const agents = useAgents();
   const { address } = useAccount();
-  const [mineOnly, setMineOnly] = useState(false);
+  const [params] = useSearchParams();
+  const [mineOnly, setMineOnly] = useState(params.get("mine") === "1");
   const now = BigInt(Math.floor(Date.now() / 1000));
   const isMine = (owner: string) =>
     Boolean(address) && owner.toLowerCase() === address!.toLowerCase();

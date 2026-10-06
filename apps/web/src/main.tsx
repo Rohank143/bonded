@@ -3,11 +3,11 @@ import { createRoot } from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider } from "wagmi";
-import { RainbowKitProvider, darkTheme, lightTheme } from "@rainbow-me/rainbowkit";
+import { RainbowKitProvider, darkTheme } from "@rainbow-me/rainbowkit";
 import "@rainbow-me/rainbowkit/styles.css";
 import { wagmiConfig } from "./wagmi";
 import { robinhoodTestnet } from "./config";
-import { Layout } from "./App";
+import { AppLayout, SiteLayout } from "./App";
 import { OperatorTokenProvider } from "./components/wallet";
 import { Landing } from "./pages/Landing";
 import { Arena } from "./pages/Arena";
@@ -24,10 +24,10 @@ import { Agents } from "./pages/Agents";
 import "./index.css";
 
 const router = createBrowserRouter([
+  { element: <SiteLayout />, children: [{ path: "/", element: <Landing /> }] },
   {
-    element: <Layout />,
+    element: <AppLayout />,
     children: [
-      { path: "/", element: <Landing /> },
       { path: "/arena", element: <Arena /> },
       { path: "/agents", element: <Agents /> },
       { path: "/agents/new", element: <NewAgent /> },
@@ -43,28 +43,21 @@ const router = createBrowserRouter([
   },
 ]);
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 10_000 } } });
-// The wallet button and modal in the brand: blue accent, Inter, the app's corner radius.
-const walletFont = '"Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif';
-const lightWallet = lightTheme({
+// The wallet button and modal in the Aurora style: brand blue, Manrope, the app's dark surfaces.
+const base = darkTheme({
   accentColor: "#1d4ed8",
   accentColorForeground: "#ffffff",
-  borderRadius: "medium",
-});
-const darkWallet = darkTheme({
-  accentColor: "#1d4ed8",
-  accentColorForeground: "#ffffff",
-  borderRadius: "medium",
+  borderRadius: "large",
 });
 const walletTheme = {
-  lightMode: { ...lightWallet, fonts: { body: walletFont } },
-  darkMode: {
-    ...darkWallet,
-    fonts: { body: walletFont },
-    colors: {
-      ...darkWallet.colors,
-      modalBackground: "#151b22",
-      connectButtonBackground: "#151b22",
-    },
+  ...base,
+  fonts: { body: '"Manrope Variable", "Manrope", ui-sans-serif, system-ui, sans-serif' },
+  colors: {
+    ...base.colors,
+    modalBackground: "#0e1320",
+    connectButtonBackground: "#0e1320",
+    connectButtonInnerBackground: "#151b2b",
+    generalBorder: "rgba(255,255,255,0.08)",
   },
 };
 

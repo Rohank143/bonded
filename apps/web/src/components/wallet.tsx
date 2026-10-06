@@ -12,8 +12,8 @@ export function ConnectButton() {
   return (
     <RainbowKitConnectButton
       label="Connect wallet"
-      accountStatus="address"
-      chainStatus="name"
+      accountStatus={{ smallScreen: "avatar", largeScreen: "full" }}
+      chainStatus={{ smallScreen: "none", largeScreen: "icon" }}
       showBalance={false}
     />
   );
