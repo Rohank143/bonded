@@ -43,19 +43,29 @@ const router = createBrowserRouter([
   },
 ]);
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 10_000 } } });
+// The wallet button and modal in the brand: blue accent, Inter, the app's corner radius.
+const walletFont = '"Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif';
+const lightWallet = lightTheme({
+  accentColor: "#1d4ed8",
+  accentColorForeground: "#ffffff",
+  borderRadius: "medium",
+});
+const darkWallet = darkTheme({
+  accentColor: "#1d4ed8",
+  accentColorForeground: "#ffffff",
+  borderRadius: "medium",
+});
 const walletTheme = {
-  lightMode: lightTheme({
-    accentColor: "#0f1419",
-    accentColorForeground: "#f7f6f2",
-    borderRadius: "small",
-    fontStack: "system",
-  }),
-  darkMode: darkTheme({
-    accentColor: "#eceae4",
-    accentColorForeground: "#111315",
-    borderRadius: "small",
-    fontStack: "system",
-  }),
+  lightMode: { ...lightWallet, fonts: { body: walletFont } },
+  darkMode: {
+    ...darkWallet,
+    fonts: { body: walletFont },
+    colors: {
+      ...darkWallet.colors,
+      modalBackground: "#151b22",
+      connectButtonBackground: "#151b22",
+    },
+  },
 };
 
 createRoot(document.getElementById("root")!).render(
