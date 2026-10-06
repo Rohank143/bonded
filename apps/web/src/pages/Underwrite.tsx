@@ -75,9 +75,12 @@ export function Underwrite() {
     <Page
       title="Underwrite"
       eyebrow="Cover pool"
-      intro="The cover pool pays whatever the operator's bond doesn't cover on a claim. Underwriters earn 80% of premiums. Withdrawals wait a cooldown and can only use capital not backing active cover."
+      intro="Back the pool that pays claims, and earn 80% of every premium."
     >
-      <Card title="Cover pool">
+      <Card
+        title="Cover pool"
+        description="The pool pays whatever the operator's bond doesn't. Withdrawals wait out a cooldown and can only use capital that isn't backing active cover."
+      >
         <Grid>
           <Stat label="Pool assets" value={$(tvl)} hint="tUSDG" />
           <Stat label="Active cover" value={$(cover)} hint={`${bps(utilisation)} of pool`} />
@@ -117,7 +120,7 @@ export function Underwrite() {
         <Position wallet={wallet} shares={shares} redeemable={redeemable} request={request} />
       )}
       <p className="text-xs text-muted">
-        Testnet gas (ETH) comes from a public faucet:{" "}
+        Need test ETH for gas? Use a public faucet:{" "}
         {faucets.map((f, i) => (
           <a key={f} href={f} className={linkClass} target="_blank" rel="noreferrer">
             {i ? ", " : ""}

@@ -18,7 +18,7 @@ export function Claims() {
     <Page
       title="Claims"
       eyebrow="Automatic payouts"
-      intro="Claims are filed automatically by the keeper when a covered vault records a breach. The contract checks everything and pays: the operator's bond first, then the pool. The deductible is 10%."
+      intro="Every payout here was filed and paid by the contracts, with no one filing a form. The operator's bond pays first, then the pool; the first 10% of each loss isn't covered."
     >
       {claims.isPending && !claims.error && (
         <Card>

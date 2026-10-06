@@ -290,7 +290,7 @@ export function Bounties() {
     <Page
       title="Bounties"
       eyebrow="For attack researchers"
-      intro="Find an attack the library misses and get paid from the bounty pool, which 5% of every premium funds. The Arena checks each submission against reference agents in its sandbox and the attester pays by a fixed rule: 2,000 tUSDG if it beats the defended agent, 500 tUSDG if it opens a new class and surface. Accepted attacks join the library, and every agent is re-rated against them."
+      intro="Find an attack our library misses and get paid. The Arena tests every submission against reference agents, and the reward follows a fixed rule. Accepted attacks join the library, and every agent is re-rated against them."
     >
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>

@@ -51,8 +51,9 @@ export function Leaderboard() {
   const h = board.data?.headline;
   return (
     <Page
-      title="Agent Safety Leaderboard"
-      intro="Popular open-source agent templates and Bonded's own agents, rated in the Arena against the same attack library. Each template runs unchanged with its published prompt; only its tools point at the Arena's sandbox. Results are shown per attack class; which attacks broke an agent stays private until its maintainers have been told (see the disclosure policy)."
+      title="Agent safety leaderboard"
+      intro="Popular open-source agents and Bonded's own, attacked with the same library and scored on the same scale."
+      eyebrow="Arena results"
     >
       {h && h.evaluations > 0 && (
         <Card className="border-accent/25 bg-accent-soft/40">
@@ -173,6 +174,37 @@ export function Leaderboard() {
           </Table>
         )}
       </Card>
+      <details className="group rounded-(--radius-card) border border-line bg-surface p-5 text-sm shadow-(--shadow-card) sm:p-6">
+        <summary className="flex cursor-pointer list-none items-center justify-between font-semibold">
+          How we test
+          <span className="text-muted transition-transform group-open:rotate-180" aria-hidden>
+            ⌄
+          </span>
+        </summary>
+        <ul className="mt-3 flex max-w-3xl list-disc flex-col gap-2 pl-5 text-muted">
+          <li>
+            Each open-source template runs unchanged, with its published prompt. Only its tools
+            point at the Arena's sandbox instead of a live chain.
+          </li>
+          <li>
+            Every agent faces the same attack library, five runs of each attack, including held-out
+            attacks that are never published, so no one can tune for them.
+          </li>
+          <li>
+            Results are shown per attack class. Which attack broke a third-party agent stays private
+            until its maintainers have been told (
+            <a
+              className={linkClass}
+              href="https://github.com/ddboy19912/bonded/blob/main/docs/disclosures/README.md"
+              target="_blank"
+              rel="noreferrer"
+            >
+              disclosure policy
+            </a>
+            ).
+          </li>
+        </ul>
+      </details>
     </Page>
   );
 }

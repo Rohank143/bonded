@@ -283,7 +283,7 @@ export function NewAgent() {
       title="Onboard an agent"
       eyebrow="For operators"
       back={{ to: "/agents", label: "All agents" }}
-      intro="Register an agent, create its Mandate Vault, stake its operator bond and fund it, all from your wallet. Then rate it in the Arena and buy cover for it from its page."
+      intro="Register an agent, give it a vault and a bond, and fund it, all from your wallet. Then get it rated and buy cover from its page."
     >
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <div className="flex min-w-0 flex-col gap-6">

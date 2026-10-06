@@ -121,7 +121,7 @@ export function Agent() {
       title={`Agent ${id}`}
       eyebrow="Agent profile"
       back={back}
-      intro="The score is the latest attestation in BondedRegistry. Cover is priced from it."
+      intro="Its latest safety score, read from the on-chain registry. Cover for its vault is priced from this score."
     >
       <Card>
         {rated && a ? (

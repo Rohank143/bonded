@@ -464,12 +464,14 @@ function BuyCover(props: {
   return (
     <Card title="Buy cover">
       <p className="mb-3 text-sm text-muted">
-        The API signs a quote priced from the agent's on-chain score and bond. Only the vault's
-        guardian, who must also own the agent, can bind it. The premium streams from the vault. On
-        testnet, cover is capped at {SELF_SERVE_MAX_COVER_USD.toLocaleString("en-US")} tUSDG.
+        Quotes are priced from the agent's on-chain score and bond, and the premium streams from the
+        vault. Only the vault's guardian, who must also own the agent, can buy. Testnet cover is
+        capped at {SELF_SERVE_MAX_COVER_USD.toLocaleString("en-US")} tUSDG.
       </p>
       {props.hasActive ? (
-        <p className="text-sm text-muted">This vault already has an active policy.</p>
+        <p className="text-sm text-muted">
+          This vault is already covered. See the policy on the left.
+        </p>
       ) : (
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-3">

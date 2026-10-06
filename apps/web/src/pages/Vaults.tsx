@@ -21,7 +21,7 @@ export function Vaults() {
       title="Vaults"
       eyebrow="Mandate vaults"
       actions={<LinkButton to="/agents/new">Onboard an agent</LinkButton>}
-      intro="A vault holds an agent's funds and enforces its mandate on chain: allowed tokens, contracts, limits. Every breach is recorded here, and that record is what pays claims."
+      intro="Each vault holds an agent's funds and enforces its mandate on chain. Its breach log is the record that pays claims."
     >
       <Card>
         {vaults.isPending && !vaults.error && <Loading what="vaults" />}

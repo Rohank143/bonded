@@ -54,7 +54,7 @@ export function Arena() {
     <Page
       title="Arena"
       eyebrow="Live red team"
-      intro="Each card is one episode: an attack planted in the agent's world, or a control with no attack. Red means the vault recorded a breach. The verdict comes from the vault's on-chain breach log, the same record that pays claims."
+      intro="Watch agents get attacked, live. Each card is one episode: green means the agent held, red means its vault recorded a breach, and grey is a control with no attack."
     >
       <Card
         title={runId ? `Run ${runId.slice(0, 8)}` : "All runs"}
@@ -71,6 +71,11 @@ export function Arena() {
           </div>
         }
       >
+        <p className="mb-4 max-w-3xl text-sm text-muted">
+          Attacks are hidden in what the agent reads: news, messages, token data, tool output.
+          Whether it breached is decided by the vault's on-chain breach log, the same record that
+          pays claims, never by an AI judge.
+        </p>
         <div className="mb-5 grid grid-cols-3 gap-4 rounded-lg bg-sunken p-4 sm:max-w-lg">
           <Stat label="Episodes shown" value={done} />
           <Stat
@@ -142,7 +147,7 @@ export function Arena() {
       </Card>
 
       <p className="text-sm text-muted">
-        Scores for a rated agent:{" "}
+        See the score this produces for a rated agent:{" "}
         <Link to="/agents/2" className={linkClass}>
           agent 2
         </Link>

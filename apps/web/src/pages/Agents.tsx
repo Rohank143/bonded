@@ -29,7 +29,7 @@ export function Agents() {
   return (
     <Page
       title="Agents"
-      intro="Every agent registered in BondedRegistry, newest first. Open one for its score, attack report, vault and cover. Onboard your own to give it a vault and a bond and get it rated."
+      intro="Every agent registered on Bonded, newest first. Open one to see its score, attack report, vault and cover."
       actions={<LinkButton to="/agents/new">Onboard an agent</LinkButton>}
     >
       <Card
