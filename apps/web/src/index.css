@@ -1,30 +1,94 @@
 @import "tailwindcss";
+@import "@fontsource-variable/inter/opsz.css";
+@import "@fontsource-variable/jetbrains-mono/index.css";
 
+/*
+ * Brand tokens. Blue, ink and paper come from the Bonded identity (output/brand/bonded-v1):
+ * Blue #1D4ED8, Ink #0F1419, Paper #F7F6F2. `brand` is the solid blue for fills (buttons, the
+ * logo); `accent` is the blue used for text and links, lighter in dark mode so it stays readable.
+ */
 @theme {
-  --color-ink: #0f1419;
   --color-paper: #f7f6f2;
-  --color-line: #dedbd2;
-  --color-muted: #6b6f76;
-  --color-safe: #1f7a4d;
-  --color-breach: #b42318;
+  --color-surface: #ffffff;
+  --color-sunken: #efede6;
+  --color-ink: #0f1419;
+  --color-muted: #5c6168;
+  --color-line: #e3e0d7;
+  --color-line-strong: #cfcbc0;
+  --color-brand: #1d4ed8;
+  --color-brand-strong: #1e40af;
+  --color-on-brand: #ffffff;
   --color-accent: #1d4ed8;
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --color-accent-soft: #e6ecfc;
+  --color-safe: #1a7f4b;
+  --color-safe-soft: #e3f3ea;
+  --color-breach: #b42318;
+  --color-breach-soft: #fbe9e7;
+  --color-warn: #a15c07;
+  --color-warn-soft: #fbf0dc;
+
+  --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
+
+  --radius-card: 0.875rem;
+  --shadow-card: 0 1px 2px rgb(15 20 25 / 0.04), 0 1px 1px rgb(15 20 25 / 0.03);
+  --shadow-raised: 0 8px 24px -8px rgb(15 20 25 / 0.12), 0 2px 4px rgb(15 20 25 / 0.04);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-ink: #eceae4;
-    --color-paper: #111315;
-    --color-line: #2a2d31;
-    --color-muted: #9aa0a6;
-    --color-safe: #4ade80;
-    --color-breach: #f87171;
-    --color-accent: #7aa2ff;
+    --color-paper: #0f1419;
+    --color-surface: #151b22;
+    --color-sunken: #0b0f13;
+    --color-ink: #f2f1ec;
+    --color-muted: #9aa1ab;
+    --color-line: #232a33;
+    --color-line-strong: #323b46;
+    --color-brand: #1d4ed8;
+    --color-brand-strong: #2a5ff0;
+    --color-on-brand: #ffffff;
+    --color-accent: #7b9bff;
+    --color-accent-soft: #17244a;
+    --color-safe: #4cc38a;
+    --color-safe-soft: #12291f;
+    --color-breach: #f6806f;
+    --color-breach-soft: #34171a;
+    --color-warn: #f0b45a;
+    --color-warn-soft: #2e2312;
+    --shadow-card: 0 0 0 1px rgb(255 255 255 / 0.02);
+    --shadow-raised: 0 12px 32px -12px rgb(0 0 0 / 0.6);
   }
 }
 
-body {
-  background: var(--color-paper);
-  color: var(--color-ink);
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+  }
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--color-brand) 22%, transparent);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--color-brand);
+  }
 }

@@ -34,3 +34,6 @@ artifacts/
 
 # Synthetic Sentinel training data (pnpm sentinel:synth; see README)
 datasets/
+
+# Brand source files (only the assets the app uses are copied into apps/web/public/brand)
+output/
