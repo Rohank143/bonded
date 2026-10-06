@@ -7,7 +7,7 @@ import { deployment, faucets, isLocal, networkName } from "../config";
 import { api, type BountyRecord } from "../lib/api";
 import { checkSpec, commitmentIfReady, isSalt, newSalt, specUriOf } from "../lib/bounty";
 import { short, usd } from "../lib/format";
-import { ConnectButton, useSend } from "../components/wallet";
+import { useSend } from "../components/wallet";
 import {
   Badge,
   Button,
@@ -54,6 +54,7 @@ const REPO = "https://github.com/ddboy19912/bonded/blob/main";
 
 /** The hunter's guide (docs/BOUNTIES.md), step by step, on the page where the steps happen. */
 function Guide() {
+  const [open, setOpen] = useState(0);
   const steps: [string, ReactNode][] = [
     [
       "Get set up",
@@ -112,19 +113,59 @@ function Guide() {
     ],
   ];
   return (
-    <Card title="How to submit an attack">
-      <ol className="flex flex-col gap-4">
-        {steps.map(([title, text], i) => (
-          <li key={title} className="grid grid-cols-[28px_1fr] gap-3 text-sm">
-            <span className="flex size-7 items-center justify-center rounded-full border border-line-strong font-mono text-xs text-accent">
-              {i + 1}
-            </span>
-            <span className="leading-relaxed text-muted [&_code]:rounded [&_code]:bg-white/[0.06] [&_code]:px-1 [&_code]:font-mono [&_code]:text-[12px] [&_code]:text-soft">
-              <strong className="block text-ink">{title}</strong>
-              {text}
-            </span>
-          </li>
-        ))}
+    <Card
+      title="How to submit an attack"
+      description="Six steps. Open one at a time; the form on the right follows the same order."
+    >
+      <ol className="flex flex-col gap-2">
+        {steps.map(([title, text], i) => {
+          const isOpen = open === i;
+          return (
+            <li
+              key={title}
+              className={`rounded-2xl border transition ${isOpen ? "border-accent/30 bg-accent-soft" : "border-line hover:border-line-strong"}`}
+            >
+              <button
+                type="button"
+                aria-expanded={isOpen}
+                onClick={() => setOpen(isOpen ? -1 : i)}
+                className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm"
+              >
+                <span
+                  className={`flex size-7 shrink-0 items-center justify-center rounded-full font-mono text-xs ${isOpen ? "btn-brand text-on-brand" : "border border-line-strong text-muted"}`}
+                >
+                  {i + 1}
+                </span>
+                <strong className="flex-1 font-semibold">{title}</strong>
+                <svg
+                  viewBox="0 0 24 24"
+                  className={`size-4 text-muted transition ${isOpen ? "rotate-180" : ""}`}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  aria-hidden
+                >
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
+              </button>
+              {isOpen && (
+                <div className="px-4 pb-4 pl-14 text-sm leading-relaxed text-muted [animation:rise_.25s_ease_both] [&_code]:rounded [&_code]:bg-white/[0.06] [&_code]:px-1 [&_code]:font-mono [&_code]:text-[12px] [&_code]:text-soft">
+                  {text}
+                  {i < steps.length - 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setOpen(i + 1)}
+                      className="mt-3 block text-sm font-semibold text-accent hover:underline"
+                    >
+                      Next: {steps[i + 1]![0]} →
+                    </button>
+                  )}
+                </div>
+              )}
+            </li>
+          );
+        })}
       </ol>
       <details className="mt-5 rounded-2xl border border-line p-4">
         <summary className="cursor-pointer text-sm font-semibold">
@@ -235,8 +276,9 @@ function Submit() {
 
       {!address ? (
         <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-line pt-5">
-          <ConnectButton />
-          <span className="text-sm text-muted">Connect a wallet to submit.</span>
+          <span className="text-sm text-muted">
+            Use Connect wallet at the top of the page to commit, reveal and validate.
+          </span>
         </div>
       ) : (
         <div className="mt-5 grid gap-2 border-t border-line pt-5 sm:grid-cols-3">

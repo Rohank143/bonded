@@ -6,7 +6,7 @@ import { deployment, faucets } from "../config";
 import { bps, duration, parseUsd, usd, when } from "../lib/format";
 import { isRpcUnavailable } from "../lib/errors";
 import { Button, Card, Input, Loading, Page, Term, Unavailable, linkClass } from "../components/ui";
-import { ConnectButton, useSend } from "../components/wallet";
+import { useSend } from "../components/wallet";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 const pool = { address: deployment.pool, abi: coverPoolAbi } as const;
@@ -134,11 +134,8 @@ export function Underwrite() {
             <section className="panel border-accent/25 p-6">
               <h2 className="text-lg font-bold">Your position</h2>
               <p className="mt-2 text-sm text-muted">
-                Connect a wallet to deposit, withdraw or get test tUSDG.
+                Use Connect wallet at the top of the page to deposit, withdraw or get test tUSDG.
               </p>
-              <div className="mt-4">
-                <ConnectButton />
-              </div>
             </section>
           ) : (
             <Position
