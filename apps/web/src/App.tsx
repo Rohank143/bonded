@@ -12,6 +12,7 @@ const REPO = "https://github.com/ddboy19912/bonded";
 
 /** Stroke icons for the sidebar, drawn on a 24-unit grid. */
 const ICONS = {
+  overview: "M3 3h8v10H3zM13 3h8v6h-8zM13 11h8v10h-8zM3 15h8v6H3z",
   agents: "M7 7h10v10H7zM10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4",
   leaderboard: "M4 21h16M7 21V12M12 21V6M17 21v-5",
   arena: "M5 12a7 7 0 1 0 14 0a7 7 0 1 0-14 0M12 2v5M12 17v5M2 12h5M17 12h5",
@@ -103,12 +104,12 @@ function Sidebar() {
       </Link>
       <nav aria-label="App" className="flex flex-col gap-5">
         <Group label="Discover">
+          <Item to="/overview" icon={ICONS.overview} label="Overview" />
           <Item
             to="/agents"
             icon={ICONS.agents}
             label="Agents"
             extra={<Count n={agents.data?.length} />}
-            end
           />
           <Item to="/leaderboard" icon={ICONS.leaderboard} label="Leaderboard" />
           <Item
@@ -122,7 +123,7 @@ function Sidebar() {
               />
             }
           />
-          <Item to="/vaults" icon={ICONS.vaults} label="Vaults" end />
+          <Item to="/vaults" icon={ICONS.vaults} label="Vaults" />
         </Group>
         <Group label="Yours">
           {isConnected ? (
@@ -302,7 +303,7 @@ export function SiteLayout() {
               Bounties
             </Link>
           </nav>
-          <Link to="/agents" className={`${buttonClass("light")} ml-auto md:ml-0`}>
+          <Link to="/overview" className={`${buttonClass("light")} ml-auto md:ml-0`}>
             Launch app <span aria-hidden>→</span>
           </Link>
         </div>

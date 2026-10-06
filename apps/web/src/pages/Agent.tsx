@@ -1,25 +1,40 @@
+import type { ReactNode } from "react";
 import { Link, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useReadContracts } from "wagmi";
-import { bondedRegistryAbi, operatorBondAbi, tierForScore } from "@bonded/shared";
+import { useReadContract, useReadContracts } from "wagmi";
+import {
+  bondedRegistryAbi,
+  coverManagerAbi,
+  mandateVaultAbi,
+  operatorBondAbi,
+  tierForScore,
+} from "@bonded/shared";
+import type { Address } from "viem";
 import { apiUrl, deployment } from "../config";
 import { ApiError, api } from "../lib/api";
 import { liveCheckView, teeView } from "../lib/tee";
 import { isRpcUnavailable } from "../lib/errors";
 import { apiLookups, isRegistered } from "../lib/agent";
+import { useAgents } from "../lib/chain";
+import { tierMeaning } from "../lib/glossary";
 import { OwnerTools } from "../components/owner-tools";
-import { bps, usd, when } from "../lib/format";
+import { bps, short, usd, when } from "../lib/format";
 import {
   AddressLink,
   Badge,
   Card,
+  EmptyState,
   ErrorText,
-  Grid,
+  LinkButton,
   Loading,
   Page,
-  Stat,
+  ScoreRing,
+  Term,
   TxLink,
   Unavailable,
+  buttonClass,
+  linkClass,
+  tierTone,
 } from "../components/ui";
 
 export function Agent() {
@@ -65,7 +80,6 @@ export function Agent() {
     queryFn: () => api.run(score.data!.runId),
     enabled: Boolean(score.data?.runId),
   });
-
   const liveCheck = useQuery({
     queryKey: ["tee", id],
     queryFn: () => api.tee(id),
@@ -73,192 +87,352 @@ export function Agent() {
     refetchInterval: 60_000,
     retry: false,
   });
+  const agents = useAgents();
+  const vault = agents.data?.find((r) => r.agentId === agentId)?.vault;
 
-  if (!valid) return <Page title="Agent">Agent IDs are whole numbers.</Page>;
-  if (reads.isLoading) return <Loading what={`agent ${id}`} />;
+  const back = { to: "/agents", label: "All agents" };
+  if (!valid)
+    return (
+      <Page title="Agent" back={back}>
+        <EmptyState title="That isn't an agent ID">Agent IDs are whole numbers.</EmptyState>
+      </Page>
+    );
+  if (reads.isLoading)
+    return (
+      <Page title={`Agent ${id}`} back={back}>
+        <Card>
+          <Loading what={`agent ${id}`} lines={5} />
+        </Card>
+      </Page>
+    );
   const readError = reads.error ?? [onchain, owner, bond, fresh].find((r) => r?.error)?.error;
   if (reads.isError || isRpcUnavailable(readError))
     return (
-      <Page title={`Agent ${id}`}>
+      <Page title={`Agent ${id}`} back={back}>
         <Unavailable error={readError} onRetry={() => void reads.refetch()} />
       </Page>
     );
   if (owner?.error || !isRegistered(owner?.result))
     return (
-      <Page title={`Agent ${id}`}>
-        <p className="text-sm text-muted">
-          No agent {id} is registered on this chain. See{" "}
-          <Link to="/agents" className="text-accent hover:underline">
-            all agents
-          </Link>
-          .
-        </p>
+      <Page title={`Agent ${id}`} back={back}>
+        <EmptyState
+          title={`No agent ${id} on this chain`}
+          action={<LinkButton to="/agents">See all agents</LinkButton>}
+        />
       </Page>
     );
+
   const report = run.data?.report;
   const tee = teeView(a?.teeMeasurement, report);
+  const tier = rated && a ? tierForScore(a.score).tier : undefined;
+  const weak = report?.classes.filter((c) => c.breaches > 0) ?? [];
+  const tone = rated && a ? tierTone(a.score) : "neutral";
+  const glow =
+    tone === "brand"
+      ? "rgb(127 160 255 / .14)"
+      : tone === "warn"
+        ? "rgb(255 179 71 / .12)"
+        : "rgb(255 122 69 / .12)";
+
   return (
     <Page
       title={`Agent ${id}`}
-      intro="The score is the latest attestation in BondedRegistry. Cover is priced from it."
+      back={back}
+      intro="Its latest safety score, read from the on-chain registry. Cover for its vault is priced from this score."
+      actions={
+        <>
+          {vault && (
+            <Link to={`/vaults/${vault}`} className={buttonClass("secondary")}>
+              Open vault
+            </Link>
+          )}
+          <Link to="/arena" className={buttonClass("light")}>
+            Watch the Arena
+          </Link>
+        </>
+      }
     >
-      <Card title="Bonded Score">
-        {rated && a ? (
-          <Grid>
-            <Stat label="Score" value={a.score} hint={`tier ${tierForScore(a.score).tier}`} />
-            <Stat label="Expected loss" value={bps(a.expectedLossBps)} hint="per year, of cover" />
-            <Stat
-              label="Operator bond"
+      <div className="-mt-2 flex flex-wrap gap-2">
+        {tier && <Badge tone={tone}>Tier {tier}</Badge>}
+        {rated &&
+          (fresh?.result ? (
+            <Badge tone="safe" dot>
+              Score valid
+            </Badge>
+          ) : (
+            <Badge tone="warn" dot>
+              Score expired
+            </Badge>
+          ))}
+        {report && <Badge>{report.mandateMode} mode</Badge>}
+      </div>
+
+      {rated && a ? (
+        <section className="grid gap-4 lg:grid-cols-2">
+          <div
+            className="panel flex flex-wrap items-center gap-7 p-6"
+            style={{
+              backgroundImage: `radial-gradient(ellipse at 20% 0%, ${glow}, transparent 60%)`,
+            }}
+          >
+            <ScoreRing score={a.score} />
+            <div className="min-w-0 flex-1">
+              <p className="eyebrow">Bonded Score</p>
+              <p className="mt-2 leading-relaxed text-soft">{tierMeaning(tier!)}</p>
+              <p className="mt-2.5 text-sm text-muted">
+                Signed {when(a.issuedAt)} · valid until {when(a.expiresAt)}
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Tile
+              label={<Term term="expectedLoss">Expected loss</Term>}
+              value={bps(a.expectedLossBps)}
+              hint="of cover a year"
+            />
+            <Tile
+              label={<Term term="bond">Operator bond</Term>}
               value={bond?.result !== undefined ? `$${usd(bond.result, 0)}` : "…"}
               hint="pays first on a claim"
             />
-            <Stat
-              label="Status"
-              value={
-                fresh?.result ? (
-                  <Badge tone="safe">valid</Badge>
-                ) : (
-                  <Badge tone="breach">expired</Badge>
-                )
-              }
-              hint={`expires ${when(a.expiresAt)}`}
-            />
-            <Stat
-              label="Key custody"
-              value={
-                tee.inTee ? <Badge tone="safe">TEE</Badge> : <Badge tone="neutral">Operator</Badge>
-              }
+            <Tile
+              label="Breached classes"
+              value={report ? `${weak.length} of ${report.classes.length}` : "…"}
               hint={
-                tee.inTee ? "key generated inside Intel TDX" : "key held on the operator's server"
+                report
+                  ? weak.length
+                    ? weak.map((c) => c.name.toLowerCase()).join(", ")
+                    : "held every attack class"
+                  : "loading the report"
               }
             />
-          </Grid>
-        ) : (
-          <p className="text-sm text-muted">Not rated yet.</p>
-        )}
-        <dl className="mt-4 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[10rem_1fr]">
-          <dt className="text-muted">Owner</dt>
-          <dd>{owner?.result ? <AddressLink address={owner.result} /> : "…"}</dd>
-          {rated && a && (
-            <>
-              <dt className="text-muted">Issued</dt>
-              <dd>{when(a.issuedAt)}</dd>
-              <dt className="text-muted">Report hash</dt>
-              <dd className="break-all font-mono text-xs">{a.reportHash}</dd>
-              <dt className="text-muted">Mandate hash</dt>
-              <dd className="break-all font-mono text-xs">{a.mandateHash}</dd>
-              {tee.measurement && (
-                <>
-                  <dt className="text-muted">TEE measurement</dt>
-                  <dd className="break-all font-mono text-xs">{tee.measurement}</dd>
-                </>
-              )}
-              {tee.measurement && (
-                <>
-                  <dt className="text-muted">TEE live check</dt>
-                  <dd>
-                    {(() => {
-                      const view = liveCheckView(
-                        liveCheck.data?.status,
-                        liveCheck.data?.blockingStatus,
-                      );
-                      return (
-                        <>
-                          <Badge tone={view.tone}>{view.label}</Badge>{" "}
-                          <span className="text-xs text-muted">
-                            {view.hint}
-                            {liveCheck.data?.verifiedAt
-                              ? `; last verified ${when(Date.parse(liveCheck.data.verifiedAt) / 1000)}`
-                              : ""}
-                          </span>
-                        </>
-                      );
-                    })()}
-                  </dd>
-                </>
-              )}
-              {tee.keys && (
-                <>
-                  <dt className="text-muted">TEE session keys</dt>
-                  <dd className="break-all font-mono text-xs">
-                    {tee.keys.evm} (EVM)
-                    <br />
-                    {tee.keys.solana} (Solana)
-                  </dd>
-                </>
-              )}
-            </>
-          )}
-          {score.data && (
-            <>
-              <dt className="text-muted">Posted in</dt>
-              <dd>
-                <TxLink hash={score.data.tx_hash} />
-              </dd>
-              <dt className="text-muted">Full report</dt>
-              <dd>
-                <a
-                  className="text-accent hover:underline"
-                  href={`${apiUrl}/arena/runs/${score.data.runId}/report`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  JSON (hashes to the report hash above)
-                </a>
-              </dd>
-            </>
-          )}
-        </dl>
-        {score.error && !(score.error instanceof ApiError && score.error.status === 404) && (
-          <ErrorText error={score.error} />
-        )}
-      </Card>
+            <Tile
+              label={<Term term="tee">Key custody</Term>}
+              value={tee.inTee ? "TEE" : "Operator"}
+              hint={tee.inTee ? "key made inside Intel TDX" : "key on the operator's server"}
+            />
+          </div>
+        </section>
+      ) : (
+        <EmptyState title="Not rated yet">
+          Its owner can ask for a rating from this page once it's registered for ratings.
+        </EmptyState>
+      )}
 
       <OwnerTools agentId={id} owner={owner?.result} />
 
-      {report && (
-        <Card title="Attack classes">
-          <p className="mb-3 text-sm text-muted">
-            {report.episodes.attacks} attacks and {report.episodes.controls} controls,{" "}
-            {report.mandateMode} mode,{" "}
-            {report.forked ? "on a fork of the live chain" : "on a local chain"}.{" "}
-            {report.unpublished?.episodes
-              ? `${report.unpublished.episodes} of the attack episodes ran ${report.unpublished.attacks} unpublished attacks (held out, or accepted bounties) that the operator couldn't study in advance.`
-              : "Published attacks only: an in-library result, not a held-out evaluation."}
-          </p>
-          <table className="w-full text-sm">
-            <thead className="text-left text-muted">
-              <tr>
-                <th className="py-1 font-normal">Class</th>
-                <th className="font-normal">Episodes</th>
-                <th className="font-normal">Breaches</th>
-                <th className="w-1/3 font-normal">Held</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.classes.map((c) => {
-                const held = c.episodes ? (c.episodes - c.breaches) / c.episodes : 1;
-                return (
-                  <tr key={c.class} className="border-t border-line">
-                    <td className="py-1.5">
-                      <span className="font-mono">{c.class}</span> {c.name}
-                    </td>
-                    <td className="tabular-nums">{c.episodes}</td>
-                    <td className={c.breaches ? "tabular-nums text-breach" : "tabular-nums"}>
-                      {c.breaches}
-                    </td>
-                    <td>
-                      <div className="h-2 rounded bg-breach/30">
-                        <div className="h-2 rounded bg-safe" style={{ width: `${held * 100}%` }} />
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </Card>
-      )}
+      <div className="flex flex-wrap items-start gap-4">
+        <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-4">
+          {report ? (
+            <Card
+              title="Attack report"
+              actions={
+                <span className="text-sm text-muted">
+                  {report.episodes.attacks} attacks · {report.episodes.controls} controls ·{" "}
+                  {report.forked ? "fork of the live chain" : "local chain"}
+                </span>
+              }
+            >
+              {weak.length > 0 && (
+                <div className="mb-5 flex gap-3.5 rounded-2xl border border-breach/35 bg-breach-soft p-4">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-breach/20 font-bold text-breach">
+                    !
+                  </span>
+                  <span>
+                    <strong className="block">
+                      {weak.length === 1 ? "One weakness" : `${weak.length} weaknesses`}:{" "}
+                      {weak.map((c) => c.name.toLowerCase()).join(", ")}
+                    </strong>
+                    <span className="mt-1 block text-sm text-soft">
+                      {weak
+                        .map((c) => `${c.class}: ${c.breaches} of ${c.episodes} episodes breached`)
+                        .join(". ")}
+                      . Every other class held.
+                    </span>
+                  </span>
+                </div>
+              )}
+              <div className="flex flex-col">
+                {report.classes.map((c) => {
+                  const held = c.episodes ? (c.episodes - c.breaches) / c.episodes : 1;
+                  return (
+                    <div
+                      key={c.class}
+                      className="grid grid-cols-[44px_minmax(0,1fr)_minmax(0,2fr)_74px] items-center gap-3.5 border-t border-white/[0.06] py-3"
+                    >
+                      <span className="font-mono text-xs text-muted">{c.class}</span>
+                      <span className="truncate text-sm">{c.name}</span>
+                      <span className="flex h-2 overflow-hidden rounded-full bg-white/[0.06]">
+                        <span
+                          className="bg-gradient-to-r from-brand to-held"
+                          style={{ width: `${held * 100}%` }}
+                        />
+                        <span
+                          className="bg-breach-solid"
+                          style={{ width: `${(1 - held) * 100}%` }}
+                        />
+                      </span>
+                      <span
+                        className={`text-right font-mono text-xs ${c.breaches ? "text-breach" : "text-muted"}`}
+                      >
+                        {c.breaches ? `${c.breaches} of ${c.episodes}` : `held ${c.episodes}`}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="mt-4 text-xs text-muted">
+                {report.unpublished?.episodes
+                  ? `${report.unpublished.episodes} of the attack episodes ran ${report.unpublished.attacks} unpublished attacks (held out, or accepted bounties) that the operator couldn't study in advance.`
+                  : "Published attacks only: an in-library result, not a held-out evaluation."}
+              </p>
+            </Card>
+          ) : rated ? (
+            <Card title="Attack report">
+              {run.isError || score.isError ? (
+                <p className="text-sm text-muted">The full report isn't available right now.</p>
+              ) : (
+                <Loading what="the attack report" lines={6} />
+              )}
+            </Card>
+          ) : null}
+        </div>
+
+        <div className="flex min-w-0 flex-[1_1_320px] flex-col gap-4">
+          {vault && <VaultSummary vault={vault} />}
+          <Card title="Proof on chain">
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2.5 text-sm [&_dd]:text-right [&_dt]:text-muted">
+              <dt>Owner</dt>
+              <dd>{owner?.result ? <AddressLink address={owner.result} /> : "…"}</dd>
+              {rated && a && (
+                <>
+                  <dt>
+                    <Term term="reportHash">Report hash</Term>
+                  </dt>
+                  <dd className="truncate font-mono text-xs">{a.reportHash}</dd>
+                  <dt>
+                    <Term term="mandate">Mandate hash</Term>
+                  </dt>
+                  <dd className="truncate font-mono text-xs">{a.mandateHash}</dd>
+                </>
+              )}
+              {tee.measurement && (
+                <>
+                  <dt>
+                    <Term term="teeMeasurement">TEE measurement</Term>
+                  </dt>
+                  <dd className="truncate font-mono text-xs">{tee.measurement}</dd>
+                  <dt>TEE live check</dt>
+                  <dd>
+                    <Badge
+                      tone={
+                        liveCheckView(liveCheck.data?.status, liveCheck.data?.blockingStatus).tone
+                      }
+                    >
+                      {liveCheckView(liveCheck.data?.status, liveCheck.data?.blockingStatus).label}
+                    </Badge>
+                  </dd>
+                </>
+              )}
+              {score.data && (
+                <>
+                  <dt>Posted in</dt>
+                  <dd>
+                    <TxLink hash={score.data.tx_hash} />
+                  </dd>
+                </>
+              )}
+            </dl>
+            {score.data && (
+              <a
+                className={`${buttonClass("secondary")} mt-5 w-full`}
+                href={`${apiUrl}/arena/runs/${score.data.runId}/report`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Download the full report
+              </a>
+            )}
+            {score.error && !(score.error instanceof ApiError && score.error.status === 404) && (
+              <ErrorText error={score.error} />
+            )}
+          </Card>
+        </div>
+      </div>
     </Page>
+  );
+}
+
+function Tile({ label, value, hint }: { label: ReactNode; value: ReactNode; hint: ReactNode }) {
+  return (
+    <div className="panel min-w-0 p-5">
+      <p className="eyebrow">{label}</p>
+      <p className="mt-2.5 truncate text-[28px] font-bold tracking-tight">{value}</p>
+      <p className="mt-1 truncate text-xs text-muted">{hint}</p>
+    </div>
+  );
+}
+
+/** The agent's newest vault: what it holds and how much cover is left. */
+function VaultSummary({ vault }: { vault: Address }) {
+  const reads = useReadContracts({
+    contracts: [
+      { address: vault, abi: mandateVaultAbi, functionName: "totalAssets" },
+      {
+        address: deployment.coverManager,
+        abi: coverManagerAbi,
+        functionName: "activePolicyOf",
+        args: [vault],
+      },
+    ],
+  });
+  const [total, active] = reads.data ?? [];
+  const policy = useReadContract({
+    address: deployment.coverManager,
+    abi: coverManagerAbi,
+    functionName: "getPolicy",
+    args: [active?.result ?? 0n],
+    query: { enabled: Boolean(active?.result) },
+  }).data;
+  const left =
+    policy && policy.coverAmount > 0n
+      ? Number((policy.remainingCover * 1000n) / policy.coverAmount) / 10
+      : 0;
+  return (
+    <Card
+      title="Its vault"
+      actions={
+        <Link to={`/vaults/${vault}`} className={`text-sm ${linkClass}`}>
+          Open →
+        </Link>
+      }
+    >
+      <p className="-mt-3 font-mono text-xs text-muted">{short(vault)}</p>
+      <p className="mt-4 text-3xl font-bold tracking-tight">
+        {total?.result !== undefined ? `$${usd(total.result)}` : "…"}
+      </p>
+      <p className="text-xs text-muted">tUSDG held for depositors</p>
+      {policy ? (
+        <>
+          <div className="mt-4 mb-1.5 flex justify-between text-xs">
+            <span className="text-muted">Cover left</span>
+            <span>
+              ${usd(policy.remainingCover, 0)} of ${usd(policy.coverAmount, 0)}
+            </span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
+            <div
+              className="h-1.5 rounded-full bg-gradient-to-r from-brand to-[#9db5ff]"
+              style={{ width: `${left}%` }}
+            />
+          </div>
+          <p className="mt-2.5 text-xs text-muted">
+            Premium {bps(policy.premiumRateBps)} a year, streamed from the vault.
+          </p>
+        </>
+      ) : (
+        <p className="mt-4 text-xs text-muted">No active cover.</p>
+      )}
+    </Card>
   );
 }

@@ -21,6 +21,7 @@ import { Bounties } from "./pages/Bounties";
 import { NotFound } from "./pages/NotFound";
 import { NewAgent } from "./pages/NewAgent";
 import { Agents } from "./pages/Agents";
+import { Overview } from "./pages/Overview";
 import "./index.css";
 
 const router = createBrowserRouter([
@@ -28,6 +29,7 @@ const router = createBrowserRouter([
   {
     element: <AppLayout />,
     children: [
+      { path: "/overview", element: <Overview /> },
       { path: "/arena", element: <Arena /> },
       { path: "/agents", element: <Agents /> },
       { path: "/agents/new", element: <NewAgent /> },
