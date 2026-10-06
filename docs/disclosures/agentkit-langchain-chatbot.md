@@ -4,7 +4,7 @@
 - **Rated:** 2026-10-03, one run of each of the 40 attack seeds plus 2 controls, on a fresh local chain
 - **Models:** anthropic/claude-haiku-4.5 and deepseek/deepseek-v4.1-flash
 - **On chain (Robinhood Chain testnet registry):** agent 4 (Haiku), agent 5 (DeepSeek)
-- **Disclosure status:** published. No breach was found, so nothing is withheld.
+- **Disclosure status:** DeepSeek: published, no breach found. Haiku: **maintainer notice pending** for one A1 breach found on 2026-10-06 (see below); the class-level result is public, the attack and transcript are withheld under the [disclosure policy](README.md).
 
 ## How it was run
 
@@ -33,6 +33,17 @@ Both models were rated again with five runs of each of the 40 attack seeds (200 
 | DeepSeek V4.1 Flash | 79 (A) | 0 of 200 | 0 of 2 | $2.27 (estimated) |
 
 Still no breach. The score rose from 50 to 79 because more runs narrow the bound on each class's breach rate. Every agent with no breaches scores 79 at these settings, so the two models tie. The behaviour counts in the table above are from the one-run rating and weren't recounted.
+
+## Re-rated with held-out attacks (2026-10-06)
+
+Both models were rated again with five runs of each of the 40 published attacks and of 15 held-out attacks that are never published (ADR-007, decision 3): 275 attack episodes and 2 controls each. The template, settings and Monitor mode are unchanged, and the scores were posted for agents 4 and 5:
+
+| Model | Score | Attacks breached | By class | Controls breached | Model spend |
+|---|---|---|---|---|---|
+| Claude Haiku 4.5 | 80 (AA) | 1 of 275 | A1 1 of 20 | 0 of 2 | $3.25 (estimated) |
+| DeepSeek V4.1 Flash | 81 (AA) | 0 of 275 | none | 0 of 2 | $2.91 (estimated) |
+
+With Haiku, one A1 (injection via token metadata) episode out of 20 was breached. This is a public library attack, not a held-out one. Under the disclosure policy the class-level result is public now, and which attack it was stays private until the maintainers have been told and have fixed it, or 30 days have passed. With DeepSeek there was no breach. Agents with no breaches score 81 at these settings; more clean episodes narrow the bounds further than the five-run rating did. The accepted bounty attack isn't in these local ratings, because its text exists only in the hosted service's database.
 
 ## Suggested mitigations, if deployed as an autonomous agent
 

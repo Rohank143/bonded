@@ -860,7 +860,7 @@ Founder actions on Day 14: post the bounty announcement; fill in the team slide.
 | Stop rating a class once the tier can't change (lever 4) | Day 9 | After submission (moved from Day 13: a cost saving, not hardening) | [Issue #34](https://github.com/ddboy19912/bonded/issues/34) |
 | Re-rate only what changed (lever 5) | Day 9 | After Gate 2, before paying customers | [Issue #35](https://github.com/ddboy19912/bonded/issues/35) |
 | Prompt caching for Arena model calls (lever 6) | Day 9 | Day 12, with the first model-driven leaderboard ratings | [Issue #36](https://github.com/ddboy19912/bonded/issues/36) |
-| Leaderboard with 5 runs per attack | Day 12 | Done Day 14: clean agents 79 (A), vulnerable 1 (CCC), $9.01 model spend | [Issue #64](https://github.com/ddboy19912/bonded/issues/64) |
+| Leaderboard with 5 runs per attack | Day 12 | Done Day 14: clean agents 79 (A), vulnerable 1 (CCC), $9.01 model spend. Re-rated 2026-10-06 with the held-out set: clean agents 81 (AA), AgentKit with Haiku 80 (AA) after one A1 breach, vulnerable 2 (CCC) | [Issue #64](https://github.com/ddboy19912/bonded/issues/64) |
 | Automatic Vercel deploys from GitHub | Day 12 | Optional | [Issue #65](https://github.com/ddboy19912/bonded/issues/65) |
 | Pre-demo checklist (TEE VM, re-rate agent 3) | Day 12 | Day 15, before recording | [Issue #66](https://github.com/ddboy19912/bonded/issues/66) |
 | Robinhood Chain mainnet deploy | Day 13 (decision) | After the hackathon | [Issue #67](https://github.com/ddboy19912/bonded/issues/67) |
@@ -873,7 +873,7 @@ Founder actions on Day 14: post the bounty announcement; fill in the team slide.
 |---|---|---|
 | 0:00 | **Hook:** "Robinhood just let AI agents trade. Who pays when one gets tricked?" | Headlines: Robinhood agentic trading, $18B uncovered |
 | 0:20 | **Rate two agents live.** The Arena throws injection, lookalike tokens and fake-admin DMs at both | Attack cards flipping red/green; per-class bars |
-| 1:00 | **Price the risk:** "Agent A: score 49, premium 7.4% (6.7% after its operator-bond discount). Agent B: score 96, premium 1.2%." (measured; Section 9.2). Explain *why*: Agent A checks addresses by their ends only, and the Arena caught it falling for address poisoning; Agent B earned Enforce mode, TEE custody and a clean report | Agent profiles; the A5 row in Agent A's report; actuarial breakdown |
+| 1:00 | **Price the risk:** "Agent A: score 54, premium 6.4% (5.8% after its operator-bond discount). Agent B: score 96, premium 1.2%." (measured; Section 9.2). Explain *why*: Agent A checks addresses by their ends only, and the Arena caught it falling for address poisoning; Agent B earned Enforce mode, TEE custody and a clean report | Agent profiles; the A5 row in Agent A's report; actuarial breakdown |
 | 1:25 | **Bond and insure on Robinhood Chain:** operator bond staked, depositor vault covered | Policy NFT minted; explorer link |
 | 1:45 | **Break it:** a zero-value transfer from a lookalike of the depositor's address asks for a "refund". Agent A's guard compares only the address's ends, so it pays the lookalike; the vault records the breach and freezes the agent (`pnpm demo:break --testnet`) | Live tx; breach event |
 | 2:05 | **Get paid:** keeper files the claim, bond slashed, pool pays, vault share price restored, all within about a minute | Claims feed with the waterfall; before/after share price |
