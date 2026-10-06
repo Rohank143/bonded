@@ -7,6 +7,7 @@ import { Logo, buttonClass } from "./components/ui";
 import { explorerUrl, networkName } from "./config";
 import { useAgents, useClaims } from "./lib/chain";
 import { searchTarget } from "./lib/search";
+import { APP_HOME } from "./lib/routes";
 
 const REPO = "https://github.com/ddboy19912/bonded";
 
@@ -286,23 +287,17 @@ export function SiteLayout() {
             className="mx-auto hidden items-center gap-7 text-sm text-soft md:flex"
             aria-label="Site"
           >
+            <a href="#product" className="hover:text-ink">
+              Product
+            </a>
+            <a href="#numbers" className="hover:text-ink">
+              Live numbers
+            </a>
             <a href="#how" className="hover:text-ink">
               How it works
             </a>
-            <Link to="/leaderboard" className="hover:text-ink">
-              Leaderboard
-            </Link>
-            <Link to="/arena" className="hover:text-ink">
-              Arena
-            </Link>
-            <Link to="/underwrite" className="hover:text-ink">
-              Underwrite
-            </Link>
-            <Link to="/bounties" className="hover:text-ink">
-              Bounties
-            </Link>
           </nav>
-          <Link to="/agents" className={`${buttonClass("light")} ml-auto md:ml-0`}>
+          <Link to={APP_HOME} className={`${buttonClass("light")} ml-auto md:ml-0`}>
             Launch app <span aria-hidden>→</span>
           </Link>
         </div>
@@ -312,7 +307,7 @@ export function SiteLayout() {
       </main>
       <footer className="border-t border-line px-4 py-10 sm:px-6">
         <div className="mx-auto flex max-w-[1180px] flex-wrap items-start justify-between gap-6">
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col items-start gap-3">
             <Logo className="h-9" />
             <p className="max-w-sm text-sm text-muted">
               Don't cage your agent. Bond it. Running on {networkName}, with test tokens only.
