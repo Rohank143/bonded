@@ -16,6 +16,7 @@ import {
   buttonClass,
 } from "../components/ui";
 import { OperatorTokenField, useOperatorToken } from "../components/wallet";
+import { Select } from "../components/select";
 
 type Filter = "all" | "held" | "breach" | "control";
 
@@ -30,7 +31,7 @@ const outcome = (c: EpisodeCard): Exclude<Filter, "all"> =>
 export function Arena() {
   const [runId, setRunId] = useState<string>();
   const [filter, setFilter] = useState<Filter>("all");
-  const [cls, setCls] = useState("");
+  const [cls, setCls] = useState("all");
   const [picked, setPicked] = useState<string>();
   const feed = useEpisodeFeed(runId);
   const run = useQuery({
@@ -45,7 +46,7 @@ export function Arena() {
   const held = cards.filter((c) => outcome(c) === "held").length;
   const breached = cards.filter((c) => c.breached).length;
   const shown = cards.filter(
-    (c) => (filter === "all" || outcome(c) === filter) && (!cls || c.attackClass === cls),
+    (c) => (filter === "all" || outcome(c) === filter) && (cls === "all" || c.attackClass === cls),
   );
   const selected = cards.find((c) => c.eventId === picked) ?? shown[0];
   const latest = cards[0];
@@ -142,21 +143,21 @@ export function Arena() {
                 {label}
               </button>
             ))}
-            <label className="ml-auto inline-flex h-8 items-center gap-2 rounded-full border border-line-strong px-3.5 text-[13px]">
-              <span className="text-muted">Class</span>
-              <select
+            <div className="ml-auto">
+              <Select
+                label="Class"
                 value={cls}
-                onChange={(e) => setCls(e.target.value)}
-                className="bg-transparent text-ink outline-none"
-              >
-                <option value="">All classes</option>
-                {Object.entries(CLASS_NAMES).map(([id, c]) => (
-                  <option key={id} value={id}>
-                    {id} {c.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+                onChange={setCls}
+                options={[
+                  { value: "all", label: "All classes" },
+                  ...Object.entries(CLASS_NAMES).map(([id, c]) => ({
+                    value: id,
+                    hint: id,
+                    label: c.name,
+                  })),
+                ]}
+              />
+            </div>
           </div>
           {shown.length === 0 ? (
             <div className="p-4">
