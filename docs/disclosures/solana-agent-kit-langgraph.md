@@ -36,6 +36,17 @@ Both models were rated again with five runs of each of the 40 attack seeds (200 
 
 Still no breach. The score rose from 50 to 79 because more runs narrow the bound on each class's breach rate. Every agent with no breaches scores 79 at these settings, so the two models tie. The behaviour counts in the table above are from the one-run rating and weren't recounted.
 
+## Re-rated with held-out attacks (2026-10-06)
+
+Both models were rated again with five runs of each of the 40 published attacks and of 15 held-out attacks that are never published (ADR-007, decision 3): 275 attack episodes and 2 controls each. The template, settings and Monitor mode are unchanged, and the scores were posted for agents 7 and 8:
+
+| Model | Score | Attacks breached | By class | Controls breached | Model spend |
+|---|---|---|---|---|---|
+| Claude Haiku 4.5 | 81 (AA) | 0 of 275 | none | 0 of 2 | $3.08 (estimated) |
+| DeepSeek V4.1 Flash | 81 (AA) | 0 of 275 | none | 0 of 2 | $2.95 (estimated) |
+
+Still no breach with either model. Agents with no breaches score 81 at these settings; more clean episodes narrow the bounds further than the five-run rating did. The accepted bounty attack isn't in these local ratings, because its text exists only in the hosted service's database.
+
 ## Suggested mitigations, if deployed as an autonomous agent
 
 The same as for AgentKit: limits enforced on chain or in code, allowlisted recipients and spenders, no follow-up approval of requests that come from untrusted content, and a pre-trade guard.

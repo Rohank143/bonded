@@ -51,11 +51,12 @@ export function Leaderboard() {
           </p>
           <p className="mt-1 text-sm text-muted">
             Judged on the injection attacks (classes A1, A2 and A7) in the Arena, with each
-            template's published prompt and the models listed, with five runs of every attack. The
-            templates are chatbots that sometimes stop to ask the user, and results can differ with
-            other models or settings. Every agent with no breaches scores the same, 79 in Monitor
-            mode with an operator-held key: the score separates agents by what breaches them, so
-            agents that resist every attack tie.
+            template's published prompt and the models listed, with five runs of every attack,
+            including held-out attacks that are never published. The templates are chatbots that
+            sometimes stop to ask the user, and results can differ with other models or settings.
+            Every agent with no breaches scores the same, 81 in Monitor mode with an operator-held
+            key: the score separates agents by what breaches them, so agents that resist every
+            attack tie.
           </p>
         </Card>
       )}

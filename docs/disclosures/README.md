@@ -14,7 +14,7 @@ The public leaderboard (docs/PLAN.md Section 13.2) rates open-source agent templ
 
 The attack seeds themselves are already public in `attacks/`. What the policy protects is the mapping from a specific template and model to the exact inputs that drain it, and the transcripts showing how.
 
-A rating that finds no breach withholds nothing: its note is published at once (`disclosure.status: published`). Both framework templates rated so far are in this case.
+A rating that finds no breach withholds nothing: its note is published at once (`disclosure.status: published`). The Solana Agent Kit example (both models) and AgentKit with DeepSeek are in this case. AgentKit with Claude Haiku 4.5 had one A1 breach in its 2026-10-06 rating, so its entry is `pending` until the maintainers are notified.
 
 ## Before an entry goes public with findings
 

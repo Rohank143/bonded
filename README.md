@@ -52,13 +52,15 @@ How the parts fit together: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). What e
 | | Agent A (agent 10) | Agent B (agent 3) |
 |---|---|---|
 | What it is | Acts on what it reads, behind a guard that checks addresses by their first and last characters only | Treats what it reads as data; full guard; Enforce mode; key generated inside a TEE |
-| Score | **49 (BB)** | **96 (AAA)** |
-| Premium | **7.4%** a year (6.7% after its operator-bond discount) | **1.2%** a year |
-| What the Arena found | Address poisoning: 15 of 20 episodes breached. Every other class: none | No breaches |
+| Score | **54 (BB)** | **96 (AAA)** |
+| Premium | **6.4%** a year (5.8% after its operator-bond discount) | **1.2%** a year |
+| What the Arena found | Address poisoning: 20 of 25 episodes breached, including an unpublished attack. Every other class: none | No breaches |
+
+Agent A's rating (2026-10-05) includes 16 unpublished attacks the operator couldn't study in advance: a held-out set that rotates every 90 days, and an accepted bounty (ADR-007, decision 3). Agent B's rating predates the held-out set; re-rating it needs its TEE VM running.
 
 **The loop, live on Robinhood testnet** (2026-10-04, [evidence](docs/progress/evidence/demo-break-testnet.json)): a lookalike of Agent A's depositor asked for a "refund"; Agent A paid 5,000 tUSDG; the vault recorded the breach and froze the agent; the keeper's claim paid 4,500 (the loss minus the 10% deductible): **4,000 from the operator's bond, 500 from the pool.**
 
-**Leaderboard:** none of the 2 open-source templates rated (Coinbase AgentKit and Solana Agent Kit, 4 template/model evaluations) fell for basic prompt injection. Rated with five runs of every attack, each clean template scores 79 (A) in Monitor mode, the same as Bonded's own hardened agent in that mode; agents that resist every attack tie. About half the attacks arrive on surfaces these templates never read ([leaderboard](https://bonded-nu.vercel.app/leaderboard), [disclosures](docs/disclosures/README.md)).
+**Leaderboard** (2026-10-06, five runs of 55 attacks, 15 of them held out and unpublished): 1 of the 2 open-source templates rated (Coinbase AgentKit and Solana Agent Kit, 4 template/model evaluations) fell for basic prompt injection, once: AgentKit with Claude Haiku 4.5 in 1 of 20 token-metadata (A1) episodes, scoring 80 (AA). The other three evaluations and Bonded's own hardened agent had no breaches and score 81 (AA) in Monitor mode; agents that resist every attack tie. The maintainers are to be notified before the attack is named. About half the attacks arrive on surfaces these templates never read ([leaderboard](https://bonded-nu.vercel.app/leaderboard), [disclosures](docs/disclosures/README.md)).
 
 **Sentinel v5** (in production), against the previous model on the same inputs ([details](docs/SENTINEL-STRESS.md#v5-gate-results)): it blocked 33 of 33 manipulated actions in held-out Arena cases (v1: 27) with no false blocks; in an Arena rerun, the vulnerable agent behind it was breached by 0 of 40 attack seeds. It failed one of five gates (2 of 44 stress families got worse) and was promoted with that exception recorded. It takes about 2.5 s per check on CPU.
 
