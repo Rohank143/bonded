@@ -1,7 +1,7 @@
 import { Link } from "react-router";
 import { useClaims, waterfall } from "../lib/chain";
 import { short, usd } from "../lib/format";
-import { Card, ErrorText, Loading, Page, TxLink } from "../components/ui";
+import { Card, EmptyState, ErrorText, Loading, Page, TxLink } from "../components/ui";
 
 export function Claims() {
   const claims = useClaims();
@@ -13,7 +13,11 @@ export function Claims() {
       <Card>
         {claims.isPending && !claims.error && <Loading what="claims" />}
         <ErrorText error={claims.error} />
-        {claims.data?.length === 0 && <p className="text-sm text-muted">No claims paid yet.</p>}
+        {claims.data?.length === 0 && (
+          <EmptyState title="No claims paid yet">
+            When a covered vault records a breach, the claim is filed and paid here automatically.
+          </EmptyState>
+        )}
         <ul className="flex flex-col gap-3">
           {claims.data?.map((c) => {
             const w = waterfall(c);

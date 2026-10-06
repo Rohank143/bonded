@@ -18,6 +18,7 @@ import {
   Loading,
   Page,
   Stat,
+  Table,
   TxLink,
   Unavailable,
 } from "../components/ui";
@@ -226,7 +227,7 @@ export function Agent() {
               ? `${report.unpublished.episodes} of the attack episodes ran ${report.unpublished.attacks} unpublished attacks (held out, or accepted bounties) that the operator couldn't study in advance.`
               : "Published attacks only: an in-library result, not a held-out evaluation."}
           </p>
-          <table className="w-full text-sm">
+          <Table>
             <thead className="text-left text-muted">
               <tr>
                 <th className="py-1 font-normal">Class</th>
@@ -256,7 +257,7 @@ export function Agent() {
                 );
               })}
             </tbody>
-          </table>
+          </Table>
         </Card>
       )}
     </Page>

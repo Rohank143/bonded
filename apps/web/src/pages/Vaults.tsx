@@ -1,7 +1,16 @@
 import { Link } from "react-router";
 import { useVaults } from "../lib/chain";
 import { short } from "../lib/format";
-import { AddressLink, Card, ErrorText, Loading, Page } from "../components/ui";
+import {
+  AddressLink,
+  Card,
+  EmptyState,
+  ErrorText,
+  LinkButton,
+  Loading,
+  Page,
+  Table,
+} from "../components/ui";
 
 export function Vaults() {
   const vaults = useVaults();
@@ -19,9 +28,16 @@ export function Vaults() {
       >
         {vaults.isPending && !vaults.error && <Loading what="vaults" />}
         <ErrorText error={vaults.error} />
-        {vaults.data?.length === 0 && <p className="text-sm text-muted">No vaults yet.</p>}
+        {vaults.data?.length === 0 && (
+          <EmptyState
+            title="No vaults yet"
+            action={<LinkButton to="/agents/new">Onboard an agent</LinkButton>}
+          >
+            Each onboarded agent gets a Mandate Vault.
+          </EmptyState>
+        )}
         {vaults.data && vaults.data.length > 0 && (
-          <table className="w-full text-sm">
+          <Table>
             <thead className="text-left text-muted">
               <tr>
                 <th className="py-1 font-normal">Vault</th>
@@ -51,7 +67,7 @@ export function Vaults() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </Table>
         )}
       </Card>
     </Page>

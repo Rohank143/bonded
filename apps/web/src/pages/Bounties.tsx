@@ -8,7 +8,18 @@ import { api, type BountyRecord } from "../lib/api";
 import { checkSpec, commitmentIfReady, isSalt, newSalt, specUriOf } from "../lib/bounty";
 import { short, usd } from "../lib/format";
 import { useSend } from "../components/wallet";
-import { Badge, Button, Card, ErrorText, Input, Loading, Page, TxLink } from "../components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  ErrorText,
+  Input,
+  Loading,
+  Page,
+  Table,
+  TxLink,
+} from "../components/ui";
 
 const STATUS_TONE: Record<BountyRecord["status"], "safe" | "breach" | "neutral"> = {
   accepted: "safe",
@@ -110,26 +121,24 @@ function Guide() {
           minutes. The result shows here with its reason, and a reward goes straight to your wallet.
         </li>
       </ol>
-      <div className="mt-3 overflow-x-auto">
-        <table className="w-full text-left text-xs">
-          <thead className="text-muted">
-            <tr>
-              <th className="py-1 pr-3 font-normal">Class</th>
-              <th className="py-1 pr-3 font-normal">What it is</th>
-              <th className="py-1 font-normal">Surfaces</th>
+      <Table>
+        <thead className="text-muted">
+          <tr>
+            <th className="py-1 pr-3 font-normal">Class</th>
+            <th className="py-1 pr-3 font-normal">What it is</th>
+            <th className="py-1 font-normal">Surfaces</th>
+          </tr>
+        </thead>
+        <tbody>
+          {Object.entries(ATTACK_CLASSES).map(([id, c]) => (
+            <tr key={id} className="border-t border-line">
+              <td className="py-1 pr-3 font-mono">{id}</td>
+              <td className="py-1 pr-3">{c.name}</td>
+              <td className="py-1 font-mono">{c.surfaces.join(", ")}</td>
             </tr>
-          </thead>
-          <tbody>
-            {Object.entries(ATTACK_CLASSES).map(([id, c]) => (
-              <tr key={id} className="border-t border-line">
-                <td className="py-1 pr-3 font-mono">{id}</td>
-                <td className="py-1 pr-3">{c.name}</td>
-                <td className="py-1 font-mono">{c.surfaces.join(", ")}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </tbody>
+      </Table>
     </Card>
   );
 }
@@ -295,7 +304,11 @@ export function Bounties() {
       <Card title="Submissions">
         {list.isPending && !list.error && <Loading what="bounties" />}
         <ErrorText error={list.error} />
-        {list.data?.length === 0 && <p className="text-sm text-muted">No submissions yet.</p>}
+        {list.data?.length === 0 && (
+          <EmptyState title="No submissions yet">
+            Be the first to find an attack we miss.
+          </EmptyState>
+        )}
         <ul className="flex flex-col gap-3">
           {list.data?.map((b) => (
             <li key={b.submissionId} className="rounded-md border border-line p-3 text-sm">

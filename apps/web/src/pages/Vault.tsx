@@ -20,12 +20,13 @@ import {
   Button,
   Card,
   ErrorText,
-  Unavailable,
   Grid,
   Input,
   Loading,
   Page,
   Stat,
+  Table,
+  Unavailable,
 } from "../components/ui";
 import { useSend } from "../components/wallet";
 
@@ -145,7 +146,7 @@ function VaultView({ vault }: { vault: Address }) {
         {breachCount === 0 ? (
           <p className="text-sm text-muted">No breaches recorded.</p>
         ) : (
-          <table className="w-full text-sm">
+          <Table>
             <thead className="text-left text-muted">
               <tr>
                 <th className="py-1 font-normal">#</th>
@@ -172,7 +173,7 @@ function VaultView({ vault }: { vault: Address }) {
                 ) : null,
               )}
             </tbody>
-          </table>
+          </Table>
         )}
       </Card>
 

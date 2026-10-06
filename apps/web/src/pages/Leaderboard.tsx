@@ -1,7 +1,16 @@
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api, type LeaderboardRecord } from "../lib/api";
-import { Badge, Card, ErrorText, Loading, Page, TxLink } from "../components/ui";
+import {
+  Card,
+  EmptyState,
+  ErrorText,
+  Loading,
+  Page,
+  Table,
+  TierBadge,
+  TxLink,
+} from "../components/ui";
 
 const CLASSES = ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10"];
 
@@ -63,91 +72,83 @@ export function Leaderboard() {
       <Card title="Rankings">
         {board.isPending && !board.error && <Loading what="the leaderboard" />}
         <ErrorText error={board.error} />
-        {board.data?.entries.length === 0 && (
-          <p className="text-sm text-muted">No ratings published yet.</p>
-        )}
+        {board.data?.entries.length === 0 && <EmptyState title="No ratings published yet" />}
         {board.data && board.data.entries.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-left text-xs text-muted">
-                <tr>
-                  <th className="py-2 pr-2">#</th>
-                  <th className="pr-2">Agent</th>
-                  <th className="pr-2">Score</th>
-                  {CLASSES.map((c) => (
-                    <th key={c} className="px-1 text-center">
-                      {c}
-                    </th>
-                  ))}
-                  <th className="pl-2">On chain</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...board.data.entries]
-                  .sort((a, b) => b.score - a.score)
-                  .map((e, i) => (
-                    <tr key={e.slug} className="border-t border-line align-top">
-                      <td className="py-2 pr-2 tabular-nums text-muted">{i + 1}</td>
-                      <td className="py-2 pr-2">
-                        <div className="font-medium">
-                          {e.template ? (
-                            <a
-                              href={e.template}
-                              className="hover:underline"
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              {e.name}
-                            </a>
-                          ) : (
-                            e.name
-                          )}
-                        </div>
-                        <div className="text-xs text-muted">
-                          {e.framework}
-                          {e.model ? ` · ${e.model}` : " · scripted"} ·{" "}
-                          {DISCLOSURE[e.disclosure.status]}
-                        </div>
-                      </td>
-                      <td className="py-2 pr-2">
-                        <span className="tabular-nums font-semibold">{e.score}</span>{" "}
-                        <Badge tone={e.score >= 70 ? "safe" : e.score < 40 ? "breach" : "neutral"}>
-                          {e.tier}
-                        </Badge>
-                      </td>
-                      {CLASSES.map((c) => (
-                        <Cell key={c} c={e.classes.find((x) => x.class === c)} />
-                      ))}
-                      <td className="py-2 pl-2 text-xs">
-                        {e.onchain ? (
-                          <span className="flex flex-col gap-0.5">
-                            <Link
-                              to={`/agents/${e.onchain.agentId}`}
-                              className="text-accent hover:underline"
-                            >
-                              agent {e.onchain.agentId}
-                            </Link>
-                            {e.onchain.tx ? (
-                              <TxLink hash={e.onchain.tx} />
-                            ) : (
-                              <span className="text-muted">score pending</span>
-                            )}
-                            {e.verified === true && (
-                              <span className="text-safe">score verified</span>
-                            )}
-                            {e.verified === false && (
-                              <span className="text-muted">re-rated since</span>
-                            )}
-                          </span>
+          <Table>
+            <thead className="text-left text-xs text-muted">
+              <tr>
+                <th className="py-2 pr-2">#</th>
+                <th className="pr-2">Agent</th>
+                <th className="pr-2">Score</th>
+                {CLASSES.map((c) => (
+                  <th key={c} className="px-1 text-center">
+                    {c}
+                  </th>
+                ))}
+                <th className="pl-2">On chain</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...board.data.entries]
+                .sort((a, b) => b.score - a.score)
+                .map((e, i) => (
+                  <tr key={e.slug} className="border-t border-line align-top">
+                    <td className="py-2 pr-2 tabular-nums text-muted">{i + 1}</td>
+                    <td className="py-2 pr-2">
+                      <div className="font-medium">
+                        {e.template ? (
+                          <a
+                            href={e.template}
+                            className="hover:underline"
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {e.name}
+                          </a>
                         ) : (
-                          <span className="text-muted">not posted</span>
+                          e.name
                         )}
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
+                      </div>
+                      <div className="text-xs text-muted">
+                        {e.framework}
+                        {e.model ? ` · ${e.model}` : " · scripted"} ·{" "}
+                        {DISCLOSURE[e.disclosure.status]}
+                      </div>
+                    </td>
+                    <td className="py-2 pr-2">
+                      <span className="tabular-nums font-semibold">{e.score}</span>{" "}
+                      <TierBadge score={e.score} />
+                    </td>
+                    {CLASSES.map((c) => (
+                      <Cell key={c} c={e.classes.find((x) => x.class === c)} />
+                    ))}
+                    <td className="py-2 pl-2 text-xs">
+                      {e.onchain ? (
+                        <span className="flex flex-col gap-0.5">
+                          <Link
+                            to={`/agents/${e.onchain.agentId}`}
+                            className="text-accent hover:underline"
+                          >
+                            agent {e.onchain.agentId}
+                          </Link>
+                          {e.onchain.tx ? (
+                            <TxLink hash={e.onchain.tx} />
+                          ) : (
+                            <span className="text-muted">score pending</span>
+                          )}
+                          {e.verified === true && <span className="text-safe">score verified</span>}
+                          {e.verified === false && (
+                            <span className="text-muted">re-rated since</span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-muted">not posted</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </Table>
         )}
       </Card>
     </Page>
