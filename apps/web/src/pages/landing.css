@@ -198,39 +198,3 @@
     opacity: 1;
   }
 }
-
-/* The walkthrough: a pinned intro on the left, a timeline of steps on the right. */
-@media (min-width: 960px) {
-  .walk-pin {
-    position: sticky;
-    top: 110px;
-  }
-}
-.walk-rail {
-  position: relative;
-  padding-left: 34px;
-  border-left: 1px solid rgb(255 255 255 / 0.1);
-}
-.walk-step {
-  position: relative;
-}
-.walk-step::before {
-  content: "";
-  position: absolute;
-  left: -41px;
-  top: 36px;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: #05070d;
-  border: 2px solid var(--dot);
-}
-@media (max-width: 700px) {
-  .walk-rail {
-    padding-left: 0;
-    border-left: 0;
-  }
-  .walk-step::before {
-    display: none;
-  }
-}
