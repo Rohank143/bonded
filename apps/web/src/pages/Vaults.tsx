@@ -10,22 +10,20 @@ import {
   Loading,
   Page,
   Table,
+  Term,
+  linkClass,
 } from "../components/ui";
 
 export function Vaults() {
   const vaults = useVaults();
   return (
     <Page
-      title="Mandate vaults"
+      title="Vaults"
+      eyebrow="Mandate vaults"
+      actions={<LinkButton to="/agents/new">Onboard an agent</LinkButton>}
       intro="A vault holds an agent's funds and enforces its mandate on chain: allowed tokens, contracts, limits. Every breach is recorded here, and that record is what pays claims."
     >
-      <Card
-        actions={
-          <Link to="/agents/new" className="text-sm text-accent hover:underline">
-            Onboard an agent →
-          </Link>
-        }
-      >
+      <Card>
         {vaults.isPending && !vaults.error && <Loading what="vaults" />}
         <ErrorText error={vaults.error} />
         {vaults.data?.length === 0 && (
@@ -38,27 +36,26 @@ export function Vaults() {
         )}
         {vaults.data && vaults.data.length > 0 && (
           <Table>
-            <thead className="text-left text-muted">
+            <thead>
               <tr>
-                <th className="py-1 font-normal">Vault</th>
-                <th className="font-normal">Agent</th>
-                <th className="font-normal">Guardian</th>
+                <th>Vault</th>
+                <th>Agent</th>
+                <th>
+                  <Term term="guardian">Guardian</Term>
+                </th>
               </tr>
             </thead>
             <tbody>
               {vaults.data.map((v) => (
-                <tr key={v.vault} className="border-t border-line">
-                  <td className="py-1.5">
-                    <Link
-                      to={`/vaults/${v.vault}`}
-                      className="font-mono text-accent hover:underline"
-                    >
+                <tr key={v.vault}>
+                  <td>
+                    <Link to={`/vaults/${v.vault}`} className={`font-mono ${linkClass}`}>
                       {short(v.vault)}
                     </Link>
                   </td>
                   <td>
-                    <Link to={`/agents/${v.agentId}`} className="text-accent hover:underline">
-                      {v.agentId.toString()}
+                    <Link to={`/agents/${v.agentId}`} className={linkClass}>
+                      Agent {v.agentId.toString()}
                     </Link>
                   </td>
                   <td>

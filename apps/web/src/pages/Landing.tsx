@@ -294,7 +294,7 @@ function Proof() {
           ) : (
             <div>
               <p className="text-4xl font-semibold tracking-tight tabular-nums">
-                ${usd(latest.payout, 0)}
+                ${usd(w.toVault, 0)}
               </p>
               <p className="mt-1 text-sm text-muted">
                 paid to vault{" "}

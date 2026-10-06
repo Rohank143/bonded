@@ -17,8 +17,10 @@ import {
   Input,
   Loading,
   Page,
+  Stat,
   Table,
   TxLink,
+  linkClass,
 } from "../components/ui";
 
 const STATUS_TONE: Record<BountyRecord["status"], "safe" | "breach" | "neutral"> = {
@@ -56,7 +58,7 @@ const REPO = "https://github.com/ddboy19912/bonded/blob/main";
 function Guide() {
   return (
     <Card title="How to submit an attack">
-      <ol className="flex list-decimal flex-col gap-2 pl-5 text-sm">
+      <ol className="flex list-decimal flex-col gap-3 pl-5 text-sm leading-relaxed marker:font-semibold marker:text-accent">
         <li>
           <span className="font-medium">Get set up.</span> Connect a browser wallet on {networkName}
           . Submitting costs only gas, no tUSDG.
@@ -65,13 +67,7 @@ function Guide() {
               {" "}
               Test ETH comes from a public faucet:{" "}
               {faucets.map((f, i) => (
-                <a
-                  key={f}
-                  href={f}
-                  className="text-accent hover:underline"
-                  target="_blank"
-                  rel="noreferrer"
-                >
+                <a key={f} href={f} className={linkClass} target="_blank" rel="noreferrer">
                   {i ? ", " : ""}
                   {new URL(f).hostname}
                 </a>
@@ -98,7 +94,7 @@ function Guide() {
           You can try an attack locally before you submit (
           <a
             href={`${REPO}/docs/BOUNTIES.md#try-it-locally-first`}
-            className="text-accent hover:underline"
+            className={linkClass}
             target="_blank"
             rel="noreferrer"
           >
@@ -188,47 +184,48 @@ function Submit() {
         timestamps it without revealing it, so nobody can copy it before you reveal. Keep the salt:
         you need it to reveal.
       </p>
-      {!yaml.trim() && (
-        <div className="mt-2">
-          <Button kind="secondary" onClick={() => setYaml(BOUNTY_SPEC_EXAMPLE)}>
-            Insert an example spec
-          </Button>
-        </div>
-      )}
-      <label className="mt-3 flex flex-col gap-1 text-sm">
-        <span className="text-muted">Attack spec (YAML)</span>
+      <label className="mt-4 flex flex-col gap-1.5 text-sm">
+        <span className="flex items-center justify-between font-medium">
+          Attack spec (YAML)
+          {!yaml.trim() && (
+            <Button kind="ghost" size="sm" onClick={() => setYaml(BOUNTY_SPEC_EXAMPLE)}>
+              Insert an example spec
+            </Button>
+          )}
+        </span>
         <textarea
           value={yaml}
           onChange={(e) => setYaml(e.target.value)}
-          rows={10}
+          rows={12}
           spellCheck={false}
-          className="rounded-md border border-line bg-transparent p-2 font-mono text-xs outline-none focus:border-accent"
+          className={`rounded-lg border bg-sunken p-3 font-mono text-xs leading-relaxed outline-none focus:border-accent focus:ring-3 focus:ring-accent/15 ${check && "error" in check ? "border-breach" : "border-line-strong"}`}
         />
       </label>
       {check && "spec" in check && (
-        <p className="mt-1 text-xs text-safe">
-          The spec passes the API's checks: {check.spec.class} via {check.spec.surfaces.join(", ")}.
+        <p className="mt-1.5 text-xs text-safe">
+          ✓ The spec passes the API's checks: {check.spec.class} via{" "}
+          {check.spec.surfaces.join(", ")}.
         </p>
       )}
       {check && "error" in check && (
-        <p className="mt-1 text-xs text-breach">
+        <p className="mt-1.5 text-xs text-breach">
           Fix this before committing: {check.error}. The API refuses a spec that fails this check,
           and a committed spec can't be edited.
         </p>
       )}
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <div className="flex flex-col gap-1">
-          <Input label="Salt (save it)" value={salt} onChange={setSalt} />
-          {!saltOk && (
-            <span className="text-xs text-breach">The salt must be 0x and 64 hex digits.</span>
-          )}
-        </div>
-        <div className="flex flex-col gap-1 text-sm">
-          <span className="text-muted">Spec URI</span>
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <Input
+          label="Salt (save it)"
+          value={salt}
+          onChange={setSalt}
+          error={saltOk ? null : "The salt must be 0x and 64 hex digits."}
+        />
+        <div className="flex flex-col gap-1.5 text-sm">
+          <span className="font-medium">Spec URI</span>
           <span className="break-all font-mono text-xs">{spec.data ?? "—"}</span>
         </div>
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-line pt-5">
         <Button
           disabled={
             !address || !commitment || !(check && "spec" in check) || busy || id !== undefined
@@ -292,15 +289,34 @@ export function Bounties() {
   return (
     <Page
       title="Bounties"
+      eyebrow="For attack researchers"
       intro="Find an attack the library misses and get paid from the bounty pool, which 5% of every premium funds. The Arena checks each submission against reference agents in its sandbox and the attester pays by a fixed rule: 2,000 tUSDG if it beats the defended agent, 500 tUSDG if it opens a new class and surface. Accepted attacks join the library, and every agent is re-rated against them."
     >
-      <Card title="Bounty pool">
-        <p className="text-2xl tabular-nums">
-          {pool.data === undefined ? "—" : `$${usd(pool.data)}`}
-        </p>
-      </Card>
-      <Guide />
-      <Submit />
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Card>
+          <Stat
+            label="Bounty pool"
+            size="lg"
+            value={pool.data === undefined ? "—" : `$${usd(pool.data, 0)}`}
+            hint="tUSDG, funded by 5% of every premium"
+          />
+        </Card>
+        <Card>
+          <Stat label="Beat the defended agent" size="lg" value="$2,000" hint="the top reward" />
+        </Card>
+        <Card>
+          <Stat
+            label="Open a new class and surface"
+            size="lg"
+            value="$500"
+            hint="against the undefended agent"
+          />
+        </Card>
+      </div>
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
+        <Guide />
+        <Submit />
+      </div>
       <Card title="Submissions">
         {list.isPending && !list.error && <Loading what="bounties" />}
         <ErrorText error={list.error} />
@@ -311,7 +327,7 @@ export function Bounties() {
         )}
         <ul className="flex flex-col gap-3">
           {list.data?.map((b) => (
-            <li key={b.submissionId} className="rounded-md border border-line p-3 text-sm">
+            <li key={b.submissionId} className="rounded-lg border border-line p-4 text-sm">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <span>
                   #{b.submissionId} · <span className="font-medium">{b.title}</span> ·{" "}

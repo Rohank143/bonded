@@ -9,7 +9,7 @@ import { recallAgent } from "../lib/onboarding";
 import { registerForRatings, requestRating } from "../lib/self-serve";
 import { when } from "../lib/format";
 import { useRatingRun } from "../lib/rating-run";
-import { Badge, Button, Card, ErrorText } from "./ui";
+import { Badge, Button, Card, ErrorText, linkClass } from "./ui";
 
 /**
  * The agent owner's controls on its profile: register it for self-serve ratings if needed, ask
@@ -106,7 +106,7 @@ export function OwnerTools({ agentId, owner }: { agentId: string; owner?: string
               ) : (
                 <>
                   Watch the attacks live in the{" "}
-                  <Link to="/arena" className="text-accent hover:underline">
+                  <Link to="/arena" className={linkClass}>
                     Arena
                   </Link>
                   .
@@ -132,7 +132,7 @@ export function OwnerTools({ agentId, owner }: { agentId: string; owner?: string
         <p className="text-sm text-muted">
           This agent isn't registered for ratings, and this browser doesn't have its mandate. Agents
           onboarded from{" "}
-          <Link to="/agents/new" className="text-accent hover:underline">
+          <Link to="/agents/new" className={linkClass}>
             Onboard an agent
           </Link>{" "}
           are registered automatically.

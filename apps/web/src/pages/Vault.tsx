@@ -13,20 +13,25 @@ import { deployment } from "../config";
 import { api, type SignedQuoteResponse } from "../lib/api";
 import { usePolicies } from "../lib/chain";
 import { isRpcUnavailable } from "../lib/errors";
-import { BREACH_TYPES, POLICY_STATUS, bps, parseUsd, usd, when } from "../lib/format";
+import { BREACH_TYPES, POLICY_STATUS, bps, parseUsd, short, usd, when } from "../lib/format";
 import {
   AddressLink,
   Badge,
   Button,
   Card,
+  Details,
+  EmptyState,
   ErrorText,
   Grid,
+  LinkButton,
+  Term,
   Input,
   Loading,
   Page,
   Stat,
   Table,
   Unavailable,
+  linkClass,
 } from "../components/ui";
 import { useSend } from "../components/wallet";
 
@@ -34,7 +39,12 @@ const ZERO = "0x0000000000000000000000000000000000000000";
 
 export function Vault() {
   const param = useParams().address ?? "";
-  if (!isAddress(param)) return <Page title="Vault">That is not a vault address.</Page>;
+  if (!isAddress(param))
+    return (
+      <Page title="Vault" back={{ to: "/vaults", label: "All vaults" }}>
+        <EmptyState title="That isn't a vault address" />
+      </Page>
+    );
   return <VaultView vault={param} />;
 }
 
@@ -76,128 +86,168 @@ function VaultView({ vault }: { vault: Address }) {
   });
   const policies = usePolicies(vault);
 
-  if (reads.isLoading) return <Loading what="vault" />;
+  const back = { to: "/vaults", label: "All vaults" };
+  if (reads.isLoading)
+    return (
+      <Page title={`Vault ${short(vault)}`} back={back}>
+        <Card>
+          <Loading what="vault" lines={4} />
+        </Card>
+      </Page>
+    );
   if (reads.isError || isRpcUnavailable(total?.error))
     return (
-      <Page title="Vault">
+      <Page title={`Vault ${short(vault)}`} back={back}>
         <Unavailable error={reads.error ?? total?.error} onRetry={() => void reads.refetch()} />
       </Page>
     );
   if (total?.error)
     return (
-      <Page title="Vault">
-        <p className="text-sm text-muted">
-          This address is not a Bonded vault on this chain. See the{" "}
-          <Link to="/vaults" className="text-accent hover:underline">
-            list of vaults
-          </Link>
-          .
-        </p>
+      <Page title={`Vault ${short(vault)}`} back={back}>
+        <EmptyState
+          title="This address isn't a Bonded vault on this chain"
+          action={<LinkButton to="/vaults">See all vaults</LinkButton>}
+        />
       </Page>
     );
   const isGuardian = Boolean(
     user && guardian?.result && user.toLowerCase() === guardian.result.toLowerCase(),
   );
   return (
-    <Page title="Vault" intro={<span className="font-mono">{vault}</span>}>
-      <Card title="Overview">
-        <Grid>
-          <Stat
-            label="Assets"
-            value={total?.result !== undefined ? `$${usd(total.result)}` : "…"}
-            hint="tUSDG"
-          />
-          <Stat
-            label="Agent"
-            value={
-              agentId?.result !== undefined ? (
-                <Link to={`/agents/${agentId.result}`} className="text-accent hover:underline">
-                  {agentId.result.toString()}
-                </Link>
-              ) : (
-                "…"
-              )
-            }
-          />
-          <Stat
-            label="State"
-            value={
-              frozen?.result ? (
-                <Badge tone="breach">frozen</Badge>
-              ) : (
-                <Badge tone="safe">active</Badge>
-              )
-            }
-            hint="freezes on a breach"
-          />
-          <Stat label="Breaches" value={breachCount} />
-        </Grid>
-        <dl className="mt-4 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[10rem_1fr]">
-          <dt className="text-muted">Guardian</dt>
-          <dd>{guardian?.result ? <AddressLink address={guardian.result} /> : "…"}</dd>
-          <dt className="text-muted">Agent key</dt>
-          <dd>{agent?.result ? <AddressLink address={agent.result} /> : "…"}</dd>
-        </dl>
-      </Card>
-
-      <Cover activeId={activeId?.result} history={policies.data} />
-
-      <Card title="Breach log">
-        {breachCount === 0 ? (
-          <p className="text-sm text-muted">No breaches recorded.</p>
+    <Page
+      title={`Vault ${short(vault)}`}
+      eyebrow="Mandate vault"
+      back={back}
+      intro={<span className="font-mono text-sm break-all">{vault}</span>}
+      actions={
+        frozen?.result ? (
+          <Badge tone="breach" dot>
+            Agent frozen
+          </Badge>
         ) : (
-          <Table>
-            <thead className="text-left text-muted">
-              <tr>
-                <th className="py-1 font-normal">#</th>
-                <th className="font-normal">Type</th>
-                <th className="font-normal">Loss</th>
-                <th className="font-normal">When</th>
-                <th className="font-normal">Claim</th>
-              </tr>
-            </thead>
-            <tbody>
-              {breaches.data?.map((b, i) =>
-                b.result ? (
-                  <tr key={i} className="border-t border-line">
-                    <td className="py-1.5">{i}</td>
-                    <td>{BREACH_TYPES[b.result.breachType] ?? b.result.breachType}</td>
-                    <td className="tabular-nums">
-                      {b.result.blocked ? "blocked, $0" : `$${usd(b.result.lossUsd6)}`}
-                    </td>
-                    <td>{when(b.result.timestamp)}</td>
-                    <td>
-                      {b.result.claimed ? <Badge tone="safe">paid</Badge> : <Badge>not paid</Badge>}
-                    </td>
-                  </tr>
-                ) : null,
-              )}
-            </tbody>
-          </Table>
-        )}
-      </Card>
+          <Badge tone="safe" dot>
+            Active
+          </Badge>
+        )
+      }
+    >
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <div className="flex flex-col gap-6">
+          <Card title="Overview">
+            <Grid>
+              <Stat
+                label="Assets"
+                value={total?.result !== undefined ? `$${usd(total.result)}` : "…"}
+                hint="tUSDG"
+              />
+              <Stat
+                label="Agent"
+                value={
+                  agentId?.result !== undefined ? (
+                    <Link to={`/agents/${agentId.result}`} className={linkClass}>
+                      {agentId.result.toString()}
+                    </Link>
+                  ) : (
+                    "…"
+                  )
+                }
+              />
+              <Stat
+                label="State"
+                value={frozen?.result ? "Frozen" : "Active"}
+                hint="freezes on a breach"
+              />
+              <Stat
+                label={<Term term="breach">Breaches</Term>}
+                value={<span className={breachCount ? "text-breach" : ""}>{breachCount}</span>}
+              />
+            </Grid>
+            <Details>
+              <dt>
+                <Term term="guardian">Guardian</Term>
+              </dt>
+              <dd>{guardian?.result ? <AddressLink address={guardian.result} /> : "…"}</dd>
+              <dt>
+                <Term term="agentKey">Agent key</Term>
+              </dt>
+              <dd>{agent?.result ? <AddressLink address={agent.result} /> : "…"}</dd>
+              <dt>
+                <Term term={mode?.result === 0 ? "monitor" : "enforce"}>Mode</Term>
+              </dt>
+              <dd>
+                {mode?.result === undefined ? "…" : mode.result === 0 ? "Monitor" : "Enforce"}
+              </dd>
+            </Details>
+          </Card>
 
-      <DepositWithdraw
-        vault={vault}
-        wallet={wallet?.result}
-        withdrawable={withdrawable?.result}
-        connected={Boolean(user)}
-      />
-      <BuyCover
-        vault={vault}
-        agentId={agentId?.result}
-        isGuardian={isGuardian}
-        hasActive={Boolean(activeId?.result)}
-      />
-      {isGuardian && Boolean(frozen?.result) && <Unfreeze vault={vault} />}
-      {user && agent?.result && user.toLowerCase() === agent.result.toLowerCase() && (
-        <SimulateBreach
-          vault={vault}
-          frozen={Boolean(frozen?.result)}
-          monitor={mode?.result === 0}
-          covered={Boolean(activeId?.result)}
-        />
-      )}
+          <Cover activeId={activeId?.result} history={policies.data} />
+
+          <Card title="Breach log">
+            {breachCount === 0 ? (
+              <EmptyState title="No breaches recorded">
+                The agent has stayed inside its mandate.
+              </EmptyState>
+            ) : (
+              <Table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Type</th>
+                    <th className="text-right">Loss</th>
+                    <th>When</th>
+                    <th>Claim</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {breaches.data?.map((b, i) =>
+                    b.result ? (
+                      <tr key={i}>
+                        <td className="text-muted tabular-nums">{i}</td>
+                        <td>{BREACH_TYPES[b.result.breachType] ?? b.result.breachType}</td>
+                        <td className="text-right tabular-nums">
+                          {b.result.blocked ? "blocked, $0" : `$${usd(b.result.lossUsd6)}`}
+                        </td>
+                        <td className="whitespace-nowrap">{when(b.result.timestamp)}</td>
+                        <td>
+                          {b.result.claimed ? (
+                            <Badge tone="safe">paid</Badge>
+                          ) : (
+                            <Badge>not paid</Badge>
+                          )}
+                        </td>
+                      </tr>
+                    ) : null,
+                  )}
+                </tbody>
+              </Table>
+            )}
+          </Card>
+        </div>
+
+        <div className="flex flex-col gap-6 lg:sticky lg:top-24">
+          <DepositWithdraw
+            vault={vault}
+            wallet={wallet?.result}
+            withdrawable={withdrawable?.result}
+            connected={Boolean(user)}
+          />
+          <BuyCover
+            vault={vault}
+            agentId={agentId?.result}
+            isGuardian={isGuardian}
+            hasActive={Boolean(activeId?.result)}
+          />
+          {isGuardian && Boolean(frozen?.result) && <Unfreeze vault={vault} />}
+          {user && agent?.result && user.toLowerCase() === agent.result.toLowerCase() && (
+            <SimulateBreach
+              vault={vault}
+              frozen={Boolean(frozen?.result)}
+              monitor={mode?.result === 0}
+              covered={Boolean(activeId?.result)}
+            />
+          )}
+        </div>
+      </div>
     </Page>
   );
 }
@@ -221,10 +271,10 @@ function Cover({ activeId, history }: { activeId?: bigint; history?: bigint[] })
   return (
     <Card title="Cover">
       {!activeId ? (
-        <p className="text-sm text-muted">
-          No active policy.
+        <EmptyState title="No active cover">
+          Depositors aren't protected yet. The guardian can buy cover from this page.
           {history && history.length > 0 && ` Past policies: ${history.map(String).join(", ")}.`}
-        </p>
+        </EmptyState>
       ) : !p ? (
         <Loading what="policy" />
       ) : (
@@ -243,13 +293,29 @@ function Cover({ activeId, history }: { activeId?: bigint; history?: bigint[] })
               value={`$${usd(p.remainingCover, 0)}`}
               hint={`of $${usd(p.coverAmount, 0)}`}
             />
-            <Stat label="Premium" value={bps(p.premiumRateBps)} hint="per year, streamed" />
+            <Stat
+              label={<Term term="premium">Premium</Term>}
+              value={bps(p.premiumRateBps)}
+              hint="per year, streamed"
+            />
             <Stat
               label="Premium owed"
               value={owed.data !== undefined ? `$${usd(owed.data)}` : "…"}
               hint={`paid until ${when(p.paidUntil)}`}
             />
           </Grid>
+          <div
+            className="mt-5 h-2 overflow-hidden rounded-full bg-sunken"
+            role="img"
+            aria-label="Cover left"
+          >
+            <div
+              className="h-2 rounded-full bg-brand"
+              style={{
+                width: `${p.coverAmount > 0n ? Number((p.remainingCover * 1000n) / p.coverAmount) / 10 : 0}%`,
+              }}
+            />
+          </div>
           <p className="mt-3 text-xs text-muted">
             Covers breaches from {when(p.coveredFrom)} to {when(p.endsAt)}. Priced at score{" "}
             {p.score}.
@@ -306,18 +372,30 @@ function DepositWithdraw(props: {
       {!props.connected ? (
         <p className="text-sm text-muted">Connect a wallet to deposit or withdraw.</p>
       ) : (
-        <div className="flex flex-col gap-3">
-          <p className="text-sm text-muted">
-            Wallet: ${props.wallet !== undefined ? usd(props.wallet) : "…"} tUSDG. Withdrawable from
-            this vault: ${props.withdrawable !== undefined ? usd(props.withdrawable) : "…"}. Get
-            tUSDG on the{" "}
-            <Link to="/underwrite" className="text-accent hover:underline">
-              Underwrite
-            </Link>{" "}
-            page.
-          </p>
-          <div className="flex flex-wrap items-end gap-2">
-            <Input label="Amount (tUSDG)" value={amount} onChange={setAmount} placeholder="1000" />
+        <div className="flex flex-col gap-4">
+          <dl className="grid grid-cols-2 gap-3 rounded-lg bg-sunken p-3 text-sm">
+            <div>
+              <dt className="text-xs text-muted">In your wallet</dt>
+              <dd className="font-medium tabular-nums">
+                ${props.wallet !== undefined ? usd(props.wallet) : "…"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">Withdrawable</dt>
+              <dd className="font-medium tabular-nums">
+                ${props.withdrawable !== undefined ? usd(props.withdrawable) : "…"}
+              </dd>
+            </div>
+          </dl>
+          <Input
+            label="Amount"
+            value={amount}
+            onChange={setAmount}
+            placeholder="1000"
+            inputMode="decimal"
+            suffix="tUSDG"
+          />
+          <div className="grid grid-cols-2 gap-2">
             <Button disabled={!value || tx.busy} onClick={deposit}>
               Deposit
             </Button>
@@ -325,6 +403,13 @@ function DepositWithdraw(props: {
               Withdraw
             </Button>
           </div>
+          <p className="text-xs text-muted">
+            Need test tUSDG? Get some on the{" "}
+            <Link to="/underwrite" className={linkClass}>
+              Underwrite
+            </Link>{" "}
+            page.
+          </p>
           {tx.view}
         </div>
       )}
@@ -387,25 +472,33 @@ function BuyCover(props: {
         <p className="text-sm text-muted">This vault already has an active policy.</p>
       ) : (
         <div className="flex flex-col gap-3">
-          <div className="grid gap-3 sm:grid-cols-[10rem_auto] sm:items-end">
+          <div className="flex flex-col gap-3">
             <Input
-              label="Cover (tUSDG)"
+              label="Cover amount"
               value={amount}
               onChange={(a) => (setAmount(a), setQuote(undefined))}
               placeholder="20000"
+              inputMode="decimal"
+              suffix="tUSDG"
             />
-            <Button disabled={!cover || quoting} onClick={getQuote}>
+            <Button kind="secondary" disabled={!cover} loading={quoting} onClick={getQuote}>
               {quoting ? "Pricing…" : "Get quote"}
             </Button>
           </div>
           <ErrorText error={quoteError} />
           {quote && (
-            <div className="flex flex-wrap items-center gap-3 rounded-md border border-line p-3 text-sm">
-              <span>
-                ${usd(BigInt(quote.quote.coverAmount), 0)} cover at{" "}
-                <strong>{bps(quote.quote.premiumRateBps)}</strong> a year, score {quote.quote.score}
-                .
-              </span>
+            <div className="flex flex-col gap-3 rounded-lg border border-accent/30 bg-accent-soft/50 p-4 text-sm">
+              <div>
+                <p className="text-xs text-muted">Your quote</p>
+                <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">
+                  {bps(quote.quote.premiumRateBps)}
+                  <span className="ml-1 text-sm font-normal text-muted">a year</span>
+                </p>
+                <p className="text-muted">
+                  for ${usd(BigInt(quote.quote.coverAmount), 0)} of cover, priced at score{" "}
+                  {quote.quote.score}.
+                </p>
+              </div>
               <Button disabled={!props.isGuardian || tx.busy} onClick={buy}>
                 Buy cover
               </Button>
@@ -425,7 +518,7 @@ function BuyCover(props: {
 function Unfreeze({ vault }: { vault: Address }) {
   const tx = useSend();
   return (
-    <Card title="Agent frozen">
+    <Card title="Agent frozen" className="border-breach/40">
       <p className="mb-3 text-sm text-muted">
         A breach froze this vault's agent. As the guardian you can let it act again; any open claim
         is unaffected.
@@ -482,7 +575,11 @@ function SimulateBreach(props: {
       },
     ]);
   return (
-    <Card title="Simulate a breach (testing)">
+    <Card
+      title="Simulate a breach"
+      actions={<Badge tone="warn">Testing only</Badge>}
+      className="border-warn/40"
+    >
       <p className="mb-3 text-sm text-muted">
         Your wallet is this vault's agent key, so you can act as a tricked agent: send tUSDG to the
         burn address, which no mandate allows. The vault records a breach and freezes the agent.
@@ -497,9 +594,15 @@ function SimulateBreach(props: {
           The agent is frozen after a breach. The guardian can unfreeze it above.
         </p>
       ) : (
-        <div className="flex flex-wrap items-end gap-2">
-          <Input label="Amount (tUSDG)" value={amount} onChange={setAmount} />
-          <Button kind="secondary" disabled={!value || tx.busy} onClick={breach}>
+        <div className="flex flex-col gap-3">
+          <Input
+            label="Amount"
+            value={amount}
+            onChange={setAmount}
+            inputMode="decimal"
+            suffix="tUSDG"
+          />
+          <Button kind="danger" disabled={!value || tx.busy} onClick={breach}>
             Simulate the breach
           </Button>
         </div>

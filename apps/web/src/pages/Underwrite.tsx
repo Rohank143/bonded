@@ -4,7 +4,18 @@ import type { Abi } from "viem";
 import { coverManagerAbi, coverPoolAbi, testTokenAbi } from "@bonded/shared";
 import { deployment, faucets } from "../config";
 import { bps, duration, parseUsd, usd, when } from "../lib/format";
-import { Button, Card, Grid, Input, Loading, Page, Stat, Unavailable } from "../components/ui";
+import {
+  Button,
+  Card,
+  Details,
+  Grid,
+  Input,
+  Loading,
+  Page,
+  Stat,
+  Unavailable,
+  linkClass,
+} from "../components/ui";
 import { isRpcUnavailable } from "../lib/errors";
 import { useSend } from "../components/wallet";
 
@@ -32,7 +43,14 @@ export function Underwrite() {
     ],
     query: { refetchInterval: 15_000 },
   });
-  if (reads.isLoading) return <Loading what="pool" />;
+  if (reads.isLoading)
+    return (
+      <Page title="Underwrite">
+        <Card>
+          <Loading what="pool" lines={4} />
+        </Card>
+      </Page>
+    );
   if (reads.isError || isRpcUnavailable(reads.data?.find((r) => r.error)?.error))
     return (
       <Page title="Underwrite">
@@ -56,6 +74,7 @@ export function Underwrite() {
   return (
     <Page
       title="Underwrite"
+      eyebrow="Cover pool"
       intro="The cover pool pays whatever the operator's bond doesn't cover on a claim. Underwriters earn 80% of premiums. Withdrawals wait a cooldown and can only use capital not backing active cover."
     >
       <Card title="Cover pool">
@@ -65,16 +84,28 @@ export function Underwrite() {
           <Stat label="Capital backing cover" value={$(required)} />
           <Stat label="Free capital" value={$(free)} />
         </Grid>
-        <dl className="mt-4 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[14rem_1fr]">
-          <dt className="text-muted">Total cover limit</dt>
+        <div className="mt-6">
+          <div className="mb-1.5 flex justify-between text-xs text-muted">
+            <span>Active cover as a share of the pool</span>
+            <span className="tabular-nums">{bps(utilisation)}</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-sunken">
+            <div
+              className="h-2 rounded-full bg-brand"
+              style={{ width: `${Math.min(utilisation / 100, 100)}%` }}
+            />
+          </div>
+        </div>
+        <Details>
+          <dt>Total cover limit</dt>
           <dd>{leverage !== undefined ? `${bps(leverage)} of pool assets` : "…"}</dd>
-          <dt className="text-muted">One agent at most</dt>
+          <dt>One agent at most</dt>
           <dd>{agentCap !== undefined ? `${bps(agentCap)} of pool assets` : "…"}</dd>
-          <dt className="text-muted">One model family at most</dt>
+          <dt>One model family at most</dt>
           <dd>{familyCap !== undefined ? `${bps(familyCap)} of pool assets` : "…"}</dd>
-          <dt className="text-muted">Withdrawal cooldown</dt>
+          <dt>Withdrawal cooldown</dt>
           <dd>{cooldown !== undefined ? duration(cooldown) : "…"}</dd>
-        </dl>
+        </Details>
       </Card>
       {!user ? (
         <Card title="Your position">
@@ -88,13 +119,7 @@ export function Underwrite() {
       <p className="text-xs text-muted">
         Testnet gas (ETH) comes from a public faucet:{" "}
         {faucets.map((f, i) => (
-          <a
-            key={f}
-            href={f}
-            className="text-accent hover:underline"
-            target="_blank"
-            rel="noreferrer"
-          >
+          <a key={f} href={f} className={linkClass} target="_blank" rel="noreferrer">
             {i ? ", " : ""}
             {new URL(f).hostname}
           </a>
@@ -157,64 +182,85 @@ function Position(props: {
           hint={requestedShares > 0n ? `unlocks ${when(unlockAt)}` : undefined}
         />
       </Grid>
-      <div className="mt-4 flex flex-wrap items-end gap-2">
-        <Input label="Amount (tUSDG)" value={amount} onChange={setAmount} placeholder="10000" />
-        <Button
-          disabled={!value || tx.busy}
-          onClick={() =>
-            value &&
-            user &&
-            tx.send([
-              call(
-                "approve",
-                [deployment.pool, value],
-                "Approve tUSDG",
-                deployment.usdg,
-                testTokenAbi as Abi,
-              ),
-              call("deposit", [value, user], "Deposit"),
-            ])
-          }
-        >
-          Deposit
-        </Button>
-        <Button
-          kind="secondary"
-          disabled={!props.shares || tx.busy}
-          onClick={() =>
-            props.shares && tx.send([call("requestRedeem", [props.shares], "Request withdrawal")])
-          }
-        >
-          Request withdrawal of all shares
-        </Button>
-        <Button
-          kind="secondary"
-          disabled={!props.redeemable || tx.busy}
-          onClick={() =>
-            user &&
-            props.redeemable &&
-            tx.send([call("withdraw", [props.redeemable, user, user], "Withdraw")])
-          }
-        >
-          Withdraw available
-        </Button>
-        <Button
-          kind="secondary"
-          disabled={tx.busy}
-          onClick={() =>
-            tx.send([
-              call(
-                "faucet",
-                [10_000_000_000n],
-                "Get 10,000 tUSDG",
-                deployment.usdg,
-                testTokenAbi as Abi,
-              ),
-            ])
-          }
-        >
-          Get 10,000 test tUSDG
-        </Button>
+      <div className="mt-6 grid gap-6 border-t border-line pt-6 md:grid-cols-2">
+        <div className="flex flex-col gap-3">
+          <p className="text-sm font-semibold">Deposit</p>
+          <Input
+            label="Amount"
+            value={amount}
+            onChange={setAmount}
+            placeholder="10000"
+            inputMode="decimal"
+            suffix="tUSDG"
+          />
+          <div className="flex flex-wrap gap-2">
+            <Button
+              disabled={!value || tx.busy}
+              onClick={() =>
+                value &&
+                user &&
+                tx.send([
+                  call(
+                    "approve",
+                    [deployment.pool, value],
+                    "Approve tUSDG",
+                    deployment.usdg,
+                    testTokenAbi as Abi,
+                  ),
+                  call("deposit", [value, user], "Deposit"),
+                ])
+              }
+            >
+              Deposit
+            </Button>
+            <Button
+              kind="ghost"
+              disabled={tx.busy}
+              onClick={() =>
+                tx.send([
+                  call(
+                    "faucet",
+                    [10_000_000_000n],
+                    "Get 10,000 tUSDG",
+                    deployment.usdg,
+                    testTokenAbi as Abi,
+                  ),
+                ])
+              }
+            >
+              Get 10,000 test tUSDG
+            </Button>
+          </div>
+        </div>
+        <div className="flex flex-col gap-3">
+          <p className="text-sm font-semibold">Withdraw</p>
+          <p className="text-sm text-muted">
+            Request a withdrawal, wait out the cooldown, then withdraw what's free.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              kind="secondary"
+              disabled={!props.shares || tx.busy}
+              onClick={() =>
+                props.shares &&
+                tx.send([call("requestRedeem", [props.shares], "Request withdrawal")])
+              }
+            >
+              Request withdrawal of all shares
+            </Button>
+            <Button
+              kind="secondary"
+              disabled={!props.redeemable || tx.busy}
+              onClick={() =>
+                user &&
+                props.redeemable &&
+                tx.send([call("withdraw", [props.redeemable, user, user], "Withdraw")])
+              }
+            >
+              Withdraw available
+            </Button>
+          </div>
+        </div>
       </div>
       <div className="mt-2">{tx.view}</div>
     </Card>

@@ -11,6 +11,7 @@ import {
   ErrorText,
   LinkButton,
   Loading,
+  linkClass,
   Page,
   Table,
   TierBadge,
@@ -29,25 +30,41 @@ export function Agents() {
     <Page
       title="Agents"
       intro="Every agent registered in BondedRegistry, newest first. Open one for its score, attack report, vault and cover. Onboard your own to give it a vault and a bond and get it rated."
+      actions={<LinkButton to="/agents/new">Onboard an agent</LinkButton>}
     >
       <Card
-        title="Registered agents"
+        title={
+          agents.data ? (
+            <>
+              Registered agents{" "}
+              <span className="ml-1 font-normal text-muted tabular-nums">{agents.data.length}</span>
+            </>
+          ) : (
+            "Registered agents"
+          )
+        }
         actions={
-          <LinkButton to="/agents/new" size="sm">
-            Onboard an agent
-          </LinkButton>
+          address &&
+          mineCount > 0 && (
+            <div className="inline-flex rounded-lg bg-sunken p-1 text-sm" role="group">
+              {[
+                [false, "All"],
+                [true, `Mine (${mineCount})`],
+              ].map(([value, label]) => (
+                <button
+                  key={String(value)}
+                  type="button"
+                  aria-pressed={mineOnly === value}
+                  onClick={() => setMineOnly(value as boolean)}
+                  className={`rounded-md px-3 py-1 font-medium ${mineOnly === value ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )
         }
       >
-        {address && mineCount > 0 && (
-          <label className="mb-3 flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={mineOnly}
-              onChange={(e) => setMineOnly(e.target.checked)}
-            />
-            Only my agents ({mineCount})
-          </label>
-        )}
         {agents.isPending && !agents.error && <Loading what="agents" />}
         <ErrorText error={agents.error} />
         {rows?.length === 0 && (
@@ -73,12 +90,12 @@ export function Agents() {
               {rows.map((a) => (
                 <tr key={a.agentId.toString()} className="border-t border-line">
                   <td className="whitespace-nowrap py-1.5 pr-3">
-                    <Link to={`/agents/${a.agentId}`} className="text-accent hover:underline">
+                    <Link to={`/agents/${a.agentId}`} className={linkClass}>
                       Agent {a.agentId.toString()}
                     </Link>
                     {isMine(a.owner) && (
                       <span className="ml-2">
-                        <Badge tone="neutral">yours</Badge>
+                        <Badge tone="brand">yours</Badge>
                       </span>
                     )}
                   </td>
@@ -87,7 +104,7 @@ export function Agents() {
                       <span className="flex items-center gap-2">
                         <span className="font-semibold tabular-nums">{a.score.score}</span>
                         <TierBadge score={a.score.score} />
-                        {a.score.expiresAt <= now && <Badge tone="breach">expired</Badge>}
+                        {a.score.expiresAt <= now && <Badge tone="warn">expired</Badge>}
                       </span>
                     ) : (
                       <span className="text-muted">unrated</span>
@@ -98,10 +115,7 @@ export function Agents() {
                   </td>
                   <td>
                     {a.vault ? (
-                      <Link
-                        to={`/vaults/${a.vault}`}
-                        className="font-mono text-accent hover:underline"
-                      >
+                      <Link to={`/vaults/${a.vault}`} className={`font-mono ${linkClass}`}>
                         {short(a.vault)}
                       </Link>
                     ) : (

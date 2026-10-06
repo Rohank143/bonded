@@ -3,7 +3,19 @@ import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useEpisodeFeed } from "../lib/events";
-import { Badge, Button, Card, ErrorText, Input, Page } from "../components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  ErrorText,
+  Input,
+  Page,
+  Stat,
+  Term,
+  TierBadge,
+  linkClass,
+} from "../components/ui";
 import { OperatorTokenField, useOperatorToken } from "../components/wallet";
 
 export function Arena() {
@@ -35,92 +47,91 @@ export function Arena() {
 
   const done = feed.cards.length;
   const breaches = feed.cards.filter((c) => c.breached).length;
+  const held = feed.cards.filter((c) => c.attackClass && !c.breached).length;
+  const runTone =
+    run.data?.status === "failed" ? "breach" : run.data?.status === "done" ? "safe" : "neutral";
   return (
     <Page
       title="Arena"
+      eyebrow="Live red team"
       intro="Each card is one episode: an attack planted in the agent's world, or a control with no attack. Red means the vault recorded a breach. The verdict comes from the vault's on-chain breach log, the same record that pays claims."
     >
-      <Card title="Start a rating">
-        <div className="grid gap-3 sm:grid-cols-[1fr_8rem_auto] sm:items-end">
-          <OperatorTokenField />
-          <Input label="Agent ID" value={agentId} onChange={setAgentId} />
-          <Button disabled={!token || !/^\d+$/.test(agentId.trim()) || starting} onClick={start}>
-            {starting ? "Queuing…" : "Run 42 episodes"}
-          </Button>
-        </div>
-        <p className="mt-2 text-xs text-muted">
-          Only agents in the server's agents file can be rated. The worker rates on a private fork,
-          then posts one signed score to the chain (this costs the attester testnet gas).
-        </p>
-        <ErrorText error={startError} />
-      </Card>
-
       <Card
         title={runId ? `Run ${runId.slice(0, 8)}` : "All runs"}
         actions={
-          <div className="flex items-center gap-2 text-xs">
-            <Badge tone={feed.connected ? "safe" : "neutral"}>
-              {feed.connected ? "live" : "reconnecting"}
+          <div className="flex items-center gap-2">
+            <Badge tone={feed.connected ? "safe" : "neutral"} dot>
+              {feed.connected ? "Live" : "Reconnecting"}
             </Badge>
             {runId && (
-              <Button kind="secondary" onClick={() => setRunId(undefined)}>
+              <Button kind="secondary" size="sm" onClick={() => setRunId(undefined)}>
                 Show all runs
               </Button>
             )}
           </div>
         }
       >
+        <div className="mb-5 grid grid-cols-3 gap-4 rounded-lg bg-sunken p-4 sm:max-w-lg">
+          <Stat label="Episodes shown" value={done} />
+          <Stat
+            label={<Term term="held">Held</Term>}
+            value={<span className="text-safe">{held}</span>}
+          />
+          <Stat
+            label={<Term term="breach">Breached</Term>}
+            value={<span className={breaches ? "text-breach" : ""}>{breaches}</span>}
+          />
+        </div>
         {run.data && (
-          <div className="mb-3 flex flex-wrap items-center gap-3 text-sm">
-            <Badge
-              tone={
-                run.data.status === "failed"
-                  ? "breach"
-                  : run.data.status === "done"
-                    ? "safe"
-                    : "neutral"
-              }
-            >
-              {run.data.status}
-            </Badge>
+          <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
+            <Badge tone={runTone}>{run.data.status}</Badge>
             {run.data.report && (
-              <span>
-                Score <strong>{run.data.report.scoring.score}</strong> (
-                {run.data.report.scoring.tier})
+              <span className="flex items-center gap-2">
+                Score <strong className="tabular-nums">{run.data.report.scoring.score}</strong>
+                <TierBadge score={run.data.report.scoring.score} />
               </span>
             )}
             {run.data.error && <span className="text-breach">{run.data.error}</span>}
           </div>
         )}
-        <p className="mb-3 text-sm text-muted">
-          {done} episodes shown, {breaches} with a breach.
-          {feed.failedRuns.length > 0 && ` ${feed.failedRuns.length} run(s) failed.`}
-        </p>
+        {feed.failedRuns.length > 0 && (
+          <p className="mb-4 text-sm text-muted">{feed.failedRuns.length} run(s) failed.</p>
+        )}
         {feed.cards.length === 0 ? (
-          <p className="text-sm text-muted">No episodes yet. Start a rating to watch it here.</p>
+          <EmptyState title="No episodes yet">
+            Episodes appear here the moment a rating runs. Agent owners can start one from their
+            agent's page.
+          </EmptyState>
         ) : (
-          <ul className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
+          <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
             {feed.cards.map((c) => (
               <li
                 key={c.eventId}
-                className={`rounded-md border p-2 text-xs ${c.breached ? "border-breach bg-breach/10" : "border-safe bg-safe/10"}`}
+                className={`flex flex-col gap-1 rounded-lg border-l-[3px] p-3 text-xs ${
+                  c.breached
+                    ? "border-breach bg-breach-soft"
+                    : c.attackClass
+                      ? "border-safe bg-safe-soft"
+                      : "border-line-strong bg-sunken"
+                }`}
               >
-                <div className="flex justify-between font-mono">
-                  <span>{c.attackClass ?? "control"}</span>
-                  <span className="text-muted">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono font-medium">{c.attackClass ?? "control"}</span>
+                  <span className="text-muted tabular-nums">
                     {c.index + 1}/{c.total}
                   </span>
                 </div>
                 <div className="truncate text-muted" title={c.attackId ?? "no attack"}>
                   {c.attackId ?? "no attack"}
                 </div>
-                <div
-                  className={c.breached ? "font-semibold text-breach" : "font-semibold text-safe"}
-                >
-                  {c.breached ? `breach, $${c.lossUsd.toFixed(0)}` : "held"}
+                <div className={`font-semibold ${c.breached ? "text-breach" : "text-safe"}`}>
+                  {c.breached ? `Breach · $${c.lossUsd.toFixed(0)}` : "Held"}
                 </div>
                 {!runId && (
-                  <button className="text-accent hover:underline" onClick={() => setRunId(c.runId)}>
+                  <button
+                    className="self-start font-mono text-accent hover:underline"
+                    onClick={() => setRunId(c.runId)}
+                  >
                     run {c.runId.slice(0, 8)}
                   </button>
                 )}
@@ -129,13 +140,39 @@ export function Arena() {
           </ul>
         )}
       </Card>
+
       <p className="text-sm text-muted">
         Scores for a rated agent:{" "}
-        <Link to="/agents/2" className="text-accent hover:underline">
+        <Link to="/agents/2" className={linkClass}>
           agent 2
         </Link>
         .
       </p>
+
+      <details className="group rounded-(--radius-card) border border-line bg-surface p-5 shadow-(--shadow-card) sm:p-6">
+        <summary className="flex cursor-pointer list-none items-center justify-between font-semibold">
+          Operator: start a rating
+          <span className="text-muted transition-transform group-open:rotate-180" aria-hidden>
+            ⌄
+          </span>
+        </summary>
+        <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_8rem_auto] sm:items-end">
+          <OperatorTokenField />
+          <Input label="Agent ID" value={agentId} onChange={setAgentId} inputMode="numeric" />
+          <Button
+            disabled={!token || !/^\d+$/.test(agentId.trim())}
+            loading={starting}
+            onClick={start}
+          >
+            {starting ? "Queuing…" : "Run 42 episodes"}
+          </Button>
+        </div>
+        <p className="mt-3 text-xs text-muted">
+          Only agents in the server's agents file can be rated. The worker rates on a private fork,
+          then posts one signed score to the chain (this costs the attester testnet gas).
+        </p>
+        <ErrorText error={startError} />
+      </details>
     </Page>
   );
 }

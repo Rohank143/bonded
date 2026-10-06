@@ -1,4 +1,5 @@
-import { useId, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Link } from "react-router";
 import { tierForScore } from "@bonded/shared";
 import { addressUrl, short, txUrl } from "../lib/format";
@@ -406,21 +407,45 @@ export function Unavailable({ error, onRetry }: { error: unknown; onRetry: () =>
   );
 }
 
-/** A hover and focus tooltip. The trigger is focusable so keyboard users can read it too. */
+/**
+ * A hover and focus tooltip. The trigger is focusable so keyboard users can read it too. The tip
+ * is drawn in a portal with fixed position, so tables that scroll sideways don't clip it.
+ */
 export function Tooltip({ content, children }: { content: ReactNode; children: ReactNode }) {
   const id = useId();
+  const [at, setAt] = useState<{ x: number; y: number; below: boolean } | null>(null);
+  const show = (e: { currentTarget: HTMLElement }) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const below = r.top < 96;
+    setAt({ x: r.left + r.width / 2, y: below ? r.bottom + 8 : r.top - 8, below });
+  };
+  const hide = () => setAt(null);
   return (
-    <span className="group/tip relative inline-flex">
-      <span tabIndex={0} aria-describedby={id} className="inline-flex rounded outline-offset-2">
-        {children}
-      </span>
-      <span
-        id={id}
-        role="tooltip"
-        className="pointer-events-none invisible absolute bottom-full left-1/2 z-30 mb-2 w-max max-w-64 -translate-x-1/2 rounded-lg bg-ink px-3 py-2 text-left text-xs leading-relaxed font-normal tracking-normal text-paper normal-case opacity-0 shadow-(--shadow-raised) transition-opacity group-focus-within/tip:visible group-focus-within/tip:opacity-100 group-hover/tip:visible group-hover/tip:opacity-100"
-      >
-        {content}
-      </span>
+    <span
+      tabIndex={0}
+      aria-describedby={at ? id : undefined}
+      onMouseEnter={show}
+      onMouseLeave={hide}
+      onFocus={show}
+      onBlur={hide}
+      className="inline-flex rounded outline-offset-2"
+    >
+      {children}
+      {at &&
+        createPortal(
+          <span
+            id={id}
+            role="tooltip"
+            style={{
+              left: Math.min(Math.max(at.x, 140), window.innerWidth - 140),
+              top: at.y,
+            }}
+            className={`pointer-events-none fixed z-50 w-max max-w-64 -translate-x-1/2 rounded-lg bg-ink px-3 py-2 text-left text-xs leading-relaxed font-normal tracking-normal text-paper normal-case shadow-(--shadow-raised) ${at.below ? "" : "-translate-y-full"}`}
+          >
+            {content}
+          </span>,
+          document.body,
+        )}
     </span>
   );
 }
