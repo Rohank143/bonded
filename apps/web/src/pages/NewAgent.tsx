@@ -286,7 +286,7 @@ export function NewAgent() {
       intro="Register an agent, create its Mandate Vault, stake its operator bond and fund it, all from your wallet. Then rate it in the Arena and buy cover for it from its page."
     >
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-        <div className="flex flex-col gap-6">
+        <div className="flex min-w-0 flex-col gap-6">
           <StepCard n={1} title="What gets rated">
             <p className="mb-4 text-sm text-muted">
               The Arena rates one of Bonded's built-in agent designs, run against your vault and
@@ -447,7 +447,7 @@ export function NewAgent() {
           </StepCard>
         </div>
 
-        <div className="lg:sticky lg:top-24">
+        <div className="min-w-0 lg:sticky lg:top-24">
           <StepCard n={4} title="Create">
             {unfinished && !busy && (
               <div className="mb-4 flex flex-col gap-3 rounded-lg border border-warn/30 bg-warn-soft p-4 text-sm">

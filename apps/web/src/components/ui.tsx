@@ -51,7 +51,7 @@ export function Card({
 }) {
   return (
     <section
-      className={`rounded-(--radius-card) border border-line bg-surface p-5 shadow-(--shadow-card) sm:p-6 ${className}`}
+      className={`min-w-0 rounded-(--radius-card) border border-line bg-surface p-5 shadow-(--shadow-card) sm:p-6 ${className}`}
     >
       {(title || actions) && (
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">

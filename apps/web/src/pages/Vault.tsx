@@ -132,7 +132,7 @@ function VaultView({ vault }: { vault: Address }) {
       }
     >
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-        <div className="flex flex-col gap-6">
+        <div className="flex min-w-0 flex-col gap-6">
           <Card title="Overview">
             <Grid>
               <Stat
@@ -224,7 +224,7 @@ function VaultView({ vault }: { vault: Address }) {
           </Card>
         </div>
 
-        <div className="flex flex-col gap-6 lg:sticky lg:top-24">
+        <div className="flex min-w-0 flex-col gap-6 lg:sticky lg:top-24">
           <DepositWithdraw
             vault={vault}
             wallet={wallet?.result}
