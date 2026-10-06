@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 import { useAccount, useReadContracts } from "wagmi";
 import type { Abi } from "viem";
 import { coverManagerAbi, coverPoolAbi, testTokenAbi } from "@bonded/shared";
@@ -15,6 +16,10 @@ const manager = { address: deployment.coverManager, abi: coverManagerAbi } as co
 export function Underwrite() {
   const { address: user } = useAccount();
   const who = user ?? ZERO;
+  // "Your underwriting" in the sidebar opens this page with ?mine=1 and jumps to the position.
+  const [params] = useSearchParams();
+  const mine = params.get("mine") === "1";
+  const position = useRef<HTMLDivElement>(null);
   const reads = useReadContracts({
     contracts: [
       { ...pool, functionName: "totalAssets" },
@@ -32,6 +37,10 @@ export function Underwrite() {
     ],
     query: { refetchInterval: 15_000 },
   });
+  const loaded = Boolean(reads.data);
+  useEffect(() => {
+    if (mine && loaded) position.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [mine, loaded]);
   if (reads.isLoading)
     return (
       <Page title="Cover pool">
@@ -59,7 +68,7 @@ export function Underwrite() {
   return (
     <Page
       eyebrow="For underwriters"
-      title="Cover pool"
+      title={mine ? "Your underwriting" : "Cover pool"}
       intro="Back the pool that pays claims, and earn 80% of every premium."
     >
       <div className="flex flex-wrap items-start gap-4">
@@ -123,7 +132,10 @@ export function Underwrite() {
           </Card>
         </div>
 
-        <div className="flex min-w-0 flex-[1_1_340px] flex-col gap-4 xl:sticky xl:top-24">
+        <div
+          ref={position}
+          className="flex min-w-0 scroll-mt-24 flex-[1_1_340px] flex-col gap-4 xl:sticky xl:top-24"
+        >
           {!user ? (
             <section className="panel border-accent/25 p-6">
               <h2 className="text-lg font-bold">Your position</h2>

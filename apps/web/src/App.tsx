@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
+import { Link, Outlet, useLocation, useNavigate } from "react-router";
 import { useAccount } from "wagmi";
 import { isAddress } from "viem";
 import { ConnectButton } from "./components/wallet";
@@ -7,6 +7,7 @@ import { Logo, buttonClass } from "./components/ui";
 import { explorerUrl, networkName } from "./config";
 import { useAgents, useClaims } from "./lib/chain";
 import { searchTarget } from "./lib/search";
+import { isNavActive } from "./lib/nav";
 import { APP_HOME } from "./lib/routes";
 
 const REPO = "https://github.com/ddboy19912/bonded";
@@ -65,20 +66,20 @@ function Item({
   extra?: ReactNode;
   end?: boolean;
 }) {
+  const { pathname, search } = useLocation();
+  const isActive = isNavActive(to, pathname, search, end);
   return (
-    <NavLink
+    <Link
       to={to}
-      end={end}
-      className={({ isActive }) =>
-        `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${
-          isActive ? "bg-accent-soft text-ink" : "text-muted hover:bg-white/[0.05] hover:text-ink"
-        }`
-      }
+      aria-current={isActive ? "page" : undefined}
+      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${
+        isActive ? "bg-accent-soft text-ink" : "text-muted hover:bg-white/[0.05] hover:text-ink"
+      }`}
     >
       <Icon d={icon} />
       <span className="flex-1">{label}</span>
       {extra}
-    </NavLink>
+    </Link>
   );
 }
 
@@ -130,7 +131,7 @@ function Sidebar() {
           {isConnected ? (
             <>
               <Item to="/agents?mine=1" icon={ICONS.mine} label="Your agents" />
-              <Item to="/underwrite" icon={ICONS.deposits} label="Your underwriting" />
+              <Item to="/underwrite?mine=1" icon={ICONS.deposits} label="Your underwriting" />
             </>
           ) : (
             <p className="mx-1 rounded-2xl border border-dashed border-line-strong p-3.5 text-[13px] leading-relaxed text-muted">
