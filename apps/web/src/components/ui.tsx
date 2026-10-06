@@ -12,7 +12,10 @@ export const linkClass =
 
 type Tone = "safe" | "breach" | "neutral" | "brand" | "warn";
 
-/** The Bonded logo: the lockup (mark and name) or the mark alone, in light and dark. */
+/**
+ * The Bonded logo: the lockup (mark and name) or the mark alone, in light and dark. The brand
+ * rules ask for a lockup at least 160 px wide (h-9); use the symbol where there is less room.
+ */
 export function Logo({
   variant = "lockup",
   className = "h-8",
