@@ -1,0 +1,236 @@
+/* The landing page's hero composition and its motion. Plain CSS, so the timings read in one place. */
+
+.hero-ui {
+  position: relative;
+  max-width: 1180px;
+  height: 600px;
+  margin: 56px auto 0;
+  perspective: 2200px;
+}
+.hero-tilt {
+  position: absolute;
+  inset: 0;
+  transform: rotateX(14deg);
+  transform-origin: 50% 0;
+  transform-style: preserve-3d;
+}
+.pane {
+  position: absolute;
+  box-sizing: border-box;
+  border-radius: 22px;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  background: linear-gradient(180deg, rgb(22 28 44 / 0.92), rgb(10 13 22 / 0.94));
+  box-shadow:
+    0 40px 80px -20px rgb(0 0 0 / 0.7),
+    inset 0 1px 0 rgb(255 255 255 / 0.08);
+  backdrop-filter: blur(16px);
+}
+.pane-agent {
+  left: 50%;
+  top: 30px;
+  width: 470px;
+  margin-left: -235px;
+  padding: 26px;
+  z-index: 3;
+  animation: hero-float 7s ease-in-out infinite;
+}
+.pane-feed {
+  left: 0;
+  top: 120px;
+  width: 350px;
+  padding: 20px 20px 8px;
+  z-index: 2;
+  animation: hero-float 8s ease-in-out 0.8s infinite;
+}
+.pane-vault {
+  right: 0;
+  top: 96px;
+  width: 340px;
+  padding: 20px;
+  z-index: 2;
+  animation: hero-float 9s ease-in-out 1.6s infinite;
+}
+.pane-toast {
+  left: 50%;
+  top: 430px;
+  width: 440px;
+  margin-left: -220px;
+  padding: 14px 18px;
+  border-radius: 16px;
+  z-index: 4;
+  border-color: rgb(127 160 255 / 0.5);
+  background: linear-gradient(180deg, rgb(25 45 110 / 0.95), rgb(13 26 70 / 0.95));
+  animation: hero-toast 12s ease infinite;
+}
+.feed-window {
+  height: 260px;
+  overflow: hidden;
+  mask-image: linear-gradient(180deg, transparent, #000 12%, #000 88%, transparent);
+}
+.feed-list {
+  animation: hero-feed 12s cubic-bezier(0.7, 0, 0.3, 1) infinite;
+}
+.limit-used {
+  animation: hero-use 12s ease-in-out infinite;
+}
+.blocked {
+  animation: hero-block 12s ease infinite;
+}
+.agent-swap {
+  animation: rise 0.6s ease both;
+}
+
+@keyframes hero-float {
+  50% {
+    transform: translateY(-10px);
+  }
+}
+@keyframes hero-use {
+  0%,
+  10% {
+    width: 18%;
+  }
+  40%,
+  94% {
+    width: 62%;
+  }
+  100% {
+    width: 18%;
+  }
+}
+@keyframes hero-block {
+  0%,
+  38% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  42%,
+  62% {
+    opacity: 1;
+    transform: none;
+    box-shadow:
+      0 0 0 1px rgb(255 92 58 / 0.6),
+      0 0 30px rgb(255 92 58 / 0.25);
+  }
+  66%,
+  100% {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@keyframes hero-toast {
+  0%,
+  66% {
+    opacity: 0;
+    transform: translateY(24px) scale(0.97);
+  }
+  70%,
+  92% {
+    opacity: 1;
+    transform: none;
+  }
+  96%,
+  100% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+@keyframes hero-feed {
+  0%,
+  10% {
+    transform: translateY(0);
+  }
+  12.5%,
+  22.5% {
+    transform: translateY(-52px);
+  }
+  25%,
+  35% {
+    transform: translateY(-104px);
+  }
+  37.5%,
+  47.5% {
+    transform: translateY(-156px);
+  }
+  50%,
+  60% {
+    transform: translateY(-208px);
+  }
+  62.5%,
+  72.5% {
+    transform: translateY(-260px);
+  }
+  75%,
+  85% {
+    transform: translateY(-312px);
+  }
+  87.5%,
+  97.5% {
+    transform: translateY(-364px);
+  }
+  100% {
+    transform: translateY(-416px);
+  }
+}
+
+/* Phones and small tablets: the cards stack, flat and still. */
+@media (max-width: 1100px) {
+  .hero-ui {
+    height: auto;
+    perspective: none;
+  }
+  .hero-tilt {
+    position: static;
+    transform: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
+  .pane {
+    position: relative;
+    inset: auto;
+    margin: 0;
+    width: min(470px, 100%);
+    animation: none;
+  }
+  .pane-toast {
+    opacity: 1;
+  }
+}
+
+/* The walkthrough: a pinned intro on the left, a timeline of steps on the right. */
+@media (min-width: 960px) {
+  .walk-pin {
+    position: sticky;
+    top: 110px;
+  }
+}
+.walk-rail {
+  position: relative;
+  padding-left: 34px;
+  border-left: 1px solid rgb(255 255 255 / 0.1);
+}
+.walk-step {
+  position: relative;
+}
+.walk-step::before {
+  content: "";
+  position: absolute;
+  left: -41px;
+  top: 36px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #05070d;
+  border: 2px solid var(--dot);
+}
+@media (max-width: 700px) {
+  .walk-rail {
+    padding-left: 0;
+    border-left: 0;
+  }
+  .walk-step::before {
+    display: none;
+  }
+}
