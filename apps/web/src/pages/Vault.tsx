@@ -14,6 +14,7 @@ import { api, type SignedQuoteResponse } from "../lib/api";
 import { useAgents, useClaims, usePolicies, waterfall } from "../lib/chain";
 import { isRpcUnavailable } from "../lib/errors";
 import { BREACH_TYPES, POLICY_STATUS, bps, parseUsd, short, usd, when } from "../lib/format";
+import { positiveAmountError } from "../lib/validate";
 import { tokenSymbol } from "../lib/tokens";
 import {
   AddressLink,
@@ -563,6 +564,11 @@ function BuyCover(props: {
   const [quoting, setQuoting] = useState(false);
   const tx = useSend();
   const cover = parseUsd(amount);
+  // Checked as it's typed: testnet cover has a cap, and the quote would be refused over it.
+  const coverError = positiveAmountError(amount, {
+    value: BigInt(SELF_SERVE_MAX_COVER_USD) * 1_000_000n,
+    message: `Testnet cover is capped at ${SELF_SERVE_MAX_COVER_USD.toLocaleString("en-US")} tUSDG.`,
+  });
   async function getQuote() {
     if (!cover || props.agentId === undefined) return;
     setQuoting(true);
@@ -613,9 +619,14 @@ function BuyCover(props: {
             placeholder="20,000"
             inputMode="decimal"
             suffix="tUSDG"
-            error={amount && !cover ? "Enter a positive amount with at most 6 decimals." : null}
+            error={coverError}
           />
-          <Button kind="secondary" disabled={!cover} loading={quoting} onClick={getQuote}>
+          <Button
+            kind="secondary"
+            disabled={!cover || Boolean(coverError)}
+            loading={quoting}
+            onClick={getQuote}
+          >
             {quoting ? "Pricing…" : "Get a quote"}
           </Button>
           <ErrorText error={quoteError} />
@@ -776,6 +787,7 @@ function SimulateBreach(props: {
             onChange={setAmount}
             inputMode="decimal"
             suffix="tUSDG"
+            error={positiveAmountError(amount)}
           />
           <Button kind="danger" disabled={!value} loading={tx.busy} onClick={breach}>
             Simulate the breach

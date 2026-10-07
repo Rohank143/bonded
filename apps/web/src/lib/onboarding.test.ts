@@ -102,9 +102,14 @@ describe("validateOnboarding", () => {
       /agent key/,
     );
     const low = { ...form, maxDailyUsd: 100 };
-    expect(validateOnboarding(deployment, { ...input, form: low }).join(" ")).toMatch(
-      /daily limit/,
-    );
+    // One plain message each, not the schema's raw wording as well.
+    expect(validateOnboarding(deployment, { ...input, form: low })).toEqual([
+      "The daily limit must be at least the per-trade limit.",
+    ]);
+    const badRefund = { ...form, destinations: ["0x123"] };
+    expect(validateOnboarding(deployment, { ...input, form: badRefund })).toEqual([
+      "The refund address 0x123 isn't an address.",
+    ]);
   });
 });
 
