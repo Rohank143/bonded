@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { tokenSymbol } from "./tokens";
+import { splitTokens, tokenSymbol } from "./tokens";
 
 const tokens = {
   usdg: "0x1111111111111111111111111111111111111111",
@@ -16,5 +16,21 @@ describe("tokenSymbol", () => {
   });
   it("shortens an address it doesn't know", () => {
     expect(tokenSymbol("0xabcdef0000000000000000000000000000001234", tokens)).toBe("0xabcd…1234");
+  });
+});
+
+describe("splitTokens", () => {
+  it("marks each token symbol and keeps the text around it", () => {
+    expect(splitTokens("Deposit 100 tUSDG into tNVDA")).toEqual([
+      { text: "Deposit 100 ", token: false },
+      { text: "tUSDG", token: true },
+      { text: " into ", token: false },
+      { text: "tNVDA", token: true },
+    ]);
+  });
+  it("returns plain text as one run and ignores look-alikes", () => {
+    expect(splitTokens("no tokens here")).toEqual([{ text: "no tokens here", token: false }]);
+    expect(splitTokens("atUSDG tUSDGx")).toEqual([{ text: "atUSDG tUSDGx", token: false }]);
+    expect(splitTokens("")).toEqual([]);
   });
 });

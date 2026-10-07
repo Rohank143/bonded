@@ -33,7 +33,7 @@ import {
   Unavailable,
   linkClass,
 } from "../components/ui";
-import { TokenChip } from "../components/token";
+import { Token, TokenChip, withTokens } from "../components/token";
 import { useSend } from "../components/wallet";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -164,7 +164,9 @@ function VaultView({ vault }: { vault: Address }) {
               <p className="mt-2 font-serif text-5xl leading-none tabular-nums">
                 {total?.result !== undefined ? `$${usd(total.result, 0)}` : "…"}
               </p>
-              <p className="mt-1 text-xs text-muted">tUSDG</p>
+              <p className="mt-1 text-xs text-muted">
+                <Token symbol="tUSDG" />
+              </p>
             </div>
             <div>
               <p className="eyebrow">Agent</p>
@@ -487,7 +489,9 @@ function DepositWithdraw(props: {
         ))}
       </div>
       {!props.connected ? (
-        <p className="mt-5 text-sm text-muted">Connect a wallet to {tab} tUSDG.</p>
+        <p className="mt-5 text-sm text-muted">
+          Connect a wallet to {tab} <Token symbol="tUSDG" />.
+        </p>
       ) : (
         <div className="mt-5 flex flex-col gap-3">
           <Input
@@ -496,7 +500,7 @@ function DepositWithdraw(props: {
                 <span>Amount</span>
                 <span className="font-normal text-muted">
                   {tab === "deposit" ? "Wallet" : "Withdrawable"}:{" "}
-                  {limit !== undefined ? usd(limit) : "…"} tUSDG
+                  {limit !== undefined ? usd(limit) : "…"} <Token symbol="tUSDG" />
                 </span>
               </span>
             }
@@ -504,7 +508,7 @@ function DepositWithdraw(props: {
             onChange={setAmount}
             placeholder="1,000"
             inputMode="decimal"
-            suffix="tUSDG"
+            suffix={<Token symbol="tUSDG" />}
             error={
               amount && !value
                 ? "Enter a positive amount with at most 6 decimals."
@@ -531,14 +535,14 @@ function DepositWithdraw(props: {
           </div>
           <Button disabled={!value || over || tx.busy} loading={tx.busy} onClick={run}>
             {value
-              ? `${tab === "deposit" ? "Deposit" : "Withdraw"} ${usd(value)} tUSDG`
+              ? withTokens(`${tab === "deposit" ? "Deposit" : "Withdraw"} ${usd(value)} tUSDG`)
               : tab === "deposit"
                 ? "Deposit"
                 : "Withdraw"}
           </Button>
           {tab === "deposit" && (
             <p className="text-xs text-muted">
-              Two steps: approve, then deposit. Need test tUSDG? Get some on the{" "}
+              Two steps: approve, then deposit. Need test <Token symbol="tUSDG" />? Get some on the{" "}
               <Link to="/underwrite" className={linkClass}>
                 cover pool
               </Link>{" "}
@@ -610,7 +614,7 @@ function BuyCover(props: {
           <p className="text-sm text-muted">
             Quotes are priced from the agent's on-chain score and bond, and the premium streams from
             the vault. Only the guardian, who must also own the agent, can buy. Testnet cover is
-            capped at {SELF_SERVE_MAX_COVER_USD.toLocaleString("en-US")} tUSDG.
+            capped at {SELF_SERVE_MAX_COVER_USD.toLocaleString("en-US")} <Token symbol="tUSDG" />.
           </p>
           <Input
             label="Cover amount"
@@ -618,7 +622,7 @@ function BuyCover(props: {
             onChange={(a) => (setAmount(a), setQuote(undefined))}
             placeholder="20,000"
             inputMode="decimal"
-            suffix="tUSDG"
+            suffix={<Token symbol="tUSDG" />}
             error={coverError}
           />
           <Button
@@ -769,8 +773,9 @@ function SimulateBreach(props: {
     <details className="panel p-5">
       <summary className="cursor-pointer text-sm font-semibold text-warn">Testing tools</summary>
       <p className="mt-3 text-sm leading-relaxed text-muted">
-        Your wallet is this vault's agent key, so you can act as a tricked agent: send tUSDG to the
-        burn address, which no mandate allows. The vault records a breach and freezes the agent.
+        Your wallet is this vault's agent key, so you can act as a tricked agent: send{" "}
+        <Token symbol="tUSDG" /> to the burn address, which no mandate allows. The vault records a
+        breach and freezes the agent.
         {props.monitor
           ? props.covered
             ? " With cover active, the keeper files the claim within a minute: the operator's bond pays first, then the pool."
@@ -786,7 +791,7 @@ function SimulateBreach(props: {
             value={amount}
             onChange={setAmount}
             inputMode="decimal"
-            suffix="tUSDG"
+            suffix={<Token symbol="tUSDG" />}
             error={positiveAmountError(amount)}
           />
           <Button kind="danger" disabled={!value} loading={tx.busy} onClick={breach}>

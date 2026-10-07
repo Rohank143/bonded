@@ -16,7 +16,7 @@ import { api } from "../lib/api";
 import { useAgents, useClaims, useVaults, waterfall, type AgentRow } from "../lib/chain";
 import { short, usd } from "../lib/format";
 import { Badge, ScoreRing, Skeleton, TierBadge, buttonClass, linkClass } from "../components/ui";
-import { TokenLogo } from "../components/token";
+import { TokenLogo, withTokens } from "../components/token";
 
 const ZERO = "0x0000000000000000000000000000000000000000" as Address;
 
@@ -373,7 +373,7 @@ function AcrossBonded() {
     <div className="panel min-w-0 p-5">
       <p className="eyebrow">{label}</p>
       <p className="mt-2 font-serif text-[40px] leading-none tabular-nums">{value ?? "…"}</p>
-      <p className="mt-1.5 text-xs text-muted">{hint}</p>
+      <p className="mt-1.5 text-xs text-muted">{withTokens(hint)}</p>
     </div>
   );
   return (

@@ -19,6 +19,7 @@ import { apiLookups, isRegistered } from "../lib/agent";
 import { useAgents } from "../lib/chain";
 import { tierMeaning } from "../lib/glossary";
 import { OwnerTools } from "../components/owner-tools";
+import { Token } from "../components/token";
 import { bps, short, usd, when } from "../lib/format";
 import {
   AddressLink,
@@ -425,7 +426,9 @@ function VaultSummary({ vault }: { vault: Address }) {
       <p className="mt-4 text-3xl font-bold tracking-tight">
         {total?.result !== undefined ? `$${usd(total.result)}` : "…"}
       </p>
-      <p className="text-xs text-muted">tUSDG held for depositors</p>
+      <p className="text-xs text-muted">
+        <Token symbol="tUSDG" /> held for depositors
+      </p>
       {policy ? (
         <>
           <div className="mt-4 mb-1.5 flex justify-between text-xs">

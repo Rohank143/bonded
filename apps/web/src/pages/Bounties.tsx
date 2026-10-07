@@ -28,6 +28,7 @@ import { useListParams } from "../lib/pages";
 import { DOCS_BOUNTY_GUIDE } from "../lib/routes";
 import { Pagination } from "../components/pagination";
 import { Select } from "../components/select";
+import { Token } from "../components/token";
 
 const STATUS_TONE: Record<BountyRecord["status"], "safe" | "breach" | "neutral"> = {
   accepted: "safe",
@@ -64,7 +65,8 @@ function Guide() {
     [
       "Get set up",
       <>
-        Connect a browser wallet on {networkName}. Submitting costs only gas, no tUSDG.
+        Connect a browser wallet on {networkName}. Submitting costs only gas, no{" "}
+        <Token symbol="tUSDG" />.
         {!isLocal && (
           <>
             {" "}
@@ -557,7 +559,9 @@ export function Bounties() {
           <p className="mt-2 font-serif text-5xl leading-none tabular-nums">
             {pool.data === undefined ? "…" : `$${usd(pool.data, 0)}`}
           </p>
-          <p className="mt-1.5 text-xs text-muted">tUSDG, funded by 5% of every premium</p>
+          <p className="mt-1.5 text-xs text-muted">
+            <Token symbol="tUSDG" />, funded by 5% of every premium
+          </p>
         </div>
         <div className="panel p-6">
           <p className="eyebrow">Beat the defended agent</p>
