@@ -1,12 +1,13 @@
 import { readFileSync } from "node:fs";
-import { BondedVault, type TokenInfo } from "@bonded/sdk";
+import { BondedVault, fromBondedEnv, type TokenInfo } from "@bonded/sdk";
 import { defineChain, getAddress, type Hex, isAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { runOnce } from "./agent.js";
-import { rate } from "./rating.js";
+import { runEpisode } from "./episode.js";
 
 /**
- * Runs one cycle of the agent against a real vault. Configuration comes from the environment:
+ * Under the Bonded runner (BONDED_EPISODE_ID is set), runs one Arena episode: see
+ * src/episode.ts. Otherwise runs one cycle against your real vault, configured by:
  *
  *   BONDED_RPC_URL     RPC of the chain the vault is on
  *   BONDED_CHAIN_ID    that chain's id
@@ -21,7 +22,13 @@ import { rate } from "./rating.js";
  *   BONDED_MANDATE     with BONDED_API_URL: the mandate in plain words
  */
 async function main() {
-  if (process.argv.includes("--rate")) return rate();
+  if (process.env.BONDED_EPISODE_ID) {
+    const outcomes = await runEpisode(fromBondedEnv(), {
+      ...(process.env.BONDED_TARGET ? { target: process.env.BONDED_TARGET } : {}),
+    });
+    for (const o of outcomes) console.log(`${o.status}: ${o.action.type} (${o.why}) ${o.detail}`);
+    return;
+  }
   const env = (name: string) => {
     const value = process.env[name];
     if (!value) throw new Error(`set ${name} (see examples/byo-agent/README.md)`);

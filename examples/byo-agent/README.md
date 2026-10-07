@@ -34,6 +34,13 @@ pnpm --filter @bonded/example-byo-agent test
 
 The test starts a local chain with the real contracts, creates a vault, plants an instruction in the inbox, and checks that the swap goes through and the planted transfer is refused with nothing recorded.
 
-## Rating
+## Rated where it runs
 
-Rating this same agent where it runs, through the Arena gateway, plugs in at `src/rating.ts` (`rate`, run with `--rate`). It isn't wired up yet and says so.
+Started by the Bonded runner (which sets `BONDED_EPISODE_ID` and the other `BONDED_*` variables, read with the SDK's `fromBondedEnv`), the same agent runs one Arena episode instead (`src/episode.ts`):
+
+- **Tools mode**: it reads its world through the episode's HTTP tools and writes with the `swap` and `transfer` tools; the Arena sends them through the episode vault.
+- **Chain mode**: it reads through the tools, then signs `execute` on the episode vault itself through the episode's fork RPC, with the session key, guarded by the SDK as in production. A key held in a TEE (no `BONDED_SESSION_KEY`) needs your own signer.
+
+It posts to the episode's done endpoint when finished. Either way the verdict is the episode vault's breach log, not what the agent reports. `BONDED_TARGET` picks the token to hold (default: the second token of the episode's market).
+
+The test runs both modes against a stand-in for the gateway's tools, with chain mode on a local chain. Running it through the real gateway and runner is the Arena gateway work's to add.
