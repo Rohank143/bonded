@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
+import { Link } from "react-router";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useAccount, usePublicClient, useReadContract } from "wagmi";
 import { getAbiItem, type Hex } from "viem";
@@ -85,9 +86,12 @@ function Guide() {
     [
       "Write the attack",
       <>
-        Use the form, or switch to YAML if you prefer, and start from the example. Its id must start
-        with the class (<code>A6-...</code>) and use one of the class's surfaces (see Attack classes
-        on this page). The <code>payloadTemplate</code> is the text planted on that surface: use{" "}
+        Fill in the form, or paste YAML if you already have a spec (start from the example). Its id
+        must start with the class (<code>A6-...</code>) and use one of the class's surfaces (the{" "}
+        <Link to="/attacks" className={linkClass}>
+          Red team
+        </Link>{" "}
+        page lists them). The <code>payloadTemplate</code> is the text planted on that surface: use{" "}
         <code>{"{{attacker}}"}</code> for an address you control, and <code>{"{{amount}}"}</code>,{" "}
         <code>{"{{token}}"}</code>, <code>{"{{vault}}"}</code>, <code>{"{{depositor}}"}</code> or{" "}
         <code>{"{{lookalike}}"}</code> where you need them. Don't set a <code>goal</code>: the Arena
@@ -134,40 +138,6 @@ function Guide() {
   );
 }
 
-/**
- * The ten attack classes and the surfaces each can be planted on. Kept on the page, apart from
- * the step-by-step guide, because it's the reference you check while writing a spec.
- */
-function AttackClasses() {
-  return (
-    <Card
-      title="Attack classes"
-      description="Every spec names one class and plants its text on one of that class's surfaces."
-    >
-      <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        {Object.entries(ATTACK_CLASSES).map(([id, c]) => (
-          <li key={id} className="flex flex-col rounded-2xl border border-line bg-white/[0.02] p-4">
-            <span className="w-fit rounded-md bg-white/[0.06] px-1.5 py-0.5 font-mono text-[11px] text-soft">
-              {id}
-            </span>
-            <span className="mt-2.5 text-sm leading-snug font-semibold">{c.name}</span>
-            <span className="mt-auto flex flex-wrap gap-1 pt-3">
-              {c.surfaces.map((s) => (
-                <span
-                  key={s}
-                  className="rounded border border-line-strong px-1.5 py-px font-mono text-[10.5px] text-muted"
-                >
-                  {s}
-                </span>
-              ))}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </Card>
-  );
-}
-
 function GuideButton({ kind = "secondary" }: { kind?: "secondary" | "ghost" }) {
   return (
     <InfoPanel
@@ -202,6 +172,19 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 }
 
 const STAGES = ["Write", "Commit", "Reveal", "Validate"] as const;
+
+const WRITE_MODES = [
+  {
+    id: "form",
+    title: "Fill in a form",
+    note: "Guided fields for each part of the attack. The page writes the YAML for you.",
+  },
+  {
+    id: "yaml",
+    title: "Paste YAML",
+    note: "For a spec you already wrote or tested locally. Edit it in place.",
+  },
+] as const;
 
 function Submit() {
   const { address } = useAccount();
@@ -321,25 +304,32 @@ function Submit() {
 
   return (
     <section className="panel overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-line px-6 py-5">
+      <div className="flex flex-wrap items-start justify-between gap-4 px-6 pt-6">
         <div>
           <h2 className="text-lg font-bold">Submit an attack</h2>
-          <p className="mt-1 text-sm text-muted">
+          <p className="mt-1 max-w-2xl text-sm text-muted">
             Committing first timestamps your attack without revealing it, so nobody can copy it.
           </p>
         </div>
         <GuideButton kind="ghost" />
       </div>
 
-      <ol className="grid grid-cols-4 border-b border-line" aria-label="Progress">
+      <ol className="flex flex-wrap items-center gap-x-3 gap-y-2 px-6 pt-5" aria-label="Progress">
         {STAGES.map((label, i) => {
           const done = stage > i;
           const current = stage === i;
           return (
             <li
               key={label}
-              className={`flex items-center gap-2.5 px-6 py-3.5 text-sm ${current ? "text-ink" : done ? "text-soft" : "text-muted"}`}
+              aria-current={current ? "step" : undefined}
+              className={`flex items-center gap-2 text-sm ${current ? "text-ink" : done ? "text-soft" : "text-muted"}`}
             >
+              {i > 0 && (
+                <span
+                  aria-hidden
+                  className={`mr-1 hidden h-px w-10 sm:block ${done || current ? "bg-accent/50" : "bg-line-strong"}`}
+                />
+              )}
               <span
                 className={`flex size-6 items-center justify-center rounded-full font-mono text-[11px] ${done ? "bg-safe text-paper" : current ? "btn-brand text-on-brand" : "border border-line-strong"}`}
               >
@@ -351,137 +341,159 @@ function Submit() {
         })}
       </ol>
 
-      <div className="p-6">
-        <div className="overflow-hidden rounded-2xl border border-line-strong bg-black/40">
-          <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-            <span
-              className="inline-flex rounded-full border border-line-strong p-0.5 text-xs"
-              role="group"
-              aria-label="Write the attack as a form or as YAML"
-            >
-              {(
-                [
-                  ["form", "Form"],
-                  ["yaml", "YAML"],
-                ] as const
-              ).map(([m, label]) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => switchTo(m)}
-                  aria-pressed={mode === m}
-                  className={`rounded-full px-3 py-1 font-semibold transition ${mode === m ? "bg-white/[0.1] text-ink" : "text-muted hover:text-ink"}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </span>
-            <span className="flex gap-1">
-              {yaml.trim() ? (
-                <button
-                  type="button"
-                  onClick={() => reset("")}
-                  className="rounded-full px-2.5 py-1 text-xs font-semibold text-muted hover:bg-white/[0.06] hover:text-ink"
-                >
-                  Clear
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => reset(BOUNTY_SPEC_EXAMPLE)}
-                  className="rounded-full px-2.5 py-1 text-xs font-semibold text-accent hover:bg-white/[0.06]"
-                >
-                  Insert the example
-                </button>
-              )}
-            </span>
-          </div>
-          {modeNote && (
-            <p
-              className="border-b border-line bg-breach-soft px-4 py-2.5 text-xs text-breach"
-              role="status"
-            >
-              {modeNote}
+      <div className="mt-6 border-t border-line px-6 py-6">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold">How do you want to write it?</h3>
+            <p className="mt-1 text-xs text-muted">
+              Both make the same spec. You can switch at any time.
             </p>
-          )}
+          </div>
+          <span className="flex gap-1">
+            {yaml.trim() ? (
+              <button
+                type="button"
+                onClick={() => reset("")}
+                className="rounded-full px-3 py-1.5 text-xs font-semibold text-muted hover:bg-white/[0.06] hover:text-ink"
+              >
+                Clear
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => reset(BOUNTY_SPEC_EXAMPLE)}
+                className="rounded-full px-3 py-1.5 text-xs font-semibold text-accent hover:bg-white/[0.06]"
+              >
+                Start from the example
+              </button>
+            )}
+          </span>
+        </div>
+
+        <div
+          role="radiogroup"
+          aria-label="Write the attack as a form or as YAML"
+          className="mt-4 grid gap-3 sm:grid-cols-2"
+        >
+          {WRITE_MODES.map((m) => {
+            const on = mode === m.id;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                onClick={() => switchTo(m.id)}
+                className={`flex items-start gap-3 rounded-2xl border p-4 text-left transition ${on ? "border-accent/60 bg-accent-soft" : "border-line hover:border-line-strong hover:bg-white/[0.02]"}`}
+              >
+                <span
+                  aria-hidden
+                  className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border ${on ? "border-accent" : "border-line-strong"}`}
+                >
+                  {on && <span className="size-2 rounded-full bg-accent" />}
+                </span>
+                <span>
+                  <span className="block text-sm font-semibold text-ink">{m.title}</span>
+                  <span className="mt-0.5 block text-xs leading-relaxed text-muted">{m.note}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {modeNote && (
+          <p
+            className="mt-4 rounded-xl bg-breach-soft px-4 py-2.5 text-xs text-breach"
+            role="status"
+          >
+            {modeNote}
+          </p>
+        )}
+
+        <div className="mt-8">
           {mode === "form" ? (
             <SpecBuilder form={form} onChange={editForm} />
           ) : (
-            <CodeEditor
-              value={yaml}
-              onChange={(text) => {
-                setYaml(text);
-                setModeNote(null);
-              }}
-              label="Attack spec in YAML"
-              placeholder="# Paste or write your attack spec here, or insert the example."
-              invalid={Boolean(check && "error" in check)}
-            />
+            <div className="overflow-hidden rounded-2xl border border-line-strong bg-black/40">
+              <CodeEditor
+                value={yaml}
+                onChange={(text) => {
+                  setYaml(text);
+                  setModeNote(null);
+                }}
+                label="Attack spec in YAML"
+                placeholder="# Paste or write your attack spec here, or start from the example."
+                invalid={Boolean(check && "error" in check)}
+              />
+            </div>
           )}
-          {mode === "form" && yaml.trim() && (
-            <details className="border-t border-line">
-              <summary className="cursor-pointer px-4 py-2.5 font-mono text-xs text-muted hover:text-ink">
-                The YAML this makes
-              </summary>
-              <pre className="max-h-72 overflow-auto px-4 pb-4 font-mono text-xs whitespace-pre-wrap text-soft">
-                {yaml}
-              </pre>
-            </details>
-          )}
-          <div
-            className={`flex items-center gap-2 border-t border-line px-4 py-2.5 font-mono text-xs ${!check ? "text-muted" : "spec" in check ? "text-safe" : "text-breach"}`}
-            role="status"
-          >
+        </div>
+
+        <div
+          className={`mt-6 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl px-4 py-3 font-mono text-xs ${!check ? "bg-white/[0.03] text-muted" : "spec" in check ? "bg-safe-soft text-safe" : "bg-breach-soft text-breach"}`}
+          role="status"
+        >
+          <span className="min-w-0 flex-1">
             {!check
               ? "Waiting for a spec"
               : "spec" in check
                 ? `✓ Valid: ${check.spec.class} via ${check.spec.surfaces.join(", ")}`
                 : `✗ ${check.error}`}
-            <span className="ml-auto text-muted">
-              {yaml ? `${yaml.split("\n").length} lines` : ""}
-            </span>
-          </div>
+          </span>
+          {yaml.trim() && <span className="text-muted">{yaml.split("\n").length} lines</span>}
         </div>
+        {mode === "form" && yaml.trim() && (
+          <details className="group mt-3">
+            <summary className="cursor-pointer text-xs font-semibold text-muted hover:text-ink">
+              Show the YAML this makes
+            </summary>
+            <pre className="mt-3 max-h-72 overflow-auto rounded-xl bg-black/40 p-4 font-mono text-xs whitespace-pre-wrap text-soft">
+              {yaml}
+            </pre>
+          </details>
+        )}
+      </div>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2">
-          <div className="min-w-0 rounded-2xl border border-line p-4">
-            <div className="flex items-center justify-between">
-              <p className="eyebrow">Salt · save it to reveal</p>
-              <span className="flex">
-                <CopyButton text={salt} label="Copy" />
-                {id === undefined && (
-                  <button
-                    type="button"
-                    onClick={() => setSalt(newSalt())}
-                    className="rounded-full px-2.5 py-1 text-xs font-semibold text-muted hover:bg-white/[0.06] hover:text-ink"
-                  >
-                    New
-                  </button>
-                )}
-              </span>
-            </div>
+      <dl className="grid gap-x-10 gap-y-5 border-t border-line px-6 py-6 md:grid-cols-2">
+        <div className="min-w-0">
+          <dt className="flex items-center justify-between gap-2">
+            <span className="eyebrow">Salt · save it to reveal</span>
+            <span className="flex">
+              <CopyButton text={salt} label="Copy" />
+              {id === undefined && (
+                <button
+                  type="button"
+                  onClick={() => setSalt(newSalt())}
+                  className="rounded-full px-2.5 py-1 text-xs font-semibold text-muted hover:bg-white/[0.06] hover:text-ink"
+                >
+                  New
+                </button>
+              )}
+            </span>
+          </dt>
+          <dd className="mt-1.5">
             <input
               value={salt}
               onChange={(e) => setSalt(e.target.value)}
               aria-label="Salt"
               spellCheck={false}
-              className={`mt-2 w-full truncate bg-transparent font-mono text-sm outline-none ${saltOk ? "text-soft" : "text-breach"}`}
+              className={`w-full truncate border-b bg-transparent pb-2 font-mono text-sm outline-none focus:border-accent ${saltOk ? "border-line-strong text-soft" : "border-breach text-breach"}`}
             />
             {!saltOk && (
               <p className="mt-1 text-xs text-breach">The salt must be 0x and 64 hex digits.</p>
             )}
-          </div>
-          <div className="min-w-0 rounded-2xl border border-line p-4">
-            <div className="flex items-center justify-between">
-              <p className="eyebrow">Spec URI</p>
-              {spec.data && <CopyButton text={spec.data} label="Copy" />}
-            </div>
-            <p className="mt-2 truncate font-mono text-sm text-muted">
-              {spec.data ?? "Appears once the spec is valid"}
-            </p>
-          </div>
+          </dd>
         </div>
-      </div>
+        <div className="min-w-0">
+          <dt className="flex min-h-7 items-center justify-between gap-2">
+            <span className="eyebrow">Spec URI</span>
+            {spec.data && <CopyButton text={spec.data} label="Copy" />}
+          </dt>
+          <dd className="mt-1.5 truncate border-b border-line pb-2 font-mono text-sm text-muted">
+            {spec.data ?? "Appears once the spec is valid"}
+          </dd>
+        </div>
+      </dl>
 
       <div className="flex flex-wrap items-center justify-between gap-4 border-t border-line bg-white/[0.02] px-6 py-5">
         <div className="min-w-0 text-sm">
@@ -574,7 +586,6 @@ export function Bounties() {
           <p className="mt-1.5 text-xs text-muted">against the undefended agent</p>
         </div>
       </section>
-      <AttackClasses />
       <Submit />
       <Card
         title="Submissions"
