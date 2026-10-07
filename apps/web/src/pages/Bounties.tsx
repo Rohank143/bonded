@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useAccount, usePublicClient, useReadContract } from "wagmi";
 import { getAbiItem, type Hex } from "viem";
 import { ATTACK_CLASSES, BOUNTY_SPEC_EXAMPLE, bountyBoardAbi, testTokenAbi } from "@bonded/shared";
@@ -16,6 +16,7 @@ import {
   Card,
   EmptyState,
   ErrorText,
+  LoadMore,
   Loading,
   Page,
   TxLink,
@@ -458,7 +459,15 @@ function Submit() {
 }
 
 export function Bounties() {
-  const list = useQuery({ queryKey: ["bounties"], queryFn: api.bounties, refetchInterval: 15_000 });
+  // Newest submissions first, a page at a time; refreshing re-reads only the loaded pages.
+  const list = useInfiniteQuery({
+    queryKey: ["bounties"],
+    queryFn: ({ pageParam }) => api.bounties(pageParam, 20),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.next ?? undefined,
+    refetchInterval: 15_000,
+  });
+  const submissions = list.data?.pages.flatMap((p) => p.items);
   const pool = useReadContract({
     address: deployment.usdg,
     abi: testTokenAbi,
@@ -501,13 +510,13 @@ export function Bounties() {
       >
         {list.isPending && !list.error && <Loading what="bounties" />}
         <ErrorText error={list.error} />
-        {list.data?.length === 0 && (
+        {submissions?.length === 0 && (
           <EmptyState title="No submissions yet">
             Be the first to find an attack we miss.
           </EmptyState>
         )}
         <ul className="flex flex-col gap-3">
-          {list.data?.map((b) => (
+          {submissions?.map((b) => (
             <li key={b.submissionId} className="rounded-2xl border border-line p-4 text-sm">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <span>
@@ -530,6 +539,11 @@ export function Bounties() {
             </li>
           ))}
         </ul>
+        <LoadMore
+          hasMore={list.hasNextPage}
+          loading={list.isFetchingNextPage}
+          onMore={() => void list.fetchNextPage()}
+        />
       </Card>
     </Page>
   );

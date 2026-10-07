@@ -6,16 +6,19 @@ import {
   Card,
   EmptyState,
   ErrorText,
+  LoadMore,
   Loading,
   Page,
   Term,
   TxLink,
   linkClass,
 } from "../components/ui";
+import { usePaged } from "../lib/paged";
 
 export function Claims() {
   const claims = useClaims();
   const all = claims.data ?? [];
+  const page = usePaged(all);
   const sum = (f: (w: ReturnType<typeof waterfall>) => bigint) =>
     all.reduce((s, c) => s + f(waterfall(c)), 0n);
   const stat = (label: ReactNode, value: string, hint: string, tone = "") => (
@@ -81,7 +84,7 @@ export function Claims() {
         </EmptyState>
       )}
       <ul className="flex flex-col gap-4">
-        {all.map((c) => {
+        {page.shown.map((c) => {
           const w = waterfall(c);
           const total = w.loss > 0n ? w.loss : 1n;
           const pct = (v: bigint) => `${Number((v * 10_000n) / total) / 100}%`;
@@ -149,6 +152,12 @@ export function Claims() {
           );
         })}
       </ul>
+      <LoadMore
+        hasMore={page.hasMore}
+        onMore={page.more}
+        shown={page.shown.length}
+        total={page.total}
+      />
     </Page>
   );
 }
