@@ -342,6 +342,10 @@ export type SelfAgentRecord =
       tee?: { url: string; composeHash: string } | null;
       /** Underwriting policy: the most cover it can hold, in tUSDG, by binding. */
       coverCaps?: Record<BindingLevel, number>;
+      /** What protects the funds: a Bonded vault, or a module on the owner's smart account. */
+      protection?: "vault" | "module";
+      /** The vault's or module's address, for agents registered from the web app. */
+      vault?: string | null;
     };
 
 /** GET /self/agents/:id/runner: the runner token (never the token itself) and the runner. */
@@ -420,6 +424,7 @@ export const api = {
     kind: SelfServeKind | SelfServeAgentKind;
     mandate: unknown;
     sentinel?: boolean;
+    protection?: "vault" | "module";
     codeHash?: string;
     mode?: RemoteMode;
     tee?: { url: string; composeHash: string };

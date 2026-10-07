@@ -21,8 +21,10 @@ export async function registerForRatings(sign: Signer, agentId: string, agent: O
     agentId,
     vault: agent.vault,
     mandateHash: mandateHash(agent.mandate),
+    ...(agent.protection === "module" ? { protection: "module" as const } : {}),
     timestamp,
   };
+  const protection = agent.protection === "module" ? { protection: "module" as const } : {};
   if (agent.kind === REMOTE_KIND) {
     if (!agent.remote) throw new Error("your agent's code hash and mode are missing");
     const remote = agent.remote;
@@ -37,6 +39,7 @@ export async function registerForRatings(sign: Signer, agentId: string, agent: O
       codeHash: remote.codeHash,
       mode: remote.mode,
       ...(remote.tee ? { tee: remote.tee } : {}),
+      ...protection,
       timestamp,
       signature,
     });
@@ -54,6 +57,7 @@ export async function registerForRatings(sign: Signer, agentId: string, agent: O
     kind: agent.kind,
     mandate: agent.mandate,
     ...(agent.sentinel ? { sentinel: true } : {}),
+    ...protection,
     timestamp,
     signature,
   });

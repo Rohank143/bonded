@@ -2,18 +2,23 @@ import { useState, type ReactNode } from "react";
 import { Token, TokenLogo } from "../components/token";
 import { Link } from "react-router";
 import { useAccount, useSignMessage, useWriteContract } from "wagmi";
-import { waitForTransactionReceipt } from "wagmi/actions";
-import { parseEventLogs, type Abi, type Address, type Hex } from "viem";
+import { readContract, waitForTransactionReceipt } from "wagmi/actions";
+import { isAddress, parseEventLogs, type Abi, type Address, type Hex } from "viem";
 import {
   REMOTE_KIND,
   SELF_SERVE_KINDS,
   SELF_SERVE_KIND_LABELS,
   bondedRegistryAbi,
+  mandateCommitment,
+  mandateModuleAbi,
+  mandateModuleFactoryAbi,
   mandateVaultAbi,
   mandateVaultFactoryAbi,
   operatorBondAbi,
   testTokenAbi,
   toEvmMandateParams,
+  withMandateCommitment,
+  type Protection,
   type RemoteAgentSpec,
   type RemoteMode,
   type SelfServeAgentKind,
@@ -43,6 +48,7 @@ import {
   limitError,
 } from "../lib/validate";
 import { registerForRatings } from "../lib/self-serve";
+import { MODULE_DEFERRED_NOTE, moduleInstallCalls, type ModuleCall } from "../lib/module";
 import { DOCS_BYOA } from "../lib/routes";
 import { codeHashError, composeHashError, normaliseCodeHash, teeUrlError } from "../lib/byoa";
 import {
@@ -67,6 +73,15 @@ const STEPS = [
   "Deposit into the vault",
   "Register it for ratings (a signature, no gas)",
 ];
+/** The same steps when a module on the owner's smart account protects the funds. */
+const MODULE_STEPS = [
+  "Register the agent",
+  "Find its module on your smart account",
+  "Get test tUSDG",
+  "Stake the operator bond",
+  "Deposit (none: the funds stay in your account)",
+  "Register it for ratings (a signature, no gas)",
+];
 
 /**
  * Onboard an agent from the browser (docs/AGENTS.md, "What works today"): register it, create its
@@ -83,6 +98,10 @@ export function NewAgent() {
   const [codeHash, setCodeHash] = useState("");
   const [teeUrl, setTeeUrl] = useState("");
   const [composeHash, setComposeHash] = useState("");
+  // Where the funds are protected: a new Bonded vault, or a module on a smart account in use.
+  const [protection, setProtection] = useState<Protection>("vault");
+  const [account, setAccount] = useState("");
+  const [install, setInstall] = useState<{ module: Address; calls: ModuleCall[] }>();
   const [mode, setMode] = useState<"monitor" | "enforce">("monitor");
   const [tokens, setTokens] = useState<MandateToken[]>([...MANDATE_TOKENS]);
   const [refund, setRefund] = useState("");
@@ -141,16 +160,25 @@ export function NewAgent() {
       deposit,
     }),
     ...remoteErrors.filter((e): e is string => Boolean(e)),
+    ...(protection === "module" && !deployment.moduleFactory
+      ? ["Smart-account protection isn't deployed on this chain yet."]
+      : []),
+    ...(protection === "module" && !isAddress(account.trim())
+      ? ["Enter your smart account's address."]
+      : []),
   ];
+  const onModule = protection === "module";
+  const stepLabels = onModule ? MODULE_STEPS : STEPS;
   const saved = user ? loadProgress(deployment.chainId, user) : undefined;
   const unfinished = saved && nextStep(saved) ? saved : undefined;
 
-  const showSteps = (done: OnboardingStep[], hashes: Partial<Record<OnboardingStep, Hex>> = {}) =>
+  const labelsFor = (p: { protection?: Protection }) =>
+    p.protection === "module" ? MODULE_STEPS : STEPS;
+  const showSteps = (done: OnboardingStep[], labels: string[]) =>
     setSteps(
       ONBOARDING_STEPS.map((step, i) => ({
-        label: STEPS[i]!,
+        label: labels[i]!,
         state: done.includes(step) ? "done" : "waiting",
-        ...(hashes[step] ? { hash: hashes[step] } : {}),
       })),
     );
   const mark = (step: OnboardingStep, state: Step["state"], hash?: Hex) =>
@@ -164,7 +192,7 @@ export function NewAgent() {
     const hash = await writeContractAsync({ ...call, chainId: robinhoodTestnet.id } as never);
     const receipt = await waitForTransactionReceipt(wagmiConfig, { hash });
     if (receipt.status !== "success")
-      throw new Error(`${STEPS[ONBOARDING_STEPS.indexOf(step)]} failed`);
+      throw new Error(`${stepLabels[ONBOARDING_STEPS.indexOf(step)]} failed`);
     mark(step, "active", hash);
     return receipt;
   }
@@ -177,7 +205,8 @@ export function NewAgent() {
     if (!user) return;
     setBusy(true);
     setError(null);
-    showSteps(progress.done);
+    showSteps(progress.done, labelsFor(progress));
+    setInstall(undefined);
     const save = (p: OnboardingProgress) => saveProgress(deployment.chainId, user, p);
     const finish = (step: OnboardingStep) => {
       progress = { ...progress, done: [...progress.done, step] };
@@ -185,7 +214,8 @@ export function NewAgent() {
       mark(step, "done");
     };
     const bondValue = parseAmount(progress.bond)!;
-    const depositValue = parseAmount(progress.deposit)!;
+    // A module guards funds already in the smart account: nothing to deposit.
+    const depositValue = progress.protection === "module" ? 0n : parseAmount(progress.deposit)!;
     try {
       if (!progress.done.includes("register")) {
         const registered = await send("register", {
@@ -208,6 +238,78 @@ export function NewAgent() {
       }
       const agentId = BigInt(progress.agentId!);
       const mandate = progress.mandate!;
+      if (!progress.done.includes("vault") && progress.protection === "module") {
+        // The smart account creates and installs its module itself; this step finds it, and
+        // checks it is this agent's and enforces this mandate (its commitment).
+        mark("vault", "active");
+        const factory = deployment.moduleFactory!;
+        const owner = progress.account as Address;
+        const found = await readContract(wagmiConfig, {
+          address: factory,
+          abi: mandateModuleFactoryAbi,
+          functionName: "moduleOf",
+          args: [owner],
+          chainId: robinhoodTestnet.id,
+        });
+        const commitment = mandateCommitment(toEvmMandateParams(mandate));
+        const fits =
+          found !== "0x0000000000000000000000000000000000000000" &&
+          (
+            await Promise.all([
+              readContract(wagmiConfig, {
+                address: found,
+                abi: mandateModuleAbi,
+                functionName: "mandateHash",
+                chainId: robinhoodTestnet.id,
+              }),
+              readContract(wagmiConfig, {
+                address: found,
+                abi: mandateModuleAbi,
+                functionName: "agentId",
+                chainId: robinhoodTestnet.id,
+              }),
+            ])
+          ).every((v, i) =>
+            i === 0 ? String(v).toLowerCase() === commitment.toLowerCase() : v === agentId,
+          );
+        if (!fits) {
+          const args = {
+            factory,
+            account: owner,
+            mandate,
+            agentKey: progress.agentKey as Address,
+            guardian: user,
+            agentId,
+          };
+          const predicted = await readContract(wagmiConfig, {
+            address: factory,
+            abi: mandateModuleFactoryAbi,
+            functionName: "predictModule",
+            args: [
+              owner,
+              withMandateCommitment(toEvmMandateParams(mandate)),
+              args.agentKey,
+              user,
+              agentId,
+            ],
+            chainId: robinhoodTestnet.id,
+          });
+          setInstall({ module: predicted, calls: moduleInstallCalls({ ...args, predicted }) });
+          throw new Error(
+            "Your smart account has no module for this agent yet. Send the calls below from it, then resume onboarding.",
+          );
+        }
+        progress = { ...progress, vault: found };
+        rememberAgent(deployment.chainId, agentId.toString(), {
+          vault: found,
+          kind: progress.kind,
+          mandate,
+          protection: "module",
+          ...(progress.sentinel ? { sentinel: true } : {}),
+          ...(progress.remote ? { remote: progress.remote } : {}),
+        });
+        finish("vault");
+      }
       if (!progress.done.includes("vault")) {
         const made = await send("vault", {
           address: deployment.factory,
@@ -294,6 +396,7 @@ export function NewAgent() {
           mandate,
           ...(progress.sentinel ? { sentinel: true } : {}),
           ...(progress.remote ? { remote: progress.remote } : {}),
+          ...(progress.protection === "module" ? { protection: "module" as const } : {}),
         });
         finish("ratings");
       }
@@ -310,6 +413,7 @@ export function NewAgent() {
       kind,
       ...(sentinel && !own ? { sentinel: true } : {}),
       ...(remote ? { remote } : {}),
+      ...(onModule ? { protection: "module" as const, account: account.trim() } : {}),
       form,
       agentKey: key,
       bond: bond.trim() || "0",
@@ -524,8 +628,44 @@ export function NewAgent() {
             </div>
           </StepCard>
 
-          <StepCard n={3} title="Agent key, bond and deposit">
+          <StepCard n={3} title="Where the funds are, agent key and bond">
             <div className="flex flex-col gap-5 text-sm">
+              <fieldset>
+                <legend className="mb-2 font-medium">What protects the funds</legend>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Choice
+                    name="protection"
+                    checked={!onModule}
+                    onChange={() => setProtection("vault")}
+                    title="Create a Bonded vault"
+                  >
+                    A new Mandate Vault holds the funds; depositors put money in it.
+                  </Choice>
+                  <Choice
+                    name="protection"
+                    checked={onModule}
+                    onChange={() => setProtection("module")}
+                    title="Protect the smart account I already use (ERC-7579 / Safe)"
+                  >
+                    {deployment.moduleFactory
+                      ? "A module on your account enforces the mandate; the funds stay where they are."
+                      : "Not deployed on this chain yet."}
+                  </Choice>
+                </div>
+                {onModule && (
+                  <div className="mt-3 flex flex-col gap-2">
+                    <Input
+                      label="Smart account address"
+                      hint="Your Safe (with Safe7579) or other ERC-7579 account. It creates and installs the module itself; the page gives you the calls."
+                      value={account}
+                      onChange={setAccount}
+                      placeholder="0x…"
+                      error={account ? addressError(account) : null}
+                    />
+                    <p className="text-xs text-muted">{MODULE_DEFERRED_NOTE}</p>
+                  </div>
+                )}
+              </fieldset>
               <fieldset>
                 <legend className="mb-2 font-medium">
                   <Term term="agentKey">The agent's key</Term>, the only key that can act for the
@@ -569,14 +709,16 @@ export function NewAgent() {
                   suffix={<Token symbol="tUSDG" />}
                   error={amountOrZeroError(bond)}
                 />
-                <Input
-                  label="Deposit"
-                  value={deposit}
-                  onChange={setDeposit}
-                  inputMode="decimal"
-                  suffix={<Token symbol="tUSDG" />}
-                  error={amountOrZeroError(deposit)}
-                />
+                {!onModule && (
+                  <Input
+                    label="Deposit"
+                    value={deposit}
+                    onChange={setDeposit}
+                    inputMode="decimal"
+                    suffix={<Token symbol="tUSDG" />}
+                    error={amountOrZeroError(deposit)}
+                  />
+                )}
               </div>
               <p className="text-xs text-muted">
                 Cover needs a bond of 10% to 30% of the cover, depending on the score's tier: 4,000
@@ -594,7 +736,10 @@ export function NewAgent() {
                 <p>
                   You have an unfinished onboarding
                   {unfinished.agentId ? ` of agent ${unfinished.agentId}` : ""}: next step,{" "}
-                  {STEPS[ONBOARDING_STEPS.indexOf(nextStep(unfinished)!)]?.toLowerCase()}.
+                  {labelsFor(unfinished)[
+                    ONBOARDING_STEPS.indexOf(nextStep(unfinished)!)
+                  ]?.toLowerCase()}
+                  .
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" onClick={() => run(unfinished)}>
@@ -654,6 +799,26 @@ export function NewAgent() {
               </ol>
             )}
             <ErrorText error={error} />
+            {install && (
+              <div className="mt-4 flex flex-col gap-3 rounded-lg border border-line-strong p-4 text-sm">
+                <p className="font-medium">Send these from your smart account, in order</p>
+                <p className="text-xs text-muted">
+                  The module will be at <span className="font-mono">{install.module}</span>. In a
+                  Safe, use the transaction builder; one-click install from this page is coming.
+                </p>
+                <ol className="flex flex-col gap-3">
+                  {install.calls.map((call) => (
+                    <li key={call.label} className="flex flex-col gap-1">
+                      <span className="text-xs font-semibold text-soft">{call.label}</span>
+                      <span className="font-mono text-xs break-all text-muted">To {call.to}</span>
+                      <pre className="max-h-28 overflow-auto rounded-lg bg-black/40 p-2.5 font-mono text-[11px] break-all whitespace-pre-wrap text-soft">
+                        {call.data}
+                      </pre>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
             {created && (
               <div className="mt-4 rounded-lg border border-safe/30 bg-safe-soft p-4 text-sm">
                 <p className="font-medium">Agent {created.agentId.toString()} is set up.</p>
@@ -662,9 +827,13 @@ export function NewAgent() {
                     {own ? "Connect and rate it" : "Rate it"}
                   </Link>{" "}
                   ·{" "}
-                  <Link className={linkClass} to={`/vaults/${created.vault}`}>
-                    Its vault (deposits, cover{selfAgent ? ", simulate a breach" : ""})
-                  </Link>
+                  {onModule ? (
+                    <span>Buy cover for its module from the agent's page</span>
+                  ) : (
+                    <Link className={linkClass} to={`/vaults/${created.vault}`}>
+                      Its vault (deposits, cover{selfAgent ? ", simulate a breach" : ""})
+                    </Link>
+                  )}
                 </p>
               </div>
             )}

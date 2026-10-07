@@ -19,6 +19,7 @@ import { apiLookups, isRegistered } from "../lib/agent";
 import { useAgents } from "../lib/chain";
 import { tierMeaning } from "../lib/glossary";
 import { OwnerTools } from "../components/owner-tools";
+import { ModuleCover } from "../components/module-cover";
 import { BindingLine } from "../components/connect-agent";
 import { coverageRows, livenessLine } from "../lib/byoa";
 import { Token } from "../components/token";
@@ -331,6 +332,7 @@ export function Agent() {
 
         <div className="flex min-w-0 flex-[1_1_320px] flex-col gap-4">
           {vault && <VaultSummary vault={vault} />}
+          <ModuleCover agentId={id} />
           <SentinelChecks agentId={id} ratedWith={Boolean(report?.sentinel)} />
           <Card title="Proof on chain">
             <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2.5 text-sm [&_dd]:text-right [&_dt]:text-muted">

@@ -558,7 +558,7 @@ function DepositWithdraw(props: {
   );
 }
 
-function BuyCover(props: {
+export function BuyCover(props: {
   vault: Address;
   agentId?: bigint;
   isGuardian: boolean;

@@ -2,6 +2,7 @@ import {
   EvmMandate,
   demoRouterAbi,
   type EvmDeployment,
+  type Protection,
   type RemoteAgentSpec,
   type SelfServeAgentKind,
 } from "@bonded/shared";
@@ -74,6 +75,8 @@ export interface OnboardedAgent {
   sentinel?: boolean;
   /** The owner's own agent: its declared code hash, mode and TEE. */
   remote?: RemoteAgentSpec;
+  /** "module" when `vault` is a MandateModule on the owner's smart account. */
+  protection?: Protection;
 }
 
 const key = (chainId: number, agentId: string) => `bonded:onboarded:${chainId}:${agentId}`;
@@ -189,6 +192,10 @@ export interface OnboardingProgress {
   sentinel?: boolean;
   /** The owner's own agent: what they declared about it. */
   remote?: RemoteAgentSpec;
+  /** Protect a smart account the owner already uses, with a module, instead of a new vault. */
+  protection?: Protection;
+  /** That smart account. */
+  account?: string;
   form: MandateForm;
   agentKey: string;
   bond: string;
