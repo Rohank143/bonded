@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { describe, resolveHref, transform } from "./transform.mjs";
+import { describe, humanDates, resolveHref, transform } from "./transform.mjs";
 
 const REPO = "https://github.com/ddboy19912/bonded";
 const files = new Set([
@@ -107,4 +107,18 @@ test("description is the first paragraph without markup", () => {
     describe(["", "# T", "", "A **bold** [link](x) claim.", "", "More."]),
     "A bold link claim.",
   );
+});
+
+test("dates in prose read as dates, and code and links keep theirs", () => {
+  assert.equal(
+    humanDates("Rated 2026-10-05 and 2026-01-31."),
+    "Rated October 5, 2026 and January 31, 2026.",
+  );
+  const out = transform(
+    "# T\n\nOn 2026-10-04 (`2026-10-04`, [x](https://e.com/2026-07-10-a)).\n\n```\n2026-10-04\n```",
+    "docs/AGENTS.md",
+    ctx,
+  );
+  assert.match(out, /On October 4, 2026 \(`2026-10-04`, \[x\]\(https:\/\/e\.com\/2026-07-10-a\)\)/);
+  assert.match(out, /```\n2026-10-04\n```/);
 });

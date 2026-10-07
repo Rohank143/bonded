@@ -102,6 +102,29 @@ export function isRepoPath(text) {
   );
 }
 
+const MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+/** `2026-10-05` -> `October 5, 2026`, in prose only (code, links and addresses are untouched). */
+export function humanDates(text) {
+  return text.replace(
+    /\b(20\d{2})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/g,
+    (all, y, m, d) => `${MONTHS[Number(m) - 1]} ${Number(d)}, ${y}`,
+  );
+}
+
 /** A bare `docs/X.md` in prose links to its page, or goes if the site has none. */
 function linkPlainDocPaths(text, ctx) {
   return text.replace(/\b(docs\/[A-Za-z0-9_/.-]+\.md)\b/g, (all, p) => {
@@ -112,10 +135,13 @@ function linkPlainDocPaths(text, ctx) {
 
 /** Wrap or escape one stretch of prose with no code or links in it. */
 function escapePlaceholders(text, ctx) {
-  return linkPlainDocPaths(text, ctx).replace(/<(\/?)([A-Za-z][^<>\n]*)>/g, (all, slash, inner) => {
-    const tag = inner.split(/[\s/]/)[0].toLowerCase();
-    return KNOWN_HTML.has(tag) ? all : `&lt;${slash}${inner}&gt;`;
-  });
+  return humanDates(linkPlainDocPaths(text, ctx)).replace(
+    /<(\/?)([A-Za-z][^<>\n]*)>/g,
+    (all, slash, inner) => {
+      const tag = inner.split(/[\s/]/)[0].toLowerCase();
+      return KNOWN_HTML.has(tag) ? all : `&lt;${slash}${inner}&gt;`;
+    },
+  );
 }
 
 const REPO_MARK = "\u0000";
