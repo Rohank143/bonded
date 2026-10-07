@@ -255,8 +255,8 @@ export function selfServeRoutes(
 
   /**
    * Register an agent for self-serve ratings. The owner signs which vault and which built-in
-   * design; the mandate must hash to the vault's on-chain mandate hash, so the rating is about
-   * exactly the rules that vault enforces.
+   * design, or for their own agent its declared code hash, mode and TEE; the mandate must hash to
+   * the vault's on-chain mandate hash, so the rating is about exactly the rules that vault enforces.
    */
   app.post(
     "/self/agents",

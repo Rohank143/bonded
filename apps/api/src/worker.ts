@@ -246,6 +246,10 @@ async function runLocked(
             });
           },
         });
+        // Every episode must have shown the same TEE deployment, or the measurement isn't earned.
+        // Checked first: a failed TEE check also ends its episode, and this says why.
+        const unbound = binding?.verdict(result.report.episodes.total);
+        if (unbound) throw new RatingRefused(unbound, false);
         if (result.report.stoppedEarly || result.report.episodes.agentErrors)
           throw new Error("incomplete rating");
         // A guard that couldn't answer refused the write to stay safe, but that's no evidence the
@@ -254,9 +258,6 @@ async function runLocked(
           throw new Error(
             `incomplete rating: a guard failed to answer ${result.report.guardFailures} times`,
           );
-        // Every episode must have shown the same TEE deployment, or the measurement isn't earned.
-        const unbound = binding?.verdict(result.report.episodes.total);
-        if (unbound) throw new RatingRefused(unbound, false);
         const current = await chain.read.readContract({
           address: chain.deployment.registry,
           abi: bondedRegistryAbi,
