@@ -6,6 +6,7 @@ import {HookType} from "safe7579/DataTypes.sol";
 import {BondedTypes} from "../../src/libraries/BondedTypes.sol";
 import {MandateModule} from "../../src/MandateModule.sol";
 import {MandateModuleFactory} from "../../src/MandateModuleFactory.sol";
+import {MockOracle} from "../../src/oracles/MockOracle.sol";
 import {ModuleTestBase, ITestAccount} from "./ModuleTestBase.sol";
 
 /// @notice The Safe path end to end, using only the Safe owner's own transactions (what the
@@ -79,6 +80,22 @@ contract ModuleSafe7579Test is ModuleTestBase {
         module.reconcile();
         assertEq(uint8(module.getBreach(0).breachType), uint8(BondedTypes.BreachType.Deferred));
         assertTrue(module.frozen());
+    }
+
+    /// @dev From the review: if the oracle changes between predicting and creating, the batch's
+    ///      install of the predicted (now empty) address fails, so nothing half-installs.
+    function test_InstallingAStalePredictionFails() public {
+        address other = _newAccount(Kind.Safe);
+        BondedTypes.MandateParams memory p = _moduleParams(BondedTypes.MandateMode.Enforce);
+        address predicted = moduleFactory.predictModule(other, p, agent, guardian, agentId);
+        MockOracle newOracle = new MockOracle(owner);
+        vm.prank(owner);
+        factory.setOracle(newOracle);
+        vm.prank(other);
+        assertTrue(moduleFactory.createModule(p, agent, guardian, agentId) != predicted);
+        vm.prank(ENTRY_POINT);
+        vm.expectRevert();
+        ITestAccount(other).installModule(EXECUTOR, predicted, "");
     }
 
     function test_SafeOwnerCanRemoveTheModule() public {

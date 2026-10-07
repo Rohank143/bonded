@@ -12,16 +12,23 @@ import {CoverPool} from "../../src/CoverPool.sol";
 import {OperatorBond} from "../../src/OperatorBond.sol";
 import {CoverManager} from "../../src/CoverManager.sol";
 import {ClaimsEngine} from "../../src/ClaimsEngine.sol";
+import {DisputeModule} from "../../src/DisputeModule.sol";
+import {MockRouter} from "../mocks/MockRouter.sol";
 import {ICoverManager} from "../../src/interfaces/ICoverManager.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 
 interface IOwnerExecute {
     function execute(bytes32 mode, bytes calldata executionCalldata) external payable;
+    function installModule(uint256 moduleTypeId, address module, bytes calldata initData)
+        external
+        payable;
 }
 
 /// @notice Drives smart accounts guarded by MandateModules against the wired protocol: cover
-///         bound to the modules, agent breaches through the module, owner withdrawals through
-///         the account, spenders pulling outside the module, and the keeper's claims. It runs
+///         bound to the (Enforce-mode) modules and refused for a Monitor-mode one, agent breaches
+///         through the module, owner withdrawals through the account, an allowed spender pulling
+///         outside the module, premiums from an account that never really pays, an attempt to
+///         install a second module, disputes, and the keeper's claims. It runs
 ///         beside ProtocolHandler (which keeps driving the vaults, the pool and the bonds), and
 ///         records what each step did so the invariant test can check it afterwards.
 contract ModuleHandler is CommonBase, StdCheats, StdUtils {
@@ -38,6 +45,14 @@ contract ModuleHandler is CommonBase, StdCheats, StdUtils {
         address agent;
         address attacker;
         address owner;
+        MockRouter router;
+        address tsla;
+        DisputeModule disputes;
+        address council;
+        /// @dev Monitor-mode module: may exist, may never hold cover.
+        MandateModule monitorModule;
+        /// @dev An older module of the first account, created before its current one.
+        MandateModule staleModule;
     }
 
     Setup internal s;
@@ -61,6 +76,12 @@ contract ModuleHandler is CommonBase, StdCheats, StdUtils {
     bool public poolPaidBeforeBondWasEmpty;
     bool public payoutAboveLossMinusDeductible;
     bool public waterfallDoesNotAddUp;
+    bool public monitorModuleInsured;
+    bool public accrualReverted;
+    bool public twoModulesInstalled;
+    bool public moduleDisputeAutoPaid;
+    uint256 public ghostDisputesPaid;
+    uint256[] internal _disputes;
 
     constructor(Setup memory setup, MandateModule[] memory modules_) {
         s = setup;
@@ -70,7 +91,29 @@ contract ModuleHandler is CommonBase, StdCheats, StdUtils {
     // ----- Operators ---------------------------------------------------------------------
 
     function bindCover(uint256 moduleSeed, uint256 cover, uint256 score, uint256 rateBps) external {
-        MandateModule m = _module(moduleSeed);
+        if (_bind(_module(moduleSeed), cover, score, rateBps)) {
+            vm.warp(block.timestamp + s.manager.waitingPeriod());
+        }
+    }
+
+    /// @dev A Monitor-mode module must never get cover.
+    function bindMonitorCover(uint256 cover, uint256 score, uint256 rateBps) external {
+        if (_bind(s.monitorModule, cover, score, rateBps)) monitorModuleInsured = true;
+    }
+
+    /// @dev Installing the account's older module next to its current one must fail.
+    function installStale() external {
+        address account = s.staleModule.account();
+        vm.prank(ENTRY_POINT);
+        try IOwnerExecute(account).installModule(2, address(s.staleModule), "") {
+            twoModulesInstalled = true;
+        } catch {}
+    }
+
+    function _bind(MandateModule m, uint256 cover, uint256 score, uint256 rateBps)
+        internal
+        returns (bool ok)
+    {
         BondedTypes.Quote memory q = BondedTypes.Quote({
             agentId: m.agentId(),
             vault: address(m),
@@ -90,7 +133,7 @@ contract ModuleHandler is CommonBase, StdCheats, StdUtils {
         vm.prank(s.guardian);
         try s.manager.buyCover(q, abi.encodePacked(r, ss, sv)) returns (uint256 policyId) {
             _policies.push(policyId);
-            vm.warp(block.timestamp + s.manager.waitingPeriod());
+            ok = true;
         } catch {}
     }
 
@@ -134,36 +177,82 @@ contract ModuleHandler is CommonBase, StdCheats, StdUtils {
         m.execute(address(s.usdg), abi.encodeCall(IERC20.transfer, (s.attacker, amount)));
     }
 
-    /// @dev The agent approves the attacker (T1), the attacker pulls outside the module, and
-    ///      anyone reconciles: a Deferred breach that ClaimsEngine must refuse to pay.
-    function spenderPull(uint256 moduleSeed, uint256 amount) external {
-        MandateModule m = _unfrozen(moduleSeed);
+    /// @dev The allowed router abuses the account's allowance outside the module, and anyone
+    ///      reconciles: a Deferred breach that ClaimsEngine must refuse to pay.
+    function routerDrain(uint256 moduleSeed, uint256 amount) external {
+        MandateModule m = _module(moduleSeed);
         address account = m.account();
         uint256 balance = s.usdg.balanceOf(account);
-        if (balance == 0) return;
-        amount = bound(amount, 1, balance);
-        vm.prank(s.agent);
-        m.execute(address(s.usdg), abi.encodeCall(IERC20.approve, (s.attacker, amount)));
-        vm.prank(s.attacker);
-        require(s.usdg.transferFrom(account, s.attacker, amount), "pull failed");
+        uint256 allowed = s.usdg.allowance(account, address(s.router));
+        if (balance == 0 || allowed == 0) return;
+        amount = bound(amount, 1, balance < allowed ? balance : allowed);
+        s.router.drain(address(s.usdg), account, s.attacker, amount);
         m.reconcile();
+        // The keeper tries to claim it straight away; it must be refused.
+        uint256 policyId = s.manager.activePolicyOf(address(m));
+        if (policyId != 0) _fileClaim(policyId, m.breachCount() - 1);
     }
 
     /// @dev A frozen agent must not move anything.
     function frozenAgentTries(uint256 moduleSeed, uint256 amount) external {
         MandateModule m = _module(moduleSeed);
         if (!m.frozen()) return;
-        uint256 before = s.usdg.balanceOf(s.attacker);
-        bytes memory transfer =
-            abi.encodeCall(IERC20.transfer, (s.attacker, bound(amount, 1, 1_000_000e6)));
+        address account = m.account();
+        uint256 before = s.usdg.balanceOf(account);
+        // An action the mandate allows (a small swap into the account): only the freeze stops it.
+        bytes memory swap = abi.encodeCall(
+            MockRouter.swap, (address(s.usdg), s.tsla, bound(amount, 1e6, 1000e6), account)
+        );
         vm.prank(s.agent);
-        try m.execute(address(s.usdg), transfer) {} catch {}
-        if (s.usdg.balanceOf(s.attacker) != before) frozenAgentActed = true;
+        try m.execute(address(s.router), swap) {} catch {}
+        if (s.usdg.balanceOf(account) != before) frozenAgentActed = true;
     }
 
+    /// @dev Premium collection must never get stuck, whatever the account does.
     function accrue(uint256 policySeed) external {
         if (_policies.length == 0) return;
-        s.manager.accrue(_policies[bound(policySeed, 0, _policies.length - 1)]);
+        try s.manager.accrue(_policies[bound(policySeed, 0, _policies.length - 1)]) {}
+        catch {
+            accrualReverted = true;
+        }
+    }
+
+    // ----- Disputes ----------------------------------------------------------------------
+
+    function proposeDispute(uint256 policySeed, uint256 loss) external {
+        if (_policies.length == 0) return;
+        uint256 policyId = _policies[bound(policySeed, 0, _policies.length - 1)];
+        _disputes.push(s.disputes.propose(policyId, bound(loss, 1e6, 20_000e6), bytes32(0), ""));
+    }
+
+    /// @dev Nobody may finalize an unchallenged dispute on a module's policy.
+    function finalizeDispute(uint256 disputeSeed) external {
+        if (_disputes.length == 0) return;
+        uint256 id = _disputes[bound(disputeSeed, 0, _disputes.length - 1)];
+        vm.warp(block.timestamp + s.disputes.challengePeriod());
+        try s.disputes.finalize(id) {
+            moduleDisputeAutoPaid = true;
+        } catch {}
+    }
+
+    /// @dev The council approves a dispute; the payout must land in the account.
+    function councilApproves(uint256 disputeSeed) external {
+        if (_disputes.length == 0) return;
+        uint256 id = _disputes[bound(disputeSeed, 0, _disputes.length - 1)];
+        DisputeModule.Dispute memory d = s.disputes.getDispute(id);
+        ICoverManager.Policy memory policy = s.manager.getPolicy(d.policyId);
+        address account = MandateModule(policy.vault).account();
+        vm.warp(block.timestamp + s.disputes.challengePeriod());
+        try s.manager.accrue(d.policyId) {} catch {}
+        uint256 accountBefore = s.usdg.balanceOf(account);
+        uint256 bondBefore = s.bond.bondOf(policy.agentId);
+        vm.recordLogs();
+        vm.prank(s.council);
+        try s.disputes.resolve(id, true) returns (uint256 paid) {
+            _checkPayout(policy.agentId, bondBefore, paid, vm.getRecordedLogs());
+            if (s.usdg.balanceOf(account) != accountBefore + paid) payoutMissedTheAccount = true;
+            ++ghostDisputesPaid;
+        } catch {}
     }
 
     // ----- Keeper ------------------------------------------------------------------------
@@ -176,7 +265,13 @@ contract ModuleHandler is CommonBase, StdCheats, StdUtils {
         MandateModule m = MandateModule(policy.vault);
         uint256 count = m.breachCount();
         if (count == 0) return;
-        uint256 breachId = breachSeed % 2 == 0 ? count - 1 : bound(breachSeed, 0, count - 1);
+        _fileClaim(policyId, breachSeed % 2 == 0 ? count - 1 : bound(breachSeed, 0, count - 1));
+    }
+
+    /// @dev The keeper's claim for one breach; checks the money lands in the account.
+    function _fileClaim(uint256 policyId, uint256 breachId) internal {
+        ICoverManager.Policy memory policy = s.manager.getPolicy(policyId);
+        MandateModule m = MandateModule(policy.vault);
         bool isDeferred = m.getBreach(breachId).breachType == BondedTypes.BreachType.Deferred;
 
         address account = m.account();
@@ -200,6 +295,14 @@ contract ModuleHandler is CommonBase, StdCheats, StdUtils {
     }
 
     // ----- Views for the invariant test --------------------------------------------------
+
+    function monitorModule() external view returns (MandateModule) {
+        return s.monitorModule;
+    }
+
+    function staleModule() external view returns (MandateModule) {
+        return s.staleModule;
+    }
 
     function modules() external view returns (MandateModule[] memory) {
         return _modules;
