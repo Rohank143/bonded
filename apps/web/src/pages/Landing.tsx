@@ -315,9 +315,11 @@ const STORY: StoryStep[] = [
     visual: (
       <div className={`${PANEL} flex items-start gap-4`}>
         <span
-          className="size-11 shrink-0 rounded-full bg-[radial-gradient(circle_at_35%_30%,#ff9a80,#8a2b1c)]"
+          className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[radial-gradient(circle_at_35%_30%,#ff9a80,#8a2b1c)] text-lg font-bold text-white/95 shadow-[inset_0_1px_0_rgb(255_255_255/.25)]"
           aria-hidden
-        />
+        >
+          P
+        </span>
         <span className="min-w-0">
           <span className="block text-sm text-muted">@payouts-support · DM</span>
           <span className="mt-2 block rounded-[4px_16px_16px_16px] bg-white/[0.07] px-4 py-3.5 text-lg leading-normal">
