@@ -5,6 +5,7 @@ import {
   bondedRegistryAbi,
   claimsEngineAbi,
   coverManagerAbi,
+  mandateModuleFactoryAbi,
   mandateVaultFactoryAbi,
 } from "@bonded/shared";
 import { deployment } from "../config";
@@ -41,6 +42,59 @@ export function waterfall(
 }
 
 const fromBlock = BigInt(deployment.deployedAtBlock);
+
+/**
+ * A smart account (a Safe, or another ERC-7579 account) protected by a MandateModule. The module
+ * holds the breach log and the policy; the account holds the funds and receives the payouts.
+ */
+export interface ProtectedAccount {
+  module: Address;
+  account: Address;
+  agentId: bigint;
+}
+
+/** Where a claim's money went: into a vault, or into the smart account a module guards. */
+export type ClaimPayee =
+  | { kind: "vault"; address: Address }
+  | { kind: "account"; address: Address; module: Address; agentId: bigint };
+
+/** ClaimPaid names the vault or module; for a module the payout went to its account. */
+export function claimPayee(
+  claim: Pick<PaidClaim, "vault">,
+  modules: readonly ProtectedAccount[],
+): ClaimPayee {
+  const m = modules.find((x) => x.module.toLowerCase() === claim.vault.toLowerCase());
+  return m
+    ? { kind: "account", address: m.account, module: m.module, agentId: m.agentId }
+    : { kind: "vault", address: claim.vault };
+}
+
+/** ModuleCreated logs as ProtectedAccounts, newest first. */
+export function protectedAccounts(
+  logs: readonly { module: Address; account: Address; agentId: bigint }[],
+): ProtectedAccount[] {
+  return logs.map(({ module, account, agentId }) => ({ module, account, agentId })).reverse();
+}
+
+/** Every smart account protected by a module, newest first (none before the module factory). */
+export function useModules() {
+  const client = usePublicClient();
+  return useQuery({
+    queryKey: ["modules"],
+    enabled: Boolean(client),
+    queryFn: async (): Promise<ProtectedAccount[]> => {
+      if (!deployment.moduleFactory) return [];
+      const logs = await client!.getLogs({
+        address: deployment.moduleFactory,
+        event: getAbiItem({ abi: mandateModuleFactoryAbi, name: "ModuleCreated" }),
+        fromBlock,
+        toBlock: "latest",
+        strict: true,
+      });
+      return protectedAccounts(logs.map((l) => l.args));
+    },
+  });
+}
 
 /** Every paid claim since the deployment, newest first. */
 export function useClaims() {
@@ -111,11 +165,14 @@ export interface AgentRow {
   score?: { score: number; expectedLossBps: number; expiresAt: bigint };
   /** The agent's newest vault, if it has one. */
   vault?: Address;
+  /** The agent's newest protected smart account (module and account), if it has one. */
+  protected?: { module: Address; account: Address };
 }
 
 /**
- * Join the registry's Registered events, each agent's score and the factory's vaults into one
- * row per agent, newest first. An agent with several vaults shows its newest.
+ * Join the registry's Registered events, each agent's score, the factory's vaults and the module
+ * factory's protected accounts into one row per agent, newest first. An agent with several vaults
+ * (or accounts) shows its newest.
  */
 export function agentRows(
   registered: readonly { agentId: bigint; owner: Address }[],
@@ -126,13 +183,18 @@ export function agentRows(
     expiresAt: bigint;
   }[],
   vaults: readonly { agentId: bigint; vault: Address }[],
+  /** Oldest first, like `vaults`. */
+  modules: readonly { agentId: bigint; module: Address; account: Address }[] = [],
 ): AgentRow[] {
   const newestVault = new Map<bigint, Address>();
   for (const v of vaults) newestVault.set(v.agentId, v.vault);
+  const newestModule = new Map<bigint, { module: Address; account: Address }>();
+  for (const m of modules) newestModule.set(m.agentId, { module: m.module, account: m.account });
   return registered
     .map((r, i) => {
       const s = scores[i];
       const vault = newestVault.get(r.agentId);
+      const guarded = newestModule.get(r.agentId);
       return {
         agentId: r.agentId,
         owner: r.owner,
@@ -142,6 +204,7 @@ export function agentRows(
             }
           : {}),
         ...(vault ? { vault } : {}),
+        ...(guarded ? { protected: guarded } : {}),
       };
     })
     .reverse();
@@ -155,7 +218,7 @@ export function useAgents() {
     enabled: Boolean(client),
     refetchInterval: 30_000,
     queryFn: async (): Promise<AgentRow[]> => {
-      const [registered, vaults] = await Promise.all([
+      const [registered, vaults, modules] = await Promise.all([
         client!.getLogs({
           address: deployment.registry,
           event: getAbiItem({ abi: bondedRegistryAbi, name: "Registered" }),
@@ -170,6 +233,15 @@ export function useAgents() {
           toBlock: "latest",
           strict: true,
         }),
+        deployment.moduleFactory
+          ? client!.getLogs({
+              address: deployment.moduleFactory,
+              event: getAbiItem({ abi: mandateModuleFactoryAbi, name: "ModuleCreated" }),
+              fromBlock,
+              toBlock: "latest",
+              strict: true,
+            })
+          : Promise.resolve([]),
       ]);
       // One read per agent; the local demo chain has no multicall contract to batch them.
       const scores = await Promise.all(
@@ -186,6 +258,7 @@ export function useAgents() {
         registered.map((r) => r.args),
         scores,
         vaults.map((v) => v.args),
+        modules.map((m) => m.args),
       );
     },
   });

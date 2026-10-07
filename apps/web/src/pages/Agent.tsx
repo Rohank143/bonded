@@ -5,8 +5,10 @@ import { useReadContract, useReadContracts } from "wagmi";
 import {
   bondedRegistryAbi,
   coverManagerAbi,
+  mandateModuleAbi,
   mandateVaultAbi,
   operatorBondAbi,
+  testTokenAbi,
   tierForScore,
 } from "@bonded/shared";
 import type { Address } from "viem";
@@ -93,7 +95,9 @@ export function Agent() {
     retry: false,
   });
   const agents = useAgents();
-  const vault = agents.data?.find((r) => r.agentId === agentId)?.vault;
+  const row = agents.data?.find((r) => r.agentId === agentId);
+  const vault = row?.vault;
+  const guarded = row?.protected;
 
   const back = { to: "/agents", label: "All agents" };
   if (!valid)
@@ -332,7 +336,8 @@ export function Agent() {
 
         <div className="flex min-w-0 flex-[1_1_320px] flex-col gap-4">
           {vault && <VaultSummary vault={vault} />}
-          <ModuleCover agentId={id} />
+          {guarded && <AccountSummary module={guarded.module} account={guarded.account} />}
+          {guarded && <ModuleCover agentId={agentId} module={guarded.module} />}
           <SentinelChecks agentId={id} ratedWith={Boolean(report?.sentinel)} />
           <Card title="Proof on chain">
             <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2.5 text-sm [&_dd]:text-right [&_dt]:text-muted">
@@ -502,6 +507,77 @@ function VaultSummary({ vault }: { vault: Address }) {
       ) : (
         <p className="mt-4 text-xs text-muted">No active cover.</p>
       )}
+    </Card>
+  );
+}
+
+/**
+ * The agent's newest smart account protected by a MandateModule: the funds stay in the account,
+ * the module checks the agent's actions, holds the breach log and the policy, and payouts go back
+ * into the account.
+ */
+function AccountSummary({ module, account }: { module: Address; account: Address }) {
+  const m = { address: module, abi: mandateModuleAbi } as const;
+  const reads = useReadContracts({
+    contracts: [
+      { address: deployment.usdg, abi: testTokenAbi, functionName: "balanceOf", args: [account] },
+      { ...m, functionName: "frozen" },
+      { ...m, functionName: "breachCount" },
+      { ...m, functionName: "installs" },
+      {
+        address: deployment.coverManager,
+        abi: coverManagerAbi,
+        functionName: "activePolicyOf",
+        args: [module],
+      },
+    ],
+  });
+  const [held, frozen, breaches, installs, active] = reads.data ?? [];
+  const policy = useReadContract({
+    address: deployment.coverManager,
+    abi: coverManagerAbi,
+    functionName: "getPolicy",
+    args: [active?.result ?? 0n],
+    query: { enabled: Boolean(active?.result) },
+  }).data;
+  return (
+    <Card title="Its smart account">
+      <p className="-mt-3 text-xs text-muted">
+        <AddressLink address={account} />
+      </p>
+      <p className="mt-4 text-3xl font-bold tracking-tight">
+        {held?.result !== undefined ? `$${usd(held.result)}` : "…"}
+      </p>
+      <p className="text-xs text-muted">
+        <Token symbol="tUSDG" /> in the account, guarded by a mandate module
+      </p>
+      <dl className="mt-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm [&_dd]:text-right [&_dt]:text-muted">
+        <dt>Module</dt>
+        <dd>
+          <AddressLink address={module} />
+        </dd>
+        <dt>Agent</dt>
+        <dd>
+          {installs?.result === 0n
+            ? "module removed"
+            : frozen?.result
+              ? "frozen"
+              : frozen?.result === false
+                ? "active"
+                : "…"}
+        </dd>
+        <dt>Breaches recorded</dt>
+        <dd className="tabular-nums">{breaches?.result?.toString() ?? "…"}</dd>
+        <dt>Cover left</dt>
+        <dd className="tabular-nums">
+          {policy
+            ? `$${usd(policy.remainingCover, 0)} of $${usd(policy.coverAmount, 0)}`
+            : "no active cover"}
+        </dd>
+      </dl>
+      <p className="mt-3 text-xs text-muted">
+        Premiums are paid from the account and claims are paid back into it.
+      </p>
     </Card>
   );
 }

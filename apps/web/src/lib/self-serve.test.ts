@@ -77,3 +77,18 @@ describe("runner tokens", () => {
     expect(revoke.mock.calls[0]![1]).toMatchObject({ signature: "0x5151" });
   });
 });
+
+describe("registerForRatings, for a module on a smart account", () => {
+  it("signs and sends the protection with the module's address", async () => {
+    const register = vi.spyOn(api, "registerSelfAgent").mockResolvedValue({ registered: true });
+    const { sign, messages } = signer();
+    await registerForRatings(sign, "12", {
+      vault,
+      kind: "hardened",
+      mandate,
+      protection: "module",
+    });
+    expect(register.mock.calls[0]![0]).toMatchObject({ vault, protection: "module" });
+    expect(messages[0]).toContain("\nprotection module\n");
+  });
+});

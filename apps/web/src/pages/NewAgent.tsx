@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Token, TokenLogo } from "../components/token";
 import { Link } from "react-router";
 import { useAccount, useSignMessage, useWriteContract } from "wagmi";
-import { readContract, waitForTransactionReceipt } from "wagmi/actions";
+import { getPublicClient, readContract, waitForTransactionReceipt } from "wagmi/actions";
 import { isAddress, parseEventLogs, type Abi, type Address, type Hex } from "viem";
 import {
   REMOTE_KIND,
@@ -16,8 +16,9 @@ import {
   mandateVaultFactoryAbi,
   operatorBondAbi,
   testTokenAbi,
+  prepareModuleInstall,
   toEvmMandateParams,
-  withMandateCommitment,
+  type ModuleAccountType,
   type Protection,
   type RemoteAgentSpec,
   type RemoteMode,
@@ -48,7 +49,12 @@ import {
   limitError,
 } from "../lib/validate";
 import { registerForRatings } from "../lib/self-serve";
-import { MODULE_DEFERRED_NOTE, moduleInstallCalls, type ModuleCall } from "../lib/module";
+import {
+  ACCOUNT_TYPE_LABELS,
+  MODULE_DEFERRED_NOTE,
+  installSteps,
+  type ModuleCall,
+} from "../lib/module";
 import { DOCS_BYOA } from "../lib/routes";
 import { codeHashError, composeHashError, normaliseCodeHash, teeUrlError } from "../lib/byoa";
 import {
@@ -101,6 +107,7 @@ export function NewAgent() {
   // Where the funds are protected: a new Bonded vault, or a module on a smart account in use.
   const [protection, setProtection] = useState<Protection>("vault");
   const [account, setAccount] = useState("");
+  const [accountType, setAccountType] = useState<ModuleAccountType>("safe7579");
   const [install, setInstall] = useState<{ module: Address; calls: ModuleCall[] }>();
   const [mode, setMode] = useState<"monitor" | "enforce">("monitor");
   const [tokens, setTokens] = useState<MandateToken[]>([...MANDATE_TOKENS]);
@@ -273,28 +280,19 @@ export function NewAgent() {
             i === 0 ? String(v).toLowerCase() === commitment.toLowerCase() : v === agentId,
           );
         if (!fits) {
-          const args = {
-            factory,
+          const client = getPublicClient(wagmiConfig, { chainId: robinhoodTestnet.id });
+          if (!client) throw new Error("can't reach the chain to plan the module's install");
+          const type = progress.accountType ?? "safe7579";
+          const plan = await prepareModuleInstall(client, {
+            moduleFactory: factory,
             account: owner,
-            mandate,
-            agentKey: progress.agentKey as Address,
+            params: toEvmMandateParams(mandate),
+            agent: progress.agentKey as Address,
             guardian: user,
             agentId,
-          };
-          const predicted = await readContract(wagmiConfig, {
-            address: factory,
-            abi: mandateModuleFactoryAbi,
-            functionName: "predictModule",
-            args: [
-              owner,
-              withMandateCommitment(toEvmMandateParams(mandate)),
-              args.agentKey,
-              user,
-              agentId,
-            ],
-            chainId: robinhoodTestnet.id,
+            accountType: type,
           });
-          setInstall({ module: predicted, calls: moduleInstallCalls({ ...args, predicted }) });
+          setInstall({ module: plan.module, calls: installSteps(plan, type) });
           throw new Error(
             "Your smart account has no module for this agent yet. Send the calls below from it, then resume onboarding.",
           );
@@ -413,7 +411,7 @@ export function NewAgent() {
       kind,
       ...(sentinel && !own ? { sentinel: true } : {}),
       ...(remote ? { remote } : {}),
-      ...(onModule ? { protection: "module" as const, account: account.trim() } : {}),
+      ...(onModule ? { protection: "module" as const, account: account.trim(), accountType } : {}),
       form,
       agentKey: key,
       bond: bond.trim() || "0",
@@ -654,6 +652,17 @@ export function NewAgent() {
                 </div>
                 {onModule && (
                   <div className="mt-3 flex flex-col gap-2">
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {(["safe7579", "erc7579"] as const).map((t) => (
+                        <Choice
+                          key={t}
+                          name="account-type"
+                          checked={accountType === t}
+                          onChange={() => setAccountType(t)}
+                          title={ACCOUNT_TYPE_LABELS[t]}
+                        />
+                      ))}
+                    </div>
                     <Input
                       label="Smart account address"
                       hint="Your Safe (with Safe7579) or other ERC-7579 account. It creates and installs the module itself; the page gives you the calls."
@@ -803,8 +812,10 @@ export function NewAgent() {
               <div className="mt-4 flex flex-col gap-3 rounded-lg border border-line-strong p-4 text-sm">
                 <p className="font-medium">Send these from your smart account, in order</p>
                 <p className="text-xs text-muted">
-                  The module will be at <span className="font-mono">{install.module}</span>. In a
-                  Safe, use the transaction builder; one-click install from this page is coming.
+                  The module will be at <span className="font-mono">{install.module}</span>.{" "}
+                  {install.calls.length > 1
+                    ? "In the Safe, add the three calls to one batch in the transaction builder."
+                    : "Send it from your account's own app."}
                 </p>
                 <ol className="flex flex-col gap-3">
                   {install.calls.map((call) => (

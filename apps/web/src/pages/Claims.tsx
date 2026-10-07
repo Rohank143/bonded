@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
-import { useClaims, waterfall } from "../lib/chain";
+import { claimPayee, useClaims, useModules, waterfall } from "../lib/chain";
 import { short, usd } from "../lib/format";
 import {
   Card,
@@ -19,6 +19,7 @@ import { Pagination } from "../components/pagination";
 
 export function Claims() {
   const claims = useClaims();
+  const modules = useModules().data ?? [];
   const all = claims.data ?? [];
   const listParams = useListParams({ vault: "all", sort: "newest" });
   const filters = listParams.values as ClaimFilters;
@@ -37,12 +38,12 @@ export function Claims() {
     <Page
       eyebrow="Automatic payouts"
       title="Claims"
-      intro="Every payout here was filed and paid by the contracts, with no one filing a form. The operator's bond pays first, then the pool; the first 10% of each loss isn't covered."
+      intro="Every payout here was filed and paid by the contracts, with no one filing a form. The operator's bond pays first, then the pool; the first 10% of each loss isn't covered. Payouts go back into the vault, or into the smart account a module protects."
     >
       {claims.data && all.length > 0 && (
         <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           {stat(
-            "Paid to vaults",
+            "Paid out",
             `$${usd(
               sum((w) => w.toVault),
               0,
@@ -85,7 +86,8 @@ export function Claims() {
       <ErrorText error={claims.error} />
       {claims.data?.length === 0 && (
         <EmptyState title="No claims paid yet">
-          When a covered vault records a breach, the claim is filed and paid here automatically.
+          When a covered vault or smart account records a breach, the claim is filed and paid here
+          automatically.
         </EmptyState>
       )}
       {all.length > 0 && (
@@ -95,12 +97,18 @@ export function Claims() {
           </h2>
           <div className="flex flex-wrap items-center gap-2">
             <Select
-              label="Vault"
+              label="Vault or account"
               value={filters.vault.toLowerCase()}
               onChange={(v) => listParams.set({ vault: v })}
               options={[
-                { value: "all", label: "All vaults" },
-                ...vaults.map((v) => ({ value: v, label: short(v) })),
+                { value: "all", label: "All" },
+                ...vaults.map((v) => {
+                  const payee = claimPayee({ vault: v as `0x${string}` }, modules);
+                  return {
+                    value: v,
+                    label: payee.kind === "account" ? `Account ${short(payee.address)}` : short(v),
+                  };
+                }),
               ]}
             />
             <Select
@@ -118,6 +126,8 @@ export function Claims() {
       <ul className="flex flex-col gap-4">
         {page.items.map((c) => {
           const w = waterfall(c);
+          const payee = claimPayee(c, modules);
+          const to = payee.kind === "account" ? "the account" : "the vault";
           const total = w.loss > 0n ? w.loss : 1n;
           const pct = (v: bigint) => `${Number((v * 10_000n) / total) / 100}%`;
           return (
@@ -125,15 +135,27 @@ export function Claims() {
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <p className="text-xs text-muted">
-                    Policy {c.policyId.toString()} · vault{" "}
-                    <Link to={`/vaults/${c.vault}`} className={`font-mono ${linkClass}`}>
-                      {short(c.vault)}
-                    </Link>{" "}
+                    Policy {c.policyId.toString()} ·{" "}
+                    {payee.kind === "account" ? (
+                      <>
+                        smart account{" "}
+                        <Link to={`/agents/${payee.agentId}`} className={`font-mono ${linkClass}`}>
+                          {short(payee.address)}
+                        </Link>
+                      </>
+                    ) : (
+                      <>
+                        vault{" "}
+                        <Link to={`/vaults/${c.vault}`} className={`font-mono ${linkClass}`}>
+                          {short(c.vault)}
+                        </Link>
+                      </>
+                    )}{" "}
                     · breach {c.breachIds.map(String).join(", ")}
                   </p>
                   <p className="mt-2 font-serif text-5xl leading-none tabular-nums">
                     ${usd(w.toVault)}
-                    <span className="ml-2.5 font-sans text-sm text-muted">paid to the vault</span>
+                    <span className="ml-2.5 font-sans text-sm text-muted">paid to {to}</span>
                   </p>
                 </div>
                 <span className="text-xs text-muted">
@@ -177,7 +199,7 @@ export function Claims() {
               </dl>
               {w.premiumNetted > 0n && (
                 <p className="mt-3 text-xs text-muted">
-                  After ${usd(w.premiumNetted)} of premium the vault still owed.
+                  After ${usd(w.premiumNetted)} of premium {to} still owed.
                 </p>
               )}
             </li>

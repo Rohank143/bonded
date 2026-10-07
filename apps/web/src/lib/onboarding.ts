@@ -2,6 +2,7 @@ import {
   EvmMandate,
   demoRouterAbi,
   type EvmDeployment,
+  type ModuleAccountType,
   type Protection,
   type RemoteAgentSpec,
   type SelfServeAgentKind,
@@ -194,8 +195,9 @@ export interface OnboardingProgress {
   remote?: RemoteAgentSpec;
   /** Protect a smart account the owner already uses, with a module, instead of a new vault. */
   protection?: Protection;
-  /** That smart account. */
+  /** That smart account, and what kind it is (how the module is installed on it). */
   account?: string;
+  accountType?: ModuleAccountType;
   form: MandateForm;
   agentKey: string;
   bond: string;

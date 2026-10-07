@@ -1,93 +1,48 @@
-import {
-  mandateModuleFactoryAbi,
-  toEvmMandateParams,
-  withMandateCommitment,
-  type EvmMandate,
-} from "@bonded/shared";
-import { encodeAbiParameters, encodeFunctionData, type Address, type Hex } from "viem";
+import type { ModuleAccountType, ModuleInstallPlan } from "@bonded/shared";
+import type { Address, Hex } from "viem";
 
 /**
  * Protecting the smart account an agent already uses (ERC-7579, e.g. Safe through Safe7579) with
- * a MandateModule instead of a Bonded vault. The account itself must make the calls: create the
- * module, then install it as an executor (the agent acts through it) and as a hook (it sees every
- * other execution). Until the shared one-batch helper lands, this builds the three calls for the
- * owner to send from their account.
+ * a MandateModule instead of a Bonded vault. The account itself makes the calls (create the
+ * module, install it as an executor and as a hook); `prepareModuleInstall` in @bonded/shared
+ * builds them, and this turns its plan into what the owner sends from their account.
  */
 
-/** ERC-7579 module types. */
-export const MODULE_TYPE = { executor: 2n, hook: 4n } as const;
-
-const installModuleAbi = [
-  {
-    type: "function",
-    name: "installModule",
-    stateMutability: "payable",
-    inputs: [
-      { name: "moduleTypeId", type: "uint256" },
-      { name: "module", type: "address" },
-      { name: "initData", type: "bytes" },
-    ],
-    outputs: [],
-  },
-] as const;
-
+/** One transaction (or batch entry) for the owner to send from the smart account. */
 export interface ModuleCall {
   label: string;
   to: Address;
   data: Hex;
 }
 
+/** Account types the onboarding page offers, in plain words. */
+export const ACCOUNT_TYPE_LABELS: Record<ModuleAccountType, string> = {
+  safe7579: "Safe (with the Safe7579 adapter)",
+  erc7579: "Another ERC-7579 account",
+};
+
 /**
- * The calls the smart account sends, in order. `predicted` is the module's address
- * (`MandateModuleFactory.predictModule`, read before the first call). The hook's install data is
- * Safe7579's (a global hook); other ERC-7579 accounts may want their own.
+ * What to send: for a Safe, the three calls as one MultiSend batch (the transaction builder takes
+ * them as they are); for another ERC-7579 account, one `execute` call carrying the same batch.
  */
-export function moduleInstallCalls(input: {
-  factory: Address;
-  account: Address;
-  mandate: EvmMandate;
-  agentKey: Address;
-  guardian: Address;
-  agentId: bigint;
-  predicted: Address;
-}): ModuleCall[] {
-  const params = withMandateCommitment(toEvmMandateParams(input.mandate));
-  return [
-    {
-      label: "Create the module (from the smart account)",
-      to: input.factory,
-      data: encodeFunctionData({
-        abi: mandateModuleFactoryAbi,
-        functionName: "createModule",
-        args: [params, input.agentKey, input.guardian, input.agentId],
-      }),
-    },
-    {
-      label: "Install it as an executor",
-      to: input.account,
-      data: encodeFunctionData({
-        abi: installModuleAbi,
-        functionName: "installModule",
-        args: [MODULE_TYPE.executor, input.predicted, "0x"],
-      }),
-    },
-    {
-      label: "Install it as a hook (Safe7579: a global hook)",
-      to: input.account,
-      data: encodeFunctionData({
-        abi: installModuleAbi,
-        functionName: "installModule",
-        args: [
-          MODULE_TYPE.hook,
-          input.predicted,
-          encodeAbiParameters(
-            [{ type: "uint8" }, { type: "bytes4" }, { type: "bytes" }],
-            [0, "0x00000000", "0x"],
-          ),
-        ],
-      }),
-    },
+export function installSteps(
+  plan: ModuleInstallPlan,
+  accountType: ModuleAccountType,
+): ModuleCall[] {
+  if (accountType === "erc7579")
+    return [
+      {
+        label: "One call to your account: execute the batch (create, install as executor and hook)",
+        to: plan.calls[1].to,
+        data: plan.execute.data,
+      },
+    ];
+  const labels = [
+    "Create the module",
+    "Install it as an executor",
+    "Install it as a hook (a global hook)",
   ];
+  return plan.calls.map((call, i) => ({ label: labels[i]!, to: call.to, data: call.data }));
 }
 
 /** What cover on a module doesn't pay, in plain words. */
