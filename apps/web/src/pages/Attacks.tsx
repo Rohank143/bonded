@@ -66,6 +66,16 @@ function ClassChip({ id }: { id: string }) {
   );
 }
 
+/** Where an attack is planted, as a small tag. */
+function SurfaceTag({ surface }: { surface: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-md border border-line-strong bg-white/[0.03] px-1.5 py-0.5 text-[11px] leading-none text-soft">
+      <span className="size-1 rounded-full bg-accent/70" aria-hidden />
+      {SURFACE_NAMES[surface] ?? surface}
+    </span>
+  );
+}
+
 /** How often an attack got through, as a line and a thin bar. */
 function Record({ s, since }: { s: AttackStats; since: string | null }) {
   if (!s.episodes)
@@ -115,8 +125,10 @@ function AttackCard({ a, since }: { a: AttackSummary; since: string | null }) {
           {a.title}
         </span>
         <span className="line-clamp-2 text-sm leading-relaxed text-muted">{a.description}</span>
-        <span className="text-xs text-soft">
-          Planted in {a.surfaces.map((s) => (SURFACE_NAMES[s] ?? s).toLowerCase()).join(" and ")}
+        <span className="flex flex-wrap gap-1.5">
+          {a.surfaces.map((x) => (
+            <SurfaceTag key={x} surface={x} />
+          ))}
         </span>
         <span className="mt-auto border-t border-line pt-3">
           <Record s={a.stats} since={since} />
@@ -199,9 +211,15 @@ function ClassGrid({
                   <span className="mt-0.5 line-clamp-2 block text-[13px] leading-snug text-muted">
                     {info.description}
                   </span>
-                  <span className="mt-1.5 block truncate text-[11px] text-muted/80">
-                    {info.surfaces.map((x) => SURFACE_NAMES[x] ?? x).join(" · ")}
-                    {c ? ` · ${c.attacks} ${c.attacks === 1 ? "attack" : "attacks"}` : ""}
+                  <span className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                    {info.surfaces.map((x) => (
+                      <SurfaceTag key={x} surface={x} />
+                    ))}
+                    {c && (
+                      <span className="text-[11px] text-muted">
+                        {c.attacks} {c.attacks === 1 ? "attack" : "attacks"}
+                      </span>
+                    )}
                   </span>
                 </span>
                 <span className="w-[72px] text-right">
