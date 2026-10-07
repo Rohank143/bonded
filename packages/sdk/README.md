@@ -38,6 +38,8 @@ Amounts are in the token's base units (`bigint`). Each write waits for its trans
 
 The same client works for a `MandateModule`: the mandate on an ERC-7579 smart account the operator already uses (Safe through Safe7579, or any ERC-7579 account). Pass the module's address as `vault`. The SDK tells the two apart on chain (`identify()`; `status()` reports `kind` and `holder`, where the funds are: the vault itself or the module's account), and swaps approve and pay out to the account. Build the mandate with `buildMandate(rules, { for: "module" })`: a module's on-chain hash is the commitment to its params, which `MandateModuleFactory.createModule` checks. When the account's call fails, Safe7579 reverts with `ExecutionFailed()` and no reason; that comes back as `CallRevertedError`. A module not installed on its account gives code `MODULE_NOT_INSTALLED`. For AgentKit, use `await BondedWalletProvider.create(...)` so the wallet's address is the account.
 
+To put a module on an account, `installMandateModule(publicClient, { moduleFactory, account, accountType, rules, agent, guardian })` prepares the one transaction the account's owner sends: `createModule`, then `installModule` as executor and as hook. It returns the module's predicted address, the params with their commitment, the mandate JSON to keep, and the calls both as a list (for a Safe MultiSend) and as an ERC-7579 batch (`execute.data`, e.g. for a user operation). Nothing is sent by the SDK.
+
 Without `account` or `walletClient` the vault is read-only: `status`, `breaches` and `dryRun` work, writes throw.
 
 ### Dry runs

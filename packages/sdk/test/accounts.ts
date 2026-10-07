@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { CONTRACTS_DIR, type Sandbox } from "@bonded/sandbox";
-import { bondedRegistryAbi, mandateModuleFactoryAbi, testTokenAbi } from "@bonded/shared";
+import { bondedRegistryAbi, testTokenAbi } from "@bonded/shared";
 import {
   type Abi,
   type Address,
@@ -13,7 +13,7 @@ import {
   parseUnits,
   zeroAddress,
 } from "viem";
-import { buildMandate, type BuiltMandate, type EvmMandateRules } from "../src/index.js";
+import { type BuiltMandate, type EvmMandateRules, installMandateModule } from "../src/index.js";
 import { send } from "./chain.js";
 
 /**
@@ -24,8 +24,6 @@ import { send } from "./chain.js";
  */
 
 const ENTRY_POINT: Address = "0x0000000071727De22E5E9d8BAf0edAc6f37da032";
-const EXECUTOR = 2n;
-const HOOK = 4n;
 
 function artifact(file: string, name: string): { abi: Abi; bytecode: Hex } {
   const json = JSON.parse(readFileSync(`${CONTRACTS_DIR}out/${file}/${name}.json`, "utf8")) as {
@@ -139,7 +137,7 @@ export interface ProtectedAccount extends BuiltMandate {
 export async function protectedAccount(
   sandbox: Sandbox,
   kind: AccountKind,
-  rules: Partial<EvmMandateRules> = {},
+  overrides: Partial<EvmMandateRules> = {},
   options: { install?: boolean } = {},
 ): Promise<ProtectedAccount> {
   const d = sandbox.deployment;
@@ -151,60 +149,48 @@ export async function protectedAccount(
     functionName: "register",
     args: ["ipfs://bonded/sdk-test/module-agent.json"],
   })) as bigint;
-  const built = buildMandate(
-    {
-      chainId: sandbox.chain.id,
-      agentId,
-      mode: "monitor",
-      baseAsset: d.usdg,
-      assets: [d.tsla, d.nvda],
-      targets: [{ address: d.router, functions: ["swap(address,address,uint256,address)"] }],
-      maxTradeUsd: 5_000,
-      maxDailyUsd: 25_000,
-      maxDrawdownPct: 15,
-      maxSlippagePct: 3,
-      description: "SDK test module: trade tTSLA and tNVDA against tUSDG.",
-      ...rules,
-    },
-    { for: "module" },
-  );
-
-  // The account creates its own module (the factory binds the module to msg.sender).
-  const asAccount = await sandbox.impersonate(account);
-  const createHash = await asAccount.writeContract({
-    address: d.moduleFactory,
-    abi: mandateModuleFactoryAbi,
-    functionName: "createModule",
-    args: [built.params, sandbox.address("agent"), sandbox.address("operator"), agentId],
+  const rules: EvmMandateRules = {
+    chainId: sandbox.chain.id,
+    agentId,
+    mode: "monitor",
+    baseAsset: d.usdg,
+    assets: [d.tsla, d.nvda],
+    targets: [{ address: d.router, functions: ["swap(address,address,uint256,address)"] }],
+    maxTradeUsd: 5_000,
+    maxDailyUsd: 25_000,
+    maxDrawdownPct: 15,
+    maxSlippagePct: 3,
+    description: "SDK test module: trade tTSLA and tNVDA against tUSDG.",
+    ...overrides,
+  };
+  // The SDK's one-batch install: createModule, then installModule as executor and hook.
+  const plan = await installMandateModule(sandbox.publicClient, {
+    moduleFactory: d.moduleFactory,
+    account,
+    accountType: kind === "msa" ? "erc7579" : "safe7579",
+    rules,
+    agent: sandbox.address("agent"),
+    guardian: sandbox.address("operator"),
   });
-  const created = parseEventLogs({
-    abi: mandateModuleFactoryAbi,
-    logs: (await sandbox.publicClient.waitForTransactionReceipt({ hash: createHash })).logs,
-    eventName: "ModuleCreated",
-  });
-  const module = created[0]!.args.module;
-
-  // The owner installs it, as the EntryPoint would after validating the owner's operation.
-  const entryPoint = await sandbox.impersonate(ENTRY_POINT);
-  const installAbi = artifact("MSAAdvanced.sol", "MSAAdvanced").abi;
-  for (const type of options.install === false ? [] : [EXECUTOR, HOOK]) {
-    const data =
-      type === HOOK && kind === "safe"
-        ? encodeAbiParameters(
-            [{ type: "uint8" }, { type: "bytes4" }, { type: "bytes" }],
-            [0, "0x00000000", "0x"],
-          )
-        : "0x";
-    const hash = await entryPoint.writeContract({
-      address: account,
-      abi: installAbi,
-      functionName: "installModule",
-      args: [type, module, data],
-    });
+  if (options.install === false) {
+    // Only create it: the account calls the factory itself.
+    const asAccount = await sandbox.impersonate(account);
+    const call = plan.calls[0];
+    const hash = await asAccount.sendTransaction({ to: call.to, data: call.data });
+    await sandbox.publicClient.waitForTransactionReceipt({ hash });
+  } else {
+    // The owner sends the batch, as the EntryPoint would after validating the owner's operation.
+    const entryPoint = await sandbox.impersonate(ENTRY_POINT);
+    const hash = await entryPoint.sendTransaction({ to: account, data: plan.execute.data });
     const receipt = await sandbox.publicClient.waitForTransactionReceipt({ hash });
-    if (receipt.status !== "success")
-      throw new Error(`installing the module (type ${type}) failed`);
+    if (receipt.status !== "success") throw new Error("installing the module failed");
   }
+  const built = {
+    mandate: plan.mandate,
+    mandateHash: plan.params.mandateHash,
+    params: plan.params,
+  };
+  const module = plan.module;
 
   // Fund the account.
   const amount = parseUnits("50000", 6);
