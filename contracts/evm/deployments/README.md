@@ -51,6 +51,8 @@ Ethereum Sepolia (11155111) was deployed Sep 30, 2026 by the same key, from bloc
 
 Always read addresses from `<chainId>.json`, never assume they match across chains.
 
+These deployments predate MandateModule, so their files have no `moduleFactory`. A new deployment adds MandateModuleFactory last (every other address stays where it was) and points CoverManager at it.
+
 ## Deploying
 
 Put a funded, testnet-only key in the repo root's `.env` as `DEPLOYER_PRIVATE_KEY` (copy [`.env.example`](../../../.env.example); a shell variable works too), then from the repo root:
