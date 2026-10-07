@@ -109,6 +109,9 @@ importers:
         specifier: ^4.6.5
         version: 4.6.5
     devDependencies:
+      '@bonded/runner':
+        specifier: workspace:*
+        version: link:../runner
       '@types/ws':
         specifier: 8.18.1
         version: 8.18.1

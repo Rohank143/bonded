@@ -32,7 +32,8 @@
     "heldout": "node dist/held-out-cli.js",
     "sentinel-consistency": "node dist/consistency-cli.js",
     "relabel": "node dist/relabel-cli.js",
-    "sentinel-rewrite": "node dist/rewrite-cli.js"
+    "sentinel-rewrite": "node dist/rewrite-cli.js",
+    "test:parity": "ARENA_PARITY=full vitest run test/parity-"
   },
   "dependencies": {
     "@bonded/demo-agents": "workspace:*",
@@ -47,6 +48,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@bonded/runner": "workspace:*",
     "@types/ws": "8.18.1"
   }
 }

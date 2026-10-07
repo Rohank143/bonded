@@ -87,6 +87,8 @@ export interface RemoteEpisode {
 export type RemoteRunSummary = AgentRunSummary & { remote: RemoteEpisode };
 
 const DEFAULT_TIMEOUT_MS = 4 * 60_000;
+/** How long an agent that posted /done has to exit before it is stopped. */
+const DONE_EXIT_GRACE_MS = 2_000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -252,6 +254,9 @@ export class RemoteAgent implements SelfSigningAgent {
       const why = await ended;
       opened.close();
 
+      // An agent that said it's done gets a moment to exit on its own.
+      if (why === "done" && !exited && !runner.closed)
+        await Promise.race([exit, sleep(DONE_EXIT_GRACE_MS)]);
       // The process may still be running (it said done, or ran out of time): stop it, and wait
       // for its exit report so the tails and exit code are recorded.
       if (!exited && !runner.closed) {
