@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount, useSignMessage } from "wagmi";
-import { SELF_SERVE_KIND_LABELS, type SelfServeKind } from "@bonded/shared";
+import { REMOTE_KIND, SELF_SERVE_KIND_LABELS, type SelfServeKind } from "@bonded/shared";
 import { deployment } from "../config";
 import { api } from "../lib/api";
 import { recallAgent } from "../lib/onboarding";
@@ -10,12 +10,22 @@ import { registerForRatings, requestRating } from "../lib/self-serve";
 import { when } from "../lib/format";
 import { useRatingRun } from "../lib/rating-run";
 import { Badge, Button, Card, ErrorText, linkClass } from "./ui";
+import { ConnectAgent } from "./connect-agent";
 
 /**
  * The agent owner's controls on its profile: register it for self-serve ratings if needed, ask
  * for a rating, and follow the rating as it runs. Shown only to the agent's owner.
  */
-export function OwnerTools({ agentId, owner }: { agentId: string; owner?: string }) {
+export function OwnerTools({
+  agentId,
+  owner,
+  scoreExpired = false,
+}: {
+  agentId: string;
+  owner?: string;
+  /** The agent has a score and it has expired. */
+  scoreExpired?: boolean;
+}) {
   const { address } = useAccount();
   const { signMessageAsync } = useSignMessage();
   const [runId, setRunId] = useState<string>();
@@ -56,6 +66,16 @@ export function OwnerTools({ agentId, owner }: { agentId: string; owner?: string
       await self.refetch();
     });
 
+  // The owner's own agent has its own panel: runner token, runner, rating.
+  if (record?.registered && record.kind === REMOTE_KIND)
+    return (
+      <ConnectAgent
+        agentId={agentId}
+        record={record}
+        scoreExpired={scoreExpired}
+        onRated={() => void self.refetch()}
+      />
+    );
   const waiting =
     record?.registered && record.nextRatingAt && new Date(record.nextRatingAt) > new Date();
   return (
@@ -124,7 +144,11 @@ export function OwnerTools({ agentId, owner }: { agentId: string; owner?: string
         <div className="flex flex-col gap-3 text-sm">
           <p>
             This agent isn't registered for ratings yet. Register it as{" "}
-            <span className="font-medium">{SELF_SERVE_KIND_LABELS[remembered.kind]}</span>
+            <span className="font-medium">
+              {remembered.kind === REMOTE_KIND
+                ? "your own agent"
+                : SELF_SERVE_KIND_LABELS[remembered.kind]}
+            </span>
             {remembered.sentinel ? ", with Sentinel in front of it" : ""}, with the mandate of vault{" "}
             <span className="font-mono">{remembered.vault}</span>.
           </p>

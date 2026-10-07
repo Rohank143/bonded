@@ -5,6 +5,7 @@ import { useAccount, useSignMessage, useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
 import { parseEventLogs, type Abi, type Address, type Hex } from "viem";
 import {
+  REMOTE_KIND,
   SELF_SERVE_KINDS,
   SELF_SERVE_KIND_LABELS,
   bondedRegistryAbi,
@@ -13,7 +14,9 @@ import {
   operatorBondAbi,
   testTokenAbi,
   toEvmMandateParams,
-  type SelfServeKind,
+  type RemoteAgentSpec,
+  type RemoteMode,
+  type SelfServeAgentKind,
 } from "@bonded/shared";
 import { deployment, robinhoodTestnet } from "../config";
 import { wagmiConfig } from "../wagmi";
@@ -40,7 +43,8 @@ import {
   limitError,
 } from "../lib/validate";
 import { registerForRatings } from "../lib/self-serve";
-import { DOCS_WHATS_COMING } from "../lib/routes";
+import { DOCS_BYOA } from "../lib/routes";
+import { codeHashError, composeHashError, normaliseCodeHash, teeUrlError } from "../lib/byoa";
 import {
   Button,
   Card,
@@ -72,8 +76,13 @@ export function NewAgent() {
   const { address: user, isConnected } = useAccount();
   const { writeContractAsync } = useWriteContract();
   const { signMessageAsync } = useSignMessage();
-  const [kind, setKind] = useState<SelfServeKind>("partial");
+  const [kind, setKind] = useState<SelfServeAgentKind>("partial");
   const [sentinel, setSentinel] = useState(false);
+  // The owner's own agent: how it acts, the code it runs, and its TEE if it has one.
+  const [remoteMode, setRemoteMode] = useState<RemoteMode>("tools");
+  const [codeHash, setCodeHash] = useState("");
+  const [teeUrl, setTeeUrl] = useState("");
+  const [composeHash, setComposeHash] = useState("");
   const [mode, setMode] = useState<"monitor" | "enforce">("monitor");
   const [tokens, setTokens] = useState<MandateToken[]>([...MANDATE_TOKENS]);
   const [refund, setRefund] = useState("");
@@ -103,13 +112,36 @@ export function NewAgent() {
   };
   // Everything is checked before the first transaction, so a bad field can't leave a half-made
   // agent behind or silently skip a funding step.
-  const problems = validateOnboarding(deployment, {
-    connected: isConnected,
-    form,
-    agentKey: key,
-    bond,
-    deposit,
-  });
+  const own = kind === REMOTE_KIND;
+  const remoteErrors = own
+    ? [codeHashError(codeHash), teeUrlError(teeUrl), composeHashError(composeHash, teeUrl)]
+    : [];
+  const remote: RemoteAgentSpec | undefined = own
+    ? {
+        codeHash: normaliseCodeHash(codeHash),
+        mode: remoteMode,
+        ...(teeUrl.trim()
+          ? {
+              tee: {
+                url: teeUrl.trim(),
+                composeHash: composeHash.trim().startsWith("0x")
+                  ? composeHash.trim()
+                  : `0x${composeHash.trim()}`,
+              },
+            }
+          : {}),
+      }
+    : undefined;
+  const problems = [
+    ...validateOnboarding(deployment, {
+      connected: isConnected,
+      form,
+      agentKey: key,
+      bond,
+      deposit,
+    }),
+    ...remoteErrors.filter((e): e is string => Boolean(e)),
+  ];
   const saved = user ? loadProgress(deployment.chainId, user) : undefined;
   const unfinished = saved && nextStep(saved) ? saved : undefined;
 
@@ -203,6 +235,7 @@ export function NewAgent() {
           kind: progress.kind,
           mandate,
           ...(progress.sentinel ? { sentinel: true } : {}),
+          ...(progress.remote ? { remote: progress.remote } : {}),
         });
         finish("vault");
       }
@@ -260,6 +293,7 @@ export function NewAgent() {
           kind: progress.kind,
           mandate,
           ...(progress.sentinel ? { sentinel: true } : {}),
+          ...(progress.remote ? { remote: progress.remote } : {}),
         });
         finish("ratings");
       }
@@ -274,7 +308,8 @@ export function NewAgent() {
   const start = () =>
     run({
       kind,
-      ...(sentinel ? { sentinel: true } : {}),
+      ...(sentinel && !own ? { sentinel: true } : {}),
+      ...(remote ? { remote } : {}),
       form,
       agentKey: key,
       bond: bond.trim() || "0",
@@ -302,10 +337,10 @@ export function NewAgent() {
         <div className="flex min-w-0 flex-col gap-6">
           <StepCard n={1} title="What gets rated">
             <p className="mb-4 text-sm text-muted">
-              The Arena rates one of Bonded's built-in agent designs, run against your vault and
-              mandate. Rating your own agent's code is coming (
-              <a className={linkClass} href={DOCS_WHATS_COMING}>
-                what's coming
+              One of Bonded's built-in agent designs, run against your vault and mandate, or your
+              own agent, running on your servers and connected to the Arena by a small runner (
+              <a className={linkClass} href={DOCS_BYOA}>
+                how
               </a>
               ).
             </p>
@@ -319,23 +354,90 @@ export function NewAgent() {
                   title={SELF_SERVE_KIND_LABELS[k]}
                 />
               ))}
-            </div>
-            <div className="mt-4">
               <Choice
-                type="checkbox"
-                checked={sentinel}
-                onChange={() => setSentinel((v) => !v)}
-                title="Rate it with Sentinel in front"
+                name="kind"
+                checked={own}
+                onChange={() => setKind(REMOTE_KIND)}
+                title="My own agent: any framework or language, where it already runs"
               >
-                Sentinel checks each trade the agent proposes and stops the ones driven by what it
-                read. If it breaches less, it scores higher and cover costs less. Your agent should
-                then ask Sentinel before each trade (
-                <Link to="/sentinel" className={linkClass}>
-                  how
-                </Link>
-                ).
+                After onboarding, its page gives you a runner token and the command that connects
+                your agent to the Arena.
               </Choice>
             </div>
+            {own ? (
+              <div className="mt-5 flex flex-col gap-5 text-sm">
+                <fieldset className="flex flex-col gap-2">
+                  <legend className="mb-2 font-medium">How your agent acts</legend>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Choice
+                      name="remote-mode"
+                      checked={remoteMode === "tools"}
+                      onChange={() => setRemoteMode("tools")}
+                      title="Tools (MCP or HTTP)"
+                    >
+                      It reads and trades through tool calls. The easiest to connect.
+                    </Choice>
+                    <Choice
+                      name="remote-mode"
+                      checked={remoteMode === "chain"}
+                      onChange={() => setRemoteMode("chain")}
+                      title="Chain"
+                    >
+                      It reads through tools and signs its own transactions to its vault, as in
+                      production.
+                    </Choice>
+                  </div>
+                </fieldset>
+                <Input
+                  label="Code hash"
+                  hint="Your own fingerprint of the code that runs: an image digest (sha256:…) or a commit, as 0x and 64 hex digits. The score is about this code."
+                  value={codeHash}
+                  onChange={setCodeHash}
+                  placeholder="0x…"
+                  error={codeHash ? codeHashError(codeHash) : null}
+                />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Input
+                    label="TEE URL (optional)"
+                    hint="If it runs in a Phala dstack TEE: every episode must then prove the code."
+                    value={teeUrl}
+                    onChange={setTeeUrl}
+                    placeholder="https://…"
+                    error={teeUrlError(teeUrl)}
+                  />
+                  <Input
+                    label="Compose hash"
+                    hint="Published for that deployment. Needed with a TEE URL."
+                    value={composeHash}
+                    onChange={setComposeHash}
+                    placeholder="0x…"
+                    error={composeHash || teeUrl ? composeHashError(composeHash, teeUrl) : null}
+                  />
+                </div>
+                <p className="text-xs text-muted">
+                  Without a TEE the score's binding is declared, and cover is capped lower
+                  (underwriting policy, not the score). With one, the vault's agent key must be the
+                  TEE's own key for cover.
+                </p>
+              </div>
+            ) : (
+              <div className="mt-4">
+                <Choice
+                  type="checkbox"
+                  checked={sentinel}
+                  onChange={() => setSentinel((v) => !v)}
+                  title="Rate it with Sentinel in front"
+                >
+                  Sentinel checks each trade the agent proposes and stops the ones driven by what it
+                  read. If it breaches less, it scores higher and cover costs less. Your agent
+                  should then ask Sentinel before each trade (
+                  <Link to="/sentinel" className={linkClass}>
+                    how
+                  </Link>
+                  ).
+                </Choice>
+              </div>
+            )}
           </StepCard>
 
           <StepCard n={2} title={<Term term="mandate">Mandate</Term>}>
@@ -557,7 +659,7 @@ export function NewAgent() {
                 <p className="font-medium">Agent {created.agentId.toString()} is set up.</p>
                 <p className="mt-1">
                   <Link className={linkClass} to={`/agents/${created.agentId}`}>
-                    Rate it
+                    {own ? "Connect and rate it" : "Rate it"}
                   </Link>{" "}
                   ·{" "}
                   <Link className={linkClass} to={`/vaults/${created.vault}`}>

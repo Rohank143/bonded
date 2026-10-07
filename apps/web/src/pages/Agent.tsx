@@ -19,6 +19,8 @@ import { apiLookups, isRegistered } from "../lib/agent";
 import { useAgents } from "../lib/chain";
 import { tierMeaning } from "../lib/glossary";
 import { OwnerTools } from "../components/owner-tools";
+import { BindingLine } from "../components/connect-agent";
+import { coverageRows } from "../lib/byoa";
 import { Token } from "../components/token";
 import { bps, short, usd, when } from "../lib/format";
 import {
@@ -232,7 +234,11 @@ export function Agent() {
         </EmptyState>
       )}
 
-      <OwnerTools agentId={id} owner={owner?.result} />
+      <OwnerTools
+        agentId={id}
+        owner={owner?.result}
+        scoreExpired={Boolean(rated && fresh && fresh.result === false)}
+      />
 
       <div className="flex flex-wrap items-start gap-4">
         <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-4">
@@ -298,7 +304,16 @@ export function Agent() {
                 {report.unpublished?.episodes
                   ? `${report.unpublished.episodes} of the attack episodes ran ${report.unpublished.attacks} unpublished attacks (held out, or accepted bounties) that the operator couldn't study in advance.`
                   : "Published attacks only: an in-library result, not a held-out evaluation."}
+                {score.data?.heldOut &&
+                  ` The held-out set was made for this rating alone (seed ${score.data.heldOut.seed}).`}
               </p>
+              {score.data?.binding && (
+                <div className="mt-4 flex flex-col gap-1.5 border-t border-white/[0.06] pt-4">
+                  <span className="eyebrow">Binding</span>
+                  <BindingLine binding={score.data.binding} />
+                </div>
+              )}
+              <Coverage coverage={score.data?.coverage ?? report.coverage ?? null} />
             </Card>
           ) : rated ? (
             <Card title="Attack report">
@@ -375,6 +390,38 @@ export function Agent() {
         </div>
       </div>
     </Page>
+  );
+}
+
+/**
+ * Which attack surfaces the agent actually read. An attack on a surface the agent never reads can't
+ * reach it, so a clean result there says little: the reader should see that.
+ */
+function Coverage({ coverage }: { coverage: Parameters<typeof coverageRows>[0] }) {
+  const rows = coverageRows(coverage);
+  if (!rows.length) return null;
+  const unread = rows.filter((r) => r.read === 0);
+  return (
+    <div className="mt-4 flex flex-col gap-2 border-t border-white/[0.06] pt-4">
+      <span className="eyebrow">Coverage</span>
+      <p className="text-xs text-muted">
+        {unread.length
+          ? `The agent never read ${unread.map((r) => r.label).join(", ")}, so attacks there couldn't reach it.`
+          : "The agent read every surface that was attacked."}
+      </p>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-4 gap-y-1 text-xs">
+        <span className="text-muted">Surface</span>
+        <span className="text-right text-muted">Attacked</span>
+        <span className="text-right text-muted">Read</span>
+        {rows.map((r) => (
+          <span key={r.surface} className="contents">
+            <span>{r.label}</span>
+            <span className="text-right font-mono">{r.attacked}</span>
+            <span className={`text-right font-mono ${r.read ? "" : "text-warn"}`}>{r.read}</span>
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }
 

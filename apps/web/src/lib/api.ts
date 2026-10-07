@@ -1,4 +1,5 @@
-import type { AttackSpec, SelfServeKind } from "@bonded/shared";
+import type { BindingLevel, RemoteMode, SelfServeAgentKind, SelfServeKind } from "@bonded/shared";
+import type { AttackSpec } from "@bonded/shared";
 import { apiUrl } from "../config";
 import type { EpisodeCard, EpisodeCounts, Outcome } from "./events";
 
@@ -195,7 +196,21 @@ function post<T>(path: string, token: string, body: unknown): Promise<T> {
   });
 }
 
-export interface ScoreRecord {
+/** What the API adds to a score or run: binding level, coverage and the held-out seed. */
+export interface RatingFacts {
+  /** `tee` when the score carries a verified TEE measurement, otherwise `declared`. */
+  binding?: BindingLevel;
+  /** Which attack surfaces the agent read (reports that record it). */
+  coverage?: Coverage | null;
+  /** The held-out set made for this rating (remote ratings). */
+  heldOut?: { seed: string } | null;
+}
+/** Per surface: episodes that attacked it, and episodes in which the agent read it. */
+export interface Coverage {
+  surfaces: Record<string, { attacked: number; read: number }>;
+  readSurfaces: string[];
+}
+export interface ScoreRecord extends RatingFacts {
   runId: string;
   tx_hash: string;
   signed: { attestation: { reportHash: string; issuedAt: number; expiresAt: number } };
@@ -211,7 +226,7 @@ export interface TeeCheckRecord {
   checkedAt: string;
   verifiedAt: string | null;
 }
-export interface RunRecord {
+export interface RunRecord extends RatingFacts {
   id: string;
   status: "queued" | "running" | "done" | "failed";
   error: string | null;
@@ -230,6 +245,8 @@ export interface Report {
   controls: { episodes: number; breaches: number };
   /** Accepted bounties and held-out attacks in the rating; older reports don't have it. */
   unpublished?: { attacks: number; episodes: number };
+  /** Which attack surfaces the agent read; reports from before bring-your-own agents don't have it. */
+  coverage?: Coverage;
   /** Set when the agent proved it runs in a TEE; reports from before Day 11 don't have it. */
   tee?: {
     measurement: `0x${string}`;
@@ -309,7 +326,37 @@ export type SelfAgentRecord =
       owner: string | null;
       lastRatingAt: string | null;
       nextRatingAt: string | null;
+      /** The owner's own agent (kind "remote"): what was declared. */
+      codeHash?: string;
+      mode?: RemoteMode;
+      tee?: { url: string; composeHash: string } | null;
+      /** Underwriting policy: the most cover it can hold, in tUSDG, by binding. */
+      coverCaps?: Record<BindingLevel, number>;
     };
+
+/** GET /self/agents/:id/runner: the runner token (never the token itself) and the runner. */
+export interface RunnerRecord {
+  token: { id: string; createdAt: string } | null;
+  runner: {
+    connected: boolean;
+    connectedAt: string;
+    lastHeartbeatAt: string;
+    disconnectedAt: string | null;
+    runnerVersion: string | null;
+    mode: string | null;
+    teeUrl: string | null;
+  } | null;
+  /** The latest rating the live loop had to skip, and why. */
+  lastSkip: { cause: string; reason: string; at: string } | null;
+  /** The Arena Gateway's public URL, for the runner command; null when it isn't configured. */
+  gatewayUrl: string | null;
+}
+
+/** A signed self-serve request with nothing else in it. */
+export interface SignedRequest {
+  timestamp: number;
+  signature: string;
+}
 
 /** A community bounty as the API lists it: no payload, which stays private. */
 export interface BountyRecord {
@@ -358,8 +405,12 @@ export const api = {
   registerSelfAgent: (input: {
     agentId: string;
     vault: string;
-    kind: SelfServeKind;
+    kind: SelfServeKind | SelfServeAgentKind;
     mandate: unknown;
+    sentinel?: boolean;
+    codeHash?: string;
+    mode?: RemoteMode;
+    tee?: { url: string; composeHash: string };
     timestamp: number;
     signature: string;
   }) =>
@@ -372,6 +423,25 @@ export const api = {
   rateSelfAgent: (agentId: string, input: { timestamp: number; signature: string }) =>
     request<{ runId: string }>(`/self/agents/${agentId}/rate`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  /** The owner's own agent: its runner token (never the token) and its runner. */
+  runner: (agentId: string) => request<RunnerRecord>(`/self/agents/${agentId}/runner`),
+  /** A new runner token, shown once; it replaces the agent's current one. */
+  createRunnerToken: (agentId: string, input: SignedRequest) =>
+    request<{ token: string; tokenId: string; createdAt: string; gatewayUrl: string | null }>(
+      `/self/agents/${agentId}/runner-token`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      },
+    ),
+  /** Revoke the agent's runner token; a connected runner is dropped. */
+  revokeRunnerToken: (agentId: string, input: SignedRequest) =>
+    request<{ revoked: number }>(`/self/agents/${agentId}/runner-token`, {
+      method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     }),

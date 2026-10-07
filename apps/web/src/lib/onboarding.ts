@@ -1,4 +1,10 @@
-import { EvmMandate, demoRouterAbi, type EvmDeployment, type SelfServeKind } from "@bonded/shared";
+import {
+  EvmMandate,
+  demoRouterAbi,
+  type EvmDeployment,
+  type RemoteAgentSpec,
+  type SelfServeAgentKind,
+} from "@bonded/shared";
 import { getAbiItem, isAddress, toFunctionSelector } from "viem";
 import { parseUsd } from "./format";
 
@@ -61,10 +67,13 @@ export function buildMandate(
 /** What the onboarding page remembers about an agent it created, in this browser. */
 export interface OnboardedAgent {
   vault: string;
-  kind: SelfServeKind;
+  /** A built-in design, or "remote": the owner's own agent. */
+  kind: SelfServeAgentKind;
   mandate: EvmMandate;
-  /** Rate it with Sentinel in front (docs/SENTINEL.md). */
+  /** Rate it with Sentinel in front (docs/SENTINEL.md). Built-in designs only. */
   sentinel?: boolean;
+  /** The owner's own agent: its declared code hash, mode and TEE. */
+  remote?: RemoteAgentSpec;
 }
 
 const key = (chainId: number, agentId: string) => `bonded:onboarded:${chainId}:${agentId}`;
@@ -175,9 +184,11 @@ export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
  * resume from the first unfinished step instead of registering another agent.
  */
 export interface OnboardingProgress {
-  kind: SelfServeKind;
+  kind: SelfServeAgentKind;
   /** Rate it with Sentinel in front. */
   sentinel?: boolean;
+  /** The owner's own agent: what they declared about it. */
+  remote?: RemoteAgentSpec;
   form: MandateForm;
   agentKey: string;
   bond: string;
