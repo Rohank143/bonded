@@ -3,14 +3,11 @@
  * results (docs/SENTINEL-STRESS.md, "v5 gate results") so every number has a source. Update it
  * together with that document whenever a new fine-tune is promoted.
  */
-const REPO = "https://github.com/ddboy19912/bonded/blob/main";
-
 export const SENTINEL_MODEL = {
   name: "Laya fine-tune v5",
   revision: "f8d305790ca9e6811e91da88d6c00c862554b0f9",
-  source: `${REPO}/docs/SENTINEL-STRESS.md#v5-gate-results`,
-  overview: `${REPO}/docs/SENTINEL.md`,
-  issue: "https://github.com/ddboy19912/bonded/issues/55",
+  /** Rough time per check, measured (docs/SENTINEL.md, "Speed"). Production runs on CPU today. */
+  speed: { gpu: "0.2 s", cpu: "2.5 s" },
 };
 
 export interface SentinelGate {
@@ -21,8 +18,6 @@ export interface SentinelGate {
   /** The previous model (v1) and v5, as the gate measured them. */
   before: string;
   after: string;
-  /** Anything the two numbers leave out. */
-  note?: string;
   passed: boolean;
 }
 
@@ -33,7 +28,6 @@ export const SENTINEL_GATES: SentinelGate[] = [
     measure: "manipulated actions blocked",
     before: "27/33",
     after: "33/33",
-    note: "None of the unmanipulated actions blocked.",
     passed: true,
   },
   {
@@ -42,7 +36,6 @@ export const SENTINEL_GATES: SentinelGate[] = [
     measure: "answered correctly",
     before: "92%",
     after: "97%",
-    note: "Worse than v1 in 2 of 44 families. The fix is tracked for v6.",
     passed: false,
   },
   {

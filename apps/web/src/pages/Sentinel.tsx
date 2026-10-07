@@ -2,7 +2,7 @@ import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { SENTINEL_GATES, SENTINEL_MODEL } from "../lib/sentinel-facts";
-import { Badge, ErrorText, Page, buttonClass, linkClass } from "../components/ui";
+import { Badge, ErrorText, Page, buttonClass } from "../components/ui";
 import { StatLoading, StatStrip } from "../components/stat-strip";
 
 const STEPS: [string, string][] = [
@@ -23,6 +23,9 @@ const STEPS: [string, string][] = [
     "At 70% confidence or more, the check says block. The vault still enforces the mandate either way.",
   ],
 ];
+
+/** One cell of the gates grid: opaque, so the 1px gaps between cells read as dividers. */
+const CELL = "bg-[linear-gradient(180deg,rgb(18_23_37),rgb(11_14_23))] p-6";
 
 const RATED_WITH: [string, string][] = [
   [
@@ -52,16 +55,6 @@ export function Sentinel() {
     <Page
       title="Sentinel"
       intro="A guard built on Laya, Convai Innovations' open-source decision model. It checks each trade before it runs and stops the ones driven by what the agent read, not its mandate. It only advises: the vault decides payouts."
-      actions={
-        <a
-          href={SENTINEL_MODEL.overview}
-          target="_blank"
-          rel="noreferrer"
-          className={buttonClass("secondary")}
-        >
-          How it's built →
-        </a>
-      }
     >
       <StatStrip
         stats={[
@@ -113,61 +106,41 @@ export function Sentinel() {
       </section>
 
       <section>
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="font-serif text-3xl leading-tight">How v5 was tested</h2>
-            <p className="mt-2 max-w-[60ch] text-sm text-muted">
-              Five gates against the previous model, v1, before it went live. It passed four and was
-              promoted with the fifth's exception recorded.
-            </p>
-          </div>
-          <a
-            href={SENTINEL_MODEL.source}
-            target="_blank"
-            rel="noreferrer"
-            className={`text-sm ${linkClass}`}
-          >
-            Full results →
-          </a>
-        </div>
-        {/* Each card spans five shared rows, so names, numbers and notes line up across cards. */}
-        <ul className="panel mt-5 grid overflow-hidden p-0 md:grid-cols-2 xl:grid-cols-5">
+        <h2 className="font-serif text-3xl leading-tight">How v5 was tested</h2>
+        <p className="mt-2 max-w-[60ch] text-sm text-muted">
+          Five gates before it went live, each run on v5 and on the previous model, v1.
+        </p>
+        {/* Cells share four rows, so names, numbers and labels line up across a row of cards. */}
+        <ul className="mt-5 grid gap-px overflow-hidden rounded-[var(--radius-card)] border border-line bg-line md:grid-cols-2 lg:grid-cols-3">
           {SENTINEL_GATES.map((g) => (
-            <li
-              key={g.name}
-              className="row-span-5 grid grid-rows-subgrid border-b border-line p-5 last:border-b-0 md:[&:nth-child(odd)]:border-r md:last:col-span-2 md:last:border-r-0 xl:border-b-0 xl:last:col-span-1 xl:[&:not(:last-child)]:border-r"
-            >
+            <li key={g.name} className={`${CELL} row-span-4 grid grid-rows-subgrid`}>
               <span>
                 <Badge tone={g.passed ? "safe" : "warn"} dot>
                   {g.passed ? "Passed" : "Exception"}
                 </Badge>
               </span>
               <p className="mt-3 font-semibold">{g.name}</p>
-              <p className="mt-1.5 text-xs leading-relaxed text-muted">{g.what}</p>
+              <p className="mt-1.5 max-w-[40ch] text-sm leading-relaxed text-muted">{g.what}</p>
               <div className="mt-6">
-                <p className="flex items-baseline gap-2 tabular-nums">
-                  <span className="font-serif text-[36px] leading-none">{g.after}</span>
+                <p className="flex items-baseline gap-3 tabular-nums">
+                  <span className="font-serif text-[40px] leading-none">{g.after}</span>
                   <span className="text-sm text-muted">
-                    from <span className="text-soft">{g.before}</span>
+                    v1: <span className="text-soft">{g.before}</span>
                   </span>
                 </p>
-                <p className="mt-1.5 text-xs text-muted">{g.measure}</p>
+                <p className="mt-1.5 text-sm text-muted">{g.measure}</p>
               </div>
-              <p
-                className={`text-xs leading-relaxed ${g.note ? "mt-3 border-t border-line pt-3" : ""} ${g.passed ? "text-muted" : "text-warn"}`}
-              >
-                {g.note}
-              </p>
             </li>
           ))}
+          <li className={`${CELL} row-span-4 flex flex-col`}>
+            <p className="eyebrow">Verdict</p>
+            <p className="mt-3 font-serif text-[40px] leading-none">4 of 5 passed</p>
+            <p className="mt-auto pt-6 text-sm leading-relaxed text-muted">
+              The stress suite improved overall but got worse in 2 of its 44 families. v5 went live
+              with that exception recorded, and the next model targets those families.
+            </p>
+          </li>
         </ul>
-        <p className="mt-3 text-xs text-muted">
-          Big number: v5. Smaller: v1 on the same cases. Where v5 still misses is tracked in{" "}
-          <a href={SENTINEL_MODEL.issue} target="_blank" rel="noreferrer" className={linkClass}>
-            issue #55
-          </a>
-          .
-        </p>
       </section>
 
       <section className="grid gap-8 border-t border-line pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">

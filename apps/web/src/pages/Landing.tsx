@@ -10,6 +10,7 @@ import { APP_HOME } from "../lib/routes";
 import { MANDATE_TOKENS } from "../lib/onboarding";
 import { ScoreRing, buttonClass, tierTone } from "../components/ui";
 import { TokenChip } from "../components/token";
+import { LandingSentinel } from "./LandingSentinel";
 import "./landing.css";
 
 /** Example attacks for the hero feed: the kinds of text the red team plants, by class. */
@@ -30,6 +31,7 @@ export function Landing() {
       <Hero />
       <Stats />
       <Walkthrough />
+      <LandingSentinel />
       <FinalCta />
     </>
   );

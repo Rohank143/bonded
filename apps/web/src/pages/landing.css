@@ -173,6 +173,55 @@
   }
 }
 
+/* Sentinel flow: the line between two cards, and the dot that travels along it. Vertical when the
+   cards stack, horizontal from 1024px. */
+.sflow-line {
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+.sflow-dot {
+  left: 50%;
+  translate: -50% -50%;
+  animation: sflow-y 0.8s ease-in-out forwards;
+}
+@media (min-width: 1024px) {
+  .sflow-line {
+    left: 0;
+    right: 0;
+    top: 50%;
+    bottom: auto;
+    width: auto;
+    height: 1px;
+  }
+  .sflow-dot {
+    top: 50%;
+    animation-name: sflow-x;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sflow-dot {
+    display: none;
+  }
+}
+@keyframes sflow-y {
+  from {
+    top: 0;
+  }
+  to {
+    top: 100%;
+  }
+}
+@keyframes sflow-x {
+  from {
+    left: 0;
+  }
+  to {
+    left: 100%;
+  }
+}
+
 /* Phones and small tablets: the cards stack, flat and still. */
 @media (max-width: 1100px) {
   .hero-ui {

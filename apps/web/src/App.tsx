@@ -299,6 +299,9 @@ export function SiteLayout() {
             <a href="#how" className="hover:text-ink">
               How it works
             </a>
+            <a href="#sentinel" className="hover:text-ink">
+              Sentinel
+            </a>
           </nav>
           <Link to={APP_HOME} className={`${buttonClass("light")} ml-auto md:ml-0`}>
             Launch app <span aria-hidden>→</span>

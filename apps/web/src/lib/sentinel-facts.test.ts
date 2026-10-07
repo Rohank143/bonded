@@ -12,3 +12,10 @@ it("names the revision production pins, so the page can't go stale silently", ()
   const railway = readFileSync(resolve(__dirname, "../../../../.railway/railway.ts"), "utf8");
   expect(railway).toContain(`SENTINEL_MODEL_REVISION: "${SENTINEL_MODEL.revision}"`);
 });
+
+it("quotes the measured speeds from docs/SENTINEL.md", () => {
+  const doc = readFileSync(resolve(__dirname, "../../../../docs/SENTINEL.md"), "utf8");
+  expect(doc).toContain("p50 217 ms"); // T4 GPU, shown as 0.2 s
+  expect(doc).toContain("about 2.5 s on CPU");
+  expect(SENTINEL_MODEL.speed).toEqual({ gpu: "0.2 s", cpu: "2.5 s" });
+});
