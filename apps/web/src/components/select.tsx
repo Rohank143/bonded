@@ -18,6 +18,7 @@ export function Select({
   options,
   label,
   placeholder,
+  block = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -25,13 +26,19 @@ export function Select({
   /** A short label shown inside the trigger, before the chosen value. */
   label?: ReactNode;
   placeholder?: string;
+  /** A full-width form field the height of a text input, instead of a compact filter pill. */
+  block?: boolean;
 }) {
   return (
     <RadixSelect.Root value={value} onValueChange={onChange}>
-      <RadixSelect.Trigger className="inline-flex h-9 items-center gap-2 rounded-full border border-line-strong px-4 text-[13px] text-ink outline-none hover:bg-white/[0.04] focus-visible:border-accent data-[state=open]:border-accent">
+      <RadixSelect.Trigger
+        className={`items-center gap-2 border border-line-strong text-ink outline-none focus-visible:border-accent data-[state=open]:border-accent ${block ? "flex h-11 w-full rounded-xl bg-white/[0.03] px-3.5 text-left text-sm transition focus-visible:ring-3 focus-visible:ring-accent/15 data-[state=open]:ring-3 data-[state=open]:ring-accent/15" : "inline-flex h-9 rounded-full px-4 text-[13px] hover:bg-white/[0.04]"}`}
+      >
         {label && <span className="text-muted">{label}</span>}
-        <RadixSelect.Value placeholder={placeholder} />
-        <RadixSelect.Icon className="text-muted">
+        <span className={block ? "min-w-0 flex-1 truncate" : ""}>
+          <RadixSelect.Value placeholder={placeholder} />
+        </span>
+        <RadixSelect.Icon className="shrink-0 text-muted">
           <svg
             viewBox="0 0 24 24"
             className="size-4"
@@ -49,7 +56,7 @@ export function Select({
         <RadixSelect.Content
           position="popper"
           sideOffset={8}
-          align="end"
+          align={block ? "start" : "end"}
           className="z-50 max-h-[var(--radix-select-content-available-height)] min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-2xl border border-line-strong bg-raised p-1.5 shadow-(--shadow-raised) [animation:rise_.15s_ease_both]"
         >
           <RadixSelect.Viewport>
