@@ -17,6 +17,8 @@ This note covers the EVM contracts, the Solana programs, and the off-chain servi
 
 No high-severity finding. Every contract fix that remains is listed in the mainnet prerequisites, [issue #67](https://github.com/ddboy19912/bonded/issues/67).
 
+The MandateModule work (smart-account protection, 2026-10-07) was reviewed afterwards; its findings (F-11 to F-15) and its effect on F-10 are in [the addendum](#addendum-mandatemodule) at the end.
+
 ## Method
 
 | Check | Tool or approach | Result |
@@ -172,3 +174,67 @@ The whole git history was scanned for secrets.
 Run it again with `gitleaks git --log-opts="--all" .`; it should report "no leaks found".
 
 The code is under the MIT licence (`LICENSE`); `SECURITY.md` says how to report a vulnerability.
+
+## Addendum: MandateModule
+
+- **Date:** 2026-10-07
+- **Code reviewed:** branch `mandate-module`: the mandate checks moved into `MandateBase` (shared by `MandateVault` and the new `MandateModule`), `MandateModuleFactory`, and the CoverManager and ClaimsEngine changes that let a module-protected smart account hold cover
+- **Deployed contracts:** not changed. The module needs a new CoverManager and ClaimsEngine, so it ships with the mainnet deployment (#67)
+
+| Severity | Found | Fixed | Accepted, documented |
+|---|---|---|---|
+| Medium | 1 | | 1 (F-11) |
+| Low | 1 | | 1 (F-12, by design) |
+| Informational | 3 | | 3 (F-13 to F-15) |
+
+F-10 is fixed for modules: `MandateModuleFactory.createModule` refuses a mandate hash that isn't `BondedTypes.mandateCommitment(params)`, the hash of the ABI-encoded enforced parameters. Vaults still carry the JSON hash; the vault factory fix stays in #67.
+
+### Method
+
+| Check | Result |
+|---|---|
+| Vault behaviour unchanged by the refactor | Every existing test and the 16 existing invariants pass with no change to their code. The vault's generated ABI differs only in the `Breach` struct's internal type name |
+| Vault and module agree | Differential tests feed the same random sequences (16 steps of agent actions, outside pulls, price moves, guardian steps and time) to a vault and a module with the same mandate and funds, in both modes, on the ERC-7579 reference account and on a Safe with Safe7579. After every step: same call outcome and data, breach log field by field, freeze state, 24h window, recorded and actual balances, and BreachRecorded and Executed events. A fixed sequence makes sure every breach type is compared |
+| Real accounts | The module tests run on the ERC-7579 reference account (`MSAAdvanced` 0.0.2) and on Safe 1.4.1 with Safe7579 1.0.2, installed as executor and hook through each account's own entry points, plus a Safe flow that uses only the owner's `execTransaction` |
+| Invariants | A new suite runs the protocol handler with two module-protected accounts beside the two vaults: 9 invariants (payouts reach the account, Deferred breaches on modules are never paid, modules never hold funds, a frozen agent gets nothing through and owner withdrawals through the account are never breaches, plus the waterfall, deductible, paid-once, exposure, bond and pool properties with modules in the mix) |
+| Planted bugs | `mutations.py` now plants 16 bugs (5 new for the module); 16 of 16 caught |
+| Slither 0.11.6 | Same command as above. 0 high, 12 medium, 57 low, 21 informational, 5 optimisation. Every medium is the same finding as before, now reported on `MandateBase` where the code moved. New: 5 `calls-loop` on the module's account reads (bounded by 16 assets), 1 `unindexed-event-address` (`ModuleFactorySet`, set-once admin event), 1 `too-many-digits` (the module's creation code in `predictModule`, a false positive). The `missing-zero-check` on `measuredCall` is gone (the call moved behind `_call`) |
+
+### F-11 (Medium) Monitor mode on a smart account reaches further than on a vault
+
+In Monitor mode a breaching call still runs, as it does for a vault, but it runs with the smart account's authority. The module refuses calls to the account and to itself in both modes. It can't list every contract that trusts the account as caller: another installed module's settings (for example an owner-list validator) or an adapter. A compromised agent in Monitor mode could call one of those and change the account's setup. That is recorded as an UnauthorizedTarget breach with no loss, the agent is frozen, and any later drain through the new setup happens outside the module (Deferred, not paid, see F-12). So the pool is not exposed, but the account owner is.
+
+- **Status:** accepted and documented (contracts README: "Prefer Enforce mode"). Enforce mode blocks such calls before they run.
+- **Option for mainnet (#67):** have CoverManager refuse cover for Monitor-mode modules, or have the factory accept only Enforce mode. Both depart from the "same modes as the vault" requirement, so they are the founder's call.
+
+### F-12 (Low, by design) Deferred breaches on module-protected accounts aren't paid
+
+The owner of a smart account can move funds without going through the module (a Safe owner's `execTransaction` doesn't pass through ERC-7579 hooks, and any other module or executor can move funds too). An unexplained drop can't be told apart from the owner withdrawing, and paying it would let the owner fake a loss and collect the pool's share of the payout. ClaimsEngine therefore refuses Deferred breaches on modules (`BreachNotCovered`); the module still records them and freezes the agent.
+
+- **Effect:** in Monitor mode, a loss through an unauthorized approval that is pulled later is not covered on a module (it is on a vault). The approval itself is recorded and freezes the agent. In Enforce mode the approval is blocked, so the case doesn't arise.
+
+### F-13 (Informational) A Safe owner's own transactions skip the hook
+
+Without the hook, an owner withdrawal looks like an unexplained drop at the next `execute`, `reconcile` or premium collection, which records a Deferred breach and freezes the agent. The owner calls `sync()` after moving funds that way (ideally in the same Safe transaction), or moves funds through Safe7579's `execute`, where the hook runs. Tested in `ModuleSafe7579.t.sol`.
+
+### F-14 (Informational) F-03 applies to modules too
+
+A payout that lands in the account while the agent's call is running counts as inflow and reduces the loss recorded for that call. Same preconditions and the same fix as F-03 (#67).
+
+### F-15 (Informational) Safe7579 hides a failed target call's revert reason
+
+Safe7579 reports a failed call as its own `ExecutionFailed()`, so `module.execute` on a Safe bubbles that instead of the target's revert data (the ERC-7579 reference account bubbles the original, as the vault does). Nothing is recorded either way. SDK error decoding should expect both.
+
+### Other checks
+
+| Item | Result |
+|---|---|
+| Only factory modules can hold cover | Yes: CoverManager checks `moduleFactory.isModule`, and the module factory is set once |
+| Payouts reach the protected account | Yes: ClaimsEngine pays `module.account()`; invariant `ModulePayoutsReachTheAccount` |
+| Nobody can create a module for someone else's account | Yes: the caller is the account |
+| One module in use per account | Yes: a new one only once the previous one is uninstalled |
+| The agent can only act through `execute` | Yes: the session key has no rights on the account; `execute` refuses the account and the module as targets |
+| The owner can always uninstall | Yes: `onUninstall` makes no external calls, and the hook lets the owner's actions through even if the oracle fails |
+| Nothing else acts on the account during the agent's call | Yes, when the hook is installed: it refuses any other execution while `execute` is running |
+| Reentrancy | `execute`, `reconcile`, `sync` and `payPremium` are `nonReentrant`; hook and install callbacks are account-only |
+
