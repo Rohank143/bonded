@@ -3,7 +3,13 @@ import { stringify } from "yaml";
 import { heldOutId, loadAttackLibrary } from "@bonded/arena";
 import type { ServiceChain } from "@bonded/keeper";
 import { createApi } from "../src/index.js";
-import { MAX_BODY_BYTES, pageOfAttacks, ratingLibrary, uploadBatches } from "../src/library.js";
+import {
+  MAX_BODY_BYTES,
+  classSummary,
+  pageOfAttacks,
+  ratingLibrary,
+  uploadBatches,
+} from "../src/library.js";
 import { postgres } from "./postgres.js";
 
 // The library routes only need the chain id; nothing here reads the chain.
@@ -132,8 +138,16 @@ it("lists the published attacks with their Arena record, and never an unpublishe
     pages: number;
     statsSince: string | null;
   };
-  const list = (await (await app.request("/library/attacks?limit=100")).json()) as Page;
+  const list = (await (await app.request("/library/attacks?limit=100")).json()) as Page & {
+    classes: { class: string; attacks: number; episodes: number }[];
+  };
   expect(list.total).toBe(library.length);
+  // The class totals cover the whole library, even when the list is filtered.
+  expect(list.classes).toHaveLength(10);
+  const filteredClasses = (
+    (await (await app.request("/library/attacks?class=A3")).json()) as typeof list
+  ).classes;
+  expect(filteredClasses).toEqual(list.classes);
   expect(list.statsSince).not.toBeNull();
   expect(list.items.find((a) => a.id === first!.id)?.stats).toMatchObject({
     episodes: 2,
@@ -176,4 +190,34 @@ it("sorts attacks by class, by breaches or by breach rate, and pages them", () =
   expect(byClass.indexOf("A10")).toBeGreaterThan(byClass.lastIndexOf("A9"));
   const page = pageOfAttacks(library, stats, { limit: 7, page: 99 });
   expect(page).toMatchObject({ page: page.pages, total: library.length });
+});
+
+it("sums each class's published attacks and their record, all ten classes in order", () => {
+  const library = loadAttackLibrary();
+  const [a, b] = library.filter((x) => x.class === "A5");
+  const stats = new Map([
+    [a!.id, { episodes: 10, breaches: 7, runs: 2, lastAt: null }],
+    [b!.id, { episodes: 5, breaches: 1, runs: 1, lastAt: null }],
+  ]);
+  const classes = classSummary(library, stats);
+  expect(classes.map((c) => c.class)).toEqual([
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8",
+    "A9",
+    "A10",
+  ]);
+  expect(classes.find((c) => c.class === "A5")).toEqual({
+    class: "A5",
+    attacks: library.filter((x) => x.class === "A5").length,
+    episodes: 15,
+    breaches: 8,
+  });
+  expect(classes.find((c) => c.class === "A1")).toMatchObject({ episodes: 0, breaches: 0 });
+  expect(classes.reduce((n, c) => n + c.attacks, 0)).toBe(library.length);
 });

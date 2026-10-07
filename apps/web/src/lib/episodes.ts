@@ -37,6 +37,20 @@ export function matches(
   );
 }
 
+/**
+ * The newest episode overall, for the Arena's "latest run" tile: one streamed since the list
+ * loaded, else the top row when the list is the unfiltered first page, else one fetched on its
+ * own. Never a filtered or later page's top row, which isn't the newest.
+ */
+export function newestEpisode(o: {
+  streamed?: EpisodeCard;
+  onFirstPage: boolean;
+  topRow?: EpisodeCard;
+  fetched?: EpisodeCard;
+}): EpisodeCard | undefined {
+  return o.streamed ?? (o.onFirstPage ? o.topRow : o.fetched);
+}
+
 export const addCounts = (a: EpisodeCounts, b: EpisodeCounts): EpisodeCounts => ({
   total: a.total + b.total,
   held: a.held + b.held,

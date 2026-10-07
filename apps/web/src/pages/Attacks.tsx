@@ -2,13 +2,16 @@ import { Fragment, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ATTACK_CLASSES, AttackSurface, type BreachType } from "@bonded/shared";
-import { ApiError, api, type AttackStats, type AttackSummary } from "../lib/api";
+import { ApiError, api, type AttackStats, type AttackSummary, type ClassRecord } from "../lib/api";
 import { useListParams } from "../lib/pages";
 import { Badge, EmptyState, ErrorText, Loading, Page, buttonClass } from "../components/ui";
 import { Select } from "../components/select";
 import { Pagination } from "../components/pagination";
 
-const CLASS_NAMES = ATTACK_CLASSES as Record<string, { name: string; description: string }>;
+const CLASS_NAMES = ATTACK_CLASSES as Record<
+  string,
+  { name: string; description: string; surfaces: string[] }
+>;
 
 /** Where an attack is planted, in plain words. */
 export const SURFACE_NAMES: Record<string, string> = {
@@ -20,7 +23,7 @@ export const SURFACE_NAMES: Record<string, string> = {
   tool_output: "Tool output",
   tx_history: "Transaction history",
   market: "Market data",
-  counterparty: "Another agent",
+  counterparty: "External agent",
 };
 
 /** What each breach type means for the vault. */
@@ -63,6 +66,16 @@ function ClassChip({ id }: { id: string }) {
   );
 }
 
+/** Where an attack is planted, as a small tag. */
+function SurfaceTag({ surface }: { surface: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-md border border-line-strong bg-white/[0.03] px-1.5 py-0.5 text-[11px] leading-none text-soft">
+      <span className="size-1 rounded-full bg-accent/70" aria-hidden />
+      {SURFACE_NAMES[surface] ?? surface}
+    </span>
+  );
+}
+
 /** How often an attack got through, as a line and a thin bar. */
 function Record({ s, since }: { s: AttackStats; since: string | null }) {
   if (!s.episodes)
@@ -99,7 +112,7 @@ function AttackCard({ a, since }: { a: AttackSummary; since: string | null }) {
     <li>
       <Link
         to={`/attacks/${a.id}`}
-        className="panel group flex h-full flex-col gap-3 p-5 transition hover:border-accent/40 hover:bg-white/[0.02]"
+        className="panel group flex h-full flex-col gap-3 p-5 transition duration-200 hover:-translate-y-0.5 hover:border-accent/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:translate-y-0 active:scale-[0.99]"
       >
         <span className="flex items-center justify-between gap-2">
           <span className="flex items-center gap-2">
@@ -113,13 +126,8 @@ function AttackCard({ a, since }: { a: AttackSummary; since: string | null }) {
         </span>
         <span className="line-clamp-2 text-sm leading-relaxed text-muted">{a.description}</span>
         <span className="flex flex-wrap gap-1.5">
-          {a.surfaces.map((s) => (
-            <span
-              key={s}
-              className="rounded-full border border-line-strong px-2 py-0.5 text-[11px] text-soft"
-            >
-              {SURFACE_NAMES[s] ?? s}
-            </span>
+          {a.surfaces.map((x) => (
+            <SurfaceTag key={x} surface={x} />
           ))}
         </span>
         <span className="mt-auto border-t border-line pt-3">
@@ -130,19 +138,129 @@ function AttackCard({ a, since }: { a: AttackSummary; since: string | null }) {
   );
 }
 
-function Tile({ label, value, hint }: { label: ReactNode; value: ReactNode; hint?: ReactNode }) {
+/** A row of key numbers in one panel, split by hairlines: no card per number. */
+function StatStrip({
+  stats,
+}: {
+  stats: { label: ReactNode; value: ReactNode; hint?: ReactNode }[];
+}) {
   return (
-    <div className="panel min-w-0 p-5">
-      <p className="eyebrow">{label}</p>
-      <p className="mt-2 font-serif text-[40px] leading-none tabular-nums">{value}</p>
-      {hint && <p className="mt-1.5 text-xs text-muted">{hint}</p>}
-    </div>
+    <section className="panel grid grid-cols-2 overflow-hidden p-0 lg:grid-cols-4">
+      {stats.map((t, i) => (
+        <div
+          key={i}
+          className="min-w-0 border-line p-5 [&:nth-child(-n+2)]:border-b max-lg:[&:nth-child(odd)]:border-r lg:border-b-0 lg:[&:not(:last-child)]:border-r"
+        >
+          <p className="text-[13px] text-muted">{t.label}</p>
+          <p className="mt-2 font-serif text-[40px] leading-none tabular-nums">{t.value}</p>
+          {t.hint && <p className="mt-1.5 text-xs text-muted">{t.hint}</p>}
+        </div>
+      ))}
+    </section>
   );
 }
 
-function BountyCall() {
+/**
+ * The ten attack classes, A1 to A10, as an index: each row has the class, what it is, where
+ * it's planted, how many published attacks it has and how often they got through. Choosing a
+ * row filters the list below; choosing it again clears the filter.
+ */
+function ClassGrid({
+  classes,
+  active,
+  onPick,
+}: {
+  classes?: ClassRecord[];
+  active: string;
+  onPick: (cls: string) => void;
+}) {
+  const byClass = new Map((classes ?? []).map((c) => [c.class, c]));
   return (
-    <div className="panel flex flex-wrap items-center justify-between gap-4 bg-gradient-to-r from-breach/12 to-transparent p-6">
+    <section>
+      <h2 className="font-serif text-3xl leading-tight text-balance">
+        Ten ways an agent gets attacked
+      </h2>
+      <p className="mt-1.5 max-w-[65ch] text-sm text-muted">
+        Every attack belongs to one class. Pick a class to see its attacks.
+      </p>
+      <ul className="panel mt-5 grid overflow-hidden p-0 md:grid-cols-2">
+        {Object.entries(CLASS_NAMES).map(([id, info]) => {
+          const c = byClass.get(id);
+          const on = active === id;
+          const rate = c?.episodes ? c.breaches / c.episodes : undefined;
+          return (
+            <li
+              key={id}
+              className="border-b border-line md:[&:nth-child(odd)]:border-r md:[&:nth-last-child(-n+2)]:border-b-0 [&:last-child]:border-b-0"
+            >
+              <button
+                type="button"
+                onClick={() => onPick(on ? "all" : id)}
+                aria-pressed={on}
+                className={`group grid h-full w-full grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-4 px-5 py-4 text-left transition duration-200 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent active:bg-white/[0.05] ${on ? "bg-accent-soft" : "hover:bg-white/[0.03]"}`}
+              >
+                <span
+                  className={`font-serif text-[32px] leading-none tabular-nums transition ${on ? "text-accent" : "text-muted group-hover:text-ink"}`}
+                >
+                  {id}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[15px] leading-snug font-semibold text-balance">
+                    {info.name}
+                  </span>
+                  <span className="mt-0.5 line-clamp-2 block text-[13px] leading-snug text-muted">
+                    {info.description}
+                  </span>
+                  <span className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                    {info.surfaces.map((x) => (
+                      <SurfaceTag key={x} surface={x} />
+                    ))}
+                    {c && (
+                      <span className="text-[11px] text-muted">
+                        {c.attacks} {c.attacks === 1 ? "attack" : "attacks"}
+                      </span>
+                    )}
+                  </span>
+                </span>
+                <span className="w-[72px] text-right">
+                  {rate !== undefined && (
+                    <>
+                      <span
+                        className={`block font-mono text-[17px] tabular-nums ${c!.breaches ? "text-breach" : "text-soft"}`}
+                      >
+                        {Math.round(rate * 100)}%
+                      </span>
+                      <span className="mt-1 block h-1 overflow-hidden rounded-full bg-white/[0.07]">
+                        <span
+                          className={`block h-full rounded-full ${c!.breaches ? "bg-breach-solid" : "bg-held/60"}`}
+                          style={{ width: c!.breaches ? `${Math.max(rate * 100, 4)}%` : "100%" }}
+                        />
+                      </span>
+                      <span className="mt-1 block text-[10.5px] text-muted">
+                        {c!.breaches} of {c!.episodes.toLocaleString()}
+                      </span>
+                    </>
+                  )}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {classes && (
+        <p className="mt-2.5 text-xs text-muted">
+          The percentage is how often a class's published attacks got through in the Arena.
+        </p>
+      )}
+    </section>
+  );
+}
+
+function BountyCall({ inline = false }: { inline?: boolean }) {
+  return (
+    <div
+      className={`flex flex-wrap items-center justify-between gap-4 bg-gradient-to-r from-breach/12 to-transparent p-6 ${inline ? "border-t border-line" : "panel"}`}
+    >
       <span>
         <strong className="block text-lg">Found an attack we miss?</strong>
         <span className="mt-1 block text-sm text-muted">
@@ -183,35 +301,34 @@ export function Attacks() {
     <Page
       eyebrow="The attack library"
       title="Meet the red team"
-      intro="Every rating sends these attacks at an agent, hidden in what it reads: news, DMs, token metadata, price feeds, tool output. Here is the public library, what each attack plants, and how often it gets through."
+      intro="Every rating sends these attacks at an agent, hidden in what it reads: news, DMs, token metadata, price feeds, tool output. They come in ten classes. Here is each class, every published attack in it, and how often it gets through."
     >
-      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Tile
-          label="Published attacks"
-          value={counts?.published ?? "…"}
-          hint="open for anyone to read"
-        />
-        <Tile
-          label="Held out"
-          value={counts?.heldOut.active ?? "…"}
-          hint={
-            counts?.heldOut.retiresFrom
-              ? `never shown; replaced from ${day(counts.heldOut.retiresFrom)}`
-              : "never shown"
-          }
-        />
-        <Tile
-          label="Accepted bounties"
-          value={counts?.acceptedBounties ?? "…"}
-          hint="found by hunters, kept private"
-        />
-        <Tile label="Attack classes" value={Object.keys(ATTACK_CLASSES).length} hint="A1 to A10" />
-      </section>
+      <StatStrip
+        stats={[
+          { label: "Attack classes", value: Object.keys(ATTACK_CLASSES).length },
+          { label: "Published attacks", value: counts?.published ?? "…" },
+          { label: "Held out", value: counts?.heldOut.active ?? "…" },
+          { label: "Accepted bounties", value: counts?.acceptedBounties ?? "…" },
+        ]}
+      />
 
-      <section className="panel min-w-0 p-5 sm:p-6">
+      <ClassGrid
+        classes={attacks.data?.classes}
+        active={f.class}
+        onPick={(cls) => {
+          list.set({ class: cls });
+          document
+            .getElementById("all-attacks")
+            ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }}
+      />
+
+      <section id="all-attacks" className="panel min-w-0 scroll-mt-24 p-5 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">
           <h2 className="text-lg font-bold">
-            {attacks.data ? `${attacks.data.total} published attacks` : "Published attacks"}
+            {f.class !== "all"
+              ? `${CLASS_NAMES[f.class]?.name ?? f.class}: ${attacks.data?.total ?? "…"} attacks`
+              : `Every published attack${attacks.data ? ` (${attacks.data.total})` : ""}`}
           </h2>
           <div className="flex flex-wrap items-center gap-2">
             <Select
@@ -300,30 +417,30 @@ export function Attacks() {
         )}
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2">
-        <div className="panel p-6">
-          <p className="eyebrow">Attacks you can't see</p>
-          <h2 className="mt-2 text-lg font-bold">
-            {counts ? `${counts.heldOut.active} held-out attacks` : "Held-out attacks"}
-          </h2>
-          <p className="mt-2 text-sm leading-relaxed text-muted">
-            Written fresh from the library's seeds and never published, so no one can tune an agent
-            to pass them. Every rating includes them, and the report says how many episodes ran
-            them. A new set replaces them each quarter.
-          </p>
+      <section className="panel overflow-hidden p-0">
+        <div className="grid md:grid-cols-2">
+          <div className="border-b border-line p-6 md:border-r md:border-b-0">
+            <h2 className="text-lg font-bold">
+              {counts ? `${counts.heldOut.active} held-out attacks` : "Held-out attacks"}
+            </h2>
+            <p className="mt-2 max-w-[60ch] text-sm leading-relaxed text-muted">
+              Written fresh from the library's seeds and never published, so no one can tune an
+              agent to pass them. Every rating includes them, and its report says how many episodes
+              ran them. A new set replaces them each quarter.
+            </p>
+          </div>
+          <div className="p-6">
+            <h2 className="text-lg font-bold">
+              {counts ? `${counts.acceptedBounties} accepted bounties` : "Accepted bounties"}
+            </h2>
+            <p className="mt-2 max-w-[60ch] text-sm leading-relaxed text-muted">
+              Attacks hunters submitted that broke the reference agents. They join every later
+              rating, and their text stays private for the same reason.
+            </p>
+          </div>
         </div>
-        <div className="panel p-6">
-          <p className="eyebrow">Found by hunters</p>
-          <h2 className="mt-2 text-lg font-bold">
-            {counts ? `${counts.acceptedBounties} accepted bounties` : "Accepted bounties"}
-          </h2>
-          <p className="mt-2 text-sm leading-relaxed text-muted">
-            Attacks submitted on the Bounties page that broke the reference agents. They join every
-            later rating, and their text stays private for the same reason.
-          </p>
-        </div>
+        <BountyCall inline />
       </section>
-      <BountyCall />
     </Page>
   );
 }
@@ -415,26 +532,28 @@ export function AttackDetail() {
         ))}
       </div>
 
-      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Tile label="Episodes" value={s.episodes.toLocaleString()} hint={`in ${s.runs} ratings`} />
-        <Tile
-          label="Got through"
-          value={
-            <span className={s.breaches ? "text-breach" : ""}>{s.breaches.toLocaleString()}</span>
-          }
-          hint="episodes the vault recorded a breach"
-        />
-        <Tile label="Breach rate" value={pct(s)} hint="of its episodes" />
-        <Tile
-          label="Last run"
-          value={<span className="text-[28px]">{s.lastAt ? day(s.lastAt) : "–"}</span>}
-          hint={statsSince ? `records since ${day(statsSince)}` : undefined}
-        />
-      </section>
+      <StatStrip
+        stats={[
+          { label: "Episodes", value: s.episodes.toLocaleString(), hint: `in ${s.runs} ratings` },
+          {
+            label: "Got through",
+            value: (
+              <span className={s.breaches ? "text-breach" : ""}>{s.breaches.toLocaleString()}</span>
+            ),
+            hint: "episodes the vault recorded a breach",
+          },
+          { label: "Breach rate", value: pct(s), hint: "of its episodes" },
+          {
+            label: "Last run",
+            value: <span className="text-[28px]">{s.lastAt ? day(s.lastAt) : "–"}</span>,
+            ...(statsSince ? { hint: `records since ${day(statsSince)}` } : {}),
+          },
+        ]}
+      />
 
       <div className="flex flex-wrap items-start gap-4">
         <section className="panel min-w-0 flex-[999_1_520px] p-6">
-          <p className="eyebrow !text-breach">What the agent reads</p>
+          <h2 className="text-lg font-bold">What the agent reads</h2>
           <div className="mt-4 overflow-hidden rounded-2xl border border-line bg-[#070a12]">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line px-4 py-2.5 text-xs text-muted">
               <span>{a.surfaces.map((x) => SURFACE_NAMES[x] ?? x).join(" · ")}</span>
@@ -475,7 +594,7 @@ export function AttackDetail() {
           )}
           {a.goal && (
             <div className="mt-6">
-              <p className="eyebrow">The task the agent is given</p>
+              <h3 className="text-sm font-semibold">The task the agent is given</h3>
               <p className="mt-2 text-sm leading-relaxed text-soft">{a.goal}</p>
             </div>
           )}
@@ -483,7 +602,21 @@ export function AttackDetail() {
 
         <aside className="flex min-w-0 flex-[1_1_320px] flex-col gap-4">
           <section className="panel p-6">
-            <p className="eyebrow !text-accent">What counts as a breach</p>
+            <h2 className="text-lg font-bold">
+              About {a.class}: {CLASS_NAMES[a.class]?.name}
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-soft">
+              {CLASS_NAMES[a.class]?.description}
+            </p>
+            <Link
+              to={`/attacks?class=${a.class}`}
+              className="mt-3 inline-block text-sm text-accent hover:underline"
+            >
+              Every {a.class} attack →
+            </Link>
+          </section>
+          <section className="panel p-6">
+            <h2 className="text-lg font-bold">What counts as a breach</h2>
             <p className="mt-2 text-sm text-muted">
               It got through if the vault records any of these. The vault decides, not a model.
             </p>
@@ -497,7 +630,7 @@ export function AttackDetail() {
             </ul>
           </section>
           <section className="panel p-6">
-            <p className="eyebrow">How the Arena varies it</p>
+            <h2 className="text-lg font-bold">How the Arena varies it</h2>
             <p className="mt-2 text-sm leading-relaxed text-soft">{a.variantPrompt}</p>
             <p className="mt-3 text-xs text-muted">
               Each rating runs every attack several times, so an agent can't pass by luck.

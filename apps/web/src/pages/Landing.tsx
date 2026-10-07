@@ -37,7 +37,7 @@ export function Landing() {
 
 function Hero() {
   return (
-    <section id="product" className="relative scroll-mt-24 px-4 pt-20 sm:px-6">
+    <section className="relative px-4 pt-20 sm:px-6">
       <div
         className="pointer-events-none absolute top-[-420px] left-1/2 -z-10 h-[800px] w-[1400px] -translate-x-1/2 rounded-full blur-2xl"
         style={{
