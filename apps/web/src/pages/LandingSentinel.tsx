@@ -117,7 +117,7 @@ function SentinelFlow() {
 
         <Track moving={shown === 1} done={shown >= 2} tone="bg-accent" />
 
-        <FlowCard title="Sentinel" tag="Laya v5" lit={shown >= 2} accent>
+        <FlowCard title="Sentinel" tag="v5 · on Laya" lit={shown >= 2} accent>
           <ul className="grid gap-2 text-sm">
             {["Mandate", "Proposed action", "Untrusted input"].map((field, i) => (
               <li
@@ -167,8 +167,8 @@ function SentinelFlow() {
               </p>
               <p className="mt-2 text-sm text-muted">
                 {s.manipulated
-                  ? "The agent skips the trade. Nothing is sent to the vault."
-                  : "The trade goes to the vault, which still checks the mandate."}
+                  ? "The agent drops the trade before signing it. No funds move."
+                  : "Sent to the vault, which checks it against the mandate on chain."}
               </p>
             </div>
           ) : (
@@ -237,29 +237,40 @@ function Track({
   );
 }
 
-const heldOut = SENTINEL_GATES.find((g) => g.name === "Held-out Arena cases");
+/** "33/33" as "100%": the share a gate's v5 result counts. */
+export function asRate(fraction: string): string {
+  const [n, d] = fraction.split("/").map(Number);
+  return n !== undefined && d ? `${Math.round((n / d) * 100)}%` : fraction;
+}
 
-/** The landing page's Sentinel section: what it does, how fast, and the flow. */
+const gate = (name: string) => SENTINEL_GATES.find((g) => g.name === name);
+
+/** The landing page's Sentinel section: what it is, how well it works, and the flow. */
 export function LandingSentinel() {
-  const stats: [string, string][] = [
-    [SENTINEL_MODEL.speed.gpu, "per check, roughly, on an NVIDIA T4 GPU"],
-    [SENTINEL_MODEL.speed.cpu, "per check, roughly, on the CPU host it runs on today"],
-  ];
+  const heldOut = gate("Held-out Arena cases");
+  const benign = gate("Fresh benign episodes");
+  const stats: [string, string][] = [];
   if (heldOut)
-    stats.push([heldOut.after, "held-out attacks blocked, from classes it never trained on"]);
+    stats.push([asRate(heldOut.after), "of attacks blocked from classes it never saw in training"]);
+  if (benign)
+    stats.push([benign.after.split("/")[0]!, "ordinary trades wrongly blocked in fresh tests"]);
+  stats.push([
+    SENTINEL_MODEL.speed.gpu,
+    `per check on a GPU: one pass of a small model. About ${SENTINEL_MODEL.speed.cpu} on today's CPU server.`,
+  ]);
   return (
     <section id="sentinel" className="mx-auto max-w-[1180px] scroll-mt-24 px-4 py-20 sm:px-6">
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
         <div>
-          <p className="eyebrow !text-accent">Sentinel · built on Laya</p>
+          <p className="eyebrow !text-accent">Sentinel · Bonded's own guard</p>
           <h2 className="mt-3 font-serif text-5xl leading-none">
             Catch the trick before the trade.
           </h2>
           <p className="mt-5 max-w-[62ch] text-lg leading-relaxed text-muted">
-            An optional guard in front of the agent. Before each trade it reads the mandate, the
-            proposed action and what the agent read from outside, and stops actions driven by those
-            inputs. It runs on Laya, a small open-source decision model, so a check is one quick
-            pass, not a conversation with a chatbot.
+            Sentinel is the guard we built for Bonded: Laya, an open-source decision model,
+            fine-tuned on attacks from our own Arena. Before each trade it reads the mandate, the
+            proposed action and what the agent saw, and blocks the trade when outside text is
+            pulling the strings. The vault on chain stays the backstop.
           </p>
         </div>
         <Link to="/sentinel" className={buttonClass("secondary", "lg")}>

@@ -33,8 +33,8 @@ const RATED_WITH: [string, string][] = [
     "The whole rating runs with Sentinel in front of your agent, exactly as it will trade.",
   ],
   [
-    "A discount that's measured",
-    "If Sentinel stops attacks, your agent breaches less, scores higher and its cover costs less.",
+    "Earn a lower premium",
+    "If Sentinel stops attacks, your agent breaches less, scores higher and pays less for cover. Measured in the Arena, not promised.",
   ],
   [
     "Labelled, never passed off",
@@ -54,7 +54,7 @@ export function Sentinel() {
   return (
     <Page
       title="Sentinel"
-      intro="A guard built on Laya, Convai Innovations' open-source decision model. It checks each trade before it runs and stops the ones driven by what the agent read, not its mandate. It only advises: the vault decides payouts."
+      intro="Bonded's own guard against manipulated trades: Laya, Convai Innovations' open-source decision model, fine-tuned on attacks from our Arena. It checks each trade before it's sent and blocks the ones driven by what the agent read instead of its mandate. The vault still enforces the mandate on chain and decides payouts."
     >
       <StatStrip
         stats={[
