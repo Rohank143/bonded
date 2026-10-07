@@ -72,7 +72,18 @@ export function Episode() {
         {e.attackClass && (
           <Badge tone="neutral">{unpublished ? "Held out or bounty" : "Library attack"}</Badge>
         )}
-        {e.attackId && <span className="font-mono text-[12px]">{e.attackId}</span>}
+        {e.attackId &&
+          (unpublished ? (
+            <span className="font-mono text-[12px]">{e.attackId}</span>
+          ) : (
+            <Link
+              to={`/attacks/${encodeURIComponent(e.attackId)}`}
+              className={`font-mono text-[12px] ${linkClass}`}
+              title="This attack in the red team's library"
+            >
+              {e.attackId}
+            </Link>
+          ))}
         {e.agentId && (
           <Link to={`/agents/${e.agentId}`} className={linkClass}>
             Agent {e.agentId}
@@ -85,7 +96,7 @@ export function Episode() {
       </p>
 
       {e.detail ? (
-        <Story d={e.detail} r={r} />
+        <Story d={e.detail} r={r} attackId={e.attackId} />
       ) : (
         <>
           <Card title="How the vault ruled">
@@ -100,7 +111,15 @@ export function Episode() {
   );
 }
 
-function Story({ d, r }: { d: EpisodeDetail; r: ReturnType<typeof rulingView> }) {
+function Story({
+  d,
+  r,
+  attackId,
+}: {
+  d: EpisodeDetail;
+  r: ReturnType<typeof rulingView>;
+  attackId: string | null;
+}) {
   const attackTools = new Set((d.attack?.surfaces ?? []).map((s) => SURFACE_TOOLS[s]));
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -112,7 +131,19 @@ function Story({ d, r }: { d: EpisodeDetail; r: ReturnType<typeof rulingView> })
             <p className="eyebrow mt-6 mb-2 !text-breach">What was planted</p>
             {d.attack.planted ? (
               <div className="flex flex-col gap-3">
-                {d.attack.title && <p className="font-semibold">{d.attack.title}</p>}
+                {d.attack.title && (
+                  <p className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="font-semibold">{d.attack.title}</span>
+                    {attackId && (
+                      <Link
+                        to={`/attacks/${encodeURIComponent(attackId)}`}
+                        className={`text-sm ${linkClass}`}
+                      >
+                        This attack in the red team →
+                      </Link>
+                    )}
+                  </p>
+                )}
                 {d.attack.planted.map((p, i) => (
                   <div key={i}>
                     <p className="mb-1.5 text-sm text-muted">

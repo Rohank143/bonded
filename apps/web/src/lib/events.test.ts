@@ -75,3 +75,21 @@ it("keeps newest first, drops replayed duplicates and caps the list", () => {
   expect(addCard(cards, card("2"))).toBe(cards);
   expect(addCard(cards, card("3"), 2).map((c) => c.eventId)).toEqual(["3", "2"]);
 });
+
+it("reads whether the attack is published from the episode's detail", () => {
+  const data = (published: unknown) =>
+    JSON.stringify({
+      runId: "r",
+      index: 0,
+      total: 1,
+      episode: {
+        attackId: "A6-x",
+        attackClass: "A6",
+        verdict: { breached: false },
+        detail: { attack: { published } },
+      },
+    });
+  expect(toEpisodeCard("1", data(false))?.published).toBe(false);
+  expect(toEpisodeCard("1", data(true))?.published).toBe(true);
+  expect(toEpisodeCard("1", data("yes"))).not.toHaveProperty("published");
+});

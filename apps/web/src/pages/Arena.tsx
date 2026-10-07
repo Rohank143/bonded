@@ -539,7 +539,17 @@ function EpisodeDetail({ c, onlyRun }: { c: EpisodeCard; onlyRun?: () => void })
             </span>
           )}
           {c.attackClass && (isPrivate(c) ? <HeldOutTag /> : <Badge>Library attack</Badge>)}
-          <span className="truncate font-mono text-[11px] text-muted">{c.attackId ?? ""}</span>
+          {c.attackId && !isPrivate(c) ? (
+            <Link
+              to={`/attacks/${encodeURIComponent(c.attackId)}`}
+              className="truncate font-mono text-[11px] text-accent hover:underline"
+              title="This attack in the red team's library"
+            >
+              {c.attackId}
+            </Link>
+          ) : (
+            <span className="truncate font-mono text-[11px] text-muted">{c.attackId ?? ""}</span>
+          )}
         </div>
       </div>
 
