@@ -76,12 +76,16 @@ function SurfaceTag({ surface }: { surface: string }) {
   );
 }
 
-/** How often an attack got through, as a line and a thin bar. */
+/**
+ * How often attacks got through. An attempt is one Arena run with the attack planted in what
+ * the agent reads; it got through if the vault recorded a breach. The bar is empty when every
+ * attempt was stopped.
+ */
 function Record({ s, since }: { s: AttackStats; since: string | null }) {
   if (!s.episodes)
     return (
       <p className="text-xs text-muted">
-        No episodes on record{since ? ` since ${day(since)}` : ""}.
+        Not tried in the Arena{since ? ` since ${day(since)}` : ""}.
       </p>
     );
   const rate = s.breaches / s.episodes;
@@ -89,19 +93,24 @@ function Record({ s, since }: { s: AttackStats; since: string | null }) {
     <div>
       <p className="flex items-baseline justify-between gap-3 text-xs text-muted">
         <span>
-          Got through{" "}
-          <span className={s.breaches ? "text-breach" : "text-soft"}>
-            {s.breaches.toLocaleString()}
-          </span>{" "}
-          of {s.episodes.toLocaleString()} episodes
+          {s.breaches ? (
+            <>
+              Got through <span className="text-breach">{s.breaches.toLocaleString()}</span> of{" "}
+              {s.episodes.toLocaleString()} attempts
+            </>
+          ) : (
+            <>Stopped all {s.episodes.toLocaleString()} attempts</>
+          )}
         </span>
         <span className={`font-mono ${s.breaches ? "text-breach" : "text-soft"}`}>{pct(s)}</span>
       </p>
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
-        <div
-          className={`h-full rounded-full ${s.breaches ? "bg-breach-solid" : "bg-held/60"}`}
-          style={{ width: s.breaches ? `${Math.max(rate * 100, 2)}%` : "100%" }}
-        />
+        {s.breaches > 0 && (
+          <div
+            className="h-full rounded-full bg-breach-solid"
+            style={{ width: `${Math.max(rate * 100, 2)}%` }}
+          />
+        )}
       </div>
     </div>
   );
@@ -215,29 +224,29 @@ function ClassGrid({
                     {info.surfaces.map((x) => (
                       <SurfaceTag key={x} surface={x} />
                     ))}
-                    {c && (
-                      <span className="text-[11px] text-muted">
-                        {c.attacks} {c.attacks === 1 ? "attack" : "attacks"}
-                      </span>
-                    )}
                   </span>
                 </span>
-                <span className="w-[72px] text-right">
+                <span className="w-[132px] text-right">
                   {rate !== undefined && (
                     <>
+                      <span className="block text-[10.5px] text-muted">Got through</span>
                       <span
-                        className={`block font-mono text-[17px] tabular-nums ${c!.breaches ? "text-breach" : "text-soft"}`}
+                        className={`block font-mono text-[17px] leading-tight tabular-nums ${c!.breaches ? "text-breach" : "text-soft"}`}
                       >
                         {Math.round(rate * 100)}%
                       </span>
                       <span className="mt-1 block h-1 overflow-hidden rounded-full bg-white/[0.07]">
-                        <span
-                          className={`block h-full rounded-full ${c!.breaches ? "bg-breach-solid" : "bg-held/60"}`}
-                          style={{ width: c!.breaches ? `${Math.max(rate * 100, 4)}%` : "100%" }}
-                        />
+                        {c!.breaches > 0 && (
+                          <span
+                            className="block h-full rounded-full bg-breach-solid"
+                            style={{ width: `${Math.max(rate * 100, 4)}%` }}
+                          />
+                        )}
                       </span>
                       <span className="mt-1 block text-[10.5px] text-muted">
-                        {c!.breaches} of {c!.episodes.toLocaleString()}
+                        {c!.breaches
+                          ? `${c!.breaches} of ${c!.episodes.toLocaleString()} attempts`
+                          : `stopped all ${c!.episodes.toLocaleString()} attempts`}
                       </span>
                     </>
                   )}
@@ -249,7 +258,8 @@ function ClassGrid({
       </ul>
       {classes && (
         <p className="mt-2.5 text-xs text-muted">
-          The percentage is how often a class's published attacks got through in the Arena.
+          An attempt is one Arena run with the attack hidden in what the agent reads. It got through
+          if the agent broke its mandate and the vault recorded a breach.
         </p>
       )}
     </section>
@@ -401,7 +411,7 @@ export function Attacks() {
             </ul>
             {since && (
               <p className="pt-4 text-xs text-muted">
-                Records cover Arena episodes since {day(since)}, the window the Arena keeps.
+                Counts cover Arena runs since {day(since)}, the window the Arena keeps.
               </p>
             )}
             <Pagination
@@ -534,15 +544,15 @@ export function AttackDetail() {
 
       <StatStrip
         stats={[
-          { label: "Episodes", value: s.episodes.toLocaleString(), hint: `in ${s.runs} ratings` },
+          { label: "Attempts", value: s.episodes.toLocaleString(), hint: `in ${s.runs} ratings` },
           {
             label: "Got through",
             value: (
               <span className={s.breaches ? "text-breach" : ""}>{s.breaches.toLocaleString()}</span>
             ),
-            hint: "episodes the vault recorded a breach",
+            hint: "attempts the vault recorded a breach",
           },
-          { label: "Breach rate", value: pct(s), hint: "of its episodes" },
+          { label: "How often it got through", value: pct(s), hint: "of its attempts" },
           {
             label: "Last run",
             value: <span className="text-[28px]">{s.lastAt ? day(s.lastAt) : "–"}</span>,
