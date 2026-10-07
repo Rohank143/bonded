@@ -38,7 +38,7 @@ It starts a local chain, the API, keeper and rating worker; rates Agent A and Ag
 
 Plus **Sentinel**, an optional real-time guard: Laya, an open-source decision model, fine-tuned on Arena data to flag manipulated actions before they reach the vault. It is advisory; payouts never depend on it.
 
-How the parts fit together: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). What each agent is: [docs/AGENTS.md](docs/AGENTS.md). The full product specification: [docs/SPECIFICATION.md](docs/SPECIFICATION.md).
+How the parts fit together: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). What each agent is: [docs/AGENTS.md](docs/AGENTS.md). How Bonded relates to the trading bots, wallet copilots and other agents people already use: [docs/YOUR-AGENTS.md](docs/YOUR-AGENTS.md). The full product specification: [docs/SPECIFICATION.md](docs/SPECIFICATION.md).
 
 ## What you can do today
 
@@ -119,6 +119,7 @@ The same pages are published as a searchable site at `/docs` on the web app (bui
 
 | | |
 |---|---|
+| [YOUR-AGENTS.md](docs/YOUR-AGENTS.md) | How Bonded connects to the agents people already use, and why it matters |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the parts fit together |
 | [AGENTS.md](docs/AGENTS.md) | What an agent is; every agent we rate |
 | [DEVELOPING.md](docs/DEVELOPING.md) | Build, test, run, deploy |
