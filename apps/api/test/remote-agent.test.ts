@@ -1,0 +1,222 @@
+import { createHash } from "node:crypto";
+import { describe, expect, it } from "vitest";
+import {
+  APPROVED_OS_IMAGES,
+  TeeVerificationError,
+  verifyTeeEvidence,
+  type QuoteFacts,
+  type QuoteVerifier,
+  type VerifiedTee,
+} from "@bonded/arena";
+import { teeReportData, type ArenaAgent } from "@bonded/shared";
+import type { Hex } from "viem";
+import { RatingRefused, TeeBinding, remoteAgentFor } from "../src/remote-agent.js";
+import { agentConfig } from "../src/worker.js";
+
+// Evidence a dstack TEE would return, built from the spec's rules (as in apps/arena/test/tee.test.ts),
+// with a stand-in quote verifier that returns the facts the "hardware" signed.
+const sha384 = (...parts: (Buffer | string)[]) => {
+  const h = createHash("sha384");
+  parts.forEach((p) => h.update(p));
+  return h.digest();
+};
+const extend = (digests: Buffer[]) =>
+  digests.reduce(
+    (mr, d) => sha384(mr, Buffer.concat([d, Buffer.alloc(48 - d.length)])),
+    Buffer.alloc(48),
+  );
+const hash = (n: number) => `0x${n.toString(16).padStart(64, "0")}` as Hex;
+const COMPOSE = "ab".repeat(32);
+const CODE = hash(7);
+const KEY = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8" as Hex;
+const OTHER_KEY = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC" as Hex;
+const SOL = "11111111111111111111111111111112";
+const OS = Object.values(APPROVED_OS_IMAGES)[0]!;
+
+function runtimeEvent(event: string, payloadHex: string) {
+  const type = Buffer.alloc(4);
+  type.writeUInt32LE(0x08000001);
+  return {
+    imr: 3,
+    event_type: 0x08000001,
+    digest: sha384(type, ":", event, ":", Buffer.from(payloadHex, "hex")).toString("hex"),
+    event,
+    event_payload: payloadHex,
+  };
+}
+
+/** One episode's evidence for `nonce`, from a VM with platform `mrTd` and key `evm`. */
+function evidence(nonce: Hex, opts: { mrTd?: string; evm?: Hex } = {}) {
+  const log = [
+    { imr: 0, event_type: 1, digest: "02".repeat(48), event: "", event_payload: "" },
+    { imr: 1, event_type: 1, digest: "03".repeat(48), event: "", event_payload: "" },
+    { imr: 2, event_type: 1, digest: "04".repeat(48), event: "", event_payload: "" },
+    runtimeEvent("compose-hash", COMPOSE),
+    runtimeEvent("os-image-hash", OS),
+  ];
+  const rtmr = (imr: number) =>
+    extend(log.filter((e) => e.imr === imr).map((e) => Buffer.from(e.digest, "hex"))).toString(
+      "hex",
+    );
+  const evm = opts.evm ?? KEY;
+  const facts: QuoteFacts = {
+    status: "UpToDate",
+    mrTd: opts.mrTd ?? "01".repeat(48),
+    rtMr0: rtmr(0),
+    rtMr1: rtmr(1),
+    rtMr2: rtmr(2),
+    rtMr3: rtmr(3),
+    reportData: `${teeReportData({ codeHash: CODE, evmAddress: evm, solanaPublicKey: SOL, nonce }).slice(2)}${"0".repeat(64)}`,
+  };
+  // The stand-in quote carries its facts, so one verifier serves every episode.
+  const quote = `0x${Buffer.from(JSON.stringify(facts)).toString("hex")}`;
+  return {
+    quote,
+    eventLog: JSON.stringify(log),
+    composeHash: COMPOSE,
+    codeHash: CODE,
+    evmAddress: evm,
+    solanaPublicKey: SOL,
+    nonce,
+  };
+}
+const verifyQuote: QuoteVerifier = async (quote) =>
+  JSON.parse(Buffer.from(quote).toString()) as QuoteFacts;
+const expected = { codeHash: CODE, composeHash: COMPOSE, verifyQuote };
+
+async function binding() {
+  const reference = await verifyTeeEvidence(evidence(hash(1)), { ...expected, nonce: hash(1) });
+  return new TeeBinding(reference, expected);
+}
+
+describe("TeeBinding", () => {
+  it("accepts every episode that proves the same deployment and key with its own nonce", async () => {
+    const b = await binding();
+    for (const n of [2, 3, 4]) {
+      const live = await b.check(evidence(hash(n)), hash(n));
+      expect(live.measurement).toBe(b.reference.measurement);
+    }
+    expect(b.verified).toBe(3);
+    expect(b.verdict(3)).toBeUndefined();
+  });
+
+  it("fails the rating when the measurement changes mid-rating", async () => {
+    const b = await binding();
+    await b.check(evidence(hash(2)), hash(2));
+    await expect(b.check(evidence(hash(3), { mrTd: "0f".repeat(48) }), hash(3))).rejects.toThrow(
+      /measurement changed during the rating/,
+    );
+    expect(b.verdict(2)).toMatch(/TEE binding failed: the TEE measurement changed/);
+  });
+
+  it("fails the rating when the TEE's key changes, even on the same measurement", async () => {
+    const b = await binding();
+    await expect(b.check(evidence(hash(2), { evm: OTHER_KEY }), hash(2))).rejects.toThrow(
+      /key changed during the rating/,
+    );
+    expect(b.verdict(1)).toMatch(/key changed/);
+  });
+
+  it("refuses evidence for another episode's nonce, and keeps the first failure", async () => {
+    const b = await binding();
+    await expect(b.check(evidence(hash(2)), hash(3))).rejects.toThrow(TeeVerificationError);
+    await expect(b.check(evidence(hash(4), { evm: OTHER_KEY }), hash(4))).rejects.toThrow();
+    expect(b.failure).toMatch(/different challenge/);
+  });
+
+  it("fails a rating in which any episode brought no evidence", async () => {
+    const b = await binding();
+    await b.check(evidence(hash(2)), hash(2));
+    expect(b.verdict(5)).toBe("TEE binding failed: 4 of 5 episodes had no verified TEE evidence");
+  });
+});
+
+describe("remoteAgentFor", () => {
+  const request = {
+    agentKey: "46630:12",
+    chainId: 46630,
+    agentId: "12",
+    mode: "tools" as const,
+    codeHash: CODE,
+  };
+
+  it("fails clearly, and for good, when the worker has no gateway", () => {
+    let error: unknown;
+    try {
+      remoteAgentFor(undefined, request);
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(RatingRefused);
+    expect((error as RatingRefused).final).toBe(true);
+    expect((error as Error).message).toMatch(/^gateway not available/);
+  });
+
+  it("hands the gateway the agent's key, mode, code hash and TEE check", async () => {
+    const agent: ArenaAgent = { name: "remote", run: async () => ({}) as never };
+    let seen: unknown;
+    const verify = async () => ({}) as VerifiedTee;
+    expect(
+      remoteAgentFor(
+        (r) => {
+          seen = r;
+          return agent;
+        },
+        { ...request, tee: { evmAddress: KEY, verify } },
+      ),
+    ).toBe(agent);
+    expect(seen).toMatchObject({ ...request, tee: { evmAddress: KEY } });
+  });
+});
+
+describe("agentConfig", () => {
+  const mandate = {
+    version: 1,
+    chain: { family: "evm", chainId: 46630 },
+    agentId: "12",
+    mode: "monitor",
+    baseAsset: "0x0000000000000000000000000000000000000001",
+    assets: ["0x0000000000000000000000000000000000000001"],
+    targets: [],
+    destinations: [],
+    limits: {
+      maxTxNotionalUsd: 100,
+      maxDailyNotionalUsd: 1000,
+      maxDrawdownBps: 1500,
+      maxSlippageBps: 300,
+    },
+    freezeOnBreach: true,
+    description: "x",
+  };
+  const remote = { kind: "remote", mandate, codeHash: CODE, mode: "chain" };
+
+  it("accepts a remote agent with its mode and an optional https TEE", () => {
+    expect(agentConfig.parse(remote)).toMatchObject({ kind: "remote", mode: "chain" });
+    expect(
+      agentConfig.parse({ ...remote, tee: { url: "https://tee.example", composeHash: COMPOSE } })
+        .tee,
+    ).toBeTruthy();
+  });
+
+  it("refuses an unknown mode, a plain-http TEE and Sentinel for a remote agent", () => {
+    expect(agentConfig.safeParse({ ...remote, mode: "both" }).success).toBe(false);
+    expect(
+      agentConfig.safeParse({
+        ...remote,
+        tee: { url: "http://tee.example", composeHash: COMPOSE },
+      }).success,
+    ).toBe(false);
+    expect(agentConfig.safeParse({ ...remote, sentinel: true }).success).toBe(false);
+  });
+
+  it("still refuses Sentinel with a TEE for a built-in design", () => {
+    const builtIn = {
+      kind: "hardened",
+      mandate,
+      codeHash: CODE,
+      sentinel: true,
+      tee: { url: "https://tee.example", composeHash: COMPOSE },
+    };
+    expect(agentConfig.safeParse(builtIn).success).toBe(false);
+  });
+});

@@ -567,6 +567,13 @@ export class Database {
       [connectionId],
     );
   }
+  /** Mark the agent's runner disconnected: its next heartbeat fails, so it must connect again. */
+  async dropRunner(agentKey: string): Promise<void> {
+    await this.pool.query(
+      "UPDATE runner_presence SET connected=false,disconnected_at=now() WHERE agent_id=$1 AND connected",
+      [agentKey],
+    );
+  }
   /** Whether the agent has a connected runner on a live token right now. */
   async runnerIsConnected(agentKey: string): Promise<boolean> {
     const r = await this.pool.query(
@@ -879,13 +886,16 @@ export class Database {
     );
     if (!r.rowCount) throw new Error("job lease lost");
   }
-  /** Fence completion, applying the retry cap and publishing the resulting status atomically. */
-  async finish(job: { id: string; token: string }, error?: string) {
+  /**
+   * Fence completion, applying the retry cap and publishing the resulting status atomically. An
+   * error is retried unless `final`, which fails the job at once (retrying can't help).
+   */
+  async finish(job: { id: string; token: string }, error?: string, options?: { final?: boolean }) {
     await this.transaction(async (c) => {
       const r = await c.query(
         `UPDATE jobs SET status=CASE WHEN $3='queued' AND attempts>=3 THEN 'failed' ELSE $3 END, lease_until=NULL, available_at=now()+interval '30 seconds'
         WHERE id=$1 AND token=$2 AND status='running' AND lease_until>now() RETURNING id,status`,
-        [job.id, job.token, error ? "queued" : "done"],
+        [job.id, job.token, error ? (options?.final ? "failed" : "queued") : "done"],
       );
       if (!r.rowCount) throw new Error("job lease lost");
       await c.query("UPDATE ratings SET status=$2,error=$3 WHERE id=$1", [
