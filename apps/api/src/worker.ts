@@ -138,6 +138,9 @@ async function runLocked(
           })
         : undefined;
       await check();
+      // A rating restarted after a crash or a lost lease runs again from the first episode. The
+      // episodes an abandoned attempt published would stay in the Arena twice over, so they go.
+      await db.withLease(job, (c) => db.clearRunEpisodes(job.id, c));
       // The published seeds, accepted bounties and the active held-out set (library.ts).
       const library = await ratingLibrary(db, chain.deployment.chainId);
       const publishedAs = (attackId: string | null) => {
