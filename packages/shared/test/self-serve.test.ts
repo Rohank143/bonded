@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { selfServeMessage, SELF_SERVE_KINDS } from "../src/index.js";
+import { REMOTE_MODES, selfServeMessage, SELF_SERVE_KINDS } from "../src/index.js";
 
 describe("selfServeMessage", () => {
   it("states everything the signature authorises, one field a line", () => {
@@ -37,5 +37,33 @@ describe("selfServeMessage", () => {
   });
   it("offers only Bonded's built-in scripted designs", () => {
     expect(SELF_SERVE_KINDS).toEqual(["vulnerable", "partial", "hardened"]);
+  });
+  it("signs a remote agent's declared code, mode and TEE, one field a line", () => {
+    const base = {
+      action: "register" as const,
+      chainId: 46630,
+      agentId: "12",
+      vault: "0x0000000000000000000000000000000000000001",
+      kind: "remote" as const,
+      mandateHash: "0xAB",
+      timestamp: 7,
+    };
+    const code = `0x${"C".repeat(64)}`;
+    expect(selfServeMessage({ ...base, remote: { codeHash: code, mode: "tools" } })).toBe(
+      `Bonded: register agent for ratings\nchain 46630\nagent 12\nvault 0x0000000000000000000000000000000000000001\ndesign remote\nmandate 0xab\ncode 0x${"c".repeat(64)}\nmode tools\ntime 7`,
+    );
+    const tee = { url: "https://Agent.example/x", composeHash: `0x${"D".repeat(64)}` };
+    expect(selfServeMessage({ ...base, remote: { codeHash: code, mode: "chain", tee } })).toContain(
+      `mode chain\ntee https://Agent.example/x\ncompose 0x${"d".repeat(64)}\ntime 7`,
+    );
+    expect(REMOTE_MODES).toEqual(["tools", "chain"]);
+  });
+  it("names the runner token actions so one signature can't stand for the other", () => {
+    const req = { chainId: 46630, agentId: "12", timestamp: 9 };
+    const create = selfServeMessage({ action: "runner-token", ...req });
+    const revoke = selfServeMessage({ action: "revoke-runner-token", ...req });
+    expect(create).toBe("Bonded: create runner token\nchain 46630\nagent 12\ntime 9");
+    expect(revoke).toBe("Bonded: revoke runner token\nchain 46630\nagent 12\ntime 9");
+    expect(selfServeMessage({ action: "rate", ...req })).not.toBe(create);
   });
 });
