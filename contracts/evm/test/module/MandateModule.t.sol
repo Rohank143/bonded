@@ -9,6 +9,7 @@ import {MandateErrors} from "../../src/libraries/MandateErrors.sol";
 import {MandateModule} from "../../src/MandateModule.sol";
 import {MandateBase} from "../../src/MandateBase.sol";
 import {MockRouter} from "../mocks/MockRouter.sol";
+import {MockERC20} from "../mocks/MockERC20.sol";
 import {MockTarget} from "../mocks/MockTargets.sol";
 import {ModuleTestBase, ITestAccount} from "./ModuleTestBase.sol";
 
@@ -412,6 +413,28 @@ abstract contract MandateModuleMonitorTests is ModuleTestBase {
         vm.stopPrank();
     }
 
+    // ----- Tokens outside the asset list -------------------------------------------------
+
+    /// @dev Regression for the review's unlisted-token drain: approving or moving a token the
+    ///      mandate doesn't list is UnauthorizedTarget on a module, even to an allowed spender.
+    function test_TokenCallsOnUnlistedTokensAreUnauthorizedTargets() public {
+        MockERC20 weth = new MockERC20("Wrapped Ether", "WETH", 18);
+        weth.mint(account, 10e18);
+        _mexec(module, address(weth), abi.encodeCall(IERC20.approve, (address(router), 1e18)));
+        MandateModule.Breach memory breach = _lastModuleBreach(module);
+        assertEq(uint8(breach.breachType), uint8(BondedTypes.BreachType.UnauthorizedTarget));
+        assertEq(breach.target, address(weth));
+        assertTrue(module.frozen());
+
+        vm.prank(guardian);
+        module.unfreeze();
+        _mexec(module, address(weth), abi.encodeCall(IERC20.transfer, (account, 1e18)));
+        assertEq(
+            uint8(_lastModuleBreach(module).breachType),
+            uint8(BondedTypes.BreachType.UnauthorizedTarget)
+        );
+    }
+
     // ----- Fuzz --------------------------------------------------------------------------
 
     function testFuzz_UnauthorizedTransferLossEqualsAmount(uint256 amount) public {
@@ -488,6 +511,33 @@ abstract contract MandateModuleEnforceTests is ModuleTestBase {
             uint8(BondedTypes.BreachType.UnauthorizedTarget)
         );
         assertTrue(_lastModuleBreach(module).blocked);
+    }
+
+    /// @dev Regression for the review's unlisted-token drain (PoC_UnlistedAssetDrain): the
+    ///      approval of an unlisted token to the allowed router is blocked, so the swap that
+    ///      would send its proceeds to the attacker can't pull the token.
+    function test_UnlistedTokenCantBeDrainedThroughAnAllowedTarget() public {
+        MockERC20 weth = new MockERC20("Wrapped Ether", "WETH", 18);
+        weth.mint(account, 10e18); // the owner's other holdings
+        router.setRate(address(weth), address(usdg), 3000e6);
+        usdg.mint(address(router), 100_000e6);
+
+        _mexec(module, address(weth), abi.encodeCall(IERC20.approve, (address(router), 10e18)));
+        assertTrue(_lastModuleBreach(module).blocked);
+        assertEq(
+            uint8(_lastModuleBreach(module).breachType),
+            uint8(BondedTypes.BreachType.UnauthorizedTarget)
+        );
+        assertEq(weth.allowance(account, address(router)), 0);
+        assertTrue(module.frozen());
+
+        vm.prank(guardian);
+        module.unfreeze();
+        vm.prank(agent);
+        vm.expectRevert(); // no allowance: the swap itself fails, nothing recorded or moved
+        module.execute(address(router), _swapData(address(weth), address(usdg), 10e18, attacker));
+        assertEq(weth.balanceOf(account), 10e18);
+        assertEq(usdg.balanceOf(attacker), 0);
     }
 
     function testFuzz_UnauthorizedTransferNeverMovesFunds(uint256 amount) public {

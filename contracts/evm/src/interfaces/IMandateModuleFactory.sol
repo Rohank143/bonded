@@ -12,4 +12,10 @@ interface IMandateModuleFactory {
 
     /// @notice True for modules deployed by this factory.
     function isModule(address module) external view returns (bool);
+
+    /// @notice The module an account created last: the only one it may install.
+    function moduleOf(address account) external view returns (address);
+
+    /// @notice The MandateVaultFactory this factory reads the oracle and protocol addresses from.
+    function vaultFactory() external view returns (address);
 }

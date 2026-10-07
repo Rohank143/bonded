@@ -142,7 +142,7 @@ Every action is checked, and at most one breach is recorded per action:
 
 **Creates modules and vouches for them,** like the vault factory does for vaults. A smart account creates its own module (the factory treats the caller as the account), so nobody can take another account's place. One module is in use per account at a time: a new one can be created once the old one is uninstalled.
 
-Unlike the vault factory, it checks the mandate hash on chain. `params.mandateHash` must equal `BondedTypes.mandateCommitment(params)`, the hash of the rules the module will enforce (`mandateCommitment` in `@bonded/shared` computes the same value). So a module's mandate hash proves what it enforces, and a rating, quote and policy for a module-protected agent use that commitment as the mandate hash. Modules are deployed with CREATE2 and `predictModule` gives the address in advance, so an account can create and install its module in one batch. The factory reads the oracle, CoverManager and ClaimsEngine from the vault factory and has no owner.
+Only the module an account created last can be installed, so an account never has two modules recording the same outflow. Unlike the vault factory, it checks the mandate hash on chain. `params.mandateHash` must equal `BondedTypes.mandateCommitment(params)`, the hash of the rules the module will enforce (`mandateCommitment` in `@bonded/shared` computes the same value). So a module's mandate hash proves what it enforces, and a rating, quote and policy for a module-protected agent use that commitment as the mandate hash. Modules are deployed with CREATE2 and `predictModule` gives the address in advance, so an account can create and install its module in one batch. The factory reads the oracle, CoverManager and ClaimsEngine from the vault factory and has no owner.
 
 ### MandateModule (one per smart account)
 
@@ -152,8 +152,9 @@ Unlike the vault factory, it checks the mandate hash on chain. `params.mandateHa
 - **Install it twice:** as an **executor** (type 2, required) and as a **hook** (type 4, recommended). The hook runs around the owner's own transactions through the account: it records any unexplained drop first (like `reconcile`), then accepts the owner's changes, so a withdrawal by the owner isn't mistaken for a breach. Nothing else may act on the account in the middle of the agent's call.
 - **The owner keeps full control.** They can move funds, uninstall the module, or install other modules at any time. A Safe owner's own `execTransaction` doesn't pass through Safe7579, so the hook can't see it: after moving funds that way, the owner calls `sync()` (ideally in the same Safe transaction). Otherwise the next `execute` or `reconcile` records the withdrawal as a Deferred breach and freezes the agent.
 - **Things the agent can never call,** in either mode: the account itself and the module (the equivalent of a vault refusing calls to itself).
-- **Claims pay the account.** Premiums are pulled from the account; payouts go into it. A Deferred breach is recorded and freezes the agent but isn't paid, because on a smart account an unexplained drop can't be told apart from the owner moving their own funds.
-- **Prefer Enforce mode.** In Monitor mode a breaching call runs with the account's authority, as it runs with the vault's for a vault. On a smart account that authority reaches further: a call into another installed module or an adapter that trusts the account as caller could change the account's setup, which isn't a loss the module can measure.
+- **Tokens outside the asset list** (a smart account usually holds others): approving or transferring one is a T1 breach on a module. The vault doesn't have this rule (it would change its published verdicts; it's listed for the next deployment). A token outside the list that the owner already approved to an allowed contract isn't protected, so give the agent a dedicated account holding only the mandate's assets.
+- **Only Enforce-mode modules can hold cover.** In Monitor mode a breach goes through, and the payout would go to the account, whose owner could have asked the agent for that breach. Monitor mode also runs a breaching call with the account's authority, which on a smart account reaches further than on a vault (another installed module or an adapter that trusts the account could be reconfigured). Monitor-mode modules still work, uninsured.
+- **Claims pay the account.** Premiums are pulled from the account and count only once they arrive; payouts go into it. In Enforce mode breaches through `execute` are blocked, and a Deferred breach is recorded and freezes the agent but isn't paid, because on a smart account an unexplained drop can't be told apart from the owner moving their own funds. So a module's cover pays through grey-area disputes, and those need the council's approval (they never pay automatically on a module).
 
 ### OperatorBond
 
@@ -173,7 +174,7 @@ Withdrawals are slowed so underwriters can't run ahead of a claim:
 
 ### CoverManager
 
-**Sells the insurance.** It turns an Arena quote into a policy for a vault, or for a module once the owner has set the module factory (set once), and it:
+**Sells the insurance.** It turns an Arena quote into a policy for a vault, or for an Enforce-mode module once the owner has set the module factory (set once, and it must serve this deployment's vault factory), and it:
 - **Checks the quote.** The signature is from an approved attester, the quote hasn't expired or been used, it matches the vault (agent, mandate and base asset), and the caller is both the vault's guardian and the agent's owner.
 - **Requires a frozen-on-breach vault.** Otherwise a compromised agent could drain the payout too.
 - **Checks the bond and the score tier:**
@@ -221,6 +222,8 @@ payout                    4,500   (capped at the cover left on the policy)
 1. Anyone proposes a payout with evidence and a 250 tUSDG deposit.
 2. If nobody challenges it within 2 days, it's paid through ClaimsEngine and the deposit is returned.
 3. A challenger can post the same deposit. Then the council decides, and the winner takes both deposits.
+
+On a MandateModule's policy step 2 doesn't apply: the payout goes to the smart account, whose owner may be the proposer, so even an unchallenged proposal is paid only when the council approves it.
 
 The council is a multisig for now; UMA or Kleros can replace it later without changing ClaimsEngine.
 
@@ -292,7 +295,7 @@ src/
   interfaces/    what the contracts read from each other, and the ERC-7579 parts the module uses
   libraries/     BondedTypes: shared structs, signed-message formats, tier rules, the mandate
                  commitment; MandateErrors: the errors the mandate checks raise
-test/            Forge tests (298), one file per contract plus full-loop tests
+test/            Forge tests (316), one file per contract plus full-loop tests
   module/        MandateModule on real ERC-7579 accounts, the vault/module differential tests
   invariant/     invariant suites and mutations.py (plants known bugs, checks the invariants catch them)
 script/          Deploy, RecordDeployment, Smoke; deploy.sh, smoke.sh, local-demo.sh, env.sh

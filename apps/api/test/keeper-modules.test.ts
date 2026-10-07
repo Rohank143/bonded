@@ -21,9 +21,10 @@ import { postgres } from "./postgres.js";
 
 /**
  * The keeper with a smart account guarded by a MandateModule, on a local chain with the real
- * contracts and a real Postgres: it finds the module through the module factory, pays a covered
- * breach into the account, and marks a Deferred breach on the module ignored (with the reason)
- * instead of retrying it forever.
+ * contracts and a real Postgres: it finds the module through the module factory, treats its
+ * breaches like a vault's (a blocked one is ignored), and marks a Deferred breach on the module
+ * ignored with the reason instead of retrying it forever. Only Enforce-mode modules can hold
+ * cover, so the module here enforces.
  */
 
 const ENTRY_POINT: Address = "0x0000000071727De22E5E9d8BAf0edAc6f37da032";
@@ -84,7 +85,7 @@ async function deployReferenceAccount(): Promise<Address> {
   ]);
 }
 
-it("tracks a module like a vault, pays the account, and ignores Deferred breaches on modules", async () => {
+it("tracks a module like a vault and ignores blocked and Deferred breaches on it", async () => {
   const d = sandbox.deployment;
   expect(d.moduleFactory).toBeDefined();
   const operator = connectChain(d, sandbox.rpcUrl, ANVIL_KEYS.operator);
@@ -113,13 +114,15 @@ it("tracks a module like a vault, pays the account, and ignores Deferred breache
 
   // The account creates and installs its module in one batch (the shared helper), then is funded.
   const account = await deployReferenceAccount();
+  // An allowed spender: approving it is fine, and its pulling later is a Deferred breach.
+  const spender = sandbox.address("depositor");
   const params: EvmMandateParams = {
     mandateHash: `0x${"00".repeat(32)}`,
-    mode: 0, // Monitor: breaches go through and are recorded
+    mode: 1, // Enforce: the only mode a module can be insured in
     baseAsset: d.usdg,
     assets: [d.usdg, d.tsla],
-    targets: [d.router],
-    selectors: [[]],
+    targets: [d.router, spender],
+    selectors: [[], []],
     destinations: [],
     maxTxNotionalUsd6: usd(5_000),
     maxDailyNotionalUsd6: usd(25_000),
@@ -173,8 +176,8 @@ it("tracks a module like a vault, pays the account, and ignores Deferred breache
     signed.signature,
   ]);
 
-  // Breach 0: the agent pays an attacker (covered). Breach 1: it approves the attacker (no loss),
-  // and breach 2: the attacker pulls outside the module (Deferred: recorded, never paid).
+  // Breach 0: the agent tries to pay an attacker (blocked). Then it approves the allowed
+  // spender, which pulls outside the module: breach 1, Deferred (recorded, never paid).
   const attacker: Address = "0x000000000000000000000000000000000000dEaD";
   const transfer = encodeFunctionData({
     abi: testTokenAbi,
@@ -183,7 +186,6 @@ it("tracks a module like a vault, pays the account, and ignores Deferred breache
   });
   await agent.send(module, mandateModuleAbi, "execute", [d.usdg, transfer]);
   await operator.send(module, mandateModuleAbi, "unfreeze", []);
-  const spender = sandbox.address("depositor");
   await agent.send(module, mandateModuleAbi, "execute", [
     d.usdg,
     encodeFunctionData({ abi: testTokenAbi, functionName: "approve", args: [spender, usd(500)] }),
@@ -197,7 +199,7 @@ it("tracks a module like a vault, pays the account, and ignores Deferred breache
         address: module,
         abi: mandateModuleAbi,
         functionName: "getBreach",
-        args: [2n],
+        args: [1n],
       })
     ).breachType,
   ).toBe(3);
@@ -223,30 +225,27 @@ it("tracks a module like a vault, pays the account, and ignores Deferred breache
     )
   ).rows.map((r) => ({ id: Number(r.breach_id), status: r.status, error: r.error }));
   expect(rows).toEqual([
-    { id: 0, status: "claimed", error: null },
-    { id: 1, status: "ignored", error: null }, // no loss
-    { id: 2, status: "ignored", error: MODULE_DEFERRED_NOT_COVERED },
+    { id: 0, status: "ignored", error: null }, // blocked: nothing was lost
+    { id: 1, status: "ignored", error: MODULE_DEFERRED_NOT_COVERED },
   ]);
 
-  // 1,000 lost, 10% deductible: 900 paid into the account (premiums were paid up front).
+  // Nothing was paid; only premiums left the account.
   const after = await read.readContract({
     address: d.usdg,
     abi: testTokenAbi,
     functionName: "balanceOf",
     args: [account],
   });
-  expect(after - before).toBeGreaterThan(usd(899));
-  expect(after - before).toBeLessThanOrEqual(usd(900));
+  expect(after).toBeLessThanOrEqual(before);
   expect((await pg.db.pool.query("SELECT 1 FROM events WHERE topic='claim.paid'")).rowCount).toBe(
-    1,
+    0,
   );
 
   // The Arena's judge reads a module's breach log exactly as it reads a vault's.
   const verdict = await judge(sandbox, module, null);
-  expect(verdict.breaches.map((b) => b.type)).toEqual([
-    "T1_UNAUTHORIZED_TRANSFER",
-    "T1_UNAUTHORIZED_APPROVAL",
-    "T1_DEFERRED",
+  expect(verdict.breaches.map((b) => [b.type, b.blocked])).toEqual([
+    ["T1_UNAUTHORIZED_TRANSFER", true],
+    ["T1_DEFERRED", false],
   ]);
-  expect(verdict.totalLossUsd).toBe(1_500);
+  expect(verdict.totalLossUsd).toBe(500);
 }, 240_000);

@@ -2,20 +2,24 @@
 pragma solidity 0.8.28;
 
 import {StdInvariant} from "forge-std/StdInvariant.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BondedTypes} from "../../src/libraries/BondedTypes.sol";
 import {MandateVault} from "../../src/MandateVault.sol";
 import {MandateModule} from "../../src/MandateModule.sol";
+import {DisputeModule, IDisputePayer} from "../../src/DisputeModule.sol";
 import {ICoverManager} from "../../src/interfaces/ICoverManager.sol";
 import {ProtocolBase} from "../ProtocolBase.t.sol";
 import {ModuleTestBase} from "../module/ModuleTestBase.sol";
 import {ProtocolHandler} from "./ProtocolHandler.sol";
 import {ModuleHandler} from "./ModuleHandler.sol";
+import {FakeAccount} from "../mocks/MockAccounts.sol";
 
-/// @notice The protocol invariants again, now with two smart accounts guarded by MandateModules
-///         (one ERC-7579 reference account, one Safe with Safe7579) alongside two vaults, plus
-///         the module's own properties: payouts land in the account, Deferred breaches on
-///         modules are never paid, a module never holds funds, a frozen agent never gets
-///         anything through, and an owner withdrawal through the account is never a breach.
+/// @notice The protocol invariants again, now with smart accounts guarded by MandateModules
+///         alongside two vaults, plus the module's own properties: payouts land in the account,
+///         Deferred breaches on modules are never paid, Monitor-mode modules are never insured,
+///         premiums can't stall, an account never has two modules, module disputes need the
+///         council, a module never holds funds, a frozen agent never gets anything through, and
+///         an owner withdrawal through the account is never a breach.
 contract ModuleInvariants is StdInvariant, ProtocolBase, ModuleTestBase {
     ProtocolHandler internal vaults;
     ModuleHandler internal handler;
@@ -52,23 +56,56 @@ contract ModuleInvariants is StdInvariant, ProtocolBase, ModuleTestBase {
         );
         vaults.recordStake(agentId, BOND);
 
-        MandateModule[] memory modules = new MandateModule[](2);
+        // Three insured (Enforce-mode) modules: a reference account (which also has an older,
+        // never-installed module), a Safe with Safe7579, and an account that reports executions
+        // without doing them. Plus a Monitor-mode module, which must never get cover.
+        MandateModule stale;
+        MandateModule[] memory modules = new MandateModule[](3);
         for (uint256 i; i < modules.length; ++i) {
             vm.prank(guardian);
             uint256 id = registry.register("ipfs://bonded/agents/module.json");
-            address account = _newAccount(i == 0 ? Kind.Msa : Kind.Safe);
-            vm.prank(account);
-            modules[i] = MandateModule(
-                moduleFactory.createModule(
-                    _moduleParams(BondedTypes.MandateMode.Monitor), agent, guardian, id
-                )
-            );
-            _install(account, address(modules[i]), EXECUTOR);
-            _install(account, address(modules[i]), HOOK);
-            usdg.mint(account, DEPOSIT);
+            BondedTypes.MandateParams memory p = _moduleParams(BondedTypes.MandateMode.Enforce);
+            if (i == 2) {
+                FakeAccount fake = new FakeAccount();
+                modules[i] = fake.create(moduleFactory, p, agent, guardian, id);
+                usdg.mint(address(fake), DEPOSIT);
+            } else {
+                address account = _newAccount(i == 0 ? Kind.Msa : Kind.Safe);
+                vm.startPrank(account);
+                if (i == 0) {
+                    stale = MandateModule(moduleFactory.createModule(p, agent, guardian, id));
+                }
+                modules[i] = MandateModule(moduleFactory.createModule(p, agent, guardian, id));
+                vm.stopPrank();
+                _install(account, address(modules[i]), EXECUTOR);
+                _install(account, address(modules[i]), HOOK);
+                usdg.mint(account, DEPOSIT);
+                _mexec(
+                    modules[i],
+                    address(usdg),
+                    abi.encodeCall(IERC20.approve, (address(router), type(uint256).max))
+                );
+            }
             _stake(id, BOND);
             moduleAgentIds.push(id);
         }
+        address monitorAccount = _newAccount(Kind.Msa);
+        vm.prank(monitorAccount);
+        MandateModule monitorModule = MandateModule(
+            moduleFactory.createModule(
+                _moduleParams(BondedTypes.MandateMode.Monitor), agent, guardian, moduleAgentIds[0]
+            )
+        );
+        _install(monitorAccount, address(monitorModule), EXECUTOR);
+
+        // Disputes: no proposal bond, so the handler can propose freely; a council decides.
+        address council = makeAddr("council");
+        DisputeModule disputes = new DisputeModule(
+            owner, IERC20(address(usdg)), manager, IDisputePayer(address(claims)), council, 0
+        );
+        vm.prank(owner);
+        claims.setDisputeModule(address(disputes));
+
         handler = new ModuleHandler(
             ModuleHandler.Setup({
                 usdg: usdg,
@@ -80,28 +117,40 @@ contract ModuleInvariants is StdInvariant, ProtocolBase, ModuleTestBase {
                 guardian: guardian,
                 agent: agent,
                 attacker: attacker,
-                owner: safeOwner
+                owner: safeOwner,
+                router: router,
+                tsla: address(tsla),
+                disputes: disputes,
+                council: council,
+                monitorModule: monitorModule,
+                staleModule: stale
             }),
             modules
         );
 
-        bytes4[] memory moduleSteps = new bytes4[](16);
+        bytes4[] memory moduleSteps = new bytes4[](22);
         moduleSteps[0] = ModuleHandler.bindCover.selector;
         moduleSteps[1] = ModuleHandler.bindCover.selector;
-        moduleSteps[2] = ModuleHandler.unfreeze.selector;
-        moduleSteps[3] = ModuleHandler.fund.selector;
-        moduleSteps[4] = ModuleHandler.ownerWithdraw.selector;
-        moduleSteps[5] = ModuleHandler.breach.selector;
+        moduleSteps[2] = ModuleHandler.bindMonitorCover.selector;
+        moduleSteps[3] = ModuleHandler.unfreeze.selector;
+        moduleSteps[4] = ModuleHandler.fund.selector;
+        moduleSteps[5] = ModuleHandler.ownerWithdraw.selector;
         moduleSteps[6] = ModuleHandler.breach.selector;
         moduleSteps[7] = ModuleHandler.breach.selector;
-        moduleSteps[8] = ModuleHandler.spenderPull.selector;
-        moduleSteps[9] = ModuleHandler.spenderPull.selector;
+        moduleSteps[8] = ModuleHandler.routerDrain.selector;
+        moduleSteps[9] = ModuleHandler.routerDrain.selector;
         moduleSteps[10] = ModuleHandler.frozenAgentTries.selector;
-        moduleSteps[11] = ModuleHandler.accrue.selector;
-        moduleSteps[12] = ModuleHandler.fileClaim.selector;
-        moduleSteps[13] = ModuleHandler.fileClaim.selector;
+        moduleSteps[11] = ModuleHandler.installStale.selector;
+        moduleSteps[12] = ModuleHandler.accrue.selector;
+        moduleSteps[13] = ModuleHandler.accrue.selector;
         moduleSteps[14] = ModuleHandler.fileClaim.selector;
-        moduleSteps[15] = ModuleHandler.fileClaim.selector; // the keeper files often
+        moduleSteps[15] = ModuleHandler.fileClaim.selector;
+        moduleSteps[16] = ModuleHandler.proposeDispute.selector;
+        moduleSteps[17] = ModuleHandler.proposeDispute.selector;
+        moduleSteps[18] = ModuleHandler.finalizeDispute.selector;
+        moduleSteps[19] = ModuleHandler.councilApproves.selector;
+        moduleSteps[20] = ModuleHandler.councilApproves.selector;
+        moduleSteps[21] = ModuleHandler.councilApproves.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: moduleSteps}));
         targetContract(address(handler));
 
@@ -113,6 +162,31 @@ contract ModuleInvariants is StdInvariant, ProtocolBase, ModuleTestBase {
         vaultSteps[3] = ProtocolHandler.warp.selector;
         targetSelector(FuzzSelector({addr: address(vaults), selectors: vaultSteps}));
         targetContract(address(vaults));
+    }
+
+    // ----- Fixes from the review ---------------------------------------------------------
+
+    /// @notice A Monitor-mode module never gets cover: its account's owner could ask the agent
+    ///         for a breach and collect the payout.
+    function invariant_MonitorModulesAreUninsured() public view {
+        assertFalse(handler.monitorModuleInsured());
+        assertEq(manager.activePolicyOf(address(handler.monitorModule())), 0);
+    }
+
+    /// @notice Premium collection never gets stuck, even for an account that only claims to pay.
+    function invariant_PremiumAccrualNeverStalls() public view {
+        assertFalse(handler.accrualReverted());
+    }
+
+    /// @notice An account never has two modules installed.
+    function invariant_OneModulePerAccount() public view {
+        assertFalse(handler.twoModulesInstalled());
+        assertEq(handler.staleModule().installs(), 0);
+    }
+
+    /// @notice A dispute on a module's policy is only ever paid by the council's decision.
+    function invariant_ModuleDisputesNeedTheCouncil() public view {
+        assertFalse(handler.moduleDisputeAutoPaid());
     }
 
     // ----- Module properties -------------------------------------------------------------

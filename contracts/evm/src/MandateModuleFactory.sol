@@ -22,11 +22,11 @@ import {MandateModule} from "./MandateModule.sol";
 ///      The oracle, CoverManager and ClaimsEngine come from the vault factory, so there is one
 ///      place to set them and this factory has no owner.
 contract MandateModuleFactory is IMandateModuleFactory {
-    MandateVaultFactory public immutable vaultFactory;
+    MandateVaultFactory internal immutable _vaultFactory;
 
     /// @inheritdoc IMandateModuleFactory
     mapping(address module => bool) public isModule;
-    /// @notice The latest module created for an account.
+    /// @inheritdoc IMandateModuleFactory
     mapping(address account => address module) public moduleOf;
     /// @notice Modules created per account so far (part of the CREATE2 salt).
     mapping(address account => uint256) public modulesCreated;
@@ -48,7 +48,7 @@ contract MandateModuleFactory is IMandateModuleFactory {
 
     constructor(MandateVaultFactory vaultFactory_) {
         if (address(vaultFactory_) == address(0)) revert ZeroAddress();
-        vaultFactory = vaultFactory_;
+        _vaultFactory = vaultFactory_;
     }
 
     /// @notice Deploys a module guarding the caller (the smart account). The caller chooses the
@@ -103,19 +103,24 @@ contract MandateModuleFactory is IMandateModuleFactory {
         return address(uint160(uint256(digest)));
     }
 
+    /// @inheritdoc IMandateModuleFactory
+    function vaultFactory() external view returns (address) {
+        return address(_vaultFactory);
+    }
+
     /// @notice Oracle given to new modules: the vault factory's current oracle.
     function oracle() public view returns (IPriceOracle) {
-        return vaultFactory.oracle();
+        return _vaultFactory.oracle();
     }
 
     /// @inheritdoc IMandateModuleFactory
     function coverManager() external view returns (address) {
-        return vaultFactory.coverManager();
+        return _vaultFactory.coverManager();
     }
 
     /// @inheritdoc IMandateModuleFactory
     function claimsEngine() external view returns (address) {
-        return vaultFactory.claimsEngine();
+        return _vaultFactory.claimsEngine();
     }
 
     function moduleCount() external view returns (uint256) {

@@ -3899,7 +3899,7 @@ export const mandateModuleFactoryAbi = [
       {
         name: "",
         type: "address",
-        internalType: "contract MandateVaultFactory",
+        internalType: "address",
       },
     ],
     stateMutability: "view",
@@ -5003,6 +5003,11 @@ export const mandateModuleAbi = [
   {
     type: "error",
     name: "NotCoverManager",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "NotCurrentModule",
     inputs: [],
   },
   {
@@ -8788,6 +8793,11 @@ export const coverManagerAbi = [
   },
   {
     type: "error",
+    name: "ModuleMustEnforce",
+    inputs: [],
+  },
+  {
+    type: "error",
     name: "NotAVault",
     inputs: [
       {
@@ -8939,6 +8949,11 @@ export const coverManagerAbi = [
   {
     type: "error",
     name: "VaultMustFreezeOnBreach",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "WrongVaultFactory",
     inputs: [],
   },
   {
@@ -10019,6 +10034,11 @@ export const disputeModuleAbi = [
   {
     type: "error",
     name: "ChallengePeriodOver",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "CouncilDecisionRequired",
     inputs: [],
   },
   {
