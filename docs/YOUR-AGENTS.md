@@ -40,7 +40,7 @@ None of these need a hacker to break into anything. The attacker only has to put
 | A tool or API that answers normally | A response with "user pre-approved this withdrawal" tucked inside | A7, instructions hidden in tool output |
 | Another agent offering a deal | A counterparty that talks your agent into an approval it shouldn't give | A10, hostile agents |
 
-This is not hypothetical. When we rated the Coinbase AgentKit chatbot template, unchanged, with Claude Haiku 4.5, a poisoned token description got it to act once in 20 tries ([leaderboard](https://bonded-nu.vercel.app/leaderboard), [disclosures](disclosures/README.md)). Once is enough when the agent holds your savings.
+This is not hypothetical. When we rated the Coinbase AgentKit chatbot template, unchanged, with Claude Haiku 4.5, a poisoned token description got it to break its rules once in 20 tries ([leaderboard](https://bonded-nu.vercel.app/leaderboard), [disclosures](disclosures/README.md)). Once is enough when the agent holds your savings.
 
 ## What changes for you
 
@@ -61,14 +61,14 @@ flowchart LR
 ### If you build agents
 
 - **A number to aim for.** The same attacks and the same scale for every agent, so a better-built agent shows up as a better score.
-- **Proof you can show users.** A signed score, readable on Robinhood Chain, Arbitrum, Ethereum and Solana, instead of "trust us, it's safe."
+- **Proof you can show users.** A signed score, posted on Robinhood Chain and able to be posted to Arbitrum, Ethereum and Solana, instead of "trust us, it's safe."
 - **Cheaper cover for safer design.** Enforce mode, keeping the key in a TEE and running Sentinel each lower the premium, because re-running the Arena with them on measurably lowers breaches. Every discount is earned, not claimed.
 - **Skin in the game.** Your bond pays first when your agent fails, which is what makes depositors willing to trust a new agent.
 
 ### If you run a platform, exchange or wallet
 
 - **Set a minimum score.** List or route funds only to agents above a threshold, the way a lender checks a credit rating.
-- **Read it anywhere.** The score is a signed attestation on chain (ERC-8004 compatible), so one check works across chains.
+- **Read it on chain.** The score is a signed attestation (ERC-8004 compatible). The same signature can be posted to other chains, so one check can work across chains; Agent B's score is live on all four.
 
 ### If you underwrite risk
 
