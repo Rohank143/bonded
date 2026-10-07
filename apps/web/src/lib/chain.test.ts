@@ -1,5 +1,5 @@
-import { expect, it } from "vitest";
-import { agentRows, waterfall } from "./chain";
+import { describe, expect, it } from "vitest";
+import { agentRows, claimPayee, protectedAccounts, waterfall } from "./chain";
 
 it("splits the Gate 1 testnet claim like the contract did", () => {
   // ClaimPaid for policy 1 on chain 46630 (docs/progress/DAY-07.md).
@@ -60,4 +60,52 @@ it("lists agents newest first, with their score and newest vault", () => {
       vault: v2,
     },
   ]);
+});
+
+describe("smart accounts protected by a MandateModule", () => {
+  const module1 = "0x00000000000000000000000000000000000000d1" as const;
+  const module2 = "0x00000000000000000000000000000000000000d2" as const;
+  const account1 = "0x00000000000000000000000000000000000000a1" as const;
+  const account2 = "0x00000000000000000000000000000000000000a2" as const;
+  const vault = "0x00000000000000000000000000000000000000f1" as const;
+  // ModuleCreated logs, oldest first, as the chain returns them.
+  const logs = [
+    { module: module1, account: account1, agentId: 1n },
+    { module: module2, account: account2, agentId: 1n },
+  ];
+
+  it("lists protected accounts newest first", () => {
+    expect(protectedAccounts(logs).map((p) => p.module)).toEqual([module2, module1]);
+  });
+
+  it("says a module's claim was paid into its account, and a vault's into the vault", () => {
+    const modules = protectedAccounts(logs);
+    // ClaimPaid logs carry checksummed addresses; the match ignores case.
+    const checksummed = "0x00000000000000000000000000000000000000D1" as const;
+    expect(claimPayee({ vault: checksummed }, modules)).toEqual({
+      kind: "account",
+      address: account1,
+      module: module1,
+      agentId: 1n,
+    });
+    expect(claimPayee({ vault }, modules)).toEqual({ kind: "vault", address: vault });
+  });
+
+  it("gives an agent its newest protected account next to its vault", () => {
+    const owner = "0x00000000000000000000000000000000000000aa" as const;
+    const unrated = { score: 0, expectedLossBps: 0, issuedAt: 0n, expiresAt: 0n };
+    const rows = agentRows(
+      [
+        { agentId: 1n, owner },
+        { agentId: 2n, owner },
+      ],
+      [unrated, unrated],
+      [{ agentId: 2n, vault }],
+      logs,
+    );
+    expect(rows).toEqual([
+      { agentId: 2n, owner, vault },
+      { agentId: 1n, owner, protected: { module: module2, account: account2 } },
+    ]);
+  });
 });
