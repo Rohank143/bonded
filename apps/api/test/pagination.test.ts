@@ -19,29 +19,45 @@ const RUN_A = "00000000-0000-4000-8000-00000000000a";
 const RUN_B = "00000000-0000-4000-8000-00000000000b";
 
 /** Publish one episode the way the Arena worker does (topic rating.episode). */
-const episode = (runId: string, index: number, attackClass: string | null, breached = false) =>
+const episode = (
+  runId: string,
+  index: number,
+  attackClass: string | null,
+  breached = false,
+  attackId = attackClass ? `${attackClass}-seed-${index}` : null,
+) =>
   pg.db.publish("rating.episode", {
     runId,
     index,
     total: 10,
     episode: {
-      attackId: attackClass ? `${attackClass}-x-${index}` : null,
+      attackId,
       attackClass,
       verdict: { breached, totalLossUsd: breached ? 250 : 0, frozen: false },
     },
   });
 
+type Counts = { total: number; held: number; breach: number; control: number };
 type EpisodesPage = {
-  items: { eventId: string; runId: string; index: number; breached: boolean }[];
-  next: string | null;
-  through?: string;
-  counts?: { total: number; held: number; breach: number; control: number };
+  items: {
+    eventId: string;
+    runId: string;
+    index: number;
+    breached: boolean;
+    agentId: string | null;
+  }[];
+  page: number;
+  pages: number;
+  total: number;
+  through: string;
+  counts: Counts;
 };
 const get = async (path: string) => {
   const res = await app.request(path);
   expect(res.status).toBe(200);
   return (await res.json()) as EpisodesPage;
 };
+const tag = (p: EpisodesPage) => p.items.map((e) => `${e.runId.at(-1)}${e.index}`);
 
 beforeAll(async () => {
   pg = await postgres();
@@ -50,7 +66,6 @@ beforeAll(async () => {
     chain,
     attesterKey: ANVIL_KEYS.deployer,
     apiToken: "pagination-test-token-at-least-24-chars",
-    episodeCountsCacheMs: 0,
   });
 }, 120_000);
 afterAll(async () => {
@@ -58,114 +73,127 @@ afterAll(async () => {
   await pg?.stop();
 });
 beforeEach(async () => {
-  await pg.db.pool.query("TRUNCATE events, bounties");
-  // Run A: a control, then attacks A1..A5, with a breach on A3. Run B: two held attacks.
+  await pg.db.pool.query("TRUNCATE events, bounties, ratings, agents CASCADE");
+  // Run A is agent 7's rating: a control, then attacks A1..A5, with a breach on A3 and a
+  // held-out attack on A5. Run B (no rating row) has two held attacks.
+  await pg.db.pool.query("INSERT INTO agents(id,chain_id,agent_id,config) VALUES($1,$2,7,'{}')", [
+    `${chain.deployment.chainId}:7`,
+    chain.deployment.chainId,
+  ]);
+  await pg.db.pool.query("INSERT INTO ratings(id,agent_id,status) VALUES($1,$2,'done')", [
+    RUN_A,
+    `${chain.deployment.chainId}:7`,
+  ]);
   await episode(RUN_A, 0, null);
-  for (let i = 1; i <= 5; i++) await episode(RUN_A, i, `A${i}`, i === 3);
+  for (let i = 1; i <= 4; i++) await episode(RUN_A, i, `A${i}`, i === 3);
+  await episode(RUN_A, 5, "A5", false, "A5-held-out-1a2b3c4d");
   await pg.db.publish("claim.paid", { vault: "0x1" });
   await episode(RUN_B, 0, "A1");
   await episode(RUN_B, 1, "A2");
 });
 
-it("pages episodes newest first with a cursor, and nothing is skipped or repeated", async () => {
+it("numbers pages of a snapshot that new episodes don't shift", async () => {
   const first = await get("/episodes?limit=3");
-  expect(first.items.map((e) => `${e.runId.at(-1)}${e.index}`)).toEqual(["b1", "b0", "a5"]);
-  expect(first.next).toBe(first.items[2]!.eventId);
-  const seen = [...first.items];
-  let next = first.next;
-  while (next) {
-    const page = await get(`/episodes?limit=3&before=${next}`);
-    // Later pages don't recount or return the stream position.
-    expect(page.counts).toBeUndefined();
-    expect(page.through).toBeUndefined();
-    seen.push(...page.items);
-    next = page.next;
-  }
-  expect(seen).toHaveLength(8);
-  expect(new Set(seen.map((e) => e.eventId)).size).toBe(8);
-  // Only episodes: the claim event is not in the list.
-  expect(seen.map((e) => Number(e.eventId))).toEqual(
-    [...seen.map((e) => Number(e.eventId))].sort((a, b) => b - a),
-  );
+  expect(first).toMatchObject({ page: 1, pages: 3, total: 8 });
+  expect(tag(first)).toEqual(["b1", "b0", "a5"]);
+
+  // An episode arrives; page 2 of the same snapshot still shows the rows after page 1.
+  await episode(RUN_B, 2, "A3");
+  const second = await get(`/episodes?limit=3&page=2&through=${first.through}`);
+  expect(tag(second)).toEqual(["a4", "a3", "a2"]);
+  expect(second.total).toBe(8);
+  const third = await get(`/episodes?limit=3&page=3&through=${first.through}`);
+  expect(tag(third)).toEqual(["a1", "a0"]);
+
+  // A page past the end reads the last page; a new snapshot includes the new episode.
+  expect(tag(await get(`/episodes?limit=3&page=9&through=${first.through}`))).toEqual(["a1", "a0"]);
+  const fresh = await get("/episodes?limit=3");
+  expect(fresh.total).toBe(9);
+  expect(tag(fresh)[0]).toBe("b2");
+  expect(Number(fresh.through)).toBeGreaterThan(Number(first.through));
 });
 
-it("filters by run, outcome and class in the database, so pages stay full", async () => {
+it("filters in the database, and counts outcomes with every filter but the outcome", async () => {
+  const all = await get("/episodes");
+  expect(all.counts).toEqual({ total: 8, held: 6, breach: 1, control: 1 });
+
   const breaches = await get("/episodes?outcome=breach");
-  expect(breaches.items).toHaveLength(1);
+  expect(breaches.total).toBe(1);
   expect(breaches.items[0]).toMatchObject({ runId: RUN_A, index: 3, breached: true });
-
-  const controls = await get("/episodes?outcome=control");
-  expect(controls.items.map((e) => e.index)).toEqual([0]);
-
-  const heldA = await get(`/episodes?runId=${RUN_A}&outcome=held&limit=2`);
-  expect(heldA.items.map((e) => e.index)).toEqual([5, 4]);
-  expect(heldA.next).not.toBeNull();
-  const rest = await get(`/episodes?runId=${RUN_A}&outcome=held&limit=2&before=${heldA.next}`);
-  expect(rest.items.map((e) => e.index)).toEqual([2, 1]);
-  expect(rest.next).toBeNull();
+  // The chips still show every outcome's count.
+  expect(breaches.counts).toEqual(all.counts);
 
   const a1 = await get("/episodes?class=A1");
   expect(a1.items.map((e) => e.runId)).toEqual([RUN_B, RUN_A]);
+  expect(a1.counts).toEqual({ total: 2, held: 2, breach: 0, control: 0 });
+
+  expect(tag(await get(`/episodes?runId=${RUN_B}`))).toEqual(["b1", "b0"]);
+  expect(tag(await get("/episodes?source=held-out"))).toEqual(["a5"]);
+  expect((await get("/episodes?source=library")).total).toBe(6);
+  expect((await get("/episodes?since=1h")).total).toBe(8);
+  await pg.db.pool.query("UPDATE events SET created_at = now() - interval '2 days'");
+  expect((await get("/episodes?since=24h")).total).toBe(0);
+  expect((await get("/episodes?since=7d")).total).toBe(8);
 });
 
-it("counts outcomes through an event id, where the live stream resumes", async () => {
+it("filters by agent and names each episode's agent", async () => {
+  const mine = await get("/episodes?agentId=7");
+  expect(mine.total).toBe(6);
+  expect(new Set(mine.items.map((e) => e.agentId))).toEqual(new Set(["7"]));
   const all = await get("/episodes");
-  expect(all.counts).toEqual({ total: 8, held: 6, breach: 1, control: 1 });
-  const latest = await pg.db.pool.query("SELECT max(id)::text AS id FROM events");
-  expect(all.through).toBe(latest.rows[0].id);
-  const runB = await get(`/episodes?runId=${RUN_B}`);
-  expect(runB.counts).toEqual({ total: 2, held: 2, breach: 0, control: 0 });
+  expect(all.items.find((e) => e.runId === RUN_B)?.agentId).toBeNull();
+  expect((await get("/episodes?agentId=8")).total).toBe(0);
 });
 
-it("reuses a count only with its own through, so the live stream fills the gap exactly", async () => {
-  const cachedApp = createApi({
-    db: pg.db,
-    chain,
-    attesterKey: ANVIL_KEYS.deployer,
-    apiToken: "pagination-test-token-at-least-24-chars",
-    episodeCountsCacheMs: 60_000,
-  });
-  try {
-    const read = async () => (await (await cachedApp.request("/episodes")).json()) as EpisodesPage;
-    const before = await read();
-    await episode(RUN_B, 2, "A3", true);
-    const after = await read();
-    // Same count and through, but the new episode is on the first page.
-    expect(after.counts).toEqual(before.counts);
-    expect(after.through).toBe(before.through);
-    expect(after.items[0]).toMatchObject({ runId: RUN_B, index: 2, breached: true });
-    expect(Number(after.items[0]!.eventId)).toBeGreaterThan(Number(after.through));
-  } finally {
-    await cachedApp.close();
-  }
+it("rejects bad pages and filters", async () => {
+  for (const q of [
+    "page=0",
+    "limit=0",
+    "limit=101",
+    "through=abc",
+    "outcome=lost",
+    "class=Z9",
+    "runId=1",
+    "source=x",
+    "since=1y",
+    "before=3",
+  ])
+    expect((await app.request(`/episodes?${q}`)).status, q).toBe(400);
+  for (const q of ["status=lost", "hunter=0x1", "sort=size", "page=-1"])
+    expect((await app.request(`/bounties?${q}`)).status, q).toBe(400);
 });
 
-it("rejects bad cursors and page sizes", async () => {
-  for (const q of ["before=abc", "limit=0", "limit=101", "outcome=lost", "class=Z9", "runId=1"])
-    expect((await app.request(`/episodes?${q}`)).status).toBe(400);
-  expect((await app.request("/bounties?before=-1")).status).toBe(400);
-});
-
-it("pages bounties by submission id, newest first", async () => {
+it("numbers bounty pages, with filters and a reward sort", async () => {
+  const hunter = (n: number) => `0x${String(n).repeat(40)}`;
   for (let id = 1; id <= 5; id++)
     await pg.db.pool.query(
-      `INSERT INTO bounties(chain_id,submission_id,hunter,spec_uri,spec_yaml,spec)
-       VALUES($1,$2,'0xhunter','uri','yaml',$3)`,
+      `INSERT INTO bounties(chain_id,submission_id,hunter,spec_uri,spec_yaml,spec,status,verdict)
+       VALUES($1,$2,$3,'uri','yaml',$4,$5,$6)`,
       [
         chain.deployment.chainId,
         id,
-        JSON.stringify({ id: `A1-b-${id}`, class: "A1", title: `T${id}`, surfaces: ["dm"] }),
+        hunter(id % 2),
+        JSON.stringify({
+          id: `A${id}-b-${id}`,
+          class: id === 5 ? "A1" : `A${id}`,
+          title: `T${id}`,
+          surfaces: ["dm"],
+        }),
+        id % 2 ? "accepted" : "rejected",
+        JSON.stringify({ reward: String(id === 1 ? 2000 : id * 100) }),
       ],
     );
+  type Bounties = { items: { submissionId: string }[]; page: number; pages: number; total: number };
   const page = async (q: string) =>
-    (await (await app.request(`/bounties?${q}`)).json()) as {
-      items: { submissionId: string }[];
-      next: string | null;
-    };
-  const first = await page("limit=2");
-  expect(first.items.map((b) => b.submissionId)).toEqual(["5", "4"]);
-  const second = await page(`limit=2&before=${first.next}`);
-  expect(second.items.map((b) => b.submissionId)).toEqual(["3", "2"]);
-  const last = await page(`limit=2&before=${second.next}`);
-  expect(last).toEqual({ items: [expect.objectContaining({ submissionId: "1" })], next: null });
+    (await (await app.request(`/bounties?${q}`)).json()) as Bounties;
+  const ids = (b: Bounties) => b.items.map((x) => x.submissionId);
+
+  expect(await page("limit=2")).toMatchObject({ page: 1, pages: 3, total: 5 });
+  expect(ids(await page("limit=2"))).toEqual(["5", "4"]);
+  expect(ids(await page("limit=2&page=3"))).toEqual(["1"]);
+  expect(ids(await page("sort=reward"))).toEqual(["1", "5", "4", "3", "2"]);
+  expect(ids(await page("status=accepted"))).toEqual(["5", "3", "1"]);
+  expect(ids(await page("class=A1"))).toEqual(["5", "1"]);
+  expect(ids(await page(`hunter=${hunter(0)}`))).toEqual(["4", "2"]);
+  expect(await page("submission=3")).toMatchObject({ total: 1, items: [{ submissionId: "3" }] });
 });

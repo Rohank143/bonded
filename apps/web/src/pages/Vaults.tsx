@@ -11,7 +11,6 @@ import {
   EmptyState,
   ErrorText,
   LinkButton,
-  LoadMore,
   Loading,
   Page,
   Table,
@@ -19,14 +18,16 @@ import {
   TierBadge,
   linkClass,
 } from "../components/ui";
-import { usePaged } from "../lib/paged";
+import { paginate, useListParams } from "../lib/pages";
+import { filterVaults, type VaultFilters, type VaultRow } from "../lib/lists";
+import { Select } from "../components/select";
+import { Pagination } from "../components/pagination";
 
 export function Vaults() {
   const vaults = useVaults();
   const agents = useAgents();
   const navigate = useNavigate();
   const list = vaults.data ?? [];
-  const page = usePaged(list);
   const reads = useReadContracts({
     contracts: list.flatMap((v) => [
       { address: v.vault, abi: mandateVaultAbi, functionName: "totalAssets" as const },
@@ -44,6 +45,17 @@ export function Vaults() {
   const held = list.reduce((s, _, i) => s + ((at(i, 0) as bigint | undefined) ?? 0n), 0n);
   const covered = list.filter((_, i) => Boolean(at(i, 2))).length;
   const frozen = list.filter((_, i) => at(i, 1) === true).length;
+  const listParams = useListParams({ state: "all", sort: "newest" });
+  const filters = listParams.values as unknown as VaultFilters;
+  const rows: VaultRow[] = list.map((v, i) => ({
+    vault: v.vault,
+    agentId: v.agentId,
+    guardian: v.guardian,
+    assets: at(i, 0) as bigint | undefined,
+    frozen: at(i, 1) as boolean | undefined,
+    covered: Boolean(at(i, 2)),
+  }));
+  const page = paginate(filterVaults(rows, filters), listParams.page, listParams.size);
 
   return (
     <Page
@@ -68,7 +80,33 @@ export function Vaults() {
           ))}
         </section>
       )}
-      <Card>
+      <Card
+        title={vaults.data ? `${page.total} ${page.total === 1 ? "vault" : "vaults"}` : "Vaults"}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              label="Show"
+              value={filters.state}
+              onChange={(v) => listParams.set({ state: v })}
+              options={[
+                { value: "all", label: "All" },
+                { value: "covered", label: "Covered" },
+                { value: "uncovered", label: "No cover" },
+                { value: "frozen", label: "Agent frozen" },
+              ]}
+            />
+            <Select
+              label="Sort"
+              value={filters.sort}
+              onChange={(v) => listParams.set({ sort: v })}
+              options={[
+                { value: "newest", label: "Newest" },
+                { value: "assets", label: "Most assets" },
+              ]}
+            />
+          </div>
+        }
+      >
         {vaults.isPending && !vaults.error && <Loading what="vaults" lines={5} />}
         <ErrorText error={vaults.error} />
         {vaults.data?.length === 0 && (
@@ -79,7 +117,10 @@ export function Vaults() {
             Each onboarded agent gets a Mandate Vault.
           </EmptyState>
         )}
-        {list.length > 0 && (
+        {list.length > 0 && page.total === 0 && (
+          <EmptyState title="No vaults match these filters">Try another filter.</EmptyState>
+        )}
+        {page.total > 0 && (
           <>
             <Table>
               <thead>
@@ -97,9 +138,9 @@ export function Vaults() {
                 </tr>
               </thead>
               <tbody>
-                {page.shown.map((v, i) => {
+                {page.items.map((v) => {
                   const score = agents.data?.find((a) => a.agentId === v.agentId)?.score?.score;
-                  const assets = at(i, 0) as bigint | undefined;
+                  const assets = v.assets;
                   return (
                     <tr
                       key={v.vault}
@@ -131,14 +172,14 @@ export function Vaults() {
                         {assets !== undefined ? `$${usd(assets, 0)}` : "…"}
                       </td>
                       <td>
-                        {at(i, 2) ? <Badge tone="brand">Covered</Badge> : <Badge>No cover</Badge>}
+                        {v.covered ? <Badge tone="brand">Covered</Badge> : <Badge>No cover</Badge>}
                       </td>
                       <td>
-                        {at(i, 1) === true ? (
+                        {v.frozen === true ? (
                           <Badge tone="breach" dot>
                             Frozen
                           </Badge>
-                        ) : at(i, 1) === false ? (
+                        ) : v.frozen === false ? (
                           <Badge tone="safe" dot>
                             Active
                           </Badge>
@@ -154,11 +195,14 @@ export function Vaults() {
                 })}
               </tbody>
             </Table>
-            <LoadMore
-              hasMore={page.hasMore}
-              onMore={page.more}
-              shown={page.shown.length}
+            <Pagination
+              page={page.page}
+              pages={page.pages}
               total={page.total}
+              size={listParams.size}
+              onPage={(p) => listParams.set({ page: p })}
+              onSize={(size) => listParams.set({ size })}
+              noun="vaults"
             />
           </>
         )}

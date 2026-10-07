@@ -3,7 +3,14 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { z } from "zod";
-import { Database, json, AgentNotConfiguredError, PAGE_LIMIT } from "@bonded/db";
+import {
+  Database,
+  json,
+  AgentNotConfiguredError,
+  PAGE_LIMIT,
+  type EpisodeCounts,
+  type EpisodeFilters,
+} from "@bonded/db";
 import {
   QuoteError,
   SELF_SERVE_MAX_COVER_USD,
@@ -26,25 +33,37 @@ const uint = z
   .string()
   .regex(/^\d{1,78}$/)
   .transform((v) => BigInt(v).toString());
-/** Query parameters shared by the paginated lists: a cursor from the previous page and a size. */
+/** Query parameters shared by the numbered lists: a 1-based page and a page size. */
 const pageQuery = {
+  page: z.coerce.number().int().min(1).max(1_000_000).optional(),
   limit: z.coerce.number().int().min(1).max(PAGE_LIMIT.max).optional(),
 };
+const attackClass = z.string().regex(/^A\d{1,2}$/);
 const episodesQuery = z.strictObject({
   ...pageQuery,
-  // An event id (bigint) from the previous page's `next`.
-  before: z
+  // The snapshot: the event id the first page returned. Pages read only events up to it.
+  through: z
     .string()
     .regex(/^\d{1,18}$/)
     .optional(),
   runId: z.uuid().optional(),
+  agentId: uint.optional(),
   outcome: z.enum(["held", "breach", "control"]).optional(),
-  class: z
-    .string()
-    .regex(/^A\d{1,2}$/)
-    .optional(),
+  class: attackClass.optional(),
+  source: z.enum(["held-out", "library"]).optional(),
+  since: z.enum(["1h", "24h", "7d"]).optional(),
 });
-const bountiesQuery = z.strictObject({ ...pageQuery, before: uint.optional() });
+const bountiesQuery = z.strictObject({
+  ...pageQuery,
+  status: z.enum(["validating", "accepted", "rejected", "failed"]).optional(),
+  class: attackClass.optional(),
+  hunter: z
+    .string()
+    .regex(/^0x[0-9a-fA-F]{40}$/)
+    .optional(),
+  submission: uint.optional(),
+  sort: z.enum(["newest", "reward"]).optional(),
+});
 const quoteInput = z.strictObject({
   agentId: uint,
   vault: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
@@ -65,7 +84,7 @@ export function createApi(options: {
   revealLimit?: ConstructorParameters<typeof RateLimiter>[0];
   /** How long a leaderboard response is reused before the chain is read again. */
   leaderboardCacheMs?: number;
-  /** How long GET /episodes reuses its outcome counts (default 10 seconds). */
+  /** How long GET /episodes reuses a snapshot's counts (default a minute). */
   episodeCountsCacheMs?: number;
   /** Limits on self-serve ratings and quotes without the operator token (see self-serve.ts). */
   selfServe?: Partial<SelfServeLimits>;
@@ -285,30 +304,55 @@ export function createApi(options: {
     return c.json(result, result.created ? 202 : 200);
   });
   app.get("/bounties", async (c) => {
-    const q = bountiesQuery.parse(c.req.query());
-    return c.json(await db.bounties(chain.deployment.chainId, q));
+    const { class: cls, submission, ...q } = bountiesQuery.parse(c.req.query());
+    return c.json(
+      await db.bounties(chain.deployment.chainId, {
+        ...q,
+        ...(cls ? { attackClass: cls } : {}),
+        ...(submission ? { submissionId: submission } : {}),
+      }),
+    );
   });
-  // The first page also carries outcome counts and `through`, the event id they were counted
-  // up to: a live stream opened after `through` adds exactly the episodes the counts don't have
-  // (the web drops the ones it already has from the pages). Counting scans a run's, or the
-  // retention window's, episodes, so a count is reused briefly: the Arena page must not turn
-  // every visit into a full count. A reused count is still exact up to its own `through`.
-  const countsCacheMs = options.episodeCountsCacheMs ?? 10_000;
-  const countsCache = new Map<string, { at: number; through: string; counts: unknown }>();
+  // Episodes come as numbered pages of a snapshot: the first request returns `through`, the
+  // newest event id, and later pages pass it back, so a page shows the same rows however many
+  // episodes arrive meanwhile. A live stream opened after `through` brings the new ones.
+  // Counts are per snapshot and filters (all but the outcome), so turning pages reuses them;
+  // each is kept a minute, and the cache is bounded.
+  const countsCacheMs = options.episodeCountsCacheMs ?? 60_000;
+  const countsCache = new Map<string, { at: number; counts: EpisodeCounts }>();
   app.get("/episodes", async (c) => {
-    const { class: attackClass, ...q } = episodesQuery.parse(c.req.query());
-    const filters = { ...q, ...(attackClass ? { attackClass } : {}) };
-    if (q.before !== undefined) return c.json(await db.episodes(filters));
-    const key = q.runId ?? "all";
+    const {
+      class: cls,
+      page,
+      limit,
+      through: asked,
+      outcome,
+      agentId,
+      ...rest
+    } = episodesQuery.parse(c.req.query());
+    const through = asked ?? (await db.latestEventId());
+    const scope: EpisodeFilters = {
+      ...rest,
+      ...(cls ? { attackClass: cls } : {}),
+      ...(agentId ? { agentId, chainId: chain.deployment.chainId } : {}),
+    };
+    const key = JSON.stringify([scope, through]);
     let cached = countsCache.get(key);
     if (!cached || Date.now() - cached.at >= countsCacheMs) {
-      const through = await db.latestEventId();
-      cached = { at: Date.now(), through, counts: await db.episodeCounts(through, q.runId) };
+      cached = { at: Date.now(), counts: await db.episodeCounts(scope, through) };
       if (countsCache.size > 500) countsCache.clear();
       countsCache.set(key, cached);
     }
-    const page = await db.episodes(filters);
-    return c.json({ ...page, counts: cached.counts, through: cached.through });
+    const result = await db.episodes(
+      { ...scope, ...(outcome ? { outcome } : {}) },
+      {
+        through,
+        counts: cached.counts,
+        ...(page ? { page } : {}),
+        ...(limit ? { limit } : {}),
+      },
+    );
+    return c.json({ ...result, through, counts: cached.counts });
   });
   selfServeRoutes(app, { db, chain, ...(options.selfServe ? { limits: options.selfServe } : {}) });
   libraryRoutes(app, { db, chainId: chain.deployment.chainId });

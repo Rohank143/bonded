@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addCounts, matches, mergeEpisodes } from "./episodes";
+import { addCounts, isPrivate, matches } from "./episodes";
 import { NO_EPISODES, outcomeOf, tally, type EpisodeCard } from "./events";
 
 const card = (eventId: string, attackClass: string | null, breached = false, runId = "r1") =>
@@ -31,15 +31,27 @@ describe("episodes", () => {
     expect(matches(c, { attackClass: "A1" })).toBe(false);
   });
 
-  it("merges live and paged episodes newest first, each once", () => {
-    const live = [card("12", "A1"), card("10", "A2")];
-    const paged = [card("10", "A2"), card("9", null), card("3", "A1")];
-    expect(mergeEpisodes(live, paged).map((c) => c.eventId)).toEqual(["12", "10", "9", "3"]);
-    // Ids compare as numbers, not strings.
-    expect(mergeEpisodes([card("100", null)], [card("99", null)]).map((c) => c.eventId)).toEqual([
-      "100",
-      "99",
-    ]);
+  it("reads held-out and bounty attacks as private, as the API does", () => {
+    const heldOut = { ...card("6", "A5"), attackId: "A5-held-out-1a2b3c4d" };
+    const bounty = { ...card("7", "A2"), attackId: "A2-bounty-12" };
+    expect(isPrivate(heldOut)).toBe(true);
+    expect(isPrivate(bounty)).toBe(true);
+    expect(isPrivate(card("8", "A1"))).toBe(false);
+    expect(matches(heldOut, { source: "held-out" })).toBe(true);
+    expect(matches(heldOut, { source: "library" })).toBe(false);
+    expect(matches(card("8", "A1"), { source: "library" })).toBe(true);
+    // A control is neither a library nor a held-out attack.
+    expect(matches(card("9", null), { source: "library" })).toBe(false);
+  });
+
+  it("matches an agent filter by the agent, or by runs already seen for it", () => {
+    const streamed = card("10", "A1", false, "run-7");
+    expect(matches(streamed, { agentId: "7" })).toBe(false);
+    expect(matches(streamed, { agentId: "7" }, new Set(["run-7"]))).toBe(true);
+    expect(matches({ ...streamed, agentId: "7" }, { agentId: "7" })).toBe(true);
+    expect(matches({ ...streamed, agentId: "8" }, { agentId: "7" }, new Set(["run-7"]))).toBe(
+      false,
+    );
   });
 
   it("adds streamed episodes to the server's counts", () => {

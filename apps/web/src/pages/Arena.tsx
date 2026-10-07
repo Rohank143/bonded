@@ -4,14 +4,15 @@ import { useQuery } from "@tanstack/react-query";
 import { ATTACK_CLASSES } from "@bonded/shared";
 import { api } from "../lib/api";
 import { outcomeOf, type EpisodeCard } from "../lib/events";
-import { useEpisodes } from "../lib/episodes";
+import { isPrivate, useEpisodeSnapshot, type EpisodeFilters } from "../lib/episodes";
+import { useListParams } from "../lib/pages";
+import { useAgents } from "../lib/chain";
 import {
   Badge,
   Button,
   EmptyState,
   ErrorText,
   Input,
-  LoadMore,
   Page,
   Term,
   TierBadge,
@@ -21,29 +22,39 @@ import {
 import { InfoPanel } from "../components/overlay";
 import { OperatorTokenField, useOperatorToken } from "../components/wallet";
 import { Select } from "../components/select";
-
-type Filter = "all" | "held" | "breach" | "control";
+import { Pagination } from "../components/pagination";
 
 const CLASS_NAMES = ATTACK_CLASSES as Record<string, { name: string }>;
-
-/** Held-out and bounty attacks have ids that say so; their text is never shown. */
-const isPrivate = (c: EpisodeCard) => Boolean(c.attackId && /held-out|bounty/i.test(c.attackId));
 
 const outcome = outcomeOf;
 
 export function Arena() {
-  const [runId, setRunId] = useState<string>();
-  const [filter, setFilter] = useState<Filter>("all");
-  const [cls, setCls] = useState("all");
   const [picked, setPicked] = useState<string>();
+  // Page, page size and filters live in the address, so a view can be shared.
+  const list = useListParams({
+    outcome: "all",
+    class: "all",
+    source: "all",
+    since: "any",
+    agent: "all",
+    run: "",
+  });
+  const f = list.values;
+  const runId = f.run || undefined;
+  const setRunId = (run: string | undefined) => list.set({ run: run ?? "" });
   const [params] = useSearchParams();
   // The operator form needs the server API token, which only the Bonded operator has.
   const operator = params.get("operator") === "1";
-  const feed = useEpisodes({
+  const filters: EpisodeFilters = {
     ...(runId ? { runId } : {}),
-    ...(filter !== "all" ? { outcome: filter } : {}),
-    ...(cls !== "all" ? { attackClass: cls } : {}),
-  });
+    ...(f.outcome !== "all" ? { outcome: f.outcome as EpisodeFilters["outcome"] } : {}),
+    ...(f.class !== "all" ? { attackClass: f.class } : {}),
+    ...(f.source !== "all" ? { source: f.source as EpisodeFilters["source"] } : {}),
+    ...(f.since !== "any" ? { since: f.since as EpisodeFilters["since"] } : {}),
+    ...(f.agent !== "all" ? { agentId: f.agent } : {}),
+  };
+  const feed = useEpisodeSnapshot(filters, list.page, list.size);
+  const agents = useAgents();
   const run = useQuery({
     queryKey: ["run", runId],
     queryFn: () => api.run(runId!),
@@ -52,13 +63,15 @@ export function Arena() {
       q.state.data?.status === "done" || q.state.data?.status === "failed" ? false : 3000,
   });
 
-  // Filters run on the API, so `shown` is already the filtered list, a page at a time.
-  const shown = feed.items;
+  // Filters run on the API, so `shown` is already one page of the filtered list.
+  const shown = feed.data?.items ?? [];
   const counts = feed.counts;
-  const filtered = filter !== "all" || cls !== "all";
+  const filtered = Object.keys(filters).length > 0;
   const selected = shown.find((c) => c.eventId === picked) ?? shown[0];
-  // The newest episode overall: streamed, or the top of an unfiltered list.
-  const latest = feed.newest ?? (filtered ? undefined : shown[0]);
+  // The newest episode overall: streamed, or the top of an unfiltered first page.
+  const latest = feed.newest ?? (filtered || list.page > 1 ? undefined : shown[0]);
+  const clear = () =>
+    list.set({ outcome: "all", class: "all", source: "all", since: "any", agent: "all", run: "" });
 
   return (
     <Page
@@ -96,7 +109,13 @@ export function Arena() {
       </div>
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Tile
-          label={runId ? "Episodes in this run" : "Episodes"}
+          label={
+            Object.keys(filters).some((k) => k !== "runId" && k !== "outcome")
+              ? "Matching episodes"
+              : runId
+                ? "Episodes in this run"
+                : "Episodes"
+          }
           value={counts ? counts.total.toLocaleString() : "…"}
         />
         <Tile
@@ -154,31 +173,45 @@ export function Arena() {
 
       <div className="flex flex-wrap items-start gap-4">
         <section className="panel min-w-0 flex-[999_1_520px] p-4.5">
-          <div className="flex flex-wrap items-center gap-2 border-b border-line px-1.5 pb-3.5">
-            {(
-              [
-                ["all", "All", ""],
-                ["held", "Held", "bg-held"],
-                ["breach", "Breached", "bg-breach-solid"],
-                ["control", "Controls", "bg-[#5b6478]"],
-              ] as const
-            ).map(([key, label, dot]) => (
-              <button
-                key={key}
-                type="button"
-                aria-pressed={filter === key}
-                onClick={() => setFilter(key)}
-                className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3.5 text-[13px] ${filter === key ? "border-ink bg-ink text-paper" : "border-line-strong text-soft hover:text-ink"}`}
-              >
-                {dot && <span className={`size-[7px] rounded-full ${dot}`} />}
-                {label}
-              </button>
-            ))}
-            <div className="ml-auto">
+          <div className="flex flex-col gap-3 border-b border-line px-1.5 pb-3.5">
+            <div className="flex flex-wrap items-center gap-2">
+              {(
+                [
+                  ["all", "All", "", feed.data?.counts.total],
+                  ["held", "Held", "bg-held", feed.data?.counts.held],
+                  ["breach", "Breached", "bg-breach-solid", feed.data?.counts.breach],
+                  ["control", "Controls", "bg-[#5b6478]", feed.data?.counts.control],
+                ] as const
+              ).map(([key, label, dot, n]) => (
+                <button
+                  key={key}
+                  type="button"
+                  aria-pressed={f.outcome === key}
+                  onClick={() => list.set({ outcome: key })}
+                  className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3.5 text-[13px] ${f.outcome === key ? "border-ink bg-ink text-paper" : "border-line-strong text-soft hover:text-ink"}`}
+                >
+                  {dot && <span className={`size-[7px] rounded-full ${dot}`} />}
+                  {label}
+                  {n !== undefined && (
+                    <span className="font-mono text-[11px] opacity-60">{n.toLocaleString()}</span>
+                  )}
+                </button>
+              ))}
+              {filtered && (
+                <button
+                  type="button"
+                  onClick={clear}
+                  className="ml-auto text-[13px] text-accent hover:underline"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
               <Select
                 label="Class"
-                value={cls}
-                onChange={setCls}
+                value={f.class}
+                onChange={(v) => list.set({ class: v })}
                 options={[
                   { value: "all", label: "All classes" },
                   ...Object.entries(CLASS_NAMES).map(([id, c]) => ({
@@ -188,8 +221,69 @@ export function Arena() {
                   })),
                 ]}
               />
+              <Select
+                label="Attacks"
+                value={f.source}
+                onChange={(v) => list.set({ source: v })}
+                options={[
+                  { value: "all", label: "All" },
+                  { value: "library", label: "Library" },
+                  { value: "held-out", label: "Held out" },
+                ]}
+              />
+              <Select
+                label="When"
+                value={f.since}
+                onChange={(v) => list.set({ since: v })}
+                options={[
+                  { value: "any", label: "Any time" },
+                  { value: "1h", label: "Last hour" },
+                  { value: "24h", label: "Last 24 hours" },
+                  { value: "7d", label: "Last 7 days" },
+                ]}
+              />
+              <Select
+                label="Agent"
+                value={f.agent}
+                onChange={(v) => list.set({ agent: v })}
+                options={[
+                  { value: "all", label: "All agents" },
+                  ...(agents.data ?? [])
+                    .filter((a) => a.score || String(a.agentId) === f.agent)
+                    .map((a) => ({ value: String(a.agentId), label: `Agent ${a.agentId}` })),
+                ]}
+              />
+              {runId && (
+                <span className="inline-flex h-9 items-center gap-2 rounded-full border border-accent/40 bg-accent-soft pr-1.5 pl-3.5 text-[13px]">
+                  <span className="text-muted">Run</span>
+                  <span className="font-mono">{runId.slice(0, 8)}</span>
+                  <button
+                    type="button"
+                    onClick={() => setRunId(undefined)}
+                    aria-label="Show every run"
+                    className="flex size-6 items-center justify-center rounded-full text-muted hover:bg-white/10 hover:text-ink"
+                  >
+                    ×
+                  </button>
+                </span>
+              )}
             </div>
           </div>
+          {feed.fresh > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                feed.refresh();
+                list.set({ page: 1 });
+              }}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-accent/30 bg-accent-soft px-4 py-2.5 text-[13px] text-ink transition hover:border-accent/60"
+            >
+              <span className="size-[7px] rounded-full bg-breach-solid [animation:blink_1.4s_infinite]" />
+              {feed.fresh >= 500 ? "500+" : feed.fresh.toLocaleString()} new{" "}
+              {feed.fresh === 1 ? "episode" : "episodes"} since this list loaded
+              <span className="text-accent">Show them ↑</span>
+            </button>
+          )}
           <ErrorText error={feed.error} />
           {feed.isPending ? (
             <div className="flex flex-col gap-2 p-2">
@@ -205,27 +299,29 @@ export function Arena() {
                 }
               >
                 {filtered && counts?.total
-                  ? "Try another class or outcome."
+                  ? "Try other filters, or clear them."
                   : "Episodes appear here the moment a rating runs. Agent owners can start one from their agent's page."}
               </EmptyState>
             </div>
           ) : (
-            <ul className="mt-2 flex flex-col gap-0.5">
+            <ul
+              className={`mt-2 flex flex-col gap-0.5 transition-opacity ${feed.isFetching && !feed.isPending ? "opacity-60" : ""}`}
+            >
               {shown.map((c) => {
                 const o = outcome(c);
                 const isSel = selected?.eventId === c.eventId;
                 return (
-                  <li key={c.eventId} className="[animation:rise_.4s_ease_both]">
+                  <li key={c.eventId}>
                     <button
                       type="button"
                       onClick={() => setPicked(c.eventId)}
                       aria-pressed={isSel}
-                      className={`grid w-full grid-cols-[10px_52px_minmax(0,1fr)_auto] items-center gap-4 rounded-2xl border px-4 py-3.5 text-left transition ${isSel ? "border-accent/40 bg-accent-soft" : "border-transparent hover:bg-white/[0.035]"}`}
+                      className={`grid w-full grid-cols-[10px_minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border px-3 py-3.5 sm:grid-cols-[10px_52px_minmax(0,1fr)_auto] sm:gap-4 sm:px-4 text-left transition ${isSel ? "border-accent/40 bg-accent-soft" : "border-transparent hover:bg-white/[0.035]"}`}
                     >
                       <span
                         className={`size-2.5 rounded-full ${o === "breach" ? "bg-breach-solid shadow-[0_0_10px_rgb(255_122_69/.7)]" : o === "held" ? "bg-held shadow-[0_0_10px_rgb(127_160_255/.6)]" : "bg-[#5b6478]"}`}
                       />
-                      <span className="w-fit rounded-md bg-white/[0.06] px-1.5 py-0.5 text-center font-mono text-[11px] text-soft">
+                      <span className="hidden w-fit rounded-md bg-white/[0.06] px-1.5 py-0.5 text-center font-mono text-[11px] text-soft sm:block">
                         {c.attackClass ?? "CTRL"}
                       </span>
                       <span className="min-w-0">
@@ -235,13 +331,17 @@ export function Arena() {
                               ? (CLASS_NAMES[c.attackClass]?.name ?? c.attackClass)
                               : "Control: no attack"}
                           </span>
-                          {isPrivate(c) && <HeldOutTag />}
+                          {isPrivate(c) && (
+                            <span className="hidden sm:inline-flex">
+                              <HeldOutTag />
+                            </span>
+                          )}
                         </span>
                         <span className="mt-0.5 block truncate font-mono text-[11px] text-muted">
                           {c.attackId ?? "a plain task"}
                         </span>
                       </span>
-                      <span className="w-[118px] text-right">
+                      <span className="text-right sm:w-[118px]">
                         <Badge
                           tone={o === "breach" ? "breach" : o === "held" ? "brand" : "neutral"}
                         >
@@ -258,13 +358,17 @@ export function Arena() {
               })}
             </ul>
           )}
-          <LoadMore
-            hasMore={feed.hasMore}
-            loading={feed.loadingMore}
-            onMore={() => void feed.loadMore()}
-            shown={shown.length}
-            {...(!filtered && counts ? { total: counts.total } : {})}
-          />
+          {feed.data && (
+            <Pagination
+              page={feed.data.page}
+              pages={feed.data.pages}
+              total={feed.data.total}
+              size={list.size}
+              onPage={(page) => list.set({ page })}
+              onSize={(size) => list.set({ size })}
+              noun="episodes"
+            />
+          )}
           {feed.failedRuns.length > 0 && (
             <p className="px-3 pt-3 text-xs text-muted">{feed.failedRuns.length} run(s) failed.</p>
           )}
@@ -431,6 +535,14 @@ function EpisodeDetail({ c, onlyRun }: { c: EpisodeCard; onlyRun?: () => void })
       <section className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-5 text-sm">
         <span className="text-muted">
           Run <span className="font-mono text-soft">{c.runId.slice(0, 8)}</span>
+          {c.agentId && (
+            <>
+              {" · "}
+              <Link to={`/agents/${c.agentId}`} className="text-accent hover:underline">
+                Agent {c.agentId}
+              </Link>
+            </>
+          )}
         </span>
         {onlyRun && (
           <button type="button" onClick={onlyRun} className="text-accent hover:underline">
