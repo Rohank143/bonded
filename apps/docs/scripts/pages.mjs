@@ -24,14 +24,13 @@ export const PAGES = [
   },
 
   { src: "docs/DEVELOPING.md", slug: "guides/developing", label: "Developing Bonded" },
-  {
-    src: "docs/SERVICES.md",
-    slug: "guides/services",
-    label: "Hosted services",
-    title: "Hosted services",
-  },
   { src: "docs/BOUNTIES.md", slug: "guides/bounties", label: "Submit a bounty attack" },
-  { src: "docs/TEE.md", slug: "guides/tee", label: "TEE custody runbook" },
+  {
+    src: "docs/TEE.md",
+    slug: "guides/tee",
+    label: "TEE custody",
+    title: "TEE custody",
+  },
 
   { src: "docs/SENTINEL.md", slug: "sentinel/overview", label: "How Sentinel works" },
   { src: "docs/SENTINEL-STRESS.md", slug: "sentinel/stress-suite", label: "Stress suite" },
@@ -83,8 +82,7 @@ export const SHORT_NAMES = {
   "docs/BOUNTIES-EXPLAINED.md": "the bounty overview",
   "docs/BOUNTIES.md": "the bounty guide",
   "docs/DEVELOPING.md": "the developer guide",
-  "docs/SERVICES.md": "the hosted services page",
-  "docs/TEE.md": "the TEE runbook",
+  "docs/TEE.md": "the TEE custody page",
   "docs/SENTINEL.md": "the Sentinel page",
   "docs/SENTINEL-STRESS.md": "the stress suite page",
   "docs/AUDIT.md": "the audit note",
@@ -95,6 +93,7 @@ export const SHORT_NAMES = {
 
 /** Sections left out of the site. */
 export const DROP_SECTIONS = {
+  "docs/DEVELOPING.md": ["The documentation site"],
   // The build schedule, demo script, submission checklist and founder's to-do list are internal.
   "docs/PLAN.md": ["20.", "21.", "22.", "24.", "27."],
 };

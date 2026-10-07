@@ -8,6 +8,7 @@ const at = (src, pairs) => pairs.map(([from, to]) => ({ src, from, to }));
 
 export const PATCHES = [
   ...at("README.md", [
+    ["| [SERVICES.md](docs/SERVICES.md) | The hosted API, keeper and workers; alerts |\n", ""],
     [
       "The same pages are published as a searchable site at `/docs` on the web app (built from these files by `apps/docs`; run it locally with `pnpm docs:dev`).\n",
       "",
@@ -56,7 +57,38 @@ export const PATCHES = [
     ],
   ]),
 
+  ...at("docs/ARCHITECTURE.md", [
+    [
+      "One Docker image, three roles on Railway ([SERVICES.md](SERVICES.md), [ADR-008](decisions/008-hosting-and-storage.md)), sharing Postgres:",
+      "Three off-chain services share one database:",
+    ],
+  ]),
+
+  ...at("docs/AUDIT.md", [
+    ["**Status: fixed** (this branch, `static-analysis`).", "**Status: fixed.**"],
+  ]),
+
+  ...at("docs/TEE.md", [
+    ["Plain-language version of ADR-012: the hardened agent", "The hardened agent"],
+    [" ADR-012 and ADR-014 say so.", ""],
+  ]),
+
+  ...at("contracts/evm/README.md", [
+    [
+      " For the reasoning behind each design choice, see the decision records linked at the end.",
+      "",
+    ],
+  ]),
+
+  ...at("docs/AGENTS.md", [
+    [
+      "On the hosted services, the arena worker rates the agents listed in `config/agents.46630.json` (see `docs/SERVICES.md`); accepted bounty attacks",
+      "Accepted bounty attacks",
+    ],
+  ]),
+
   ...at("docs/DEVELOPING.md", [
+    ["Long-running service setup and API requests: [docs/SERVICES.md](SERVICES.md).", ""],
     [
       " Day 7 evidence and the Section 25 checklist: [docs/progress/DAY-07.md](progress/DAY-07.md).",
       "",

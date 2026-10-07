@@ -193,7 +193,7 @@ export function scrubReferences(line, ctx) {
   let out = line
     .replace(new RegExp(String.raw`\s*\(\s*${mark}\s*\)`, "g"), "")
     .replace(/\s*\((?:see |and )?\[?(?:ADR-\d+|decision records?)[^)]*\)/gi, "")
-    .replace(/,? (?:see )?ADR-\d+(?=[.;,)])/gi, "");
+    .replace(/[;,]? ?\b(?:see )?ADR-\d+(?:,? decision \d+)?(?= *[.;,)|])/gi, "");
   if (out.includes(REPO_MARK)) {
     ctx.leftovers?.push(line.replaceAll(REPO_MARK, "⟦path⟧").trim());
     out = out.replaceAll(REPO_MARK, "");
@@ -240,6 +240,9 @@ export function transform(markdown, srcPath, ctx, { title, dropSections = [] } =
   if (h1 >= 0) lines.splice(h1, 1);
 
   let fence = null;
+  // Lines that only point at decision records (not published) go.
+  lines = lines.filter((l) => !/^(Design records?: |- \[ADR-\d+\])/.test(l));
+
   const body = lines.map((line) => {
     const f = line.match(/^\s*(```+|~~~+)/);
     if (f) {
