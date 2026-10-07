@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addCounts, isPrivate, matches } from "./episodes";
+import { addCounts, isPrivate, matches, newestEpisode } from "./episodes";
 import { NO_EPISODES, outcomeOf, tally, type EpisodeCard } from "./events";
 
 const card = (eventId: string, attackClass: string | null, breached = false, runId = "r1") =>
@@ -68,5 +68,15 @@ describe("episodes", () => {
       breach: 3,
       control: 2,
     });
+  });
+
+  it("picks the newest episode for the latest-run tile, never a filtered or later page's top", () => {
+    const streamed = card("20", "A1");
+    const top = card("12", "A2");
+    const fetched = card("15", "A3");
+    expect(newestEpisode({ streamed, onFirstPage: false, topRow: top, fetched })).toBe(streamed);
+    expect(newestEpisode({ onFirstPage: true, topRow: top, fetched })).toBe(top);
+    expect(newestEpisode({ onFirstPage: false, topRow: top, fetched })).toBe(fetched);
+    expect(newestEpisode({ onFirstPage: false, topRow: top })).toBeUndefined();
   });
 });
