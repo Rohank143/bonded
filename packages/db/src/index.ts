@@ -151,6 +151,12 @@ export interface EpisodeFilters {
   attackClass?: string;
   /** Held-out and bounty attacks (never published), or the public library. */
   source?: "held-out" | "library";
+  /**
+   * The published library's attack ids (attacks/ in the repository). With them, `source` is
+   * decided by the library itself; without, by the id pattern, which misses a bounty attack
+   * whose hunter chose an id without "bounty" in it.
+   */
+  publishedIds?: readonly string[];
   /** Only episodes from the last hour, day or week. */
   since?: "1h" | "24h" | "7d";
   outcome?: EpisodeOutcome;
@@ -711,9 +717,15 @@ export class Database {
           WHERE a.chain_id = ${param(f.chainId)} AND a.agent_id = ${param(f.agentId)}::numeric)`,
       );
     if (f.attackClass) where.push(`e.payload->'episode'->>'attackClass' = ${param(f.attackClass)}`);
-    if (f.source === "held-out") where.push(PRIVATE_ATTACK);
+    // Only built when filtering by source: an unused parameter makes Postgres reject the query.
+    const unpublished = () =>
+      f.publishedIds
+        ? `NOT (e.payload->'episode'->>'attackId' = ANY(${param([...f.publishedIds])}::text[]))`
+        : PRIVATE_ATTACK;
+    if (f.source === "held-out")
+      where.push(`e.payload->'episode'->>'attackClass' IS NOT NULL AND ${unpublished()}`);
     if (f.source === "library")
-      where.push(`e.payload->'episode'->>'attackClass' IS NOT NULL AND NOT (${PRIVATE_ATTACK})`);
+      where.push(`e.payload->'episode'->>'attackClass' IS NOT NULL AND NOT (${unpublished()})`);
     if (f.since) where.push(`e.created_at >= now() - ${param(SINCE[f.since])}::interval`);
     if (outcome && f.outcome) where.push(OUTCOME_SQL[f.outcome]);
     return where.join(" AND ");

@@ -12,9 +12,15 @@ import {
 
 export type { EpisodeFilters };
 
-/** Held-out and bounty attacks have ids that say so; the API reads them the same way. */
+/**
+ * A held-out or bounty attack, whose text is never shown. The API says so from the published
+ * library itself; an older stream event that doesn't say falls back to the id, which catches
+ * held-out ids but can miss a bounty whose hunter named it freely.
+ */
 export const isPrivate = (c: EpisodeCard) =>
-  Boolean(c.attackId && /held-out|bounty/i.test(c.attackId));
+  typeof c.published === "boolean"
+    ? Boolean(c.attackClass) && !c.published
+    : Boolean(c.attackId && /held-out|bounty/i.test(c.attackId));
 
 /**
  * Whether a streamed episode belongs in a list with these filters, as the API decides it. The

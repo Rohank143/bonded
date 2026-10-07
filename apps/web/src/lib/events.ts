@@ -17,6 +17,11 @@ export interface EpisodeCard {
   agentId?: string | null;
   /** Why the vault ruled as it did (lib/ruling.ts); null for episodes from before it was recorded. */
   ruling?: string | null;
+  /**
+   * Whether the attack is in the published library (from the API, or the episode's detail on the
+   * stream). Undefined when nothing says: lib/episodes.ts then falls back to the id.
+   */
+  published?: boolean | null;
 }
 
 /** Topics the API streams (docs/SERVICES.md). Unknown topics are ignored. */
@@ -37,6 +42,7 @@ export function toEpisodeCard(eventId: string, data: string): EpisodeCard | null
         attackClass?: string | null;
         verdict?: { breached?: boolean; totalLossUsd?: number; frozen?: boolean };
         ruling?: unknown;
+        detail?: { attack?: { published?: unknown } | null };
       };
     };
     if (typeof p.runId !== "string" || typeof p.index !== "number" || !p.episode?.verdict)
@@ -52,6 +58,9 @@ export function toEpisodeCard(eventId: string, data: string): EpisodeCard | null
       lossUsd: Number(p.episode.verdict.totalLossUsd ?? 0),
       frozen: p.episode.verdict.frozen === true,
       ruling: typeof p.episode.ruling === "string" ? p.episode.ruling : null,
+      ...(typeof p.episode.detail?.attack?.published === "boolean"
+        ? { published: p.episode.detail.attack.published }
+        : {}),
     };
   } catch {
     return null;

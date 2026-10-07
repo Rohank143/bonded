@@ -33,6 +33,18 @@ describe("episodes", () => {
     expect(matches(c, { attackId: "A3-y" })).toBe(false);
   });
 
+  it("trusts the API's published flag over the id: a bounty can be named anything", () => {
+    const bounty = { ...card("9", "A6"), attackId: "A6-operator-social-broadcast-801" };
+    expect(isPrivate(bounty)).toBe(false); // by id alone it looks public
+    expect(isPrivate({ ...bounty, published: false })).toBe(true);
+    expect(isPrivate({ ...card("10", "A2"), attackId: "A2-bounty-12", published: true })).toBe(
+      false,
+    );
+    expect(matches({ ...bounty, published: false }, { source: "library" })).toBe(false);
+    // A control has no attack to be private.
+    expect(isPrivate({ ...card("11", null), published: null })).toBe(false);
+  });
+
   it("reads held-out and bounty attacks as private, as the API does", () => {
     const heldOut = { ...card("6", "A5"), attackId: "A5-held-out-1a2b3c4d" };
     const bounty = { ...card("7", "A2"), attackId: "A2-bounty-12" };

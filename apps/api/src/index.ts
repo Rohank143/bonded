@@ -18,7 +18,13 @@ import {
   bountyBoardAbi,
   leaderboardHeadline,
 } from "@bonded/shared";
-import { readLeaderboard, BountySpecError, parseBountySpec, specUri } from "@bonded/arena";
+import {
+  readLeaderboard,
+  BountySpecError,
+  loadAttackLibrary,
+  parseBountySpec,
+  specUri,
+} from "@bonded/arena";
 import type { ServiceChain } from "@bonded/keeper";
 import type { Hex } from "viem";
 import { issueQuote } from "./quotes.js";
@@ -326,6 +332,14 @@ export function createApi(options: {
   // each is kept a minute, and the cache is bounded.
   const countsCacheMs = options.episodeCountsCacheMs ?? 60_000;
   const countsCache = new Map<string, { at: number; counts: EpisodeCounts }>();
+  // Whether an episode's attack is published is decided by the library itself (attacks/), not
+  // by its id: a bounty hunter can name an attack anything.
+  const publishedIds = loadAttackLibrary().map((a) => a.id);
+  const isPublished = new Set(publishedIds);
+  const withPublished = <T extends { attackId: string | null }>(e: T) => ({
+    ...e,
+    published: e.attackId === null ? null : isPublished.has(e.attackId),
+  });
   app.get("/episodes", async (c) => {
     const {
       class: cls,
@@ -345,6 +359,7 @@ export function createApi(options: {
       ...(agentId ? { agentId, chainId: chain.deployment.chainId } : {}),
     };
     const key = JSON.stringify([scope, through]);
+    scope.publishedIds = publishedIds;
     let cached = countsCache.get(key);
     if (!cached || Date.now() - cached.at >= countsCacheMs) {
       cached = { at: Date.now(), counts: await db.episodeCounts(scope, through) };
@@ -360,7 +375,12 @@ export function createApi(options: {
         ...(limit ? { limit } : {}),
       },
     );
-    return c.json({ ...result, through, counts: cached.counts });
+    return c.json({
+      ...result,
+      items: result.items.map(withPublished),
+      through,
+      counts: cached.counts,
+    });
   });
   // One episode with its detail, for the Arena's episode page. Unpublished attacks' text is never
   // in it: the worker leaves it out when it publishes the episode (publicEpisode).
@@ -368,7 +388,7 @@ export function createApi(options: {
     const eventId = uint.parse(c.req.param("eventId"));
     const episode = await db.episode(eventId);
     if (!episode) return c.json({ error: "episode not found; older episodes are pruned" }, 404);
-    return c.json(episode);
+    return c.json(withPublished(episode));
   });
   selfServeRoutes(app, { db, chain, ...(options.selfServe ? { limits: options.selfServe } : {}) });
   libraryRoutes(app, { db, chainId: chain.deployment.chainId });

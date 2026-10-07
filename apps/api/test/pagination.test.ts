@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
-import { ANVIL_KEYS } from "@bonded/arena";
+import { ANVIL_KEYS, loadAttackLibrary } from "@bonded/arena";
 import { connectChain } from "@bonded/keeper";
 import { parseEvmDeployment } from "@bonded/shared";
 import { createApi } from "../src/index.js";
@@ -18,13 +18,20 @@ const chain = connectChain(
 const RUN_A = "00000000-0000-4000-8000-00000000000a";
 const RUN_B = "00000000-0000-4000-8000-00000000000b";
 
+/** A real published seed of a class: whether an attack is published is read from the library. */
+const LIBRARY = loadAttackLibrary();
+const seedOf = (attackClass: string, index: number) => {
+  const seeds = LIBRARY.filter((a) => a.class === attackClass);
+  return seeds[index % seeds.length]!.id;
+};
+
 /** Publish one episode the way the Arena worker does (topic rating.episode). */
 const episode = (
   runId: string,
   index: number,
   attackClass: string | null,
   breached = false,
-  attackId = attackClass ? `${attackClass}-seed-${index}` : null,
+  attackId = attackClass ? seedOf(attackClass, index) : null,
 ) =>
   pg.db.publish("rating.episode", {
     runId,
@@ -129,7 +136,7 @@ it("filters in the database, and counts outcomes with every filter but the outco
 
   expect(tag(await get(`/episodes?runId=${RUN_B}`))).toEqual(["b1", "b0"]);
   expect(tag(await get("/episodes?source=held-out"))).toEqual(["a5"]);
-  expect(tag(await get("/episodes?attack=A2-seed-2"))).toEqual(["a2"]);
+  expect(tag(await get(`/episodes?attack=${seedOf("A2", 2)}`))).toEqual(["a2"]);
   expect((await get("/episodes?source=library")).total).toBe(6);
   expect((await get("/episodes?since=1h")).total).toBe(8);
   await pg.db.pool.query("UPDATE events SET created_at = now() - interval '2 days'");
@@ -245,4 +252,28 @@ it("serves one episode with its ruling and detail, and older episodes without th
   expect(old).toMatchObject({ ruling: null, detail: null });
   expect((await app.request("/episodes/999999999")).status).toBe(404);
   expect((await app.request("/episodes/abc")).status).toBe(400);
+});
+
+it("decides library or not from the published library, not the attack's id", async () => {
+  // A bounty attack named freely, and a real library seed.
+  await episode(RUN_B, 2, "A6", false, "A6-operator-social-broadcast-801");
+  await episode(RUN_B, 3, "A2", false, "A2-fake-halt-news-001");
+  const all = await get(`/episodes?runId=${RUN_B}`);
+  const flag = (id: string) =>
+    (all.items as unknown as { attackId: string; published: boolean | null }[]).find(
+      (e) => e.attackId === id,
+    )?.published;
+  expect(flag("A6-operator-social-broadcast-801")).toBe(false);
+  expect(flag("A2-fake-halt-news-001")).toBe(true);
+  const ids = (p: EpisodesPage) =>
+    (p.items as unknown as { attackId: string }[]).map((e) => e.attackId);
+  const library = ids(await get(`/episodes?runId=${RUN_B}&source=library`));
+  expect(library).toContain("A2-fake-halt-news-001");
+  expect(library).not.toContain("A6-operator-social-broadcast-801");
+  expect(ids(await get(`/episodes?runId=${RUN_B}&source=held-out`))).toEqual(
+    expect.arrayContaining(["A6-operator-social-broadcast-801"]),
+  );
+  expect(ids(await get(`/episodes?runId=${RUN_B}&source=held-out`))).not.toContain(
+    "A2-fake-halt-news-001",
+  );
 });
