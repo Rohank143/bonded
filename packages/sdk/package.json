@@ -1,0 +1,56 @@
+{
+  "name": "@bonded/sdk",
+  "version": "0.1.0",
+  "description": "Trade through a Bonded Mandate Vault from any TypeScript agent: a typed vault client with dry runs, Sentinel checks, a mandate builder, and plugins for Coinbase AgentKit, Solana Agent Kit and ElizaOS.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ddboy19912/bonded.git",
+    "directory": "packages/sdk"
+  },
+  "homepage": "https://github.com/ddboy19912/bonded/tree/main/packages/sdk#readme",
+  "keywords": [
+    "bonded",
+    "ai-agents",
+    "mandate-vault",
+    "agentkit",
+    "solana-agent-kit",
+    "elizaos",
+    "viem"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src test",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@bonded/shared": "workspace:^",
+    "viem": "^2.56.9",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@bonded/sandbox": "workspace:*"
+  }
+}
