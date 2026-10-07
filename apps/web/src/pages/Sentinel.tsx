@@ -5,37 +5,6 @@ import { SENTINEL_GATES, SENTINEL_MODEL } from "../lib/sentinel-facts";
 import { Badge, ErrorText, Page, buttonClass, linkClass } from "../components/ui";
 import { StatLoading, StatStrip } from "../components/stat-strip";
 
-/** What an agent sends and signs to ask Sentinel about one action. */
-const CHECK_EXAMPLE = `import {
-  sentinelCheckDigest, sentinelCheckMessage,
-} from "@bonded/shared";
-
-// Before each trade: what the agent read, and what it wants to do.
-const body = {
-  mandate: "You manage a vault holding tUSDG and tNVDA ...",
-  proposedAction: { tool: "swap", args: { tokenIn: "tUSDG", amount: "100" } },
-  untrustedInputs: [{ tool: "read_news", output: "..." }],
-};
-const timestamp = Math.floor(Date.now() / 1000);
-// Signed with the agent's own key: the vault's agent() address.
-const signature = await agentKey.signMessage({
-  message: sentinelCheckMessage({
-    chainId, agentId, vault, timestamp,
-    digest: sentinelCheckDigest(body),
-  }),
-});
-const res = await fetch(\`\${API}/sentinel/check\`, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ agentId, vault, timestamp, signature, ...body }),
-});
-// Trade only on a clear "not blocked": throttled, busy or unreachable
-// (429 or 503) means Sentinel couldn't assess it, so don't go ahead.
-const answer = res.ok ? await res.json() : undefined;
-if (typeof answer?.blocked !== "boolean" || answer.blocked) {
-  return; // skip this trade, or retry the check after a pause
-}`;
-
 const STEPS: [string, string][] = [
   [
     "The agent proposes a trade",
@@ -55,6 +24,21 @@ const STEPS: [string, string][] = [
   ],
 ];
 
+const RATED_WITH: [string, string][] = [
+  [
+    "Every attack meets Sentinel first",
+    "The whole rating runs with Sentinel in front of your agent, exactly as it will trade.",
+  ],
+  [
+    "A discount that's measured",
+    "If Sentinel stops attacks, your agent breaches less, scores higher and its cover costs less.",
+  ],
+  [
+    "Labelled, never passed off",
+    "The report and the agent's page say Sentinel was on, and the rating has its own code hash.",
+  ],
+];
+
 /** Sentinel: what it is, whether it's running, how it was tested, and how to use it. */
 export function Sentinel() {
   const status = useQuery({
@@ -67,7 +51,7 @@ export function Sentinel() {
   return (
     <Page
       title="Sentinel"
-      intro="A guard that checks each trade an agent proposes before it runs, and stops the ones driven by something the agent read instead of its mandate. It only advises: payouts are decided by the vault alone."
+      intro="A guard built on Laya, Convai Innovations' open-source decision model. It checks each trade before it runs and stops the ones driven by what the agent read, not its mandate. It only advises: the vault decides payouts."
       actions={
         <a
           href={SENTINEL_MODEL.overview}
@@ -128,13 +112,13 @@ export function Sentinel() {
         </ol>
       </section>
 
-      <section className="panel p-0">
-        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-line p-6">
+      <section>
+        <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-lg font-bold">How v5 was tested before it went live</h2>
-            <p className="mt-1 max-w-[65ch] text-sm text-muted">
-              Five gates against the previous model, v1. It passed four. It was promoted with the
-              fifth's exception recorded; the fix is tracked for v6.
+            <h2 className="font-serif text-3xl leading-tight">How v5 was tested</h2>
+            <p className="mt-2 max-w-[60ch] text-sm text-muted">
+              Five gates against the previous model, v1, before it went live. It passed four and was
+              promoted with the fifth's exception recorded.
             </p>
           </div>
           <a
@@ -146,31 +130,39 @@ export function Sentinel() {
             Full results →
           </a>
         </div>
-        <ul>
+        {/* Each card spans five shared rows, so names, numbers and notes line up across cards. */}
+        <ul className="panel mt-5 grid overflow-hidden p-0 md:grid-cols-2 xl:grid-cols-5">
           {SENTINEL_GATES.map((g) => (
             <li
               key={g.name}
-              className="grid gap-3 border-b border-line px-6 py-4 last:border-b-0 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-center"
+              className="row-span-5 grid grid-rows-subgrid border-b border-line p-5 last:border-b-0 md:[&:nth-child(odd)]:border-r md:last:col-span-2 md:last:border-r-0 xl:border-b-0 xl:last:col-span-1 xl:[&:not(:last-child)]:border-r"
             >
               <span>
-                <span className="block font-semibold">{g.name}</span>
-                <span className="block text-xs text-muted">{g.what}</span>
+                <Badge tone={g.passed ? "safe" : "warn"} dot>
+                  {g.passed ? "Passed" : "Exception"}
+                </Badge>
               </span>
-              <span className="text-sm text-muted">
-                <span className="mr-1.5 text-[11px] text-muted/70">v1</span>
-                {g.before}
-              </span>
-              <span className="text-sm text-soft">
-                <span className="mr-1.5 text-[11px] text-muted/70">v5</span>
-                {g.after}
-              </span>
-              <Badge tone={g.passed ? "safe" : "warn"}>{g.passed ? "Passed" : "Exception"}</Badge>
+              <p className="mt-3 font-semibold">{g.name}</p>
+              <p className="mt-1.5 text-xs leading-relaxed text-muted">{g.what}</p>
+              <div className="mt-6">
+                <p className="flex items-baseline gap-2 tabular-nums">
+                  <span className="font-serif text-[36px] leading-none">{g.after}</span>
+                  <span className="text-sm text-muted">
+                    from <span className="text-soft">{g.before}</span>
+                  </span>
+                </p>
+                <p className="mt-1.5 text-xs text-muted">{g.measure}</p>
+              </div>
+              <p
+                className={`text-xs leading-relaxed ${g.note ? "mt-3 border-t border-line pt-3" : ""} ${g.passed ? "text-muted" : "text-warn"}`}
+              >
+                {g.note}
+              </p>
             </li>
           ))}
         </ul>
-        <p className="border-t border-line px-6 py-4 text-xs text-muted">
-          Held out from training: attack classes {SENTINEL_MODEL.heldOutClasses.join(" and ")}.
-          Speed: {SENTINEL_MODEL.speed.cpu}, {SENTINEL_MODEL.speed.gpu}. Where v5 still misses is in{" "}
+        <p className="mt-3 text-xs text-muted">
+          Big number: v5. Smaller: v1 on the same cases. Where v5 still misses is tracked in{" "}
           <a href={SENTINEL_MODEL.issue} target="_blank" rel="noreferrer" className={linkClass}>
             issue #55
           </a>
@@ -178,39 +170,27 @@ export function Sentinel() {
         </p>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-2">
-        <div className="panel flex flex-col p-6">
-          <h2 className="text-lg font-bold">Rate your agent with Sentinel on</h2>
-          <p className="mt-2 text-sm leading-relaxed text-muted">
-            Choose it when you onboard an agent. Every attack in the rating then runs with Sentinel
-            in front of the agent. If it stops attacks, the agent breaches less, scores higher and
-            its cover costs less: the discount is measured, not assumed.
+      <section className="grid gap-8 border-t border-line pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+        <div>
+          <h2 className="font-serif text-3xl leading-tight">Rate your agent with Sentinel on</h2>
+          <p className="mt-3 max-w-[48ch] text-sm leading-relaxed text-muted">
+            Choose it when you onboard an agent. Your agent then asks Sentinel before each trade.
           </p>
-          <p className="mt-2 text-sm leading-relaxed text-muted">
-            The report and the agent's page say the score was earned with Sentinel on, and the
-            rating has its own code hash, so it's never passed off as the agent's score alone. Your
-            agent should then ask Sentinel before each trade, as below.
-          </p>
-          <div className="mt-auto pt-5">
-            <Link to="/agents/new" className={buttonClass("primary")}>
-              Onboard an agent
-            </Link>
-          </div>
+          <Link to="/agents/new" className={`mt-6 ${buttonClass("primary")}`}>
+            Onboard an agent
+          </Link>
         </div>
-        <div className="panel flex min-w-0 flex-col p-6">
-          <h2 className="text-lg font-bold">Ask Sentinel before each trade</h2>
-          <p className="mt-2 text-sm leading-relaxed text-muted">
-            <code className="rounded bg-white/[0.06] px-1 font-mono text-[12px] text-soft">
-              POST /sentinel/check
-            </code>{" "}
-            with the action and what the agent read, signed with the agent's own key (the vault's{" "}
-            <code className="font-mono text-[12px]">agent()</code> address). Up to 30 checks a
-            minute per agent. Nothing the agent sends is stored: only whether it blocked.
-          </p>
-          <pre className="mt-4 max-h-80 overflow-auto rounded-2xl border border-line bg-[#070a12] p-4 font-mono text-[12px] leading-relaxed text-soft">
-            {CHECK_EXAMPLE}
-          </pre>
-        </div>
+        <ul className="grid content-start gap-6">
+          {RATED_WITH.map(([title, text]) => (
+            <li key={title} className="flex gap-4">
+              <span className="mt-2 size-1.5 shrink-0 rounded-full bg-accent" aria-hidden />
+              <span>
+                <span className="block font-semibold">{title}</span>
+                <span className="mt-1 block text-sm leading-relaxed text-muted">{text}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
       </section>
     </Page>
   );
