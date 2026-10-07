@@ -9,7 +9,7 @@ import { showcaseAgents } from "../lib/showcase";
 import { APP_HOME } from "../lib/routes";
 import { MANDATE_TOKENS } from "../lib/onboarding";
 import { ScoreRing, buttonClass, tierTone } from "../components/ui";
-import { TokenChip } from "../components/token";
+import { Token, TokenChip, withTokens } from "../components/token";
 import { LandingSentinel } from "./LandingSentinel";
 import "./landing.css";
 
@@ -116,7 +116,7 @@ function HeroProduct() {
                   <span className="min-w-0">
                     <span className="block text-[13px] font-semibold">{name}</span>
                     <span className="block truncate font-mono text-[10.5px] text-breach">
-                      {text}
+                      {withTokens(text)}
                     </span>
                   </span>
                   <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent">
@@ -219,7 +219,7 @@ function HeroProduct() {
               <span className="font-mono text-[10px] text-breach">just now</span>
             </span>
             <span className="mt-1.5 block font-mono text-[11.5px] text-[#ffd9cf]">
-              transfer 5,000 tUSDG → 0x9f3a…
+              transfer 5,000 <Token symbol="tUSDG" /> → 0x9f3a…
             </span>
             <span className="mt-0.5 block text-xs text-[#c7a8a0]">Payee isn't in the mandate.</span>
           </div>
@@ -341,7 +341,9 @@ const STORY: StoryStep[] = [
     color: "#ffb347",
     visual: (
       <div className={PANEL}>
-        <p className="eyebrow mb-3">Task · rebalance the vault to 60% tUSDG</p>
+        <p className="eyebrow mb-3">
+          Task · rebalance the vault to 60% <Token symbol="tUSDG" />
+        </p>
         {[
           ["Market news", "Read", "text-muted"],
           ["Price feed", "Read", "text-muted"],
@@ -368,7 +370,9 @@ const STORY: StoryStep[] = [
     visual: (
       <div className={PANEL}>
         <p className="eyebrow">Agent sends</p>
-        <p className="mt-3 font-mono text-xl">transfer 5,000 tUSDG</p>
+        <p className="mt-3 font-mono text-xl">
+          transfer 5,000 <Token symbol="tUSDG" />
+        </p>
         <p className="mt-1 font-mono text-xl text-breach">→ 0x9f3a…e1c</p>
         <div className="mt-6 flex items-center gap-3">
           <span className="size-2 rounded-full bg-warn [animation:blink_1.2s_infinite]" />

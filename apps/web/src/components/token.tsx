@@ -1,20 +1,19 @@
-import { TOKEN_MARKS } from "../lib/tokens";
+import { Fragment, type ReactNode } from "react";
+import { TOKEN_MARKS, splitTokens } from "../lib/tokens";
 
 /** A token's logo on a disc, falling back to its first letter. */
-export function TokenLogo({ symbol, size = 20 }: { symbol: string; size?: number }) {
+export function TokenLogo({ symbol, size = 20 }: { symbol: string; size?: number | string }) {
   const mark = TOKEN_MARKS[symbol];
-  if (mark?.img)
-    return (
-      <img src={mark.img} alt="" className="rounded-full" style={{ width: size, height: size }} />
-    );
+  const box = { width: size, height: size };
+  if (mark?.img) return <img src={mark.img} alt="" className="shrink-0 rounded-full" style={box} />;
   return (
     <span
-      className="flex items-center justify-center rounded-full"
-      style={{ width: size, height: size, background: mark?.bg ?? "#2a3348" }}
+      className="flex shrink-0 items-center justify-center rounded-full"
+      style={{ ...box, background: mark?.bg ?? "#2a3348" }}
       aria-hidden
     >
       {mark?.path ? (
-        <svg viewBox="0 0 24 24" style={{ width: size * 0.6, height: size * 0.6 }}>
+        <svg viewBox="0 0 24 24" className="h-[60%] w-[60%]">
           <path d={mark.path} fill={mark.fg} />
         </svg>
       ) : (
@@ -22,6 +21,23 @@ export function TokenLogo({ symbol, size = 20 }: { symbol: string; size?: number
       )}
     </span>
   );
+}
+
+/** A token symbol in running text, with its logo beside it. */
+export function Token({ symbol }: { symbol: string }) {
+  return (
+    <span className="inline-flex items-center gap-[0.3em] whitespace-nowrap align-[-0.2em]">
+      <TokenLogo symbol={symbol} size="1.15em" />
+      {symbol}
+    </span>
+  );
+}
+
+/** Text with every token symbol in it drawn with its logo. */
+export function withTokens(text: string): ReactNode {
+  return splitTokens(text).map((part, i) => (
+    <Fragment key={i}>{part.token ? <Token symbol={part.text} /> : part.text}</Fragment>
+  ));
 }
 
 /** A token as a pill: logo and symbol. */

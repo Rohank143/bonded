@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { TokenLogo } from "../components/token";
+import { Token, TokenLogo } from "../components/token";
 import { Link } from "react-router";
 import { useAccount, useSignMessage, useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
@@ -367,7 +367,9 @@ export function NewAgent() {
                 </div>
               </fieldset>
               <fieldset>
-                <legend className="mb-2 font-medium">Tokens it may hold (tUSDG always)</legend>
+                <legend className="mb-2 font-medium">
+                  Tokens it may hold (<Token symbol="tUSDG" /> always)
+                </legend>
                 <div className="flex flex-wrap gap-2">
                   {MANDATE_TOKENS.map((t) => (
                     <label
@@ -466,7 +468,7 @@ export function NewAgent() {
                   value={bond}
                   onChange={setBond}
                   inputMode="decimal"
-                  suffix="tUSDG"
+                  suffix={<Token symbol="tUSDG" />}
                   error={amountOrZeroError(bond)}
                 />
                 <Input
@@ -474,14 +476,14 @@ export function NewAgent() {
                   value={deposit}
                   onChange={setDeposit}
                   inputMode="decimal"
-                  suffix="tUSDG"
+                  suffix={<Token symbol="tUSDG" />}
                   error={amountOrZeroError(deposit)}
                 />
               </div>
               <p className="text-xs text-muted">
                 Cover needs a bond of 10% to 30% of the cover, depending on the score's tier: 4,000
-                covers 20,000 for tier BB. Test tUSDG is minted from the faucet as part of these
-                steps; you need a little test ETH for gas.
+                covers 20,000 for tier BB. Test <Token symbol="tUSDG" /> is minted from the faucet
+                as part of these steps; you need a little test ETH for gas.
               </p>
             </div>
           </StepCard>

@@ -8,6 +8,7 @@ import { bps, duration, parseUsd, usd, when } from "../lib/format";
 import { isRpcUnavailable } from "../lib/errors";
 import { Button, Card, Input, Loading, Page, Term, Unavailable, linkClass } from "../components/ui";
 import { useSend } from "../components/wallet";
+import { Token, withTokens } from "../components/token";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 const pool = { address: deployment.pool, abi: coverPoolAbi } as const;
@@ -86,7 +87,7 @@ export function Underwrite() {
                   <p className="mt-2 truncate font-serif text-[40px] leading-none tabular-nums">
                     {value}
                   </p>
-                  <p className="mt-1.5 text-xs text-muted">{hint}</p>
+                  <p className="mt-1.5 text-xs text-muted">{hint && withTokens(hint)}</p>
                 </div>
               ))}
             </div>
@@ -140,7 +141,8 @@ export function Underwrite() {
             <section className="panel border-accent/25 p-6">
               <h2 className="text-lg font-bold">Your position</h2>
               <p className="mt-2 text-sm text-muted">
-                Use Connect wallet at the top of the page to deposit, withdraw or get test tUSDG.
+                Use Connect wallet at the top of the page to deposit, withdraw or get test{" "}
+                <Token symbol="tUSDG" />.
               </p>
             </section>
           ) : (
@@ -236,7 +238,7 @@ function Position(props: {
             onChange={setAmount}
             placeholder="10,000"
             inputMode="decimal"
-            suffix="tUSDG"
+            suffix={<Token symbol="tUSDG" />}
             error={
               amount && !value
                 ? "Enter a positive amount with at most 6 decimals."
@@ -263,7 +265,7 @@ function Position(props: {
               ])
             }
           >
-            {value ? `Deposit ${usd(value)} tUSDG` : "Deposit"}
+            {value ? withTokens(`Deposit ${usd(value)} tUSDG`) : "Deposit"}
           </Button>
           <Button
             kind="ghost"
@@ -280,7 +282,7 @@ function Position(props: {
               ])
             }
           >
-            Get 10,000 test tUSDG
+            {withTokens("Get 10,000 test tUSDG")}
           </Button>
         </div>
       ) : (

@@ -47,3 +47,13 @@ export function tokenSymbol(
   if (a === tokens.nvda.toLowerCase()) return "tNVDA";
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
+
+const SYMBOL_RE = new RegExp(`\\b(${Object.keys(TOKEN_MARKS).join("|")})\\b`);
+
+/** Text cut into plain runs and token symbols, so a caller can draw each symbol with its logo. */
+export function splitTokens(text: string): { text: string; token: boolean }[] {
+  return text
+    .split(new RegExp(SYMBOL_RE.source, "g"))
+    .map((part, i) => ({ text: part, token: i % 2 === 1 }))
+    .filter((part) => part.text !== "");
+}
