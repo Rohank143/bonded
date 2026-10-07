@@ -197,6 +197,52 @@ const OUTCOME_SQL: Record<EpisodeOutcome, string> = {
   held: "e.payload->'episode'->>'attackClass' IS NOT NULL AND (e.payload->'episode'->'verdict'->>'breached')::boolean IS NOT TRUE",
 };
 
+/**
+ * A runner counts as connected while its last heartbeat is this recent: three of the runner's
+ * 15-second heartbeats (RUNNER_HEARTBEAT_MS in @bonded/shared).
+ */
+export const RUNNER_FRESH_MS = 45_000;
+
+/** A live runner token, as the gateway's validator needs it (migration 0014). */
+export interface RunnerTokenRecord {
+  tokenId: string;
+  /** The agent's row id, "<chain id>:<agent id>". */
+  agentKey: string;
+  chainId: number;
+  agentId: string;
+  config: unknown;
+}
+
+/** What a runner said when it connected. */
+export interface RunnerHello {
+  runnerVersion: string;
+  mode: string;
+  teeUrl?: string | undefined;
+}
+
+/** An agent's runner token and runner, as the owner's page shows them. */
+export interface RunnerStatus {
+  /** The live token's id and age; never the token. Null when there is none. */
+  token: { id: string; createdAt: Date } | null;
+  /** The runner last seen with the live token, if any. */
+  runner: {
+    connected: boolean;
+    connectedAt: Date;
+    lastHeartbeatAt: Date;
+    disconnectedAt: Date | null;
+    runnerVersion: string | null;
+    mode: string | null;
+    teeUrl: string | null;
+  } | null;
+  /** The latest rating the live loop skipped, and why. */
+  lastSkip: { cause: string; reason: string; at: Date } | null;
+}
+
+/** SQL: whether agent `a` has a connected runner on a live token right now. */
+const RUNNER_CONNECTED = `EXISTS (SELECT 1 FROM runner_presence p JOIN runner_tokens t ON t.id=p.token_id
+  WHERE p.agent_id=a.id AND p.connected AND t.revoked_at IS NULL
+    AND p.last_heartbeat_at > now() - make_interval(secs => ${RUNNER_FRESH_MS / 1000}))`;
+
 /** Raised when a caller tries to queue an agent outside the configured set. */
 export class AgentNotConfiguredError extends Error {}
 
@@ -241,6 +287,8 @@ export class Database {
       "0011_list_pagination.sql",
       "0012_attack_index.sql",
       "0013_sentinel_checks.sql",
+      "0014_runner_tokens.sql",
+      "0015_breach_details.sql",
     ];
     await this.transaction(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(7001)");
@@ -409,6 +457,243 @@ export class Database {
       // Stamped with the same clock the quotas use, so the next check compares like with like.
       return { runId: await this.enqueueIn(c, id, new Date(quota.nowMs)) };
     });
+  }
+  /**
+   * Store a new runner token's hash for an agent, revoking the one it replaces, in one transaction.
+   * Refused when the request was signed no later than the last token request for this agent, so a
+   * captured signature can't be replayed.
+   */
+  async createRunnerToken(
+    agentKey: string,
+    token: { hash: string; createdBy: string; signedAt: number },
+  ): Promise<{ id: string; createdAt: Date } | { refused: "replayed" }> {
+    return this.transaction(async (c) => {
+      await c.query("SELECT 1 FROM agents WHERE id=$1 FOR UPDATE", [agentKey]);
+      if (await this.runnerRequestSeen(c, agentKey, token.signedAt)) return { refused: "replayed" };
+      await c.query(
+        "UPDATE runner_tokens SET revoked_at=now(),revoked_signed_at=$2 WHERE agent_id=$1 AND revoked_at IS NULL",
+        [agentKey, token.signedAt],
+      );
+      const r = await c.query(
+        `INSERT INTO runner_tokens(id,agent_id,token_hash,created_by,signed_at) VALUES($1,$2,$3,$4,$5)
+         RETURNING id,created_at`,
+        [randomUUID(), agentKey, token.hash, token.createdBy.toLowerCase(), token.signedAt],
+      );
+      return { id: r.rows[0].id as string, createdAt: r.rows[0].created_at as Date };
+    });
+  }
+  /** Revoke an agent's live runner token. Refused like `createRunnerToken` for a replay. */
+  async revokeRunnerToken(
+    agentKey: string,
+    signedAt: number,
+  ): Promise<{ revoked: number } | { refused: "replayed" }> {
+    return this.transaction(async (c) => {
+      await c.query("SELECT 1 FROM agents WHERE id=$1 FOR UPDATE", [agentKey]);
+      if (await this.runnerRequestSeen(c, agentKey, signedAt)) return { refused: "replayed" };
+      const r = await c.query(
+        "UPDATE runner_tokens SET revoked_at=now(),revoked_signed_at=$2 WHERE agent_id=$1 AND revoked_at IS NULL",
+        [agentKey, signedAt],
+      );
+      await c.query(
+        "UPDATE runner_presence SET connected=false,disconnected_at=now() WHERE agent_id=$1 AND connected",
+        [agentKey],
+      );
+      return { revoked: r.rowCount ?? 0 };
+    });
+  }
+  /** Whether a runner token request for this agent was already signed at or after `signedAt`. */
+  private async runnerRequestSeen(c: Connection, agentKey: string, signedAt: number) {
+    const r = await c.query(
+      `SELECT 1 FROM runner_tokens WHERE agent_id=$1
+         AND greatest(signed_at, coalesce(revoked_signed_at, 0)) >= $2 LIMIT 1`,
+      [agentKey, signedAt],
+    );
+    return Boolean(r.rowCount);
+  }
+  /** The live token with this hash, for an enabled agent; undefined for anything else. */
+  async runnerToken(hash: string): Promise<RunnerTokenRecord | undefined> {
+    const r = await this.pool.query(
+      `SELECT t.id,t.agent_id,a.chain_id,a.agent_id::text AS onchain,a.config FROM runner_tokens t
+       JOIN agents a ON a.id=t.agent_id
+       WHERE t.token_hash=$1 AND t.revoked_at IS NULL AND a.enabled`,
+      [hash],
+    );
+    const row = r.rows[0];
+    return (
+      row && {
+        tokenId: row.id,
+        agentKey: row.agent_id,
+        chainId: row.chain_id,
+        agentId: row.onchain,
+        config: row.config,
+      }
+    );
+  }
+  /**
+   * Record that a runner connected with a token, replacing any earlier connection for the agent.
+   * Returns the connection's id, or undefined, recording nothing, if the token has been revoked
+   * since it was validated.
+   */
+  async runnerConnected(tokenId: string, hello: RunnerHello): Promise<string | undefined> {
+    const connection = randomUUID();
+    const r = await this.pool.query(
+      `INSERT INTO runner_presence(agent_id,token_id,connection_id,connected,connected_at,last_heartbeat_at,
+                                   disconnected_at,runner_version,mode,tee_url)
+       SELECT agent_id,id,$2,true,now(),now(),NULL,$3,$4,$5 FROM runner_tokens WHERE id=$1 AND revoked_at IS NULL
+       ON CONFLICT(agent_id) DO UPDATE SET token_id=EXCLUDED.token_id,connection_id=EXCLUDED.connection_id,
+         connected=true,connected_at=now(),last_heartbeat_at=now(),disconnected_at=NULL,
+         runner_version=EXCLUDED.runner_version,mode=EXCLUDED.mode,tee_url=EXCLUDED.tee_url
+       RETURNING agent_id`,
+      [tokenId, connection, hello.runnerVersion, hello.mode, hello.teeUrl ?? null],
+    );
+    return r.rowCount === 1 ? connection : undefined;
+  }
+  /**
+   * A heartbeat on a connection. Returns false when its token was revoked or a newer connection
+   * replaced it: the gateway should then drop it.
+   */
+  async runnerHeartbeat(connectionId: string): Promise<boolean> {
+    const r = await this.pool.query(
+      `UPDATE runner_presence p SET last_heartbeat_at=now() FROM runner_tokens t
+       WHERE p.connection_id=$1 AND t.id=p.token_id AND p.connected AND t.revoked_at IS NULL`,
+      [connectionId],
+    );
+    return r.rowCount === 1;
+  }
+  /** A connection closed. A newer connection for the same agent is left alone. */
+  async runnerDisconnected(connectionId: string): Promise<void> {
+    await this.pool.query(
+      "UPDATE runner_presence SET connected=false,disconnected_at=now() WHERE connection_id=$1 AND connected",
+      [connectionId],
+    );
+  }
+  /** Whether the agent has a connected runner on a live token right now. */
+  async runnerIsConnected(agentKey: string): Promise<boolean> {
+    const r = await this.pool.query(
+      `SELECT ${RUNNER_CONNECTED} AS ok FROM agents a WHERE a.id=$1`,
+      [agentKey],
+    );
+    return r.rows[0]?.ok === true;
+  }
+  /** The agent's live token (never the token itself), its runner and the latest skipped rating. */
+  async runnerStatus(agentKey: string): Promise<RunnerStatus> {
+    const [token, presence, skip] = await Promise.all([
+      this.pool.query(
+        "SELECT id,created_at FROM runner_tokens WHERE agent_id=$1 AND revoked_at IS NULL",
+        [agentKey],
+      ),
+      this.pool.query(
+        `SELECT p.*, (p.connected AND t.revoked_at IS NULL
+                      AND p.last_heartbeat_at > now() - make_interval(secs => $2)) AS live
+         FROM runner_presence p JOIN runner_tokens t ON t.id=p.token_id
+         WHERE p.agent_id=$1 AND t.revoked_at IS NULL`,
+        [agentKey, RUNNER_FRESH_MS / 1000],
+      ),
+      this.pool.query(
+        "SELECT cause,reason,created_at FROM rating_skips WHERE agent_id=$1 ORDER BY id DESC LIMIT 1",
+        [agentKey],
+      ),
+    ]);
+    const t = token.rows[0];
+    const p = presence.rows[0];
+    const s = skip.rows[0];
+    return {
+      token: t ? { id: t.id, createdAt: t.created_at } : null,
+      runner: p
+        ? {
+            connected: p.live === true,
+            connectedAt: p.connected_at,
+            lastHeartbeatAt: p.last_heartbeat_at,
+            disconnectedAt: p.disconnected_at,
+            runnerVersion: p.runner_version,
+            mode: p.mode,
+            teeUrl: p.tee_url,
+          }
+        : null,
+      lastSkip: s ? { cause: s.cause, reason: s.reason, at: s.created_at } : null,
+    };
+  }
+  /** Record a rating the live loop chose not to queue, and why. */
+  async recordRatingSkip(agentKey: string, cause: string, reason: string, c?: Connection) {
+    await (c ?? this.pool).query(
+      "INSERT INTO rating_skips(agent_id,cause,reason) VALUES($1,$2,$3)",
+      [agentKey, cause, reason],
+    );
+  }
+  /**
+   * Queue a rating for the live loop unless the agent already has one queued or running, or one
+   * was created within `minGapMs`. Returns the run id, or undefined when nothing was queued.
+   */
+  async enqueueIfIdle(agentKey: string, minGapMs: number): Promise<string | undefined> {
+    return this.transaction(async (c) => {
+      await c.query("SELECT 1 FROM agents WHERE id=$1 FOR UPDATE", [agentKey]);
+      const busy = await c.query(
+        `SELECT 1 FROM ratings r JOIN jobs j ON j.id=r.id WHERE r.agent_id=$1
+           AND (j.status IN ('queued','running') OR r.created_at > now() - make_interval(secs => $2))
+         LIMIT 1`,
+        [agentKey, minGapMs / 1000],
+      );
+      if (busy.rowCount) return undefined;
+      return this.enqueueIn(c, agentKey);
+    });
+  }
+  /**
+   * Bring-your-own agents on a chain whose runner is connected and whose latest posted score
+   * expires before `beforeSeconds` (unix seconds): the ones to re-rate before their score lapses.
+   */
+  async remoteAgentsExpiring(chainId: number, beforeSeconds: number): Promise<string[]> {
+    const r = await this.pool.query(
+      `SELECT a.id FROM agents a
+       WHERE a.chain_id=$1 AND a.enabled AND a.config->>'kind'='remote' AND ${RUNNER_CONNECTED}
+         AND (SELECT (s.signed->'attestation'->>'expiresAt')::bigint FROM attestations s
+              WHERE s.agent_id=a.id ORDER BY s.created_at DESC LIMIT 1) < $2
+       ORDER BY a.id`,
+      [chainId, beforeSeconds],
+    );
+    return r.rows.map((row) => row.id as string);
+  }
+  /**
+   * What observed breach rates are estimated from (`estimateObservedRates` in @bonded/shared):
+   * every posted score's validity and per-group results, and every production breach on the chain.
+   */
+  async observedRateInputs(chainId: number): Promise<{
+    periods: {
+      agentId: string;
+      from: number;
+      to: number;
+      groups: { id: string; episodes: number; breaches: number }[];
+    }[];
+    breaches: { agentId: string | null; at: Date | null; blocked: boolean | null }[];
+  }> {
+    const [periods, breaches] = await Promise.all([
+      this.pool.query(
+        `SELECT a.agent_id::text AS agent, (s.signed->'attestation'->>'issuedAt')::bigint AS issued,
+           (s.signed->'attestation'->>'expiresAt')::bigint AS expires,
+           r.report->'scoring'->'groups' AS groups
+         FROM attestations s JOIN agents a ON a.id=s.agent_id JOIN ratings r ON r.id=s.id
+         WHERE a.chain_id=$1`,
+        [chainId],
+      ),
+      this.pool.query(
+        "SELECT agent_id::text AS agent,occurred_at,blocked FROM handled_events WHERE chain_id=$1",
+        [chainId],
+      ),
+    ]);
+    return {
+      periods: periods.rows.map((row) => ({
+        agentId: row.agent,
+        from: Number(row.issued),
+        to: Number(row.expires),
+        groups: Array.isArray(row.groups)
+          ? (row.groups as { id: string; episodes: number; breaches: number }[])
+          : [],
+      })),
+      breaches: breaches.rows.map((row) => ({
+        agentId: row.agent,
+        at: row.occurred_at,
+        blocked: row.blocked,
+      })),
+    };
   }
   /**
    * Store a live check only if its observed rating is still current. Custody evidence and failures
@@ -747,10 +1032,22 @@ export class Database {
       );
       if (!r.rowCount) throw new Error("bounty lease lost");
       if (done && outcome.status === "accepted") {
-        const agents = await c.query("SELECT id FROM agents WHERE chain_id=$1 AND enabled", [
-          job.chainId,
-        ]);
-        for (const row of agents.rows) await this.enqueueIn(c, row.id as string);
+        // A bring-your-own agent is rated through its own runner. With none connected its rating
+        // can't run, so it is skipped with the reason on record instead of queued to fail.
+        const agents = await c.query(
+          `SELECT a.id, a.config->>'kind'='remote' AND NOT ${RUNNER_CONNECTED} AS offline
+           FROM agents a WHERE a.chain_id=$1 AND a.enabled`,
+          [job.chainId],
+        );
+        for (const row of agents.rows)
+          if (row.offline)
+            await this.recordRatingSkip(
+              row.id as string,
+              "bounty",
+              `bounty ${job.submissionId} was accepted while the agent's runner was offline; connect it and rate the agent`,
+              c,
+            );
+          else await this.enqueueIn(c, row.id as string);
       }
       await this.publish(
         `bounty.${done ? outcome.status : "failed" in outcome ? "failed" : "retry"}`,
