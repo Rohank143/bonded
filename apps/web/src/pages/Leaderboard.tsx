@@ -121,7 +121,7 @@ export function Leaderboard() {
           </div>
         }
       >
-        {board.isPending && !board.error && <Loading what="the leaderboard" lines={6} />}
+        {board.isPending && !board.error && <Loading what="the leaderboard" height="lg" />}
         <ErrorText error={board.error} />
         {board.data?.entries.length === 0 && <EmptyState title="No ratings published yet" />}
         {entries.length > 0 && (

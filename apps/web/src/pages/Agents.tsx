@@ -117,7 +117,7 @@ export function Agents() {
         }
         title={agents.data ? `${rows.length} ${rows.length === 1 ? "agent" : "agents"}` : "Agents"}
       >
-        {agents.isPending && !agents.error && <Loading what="agents" lines={6} />}
+        {agents.isPending && !agents.error && <Loading what="agents" height="lg" />}
         <ErrorText error={agents.error} />
         {agents.data && rows.length === 0 && (
           <EmptyState

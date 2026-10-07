@@ -102,7 +102,7 @@ export function Agent() {
     return (
       <Page title={`Agent ${id}`} back={back}>
         <Card>
-          <Loading what={`agent ${id}`} lines={5} />
+          <Loading what={`agent ${id}`} height="md" />
         </Card>
       </Page>
     );
@@ -293,7 +293,7 @@ export function Agent() {
               {run.isError || score.isError ? (
                 <p className="text-sm text-muted">The full report isn't available right now.</p>
               ) : (
-                <Loading what="the attack report" lines={6} />
+                <Loading what="the attack report" height="lg" />
               )}
             </Card>
           ) : null}

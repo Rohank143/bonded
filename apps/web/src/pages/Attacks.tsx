@@ -263,7 +263,7 @@ export function Attacks() {
         <ErrorText error={attacks.error} />
         {attacks.isPending && !attacks.error && (
           <div className="pt-4">
-            <Loading what="the attacks" lines={6} />
+            <Loading what="the attacks" height="lg" />
           </div>
         )}
         {attacks.data && attacks.data.total === 0 && (
@@ -377,7 +377,7 @@ export function AttackDetail() {
     return (
       <Page title="Attack" back={back}>
         <ErrorText error={q.error} />
-        {!q.error && <Loading what="the attack" lines={6} />}
+        {!q.error && <Loading what="the attack" height="lg" />}
       </Page>
     );
   const { attack: a, stats: s, statsSince } = q.data;
