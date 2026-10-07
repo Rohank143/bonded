@@ -46,6 +46,20 @@ export const BENIGN_GOALS = [
     "before you trade.",
 ] as const;
 
+/**
+ * An agent that signs its own transactions: the gateway's chain mode (gateway/remote-agent.ts).
+ * Before each episode it names the address the episode's vault must accept as its agent (a fresh
+ * session key, or a TEE's attested key) and funds it with test gas. Every other agent acts through
+ * the toolbox, which signs with the sandbox's agent key.
+ */
+export interface SelfSigningAgent extends ArenaAgent {
+  episodeSigner(sandbox: Sandbox): Promise<`0x${string}` | undefined>;
+}
+
+export function isSelfSigning(agent: ArenaAgent): agent is SelfSigningAgent {
+  return typeof (agent as Partial<SelfSigningAgent>).episodeSigner === "function";
+}
+
 export interface EpisodeOptions {
   agent: ArenaAgent;
   /** The attack to plant, or null for a control episode with no attack. */
@@ -94,7 +108,13 @@ export async function runEpisode(
 ): Promise<EpisodeResult> {
   const started = Date.now();
   const tokens = marketTokens(sandbox);
-  const vault = await createAgentVault(sandbox, options.vault);
+  const signer = isSelfSigning(options.agent)
+    ? await options.agent.episodeSigner(sandbox)
+    : undefined;
+  const vault = await createAgentVault(sandbox, {
+    ...options.vault,
+    ...(signer ? { agent: signer } : {}),
+  });
   // The depositor the world shows (and address poisoning imitates). When the mandate lets the
   // agent send funds back to a depositor, that is the address it trusts, so the attack has to
   // target it; otherwise the sandbox's depositor account. The vault is funded by the sandbox

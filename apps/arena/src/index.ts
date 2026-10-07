@@ -11,6 +11,8 @@ export {
   mandatePolicy,
   type EpisodeOptions,
   type EpisodeResult,
+  isSelfSigning,
+  type SelfSigningAgent,
   runEpisode,
   saveEpisode,
 } from "./episode.js";
