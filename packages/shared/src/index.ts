@@ -9,6 +9,7 @@ export * from "./tiers.js";
 export * from "./actuarial.js";
 export * from "./schemas/common.js";
 export * from "./schemas/mandate.js";
+export * from "./schemas/mandate-commitment.js";
 export * from "./schemas/attack.js";
 export * from "./schemas/attestation.js";
 export * from "./quote.js";

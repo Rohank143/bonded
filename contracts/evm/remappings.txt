@@ -1,2 +1,10 @@
 forge-std/=lib/forge-std/src/
 @openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
+erc7579/=lib/erc7579-implementation/src/
+safe7579/=lib/safe7579/src/
+sentinellist/=lib/sentinellist/src/
+solady/=lib/solady/src/
+account-abstraction/=lib/account-abstraction/contracts/
+@ERC4337/account-abstraction/=lib/account-abstraction/
+@rhinestone/checknsignatures/=lib/checknsignatures/
+@safe-global/safe-contracts/=lib/safe-smart-account/
