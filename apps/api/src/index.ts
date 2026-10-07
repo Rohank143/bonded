@@ -22,6 +22,7 @@ import { readLeaderboard, BountySpecError, parseBountySpec, specUri } from "@bon
 import type { ServiceChain } from "@bonded/keeper";
 import type { Hex } from "viem";
 import { issueQuote } from "./quotes.js";
+import { originAllowed } from "./origins.js";
 import { EventStreams } from "./events.js";
 import { teeQuoteBlock } from "./tee-watch.js";
 import { RateLimiter, clientAddress } from "./rate-limit.js";
@@ -95,11 +96,11 @@ export function createApi(options: {
   const app = new Hono();
   const events = new EventStreams(db);
   // Before the token check, so a browser can read a 401 and preflight requests succeed.
-  const origins = new Set(options.webOrigins ?? []);
+  const origins = options.webOrigins ?? [];
   app.use(
     "*",
     cors({
-      origin: (origin) => (origins.has(origin) ? origin : null),
+      origin: (origin) => (originAllowed(origin, origins) ? origin : null),
       allowMethods: ["GET", "POST"],
       allowHeaders: ["Content-Type", "Authorization", "Last-Event-ID"],
       maxAge: 600,
