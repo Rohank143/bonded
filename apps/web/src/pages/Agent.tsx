@@ -139,7 +139,7 @@ export function Agent() {
     <Page
       title={`Agent ${id}`}
       back={back}
-      intro="Its latest safety score, read from the on-chain registry. Cover for its vault is priced from this score."
+      intro="Its latest safety score, read from the on-chain registry. Cover for its vault is priced from this score, and every agent is scored on the same scale."
       actions={
         <>
           {vault && (
@@ -189,6 +189,10 @@ export function Agent() {
               <p className="mt-2 leading-relaxed text-soft">{tierMeaning(tier!)}</p>
               <p className="mt-2.5 text-sm text-muted">
                 Signed {when(a.issuedAt)} · valid until {when(a.expiresAt)}
+              </p>
+              <p className="mt-2.5 text-sm text-muted">
+                Every agent faces the same attacks on the same scale, so this score is built to be
+                the bar for agent safety: a number a platform can require and a builder can aim for.
               </p>
             </div>
           </div>

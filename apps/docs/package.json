@@ -1,0 +1,25 @@
+{
+  "name": "@bonded/docs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync": "node scripts/sync-content.mjs",
+    "dev": "pnpm sync && astro dev",
+    "build": "pnpm sync && astro build",
+    "preview": "astro preview",
+    "test": "node --test scripts/transform.test.mjs"
+  },
+  "dependencies": {
+    "@astrojs/markdown-remark": "7.3.2",
+    "@astrojs/starlight": "0.42.5",
+    "@fontsource-variable/jetbrains-mono": "5.3.0",
+    "@fontsource-variable/manrope": "5.3.0",
+    "@fontsource/instrument-serif": "5.3.0",
+    "@mermaid-js/layout-elk": "0.2.0",
+    "astro": "7.3.6",
+    "astro-mermaid": "2.1.0",
+    "mermaid": "11.17.2",
+    "sharp": "0.35.5"
+  }
+}

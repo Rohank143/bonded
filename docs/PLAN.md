@@ -37,7 +37,7 @@
 18. [Business model, market and competition](#18-business-model-market-and-competition)
 19. [Go-to-market](#19-go-to-market)
 20. [16-day build plan](#20-16-day-build-plan)
-21. [Demo script](#21-demo-script)
+21. [Demo script](#21-demo-script-3-minutes)
 22. [Submission checklist](#22-submission-checklist)
 23. [Risk register](#23-risk-register)
 24. [Action items for the founder](#24-action-items-for-the-founder)
@@ -60,6 +60,8 @@ AI agents now hold and move real money. Robinhood opened its Trading MCP to thir
 3. **Mandate Vaults.** Agents trade from a smart account that knows their mandate. The vault either blocks breaches or records them on-chain.
 4. **Cover.** Depositors in agent-run vaults are protected. When the agent breaches its mandate, the operator's bond is slashed first, then the underwriting pool pays. The payout is automatic and takes **minutes, not months**.
 5. **Bonded Sentinel.** A fast guard (about 33 ms per check on a T4 GPU by the author's benchmark; about 2.5 s on CPU, measured) built on **Laya**, an open-source "System One" decision model, fine-tuned on Arena data. Agents that use it earn a premium discount.
+
+**The bar for agents.** Every agent gets the same attacks and the same 0–100 scale, so scores compare. Bonded sets out to make the Bonded Score the standard that platforms, vaults and depositors require ("Bonded agents only") and that agent builders aim for: first to publish an open attack library and scoring method, with the assumptions next to the numbers.
 
 **Why it wins:**
 - It is AI-native twice over: the insured customers are AIs, and so is the underwriter.
@@ -860,7 +862,7 @@ Founder actions on Day 14: post the bounty announcement; fill in the team slide.
 | Stop rating a class once the tier can't change (lever 4) | Day 9 | After submission (moved from Day 13: a cost saving, not hardening) | [Issue #34](https://github.com/ddboy19912/bonded/issues/34) |
 | Re-rate only what changed (lever 5) | Day 9 | After Gate 2, before paying customers | [Issue #35](https://github.com/ddboy19912/bonded/issues/35) |
 | Prompt caching for Arena model calls (lever 6) | Day 9 | Day 12, with the first model-driven leaderboard ratings | [Issue #36](https://github.com/ddboy19912/bonded/issues/36) |
-| Leaderboard with 5 runs per attack | Day 12 | Done Day 14: clean agents 79 (A), vulnerable 1 (CCC), $9.01 model spend. Re-rated 2026-10-06 with the held-out set: clean agents 81 (AA), AgentKit with Haiku 80 (AA) after one A1 breach, vulnerable 2 (CCC) | [Issue #64](https://github.com/ddboy19912/bonded/issues/64) |
+| Leaderboard with 5 runs per attack | Day 12 | Done Day 14: clean agents 79 (A), vulnerable 1 (CCC), $9.01 model spend. [Re-rated](https://bonded-nu.vercel.app/leaderboard) 2026-10-06 with the held-out set: clean agents 81 (AA), AgentKit with Haiku 80 (AA) after one A1 breach, vulnerable 2 (CCC) | [Issue #64](https://github.com/ddboy19912/bonded/issues/64) |
 | Automatic Vercel deploys from GitHub | Day 12 | Optional | [Issue #65](https://github.com/ddboy19912/bonded/issues/65) |
 | Pre-demo checklist (TEE VM, re-rate agent 3) | Day 12 | Day 15, before recording | [Issue #66](https://github.com/ddboy19912/bonded/issues/66) |
 | Robinhood Chain mainnet deploy | Day 13 (decision) | After the hackathon | [Issue #67](https://github.com/ddboy19912/bonded/issues/67) |

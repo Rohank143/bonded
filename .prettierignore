@@ -8,3 +8,4 @@ contracts/evm/cache
 *.md
 contracts/solana/target
 contracts/solana/.anchor
+.astro

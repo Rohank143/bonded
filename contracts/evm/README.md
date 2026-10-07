@@ -109,6 +109,7 @@ It follows the shape of **ERC-8004**, the emerging standard for on-chain AI agen
 It also stores each agent's **Bonded Score**, a 0–100 safety rating from the Arena:
 - A score is a message signed by an approved attester, so anyone can post it (to any chain) and only the signature matters.
 - Each score expires, and an older score can't replace a newer one.
+- Other contracts can read it. A vault, a lending market or a trading platform can require a minimum score before it accepts an agent, which is how the score becomes a standard rather than a badge.
 - It keeps the list of approved attesters, which CoverManager and BountyBoard also use.
 
 ### MandateVaultFactory

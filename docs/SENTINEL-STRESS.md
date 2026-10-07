@@ -975,7 +975,7 @@ v5 is revision `f8d305790ca9e6811e91da88d6c00c862554b0f9`, trained on the v5 set
 | 4. Arena rerun | Seeds breached 3 → **0** of 40. The scripted vulnerable agent behind Sentinel scores 72 (A), up from 65 | Pass |
 | 5. Consistency | Decision changed in 2.8% → **0.7%** of edited runs; better on every edit | Pass |
 
-**The founder promoted v5 with this exception recorded** (2026-10-02). On the locked stress suite, attacks that get past both Sentinel and the policy guard (inside the rules) fall from 12 to 6, and in-rules false blocks from 7 to 0.
+**The founder promoted v5 with this exception recorded** (2026-10-02, [gate results](progress/evidence/sentinel-gates-v5.json)). On the locked stress suite, attacks that get past both Sentinel and the policy guard (inside the rules) fall from 12 to 6, and in-rules false blocks from 7 to 0.
 
 Of v5's five gate-2 misses:
 - three are pumped buys exactly at the per-trade limit, which v1 catches (0.656, 0.533, 0.144);

@@ -1,0 +1,121 @@
+---
+title: Bonded documentation
+description: The Bonded Score, a safety standard for AI trading agents, and automatic cover for the people who fund them. How Bonded works, how to run it, and why it was built this way.
+template: splash
+hero:
+  tagline: Don't cage your agent. Bond it. Bonded attacks AI trading agents in the Arena, publishes a safety score on chain, and pays depositors automatically when an agent breaks its mandate. The score it gives every agent is built to be the bar for agent safety.
+  image:
+    file: ../../assets/symbol.svg
+  actions:
+    - text: What is Bonded?
+      link: /docs/overview/introduction/
+      icon: right-arrow
+    - text: Run it locally
+      link: /docs/guides/developing/
+      variant: minimal
+      icon: rocket
+---
+
+import { Card, CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+## The bar for AI agents
+
+There is no common way yet to tell a hardened agent from a gullible one. Bonded gives every agent it rates the same attacks and the same 0 to 100 Bonded Score, signed and readable on Robinhood Chain, Arbitrum, Ethereum and Solana. A platform, vault or depositor can require a minimum score, and an agent builder has a number to measure up to. We set it first, in the open: the attack library, the scoring method and its assumptions are published next to the numbers.
+
+## How it works
+
+<CardGrid>
+  <Card title="1. Mandate Vault" icon="approve-check">
+    An agent trades from a vault that knows its rules: which tokens, which contracts, where funds
+    may go, how much per trade and per day. A breach is blocked or recorded on chain.
+  </Card>
+  <Card title="2. The Arena" icon="warning">
+    AI attacker scenarios across 10 classes are planted in the agent's world inside a sandbox. The
+    verdict of each episode is the vault's breach log.
+  </Card>
+  <Card title="3. Bonded Score" icon="star">
+    Breach rates become an expected loss, a premium and a score from 0 to 100, signed by the
+    attester and readable on Robinhood Chain, Arbitrum, Ethereum and Solana. The same scale for
+    every agent, so it can serve as the standard.
+  </Card>
+  <Card title="4. Bond and cover" icon="open-book">
+    The operator's bond pays first. Underwriters fund a pool that pays the rest. Depositors buy
+    cover priced from the score.
+  </Card>
+  <Card title="5. Automatic claims" icon="rocket">
+    When the vault records a breach, the keeper files the claim within seconds. The contract slashes
+    the bond, then the pool pays.
+  </Card>
+  <Card title="Sentinel" icon="setting">
+    An optional real-time guard that flags manipulated actions before they reach the vault. It is
+    advisory: payouts never depend on it.
+  </Card>
+</CardGrid>
+
+Payouts and pass or fail are decided by deterministic logic in the vault and cover contracts,
+never by an AI.
+
+## Start here
+
+<CardGrid>
+  <LinkCard
+    title="Introduction"
+    description="What Bonded is, the live demo, results and their assumptions."
+    href="/docs/overview/introduction/"
+  />
+  <LinkCard
+    title="Architecture"
+    description="How the contracts, Arena, API, keeper and web app fit together."
+    href="/docs/concepts/architecture/"
+  />
+  <LinkCard
+    title="Agents"
+    description="What an agent is, every agent we rate, and what works today."
+    href="/docs/concepts/agents/"
+  />
+  <LinkCard
+    title="Developing Bonded"
+    description="Build, test and run the whole loop with one command."
+    href="/docs/guides/developing/"
+  />
+</CardGrid>
+
+## Go deeper
+
+<CardGrid>
+  <LinkCard
+    title="Smart contracts"
+    description="Vault, cover, pool, bond, claims, registry and bounties."
+    href="/docs/concepts/contracts/"
+  />
+  <LinkCard
+    title="Deployments"
+    description="Contract addresses on every chain."
+    href="/docs/reference/deployments/"
+  />
+  <LinkCard
+    title="Bounties"
+    description="Submit an attack, earn a reward when it lands."
+    href="/docs/concepts/bounties-explained/"
+  />
+  <LinkCard
+    title="Sentinel"
+    description="The guard model, end to end, and how it was stress tested."
+    href="/docs/sentinel/overview/"
+  />
+  <LinkCard
+    title="TEE custody"
+    description="Run an agent's keys inside a confidential VM."
+    href="/docs/guides/tee/"
+  />
+  <LinkCard
+    title="Security"
+    description="Policy, the internal audit note and responsible disclosure."
+    href="/docs/security/policy/"
+  />
+  <LinkCard
+    title="Product and build plan"
+    description="The 16-day plan the product follows."
+    href="/docs/overview/plan/"
+  />
+</CardGrid>

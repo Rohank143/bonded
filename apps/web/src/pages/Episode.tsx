@@ -105,7 +105,7 @@ export function Episode() {
             <VerdictCard r={r} />
           </Card>
           <p className="text-sm text-muted">
-            Step-by-step detail is recorded for episodes from 2026-10-07 on; this one is older.
+            Step-by-step detail is recorded for episodes from October 7, 2026 on; this one is older.
           </p>
         </>
       )}

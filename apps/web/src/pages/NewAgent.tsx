@@ -40,6 +40,7 @@ import {
   limitError,
 } from "../lib/validate";
 import { registerForRatings } from "../lib/self-serve";
+import { DOCS_WHATS_COMING } from "../lib/routes";
 import {
   Button,
   Card,
@@ -303,13 +304,8 @@ export function NewAgent() {
             <p className="mb-4 text-sm text-muted">
               The Arena rates one of Bonded's built-in agent designs, run against your vault and
               mandate. Rating your own agent's code is coming (
-              <a
-                className={linkClass}
-                href="https://github.com/ddboy19912/bonded/issues/84"
-                target="_blank"
-                rel="noreferrer"
-              >
-                issue #84
+              <a className={linkClass} href={DOCS_WHATS_COMING}>
+                what's coming
               </a>
               ).
             </p>

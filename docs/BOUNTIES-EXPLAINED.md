@@ -83,6 +83,7 @@ The attack's text stays private. The public list shows its title, type, surfaces
 
 - **Payouts don't depend on AI.** The reference agents are scripts and the rule is code (`apps/arena/src/bounty.ts`), so anyone can rerun a submission and get the same verdict.
 - **A payout can't happen twice.** The decision is stored before it's sent, and a retry checks the chain first.
+- **It raises the bar for everyone.** Every accepted attack is run against every rated agent, so the library, and the standard the Bonded Score sets, gets harder to pass over time instead of going stale.
 - **The pool pays for itself.** It's funded from premiums, so better attacks lead to better pricing, and that keeps the pool funded.
 
 ## Limits

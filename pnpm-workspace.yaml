@@ -8,3 +8,8 @@ onlyBuiltDependencies:
   - "@embedded-postgres/darwin-x64"
   - "@embedded-postgres/linux-x64"
   - "@embedded-postgres/linux-arm64"
+
+# Astro (apps/docs) would pull in @types/node 24, which makes pnpm install a second copy of Vite
+# for the web app and breaks the types between Vite and Vitest. One version for everyone.
+overrides:
+  "@types/node": "^22.19.0"

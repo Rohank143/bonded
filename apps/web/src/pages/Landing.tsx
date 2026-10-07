@@ -62,6 +62,10 @@ function Hero() {
           We send a red team after every agent before it holds your money. If one is ever tricked
           into breaking its rules, the contracts pay you back. No forms. No AI deciding.
         </p>
+        <p className="mx-auto mt-4 max-w-[580px] text-base leading-relaxed text-soft">
+          Every agent gets the same 0–100 Bonded Score, readable on four chains. We're setting the
+          bar for agent safety: the number platforms can require and builders aim for.
+        </p>
         <div className="mt-9 flex flex-wrap justify-center gap-3">
           <a href="#how" className={buttonClass("primary", "lg")}>
             See how it works <span aria-hidden>↓</span>
@@ -588,8 +592,9 @@ function FinalCta() {
           See every agent's score, live.
         </h2>
         <p className="relative mx-auto mt-4 max-w-xl text-lg text-muted">
-          Browse the leaderboard and the Arena without a wallet. Connect one when you're ready to
-          deposit, onboard an agent or underwrite.
+          One scale for every agent, so the score can be the bar. Browse the leaderboard and the
+          Arena without a wallet. Connect one when you're ready to deposit, onboard an agent or
+          underwrite.
         </p>
         <div className="relative mt-8 flex justify-center">
           <Link to={APP_HOME} className={buttonClass("primary", "lg")}>
