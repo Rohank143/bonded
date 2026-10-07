@@ -225,8 +225,8 @@ async function forward(
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
     signal: AbortSignal.timeout(limits.timeoutMs),
   });
-  const text = await response.text();
-  if (text.length > limits.responseBytes)
+  const text = await readCapped(response, limits.responseBytes);
+  if (text === undefined)
     return {
       jsonrpc: "2.0",
       error: { code: -32005, message: "response too large; narrow the request" },
@@ -238,4 +238,23 @@ async function forward(
       error: { code: parsed.error.code ?? -32603, message: String(parsed.error.message ?? "") },
     };
   return { jsonrpc: "2.0", result: parsed.result ?? null };
+}
+
+/** The response body as text, or undefined (and the read abandoned) once it passes `limit`. */
+async function readCapped(response: Response, limit: number): Promise<string | undefined> {
+  const reader = response.body?.getReader();
+  if (!reader) return "";
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > limit) {
+      await reader.cancel();
+      return undefined;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
 }

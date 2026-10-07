@@ -294,7 +294,7 @@ export class ArenaGateway {
     server.requestTimeout = 60_000;
     server.headersTimeout = 10_000;
     server.keepAliveTimeout = 5_000;
-    server.on("upgrade", (req, socket, head) => void this.upgrade(req, socket, head));
+    server.on("upgrade", (req, socket, head) => void this.handleUpgrade(req, socket, head));
     const host = options.host ?? "127.0.0.1";
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
@@ -462,7 +462,8 @@ export class ArenaGateway {
     throw new HttpError(404, "not found");
   }
 
-  private async upgrade(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
+  /** The WebSocket upgrade handler, for mounting the gateway in another server (with `handle`). */
+  async handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
     const path = new URL(req.url ?? "/", "http://gateway").pathname;
     if (path !== RUNNER_CONNECT_PATH) return refuse(socket, 404, "Not Found");
     const token = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization ?? "")?.[1];

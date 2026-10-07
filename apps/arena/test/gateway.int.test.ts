@@ -296,6 +296,29 @@ describe("chain mode", () => {
     expect(await sandbox.publicClient.getBalance({ address: operator })).toBe(before);
   });
 
+  it("refuses an upstream answer over the size cap instead of passing it on", async () => {
+    const small = new ArenaGateway({ tokens, limits: { upstreamResponseBytes: 200 } });
+    await small.listen();
+    cleanup.push(() => small.close());
+    const { vault, toolbox, account } = await chainEpisode();
+    const episode = small.openEpisode({
+      episodeId: "small",
+      toolbox,
+      mode: "chain",
+      chain: {
+        upstream: sandbox.rpcUrl,
+        chainId: sandbox.chain.id,
+        vault: vault.address,
+        agent: account.address,
+      },
+    });
+    expect((await rpc(episode, "eth_chainId")).result).toBeDefined();
+    expect((await rpc(episode, "eth_getCode", [vault.address, "latest"])).error).toEqual({
+      code: -32005,
+      message: "response too large; narrow the request",
+    });
+  });
+
   it("checks every request in a batch, in order, and caps the batch size", async () => {
     const { episode } = await chainEpisode();
     const batch = (await (
