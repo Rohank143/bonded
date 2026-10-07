@@ -159,3 +159,14 @@ This builds the three programs and their IDLs, then runs the LiteSVM tests again
 ## TEE key custody
 
 The hardened agent can run in a Phala Cloud confidential VM. Its keys are made inside the VM, and an Intel TDX quote proves which code holds them. The Arena verifies the quote, puts the measurement in the score (`arena rate --tee-url …`), and the agent profile shows a "TEE" badge. Why and how: [ADR-012](decisions/012-tee-custody.md). Deploying it yourself: [docs/TEE.md](TEE.md).
+
+## The documentation site
+
+`apps/docs` is a [Starlight](https://starlight.astro.build) (Astro) site served at `/docs` on the web app. It is generated from the Markdown in this repository (the README, `docs/`, the contracts' READMEs), so edit those files, not the site. `scripts/sync-content.mjs` copies them into the site at build time, turns links between them into links between pages, and drops links to source code (the pages show the path as plain text instead). Evidence files that notes cite are published under `/docs/evidence/`.
+
+```bash
+pnpm docs:dev                 # the site on http://localhost:4321/docs/
+pnpm --filter @bonded/docs build
+```
+
+`pnpm --filter @bonded/web build` builds the docs first and copies them into the web app's output, which is what Vercel deploys. In `pnpm --filter @bonded/web dev`, `/docs` is proxied to the docs dev server.

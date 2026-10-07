@@ -7,7 +7,12 @@ import { fontPreload } from "./build/font-preload";
 // The deployment file lives in contracts/evm/deployments; Vite may read the whole repository.
 export default defineConfig({
   plugins: [react(), tailwindcss(), fontPreload()],
-  server: { port: 5173, fs: { allow: ["../.."] } },
+  server: {
+    port: 5173,
+    fs: { allow: ["../.."] },
+    // The documentation site: run `pnpm --filter @bonded/docs dev` to see /docs locally.
+    proxy: { "/docs": "http://localhost:4321" },
+  },
   // RainbowKit's modal is slow to render the first time under jsdom; when every package's tests
   // run at once (pnpm test), the default 5 s timeout can run out.
   test: { environment: "jsdom", testTimeout: 15_000 },

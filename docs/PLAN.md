@@ -37,7 +37,7 @@
 18. [Business model, market and competition](#18-business-model-market-and-competition)
 19. [Go-to-market](#19-go-to-market)
 20. [16-day build plan](#20-16-day-build-plan)
-21. [Demo script](#21-demo-script)
+21. [Demo script](#21-demo-script-3-minutes)
 22. [Submission checklist](#22-submission-checklist)
 23. [Risk register](#23-risk-register)
 24. [Action items for the founder](#24-action-items-for-the-founder)

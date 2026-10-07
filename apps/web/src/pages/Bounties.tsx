@@ -25,6 +25,7 @@ import {
   linkClass,
 } from "../components/ui";
 import { useListParams } from "../lib/pages";
+import { DOCS_BOUNTY_GUIDE } from "../lib/routes";
 import { Pagination } from "../components/pagination";
 import { Select } from "../components/select";
 
@@ -57,9 +58,7 @@ function useCommitId(commitment: Hex | undefined) {
   });
 }
 
-const REPO = "https://github.com/ddboy19912/bonded/blob/main";
-
-/** The hunter's guide (docs/BOUNTIES.md), opened from a button when someone needs it. */
+/** The hunter's guide (the docs site's bounty guide), opened from a button when someone needs it. */
 function Guide() {
   const steps: [string, ReactNode][] = [
     [
@@ -98,12 +97,7 @@ function Guide() {
       <>
         The Arena runs it 3 times against two scripted reference agents. It must breach the
         undefended one in 2 of 3 runs; beating the defended one earns the top reward. You can{" "}
-        <a
-          href={`${REPO}/docs/BOUNTIES.md#try-it-locally-first`}
-          className={linkClass}
-          target="_blank"
-          rel="noreferrer"
-        >
+        <a href={DOCS_BOUNTY_GUIDE} className={linkClass}>
           try it locally first
         </a>
         .

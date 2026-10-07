@@ -1,0 +1,248 @@
+/*
+ * Aurora tokens from the web app (apps/web/src/index.css): a deep navy ground, Bonded blue for
+ * the brand, Manrope for text, Instrument Serif for headings, JetBrains Mono for code. Dark only.
+ */
+:root {
+  --bonded-paper: #05070d;
+  --bonded-surface: #0e1320;
+  --bonded-raised: #151b2b;
+  --bonded-line: rgb(255 255 255 / 0.08);
+  --bonded-line-strong: rgb(255 255 255 / 0.16);
+  --bonded-brand: #1d4ed8;
+  --bonded-brand-bright: #3c6bff;
+  --bonded-accent: #afc4ff;
+  --bonded-serif: "Instrument Serif", Georgia, serif;
+
+  --sl-font: "Manrope Variable", "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --sl-font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
+
+  --sl-color-white: #f4f6fb;
+  --sl-color-gray-1: #c7d2ee;
+  --sl-color-gray-2: #aab4cc;
+  --sl-color-gray-3: #8d96ab;
+  --sl-color-gray-4: #5b657c;
+  --sl-color-gray-5: #232a3d;
+  --sl-color-gray-6: #151b2b;
+  --sl-color-gray-7: #0e1320;
+  --sl-color-black: #05070d;
+
+  --sl-color-accent-low: rgb(29 78 216 / 0.28);
+  --sl-color-accent: #3c6bff;
+  --sl-color-accent-high: #afc4ff;
+
+  --sl-color-bg: var(--bonded-paper);
+  --sl-color-bg-nav: rgb(5 7 13 / 0.78);
+  --sl-color-bg-sidebar: var(--bonded-paper);
+  --sl-color-bg-inline-code: rgb(127 160 255 / 0.12);
+  --sl-color-hairline-light: var(--bonded-line);
+  --sl-color-hairline: var(--bonded-line);
+  --sl-color-hairline-shade: var(--bonded-line);
+  --sl-color-text: #c7d2ee;
+  --sl-color-text-accent: #afc4ff;
+
+  --sl-content-width: 46rem;
+  --sl-nav-height: 4rem;
+
+  --ec-codeBg: #0a0e17;
+  --ec-frm-edBg: #0a0e17;
+  --ec-frm-trmBg: #0a0e17;
+  --ec-brdCol: var(--bonded-line);
+  --ec-brdRad: 0.9rem;
+
+  color-scheme: dark;
+}
+
+body {
+  background:
+    radial-gradient(60rem 28rem at 78% -8rem, rgb(60 107 255 / 0.16), transparent 70%),
+    radial-gradient(44rem 24rem at 6% -6rem, rgb(29 78 216 / 0.12), transparent 70%),
+    var(--bonded-paper);
+  background-repeat: no-repeat;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgb(60 107 255 / 0.4);
+}
+
+/* Header: frosted, with a hairline. */
+header.header {
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--bonded-line);
+}
+.site-title img {
+  height: 1.9rem;
+  width: auto;
+}
+
+/* Headings: serif display, like the app. */
+.sl-markdown-content h2,
+h1#_top {
+  font-family: var(--bonded-serif);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+h1#_top {
+  font-size: clamp(2.4rem, 5vw, 3.2rem);
+  line-height: 1.05;
+  text-wrap: balance;
+}
+.sl-markdown-content h2 {
+  font-size: 2rem;
+}
+.sl-markdown-content h3 {
+  font-weight: 650;
+  letter-spacing: -0.005em;
+}
+.sl-markdown-content p {
+  text-wrap: pretty;
+}
+.sl-markdown-content a:not(.sl-link-button):not([class*="card"]) {
+  text-decoration-color: rgb(175 196 255 / 0.4);
+  text-underline-offset: 3px;
+}
+.sl-markdown-content a:hover {
+  text-decoration-color: currentColor;
+}
+
+/* Sidebar */
+.sidebar-content a {
+  border-radius: 0.6rem;
+}
+.sidebar-content a[aria-current="page"] {
+  background: var(--sl-color-accent-low);
+  color: var(--bonded-accent);
+}
+
+/* Code */
+.expressive-code .frame {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+}
+.sl-markdown-content :not(pre) > code {
+  border: 1px solid var(--bonded-line);
+  border-radius: 0.4rem;
+  font-size: 0.86em;
+  color: #dbe5ff;
+}
+
+/* Tables: the app's glass panel look. */
+.sl-markdown-content table {
+  display: block;
+  overflow-x: auto;
+  border: 1px solid var(--bonded-line);
+  border-radius: 1rem;
+  background: var(--bonded-surface);
+  font-size: 0.9rem;
+}
+.sl-markdown-content :is(th, td) {
+  border-color: var(--bonded-line);
+  padding: 0.6rem 0.9rem;
+}
+.sl-markdown-content thead {
+  background: var(--bonded-raised);
+}
+.sl-markdown-content th {
+  color: var(--sl-color-gray-1);
+  font-weight: 650;
+}
+.sl-markdown-content tr:nth-child(2n) {
+  background: transparent;
+}
+
+/* Quotes */
+.sl-markdown-content blockquote {
+  border-inline-start: 3px solid var(--bonded-brand-bright);
+  background: rgb(127 160 255 / 0.06);
+  border-radius: 0 0.9rem 0.9rem 0;
+  padding: 0.7rem 1.1rem;
+  color: var(--sl-color-gray-1);
+}
+.sl-markdown-content blockquote > :first-child {
+  margin-top: 0;
+}
+.sl-markdown-content blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+/* Diagrams */
+pre.mermaid {
+  position: relative;
+  background: var(--bonded-surface);
+  border: 1px solid var(--bonded-line);
+  border-radius: 1rem;
+  padding: 1.2rem;
+  overflow-x: auto;
+  text-align: center;
+  cursor: zoom-in;
+}
+pre.mermaid svg {
+  height: auto;
+}
+pre.mermaid::after {
+  content: "Click to enlarge";
+  position: absolute;
+  right: 0.8rem;
+  bottom: 0.5rem;
+  font-size: 0.7rem;
+  color: var(--sl-color-gray-3);
+}
+/* A diagram opened full screen, at its natural size. */
+.diagram-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  overflow: auto;
+  padding: 2rem;
+  background: rgb(5 7 13 / 0.97);
+  cursor: zoom-out;
+}
+.diagram-overlay svg {
+  max-width: none;
+  height: auto;
+}
+
+/* Cards and buttons */
+.sl-link-button.primary {
+  background: var(--bonded-brand);
+  border-color: var(--bonded-brand-bright);
+  color: #fff;
+  font-weight: 650;
+}
+.sl-link-button.primary:hover {
+  background: var(--bonded-brand-bright);
+}
+.sl-link-button.secondary {
+  border-color: var(--bonded-line-strong);
+  color: var(--sl-color-white);
+}
+.card,
+.sl-link-card {
+  background: var(--bonded-surface);
+  border-color: var(--bonded-line);
+  border-radius: 1.2rem;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+  transition: border-color 0.15s;
+}
+.sl-link-card:hover {
+  border-color: rgb(60 107 255 / 0.55);
+}
+
+/* Landing hero */
+.hero h1 {
+  font-family: var(--bonded-serif);
+  font-weight: 400;
+  letter-spacing: -0.015em;
+  line-height: 1.02;
+  font-size: clamp(2.8rem, 8vw, 5rem);
+}
+.hero .tagline {
+  color: var(--sl-color-gray-2);
+}
+
+/* Search */
+site-search button[data-open-modal] {
+  border-radius: 0.8rem;
+  border-color: var(--bonded-line-strong);
+  background: var(--bonded-surface);
+}

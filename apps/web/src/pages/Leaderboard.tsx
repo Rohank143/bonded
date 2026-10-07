@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api, type LeaderboardRecord } from "../lib/api";
+import { DOCS_DISCLOSURES } from "../lib/routes";
 import {
   Badge,
   Card,
@@ -16,7 +17,6 @@ import {
 } from "../components/ui";
 
 const CLASSES = ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10"];
-const REPO = "https://github.com/ddboy19912/bonded/blob/main";
 
 /** One attack class as a small square, coloured by the share of its episodes that breached. */
 function Square({ cls, c }: { cls: string; c?: LeaderboardRecord["classes"][number] }) {
@@ -243,12 +243,7 @@ export function Leaderboard() {
           <li>
             Results are shown per attack class. Which attack broke a third-party agent stays private
             until its maintainers have been told (
-            <a
-              className={linkClass}
-              href={`${REPO}/docs/disclosures/README.md`}
-              target="_blank"
-              rel="noreferrer"
-            >
+            <a className={linkClass} href={DOCS_DISCLOSURES}>
               disclosure policy
             </a>
             ).

@@ -8,9 +8,7 @@ import { explorerUrl, networkName } from "./config";
 import { useAgents, useClaims } from "./lib/chain";
 import { searchTarget } from "./lib/search";
 import { isNavActive } from "./lib/nav";
-import { APP_HOME } from "./lib/routes";
-
-const REPO = "https://github.com/ddboy19912/bonded";
+import { APP_HOME, DOCS_HOME, DOCS_SECURITY } from "./lib/routes";
 
 /** Stroke icons for the sidebar, drawn on a 24-unit grid. */
 const ICONS = {
@@ -159,9 +157,7 @@ function Sidebar() {
           Onboard an agent
         </Link>
         <a
-          href={`${REPO}/tree/main/docs`}
-          target="_blank"
-          rel="noreferrer"
+          href={DOCS_HOME}
           className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-muted hover:bg-white/[0.05] hover:text-ink"
         >
           <Icon d={ICONS.docs} />
@@ -320,23 +316,10 @@ export function SiteLayout() {
             </p>
           </div>
           <div className="flex gap-5 text-sm text-muted">
-            <a className="hover:text-ink" href={REPO} target="_blank" rel="noreferrer">
-              GitHub
-            </a>
-            <a
-              className="hover:text-ink"
-              href={`${REPO}/tree/main/docs`}
-              target="_blank"
-              rel="noreferrer"
-            >
+            <a className="hover:text-ink" href={DOCS_HOME}>
               Docs
             </a>
-            <a
-              className="hover:text-ink"
-              href={`${REPO}/blob/main/SECURITY.md`}
-              target="_blank"
-              rel="noreferrer"
-            >
+            <a className="hover:text-ink" href={DOCS_SECURITY}>
               Security
             </a>
           </div>

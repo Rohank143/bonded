@@ -114,6 +114,8 @@ Agent B's score of 96 is the same signed attestation on all four chains ([eviden
 
 ## Documentation
 
+The same pages are published as a searchable site at `/docs` on the web app (built from these files by `apps/docs`; run it locally with `pnpm docs:dev`).
+
 | | |
 |---|---|
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the parts fit together |

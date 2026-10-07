@@ -1,0 +1,13 @@
+dist/
+.astro/
+# Generated from the repo docs by scripts/sync-content.mjs
+src/content/docs/overview/
+src/content/docs/concepts/
+src/content/docs/guides/
+src/content/docs/sentinel/
+src/content/docs/security/
+src/content/docs/decisions/
+src/content/docs/progress/
+src/content/docs/reference/
+src/content/docs/research/
+public/evidence/
