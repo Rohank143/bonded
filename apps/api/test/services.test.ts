@@ -281,6 +281,14 @@ it("rejects capacity, signs an API quote, binds it and automatically pays a brea
   expect(after - before).toBeGreaterThan(usd(899));
   const paid = await pg.db.pool.query("SELECT * FROM handled_events WHERE status='claimed'");
   expect(paid.rowCount).toBeGreaterThan(0);
+  // What the breach was and when, for observed breach rates: an unauthorised transfer (type 2),
+  // not blocked (Monitor mode), by this vault's agent.
+  expect(paid.rows[0]).toMatchObject({
+    agent_id: vault.agentId.toString(),
+    breach_type: 2,
+    blocked: false,
+  });
+  expect(paid.rows[0].occurred_at).toBeInstanceOf(Date);
   const events = await pg.db.pool.query("SELECT * FROM events WHERE topic='claim.paid'");
   expect(events.rowCount).toBe(1);
   await new Keeper(pg.db, chain, 0n).tick();
