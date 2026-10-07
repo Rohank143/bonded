@@ -2,6 +2,7 @@ import { Database } from "@bonded/db";
 import {
   claimsEngineAbi,
   coverManagerAbi,
+  mandateModuleFactoryAbi,
   mandateVaultAbi,
   mandateVaultFactoryAbi,
 } from "@bonded/shared";
@@ -9,6 +10,12 @@ import { getAbiItem, type Address } from "viem";
 import type { ServiceChain } from "./chain.js";
 export * from "./chain.js";
 export * from "./solana.js";
+
+/** BondedTypes.BreachType.Deferred: an unexplained drop found by reconcile(). */
+const DEFERRED = 3;
+/** Why the keeper doesn't file a Deferred breach recorded by a MandateModule. */
+export const MODULE_DEFERRED_NOT_COVERED =
+  "Deferred breaches on smart-account modules aren't covered: the account's owner can move funds outside the module, so ClaimsEngine refuses them";
 
 /** One durable scanner and transaction sender per chain. Finalized cursor mismatch fails closed. */
 export class Keeper {
@@ -63,7 +70,10 @@ export class Keeper {
       c.release();
     }
   }
-  /** Commit discovered vaults, policies and breaches with their confirmed block cursor. */
+  /**
+   * Commit discovered vaults, policies and breaches with their confirmed block cursor. MandateModules
+   * (smart accounts) are tracked exactly like vaults: same breach log, events and claims.
+   */
   private async scan() {
     const { read, deployment: d } = this.chain;
     if ((await read.getChainId()) !== d.chainId) throw new Error("RPC chain mismatch");
@@ -86,6 +96,15 @@ export class Keeper {
       toBlock: to,
       strict: true,
     });
+    const modules = d.moduleFactory
+      ? await read.getLogs({
+          address: d.moduleFactory,
+          event: getAbiItem({ abi: mandateModuleFactoryAbi, name: "ModuleCreated" }),
+          fromBlock: from,
+          toBlock: to,
+          strict: true,
+        })
+      : [];
     const bound = await read.getLogs({
       address: d.coverManager,
       event: getAbiItem({ abi: coverManagerAbi, name: "CoverBound" }),
@@ -100,6 +119,7 @@ export class Keeper {
       ...new Set([
         ...known.rows.map((v): Address => v.address),
         ...created.map((v) => v.args.vault.toLowerCase() as Address),
+        ...modules.map((m) => m.args.module.toLowerCase() as Address),
       ]),
     ];
     const breaches = (
@@ -144,6 +164,17 @@ export class Keeper {
       );
     });
   }
+  /** True if `address` is a MandateModule (not a vault). Deployments before modules have none. */
+  private async isModule(address: Address) {
+    const factory = this.chain.deployment.moduleFactory;
+    if (!factory) return false;
+    return this.chain.read.readContract({
+      address: factory,
+      abi: mandateModuleFactoryAbi,
+      functionName: "isModule",
+      args: [address],
+    });
+  }
   /** Pay eligible breaches; only classify a no-match after indexing through its block. */
   private async claim() {
     const { read, deployment: d } = this.chain;
@@ -164,6 +195,13 @@ export class Keeper {
             e.id,
             breach.claimed ? "claimed" : "ignored",
           ]);
+          continue;
+        }
+        if (breach.breachType === DEFERRED && (await this.isModule(e.vault as Address))) {
+          await this.db.pool.query(
+            "UPDATE handled_events SET status='ignored',error=$2 WHERE id=$1",
+            [e.id, MODULE_DEFERRED_NOT_COVERED],
+          );
           continue;
         }
         // Keep historical policies: activePolicyOf is cleared when a policy closes.
