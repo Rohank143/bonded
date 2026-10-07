@@ -74,7 +74,7 @@ The hosted services load `config/agents.46630.json` (agent 2, the scripted harde
 
 POST endpoints require `Authorization: Bearer <API_TOKEN>`, except: a bounty reveal (the spec's hash against the chain authenticates it); the self-serve routes (signed by the agent's owner in their wallet; the exact message is `selfServeMessage` in `@bonded/shared`); and `/quotes`, which without the token caps cover at 20,000 tUSDG and is rate-limited. GET endpoints are public.
 
-Browsers can call the API only from origins listed in `WEB_ORIGINS` (comma-separated, for example `http://localhost:5173,https://bonded.vercel.app`). Other origins get no CORS headers. The hosted `api` service sets it in `.railway/railway.ts`.
+Browsers can call the API only from origins listed in `WEB_ORIGINS` (comma-separated, for example `http://localhost:5173,https://bonded.vercel.app`). An https entry may have one `*` for part of a single host label, so `https://bonded-*-ddboy19912s-projects.vercel.app` covers the web app's Vercel preview deployments. Other origins get no CORS headers. CORS only decides which pages can read responses in a browser: nothing on the API relies on it for access, since writes need the operator token or a wallet signature. The hosted `api` service sets it in `.railway/railway.ts`.
 
 | Request | Body / result |
 |---|---|
@@ -84,12 +84,14 @@ Browsers can call the API only from origins listed in `WEB_ORIGINS` (comma-separ
 | `GET /arena/runs/:id/report` | Report or 202 while pending |
 | `GET /agents/:id/score` | Latest worker-posted signed attestation and transaction hash |
 | `POST /quotes` | `{ "agentId": "1", "vault": "0x…", "coverAmount": "20000000000" }` → signed quote |
-| `GET /episodes?page=&limit=&through=&runId=&agentId=&outcome=&class=&source=&since=` | Arena episodes, newest first, as numbered pages (25 by default, at most 100) of a snapshot: the first request returns `through`, the newest event id, and later pages pass it back, so pages keep their rows while episodes arrive. Filters run in the database: `outcome` (`held`, `breach`, `control`), `class`, `source` (`held-out` or `library`), `since` (`1h`, `24h`, `7d`), `runId`, `agentId`. Returns `{ items, page, pages, total, through, counts }`; `counts` are by outcome with every filter but the outcome. Each item has a `ruling`: breach, vault_blocked, guard_blocked, ignored, unseen (the agent never read where the attack was planted), no_verdict or control |
+| `GET /episodes?page=&limit=&through=&runId=&agentId=&attack=&outcome=&class=&source=&since=` | Arena episodes, newest first, as numbered pages (25 by default, at most 100) of a snapshot: the first request returns `through`, the newest event id, and later pages pass it back, so pages keep their rows while episodes arrive. Filters run in the database: `outcome` (`held`, `breach`, `control`), `class`, `attack` (one attack's id), `source` (`held-out` or `library`), `since` (`1h`, `24h`, `7d`), `runId`, `agentId`. Returns `{ items, page, pages, total, through, counts }`; `counts` are by outcome with every filter but the outcome. Each item has a `ruling`: breach, vault_blocked, guard_blocked, ignored, unseen (the agent never read where the attack was planted), no_verdict or control |
 | `GET /episodes/:eventId` | One episode for its page: the list fields plus the agent, duration and `detail` (the task, what was planted, each step, guard blocks and the vault's ruling). For an accepted bounty or held-out attack, `detail` never includes the planted text, guard reasons or the agent's last message. `detail` is null for episodes from before 2026-10-07; 404 once an episode is pruned |
 | `GET /events?runId=<uuid>&after=<id>` | SSE episode feed after event `after` (the web passes the snapshot's `through`); optional run filter, `Last-Event-ID` replay |
 | `POST /bounties/:id/reveal` | The attack's YAML as the body (no token) → 202 `{ created, status }`; see [BOUNTIES.md](BOUNTIES.md) |
 | `GET /bounties?page=&limit=&status=&class=&hunter=&submission=&sort=` | Submissions with status, reward, reason and transaction, without payloads, as numbered pages (`{ items, page, pages, total }`); newest first, or `sort=reward` |
 | `GET /library` | What ratings run, as counts only: published seeds, accepted bounties, and active held-out attacks with the earliest retirement date |
+| `GET /library/attacks?page=&limit=&class=&surface=&severity=&sort=` | The published attacks (no planted text), numbered pages, each with its record in the Arena episodes on record: episodes, breaches, runs, last run. `sort` is `class` (default), `breaches` or `rate`. `statsSince` is when the oldest episode on record ran. Held-out and bounty attacks are never listed |
+| `GET /library/attacks/:id` | One published attack in full, planted text included, with its record; an unpublished id is 404 |
 | `POST /library/held-out` | Upload held-out attacks (operator token): `{ specs: [yaml, ...], retireAfter }`, up to 10 a request; ids must look like `A6-held-out-1a2b3c4d`. See ADR-007, decision 3 |
 | `GET /self/agents/:id` | Whether an agent is registered for self-serve ratings, its design, and when it can be rated next |
 | `POST /self/agents` | Register an agent for ratings (no token): `{ agentId, vault, kind, mandate, timestamp, signature }`, signed by the agent's owner, who must also be the vault's guardian; the mandate must hash to the vault's on-chain mandate hash |
@@ -119,15 +121,15 @@ What watches the hosted services today:
 
 The `api`, `keeper` and `arena-worker` services send operations alerts to one Telegram chat through a bot, using the Bot API. Alerts are off unless both `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set on a service. The code is `apps/api/src/alerts.ts`.
 
-| Alert | Sent by | When |
-|---|---|---|
-| Started | every service with the secrets | Once per start. A deploy or restart announces itself, which doubles as each service's test alert |
-| Crashed | every service with the secrets | An error would end the process. It alerts (waiting at most 5 seconds), then exits so Railway restarts it |
-| A loop keeps failing | every service with the secrets | 3 failed iterations in a row of a service loop (EVM or Solana keeper, TEE checks, rating or bounty worker, event retention, the watchdog). Another message when it works again |
-| Keeper out of gas | keeper | The keeper's own wallet holds less than 0.002 ETH. Without gas every claim and premium accrual fails and retries |
-| Keeper lag | keeper | The keeper's scanned block is more than 10 minutes and more than 100 blocks behind the chain head. Both must hold, so a quiet chain doesn't alert |
-| Stuck claims | keeper | A breach has stayed `pending` with an error for 10 minutes (measured from when the keeper process first saw it failing, so a restart delays the alert rather than losing it) |
-| Failed rating, premium accrual, Solana claim or bounty validation | keeper | A `rating.failed`, `keeper.accrual_failed`, `solana.claim.failed` or `bounty.failed` event. Events from before the keeper started are not replayed |
+| Alert                                                             | Sent by                        | When                                                                                                                                                                           |
+| ----------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Started                                                           | every service with the secrets | Once per start. A deploy or restart announces itself, which doubles as each service's test alert                                                                               |
+| Crashed                                                           | every service with the secrets | An error would end the process. It alerts (waiting at most 5 seconds), then exits so Railway restarts it                                                                       |
+| A loop keeps failing                                              | every service with the secrets | 3 failed iterations in a row of a service loop (EVM or Solana keeper, TEE checks, rating or bounty worker, event retention, the watchdog). Another message when it works again |
+| Keeper out of gas                                                 | keeper                         | The keeper's own wallet holds less than 0.002 ETH. Without gas every claim and premium accrual fails and retries                                                               |
+| Keeper lag                                                        | keeper                         | The keeper's scanned block is more than 10 minutes and more than 100 blocks behind the chain head. Both must hold, so a quiet chain doesn't alert                              |
+| Stuck claims                                                      | keeper                         | A breach has stayed `pending` with an error for 10 minutes (measured from when the keeper process first saw it failing, so a restart delays the alert rather than losing it)   |
+| Failed rating, premium accrual, Solana claim or bounty validation | keeper                         | A `rating.failed`, `keeper.accrual_failed`, `solana.claim.failed` or `bounty.failed` event. Events from before the keeper started are not replayed                             |
 
 The keeper's checks run once a minute. Limits: the same alert is sent at most once every 30 minutes, and each service sends at most 20 messages an hour. Messages are built from fixed text and ids only: never error messages (which can carry the RPC URL and its key), secrets or attack payloads.
 

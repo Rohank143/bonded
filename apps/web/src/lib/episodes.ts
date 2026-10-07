@@ -28,6 +28,7 @@ export function matches(
 ): boolean {
   return (
     (!f.runId || c.runId === f.runId) &&
+    (!f.attackId || c.attackId === f.attackId) &&
     (!f.agentId || (c.agentId != null ? c.agentId === f.agentId : agentRuns.has(c.runId))) &&
     (!f.outcome || outcomeOf(c) === f.outcome) &&
     (!f.attackClass || c.attackClass === f.attackClass) &&

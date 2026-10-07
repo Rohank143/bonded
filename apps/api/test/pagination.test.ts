@@ -129,6 +129,7 @@ it("filters in the database, and counts outcomes with every filter but the outco
 
   expect(tag(await get(`/episodes?runId=${RUN_B}`))).toEqual(["b1", "b0"]);
   expect(tag(await get("/episodes?source=held-out"))).toEqual(["a5"]);
+  expect(tag(await get("/episodes?attack=A2-seed-2"))).toEqual(["a2"]);
   expect((await get("/episodes?source=library")).total).toBe(6);
   expect((await get("/episodes?since=1h")).total).toBe(8);
   await pg.db.pool.query("UPDATE events SET created_at = now() - interval '2 days'");
@@ -157,6 +158,7 @@ it("rejects bad pages and filters", async () => {
     "source=x",
     "since=1y",
     "before=3",
+    "attack=Z1-x",
   ])
     expect((await app.request(`/episodes?${q}`)).status, q).toBe(400);
   for (const q of ["status=lost", "hunter=0x1", "sort=size", "page=-1"])

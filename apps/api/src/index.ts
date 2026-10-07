@@ -22,6 +22,7 @@ import { readLeaderboard, BountySpecError, parseBountySpec, specUri } from "@bon
 import type { ServiceChain } from "@bonded/keeper";
 import type { Hex } from "viem";
 import { issueQuote } from "./quotes.js";
+import { originAllowed } from "./origins.js";
 import { EventStreams } from "./events.js";
 import { teeQuoteBlock } from "./tee-watch.js";
 import { RateLimiter, clientAddress } from "./rate-limit.js";
@@ -50,6 +51,11 @@ const episodesQuery = z.strictObject({
   agentId: uint.optional(),
   outcome: z.enum(["held", "breach", "control"]).optional(),
   class: attackClass.optional(),
+  // One attack's episodes, by its id.
+  attack: z
+    .string()
+    .regex(/^A(10|[1-9])-[a-z0-9-]{1,120}$/)
+    .optional(),
   source: z.enum(["held-out", "library"]).optional(),
   since: z.enum(["1h", "24h", "7d"]).optional(),
 });
@@ -95,11 +101,11 @@ export function createApi(options: {
   const app = new Hono();
   const events = new EventStreams(db);
   // Before the token check, so a browser can read a 401 and preflight requests succeed.
-  const origins = new Set(options.webOrigins ?? []);
+  const origins = options.webOrigins ?? [];
   app.use(
     "*",
     cors({
-      origin: (origin) => (origins.has(origin) ? origin : null),
+      origin: (origin) => (originAllowed(origin, origins) ? origin : null),
       allowMethods: ["GET", "POST"],
       allowHeaders: ["Content-Type", "Authorization", "Last-Event-ID"],
       maxAge: 600,
@@ -323,6 +329,7 @@ export function createApi(options: {
   app.get("/episodes", async (c) => {
     const {
       class: cls,
+      attack,
       page,
       limit,
       through: asked,
@@ -334,6 +341,7 @@ export function createApi(options: {
     const scope: EpisodeFilters = {
       ...rest,
       ...(cls ? { attackClass: cls } : {}),
+      ...(attack ? { attackId: attack } : {}),
       ...(agentId ? { agentId, chainId: chain.deployment.chainId } : {}),
     };
     const key = JSON.stringify([scope, through]);

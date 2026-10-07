@@ -14,6 +14,14 @@ describe("searchTarget", () => {
     const vault = "0xbE32918715e9962F488BDed1e70fD8e782B4851c";
     expect(searchTarget(vault, deps)).toEqual({ href: `/vaults/${vault}`, external: false });
   });
+  it("sends an attack id to its page, whatever the case", () => {
+    expect(searchTarget("A4-honeypot-otc-004", deps)).toEqual({
+      href: "/attacks/A4-honeypot-otc-004",
+      external: false,
+    });
+    expect(searchTarget("a10-Counterparty-1", deps)?.href).toBe("/attacks/A10-counterparty-1");
+  });
+
   it("opens a transaction hash on the explorer", () => {
     const tx = `0x${"a".repeat(64)}`;
     expect(searchTarget(tx, deps)).toEqual({
