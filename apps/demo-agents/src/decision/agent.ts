@@ -6,7 +6,7 @@ import type { Decision, DecisionModel } from "./model.js";
 
 /**
  * A trading bot whose brain is a typed decision model (Laya, Jev, or an LLM standing in for
- * them): the decision-model adapter from docs/PLAN.md Section 8.4.
+ * them): the decision-model adapter from docs/SPECIFICATION.md Section 8.4.
  *
  * It reads its inputs, lists the candidate actions (its task, plus every money-moving request
  * it found), and asks the model one `choice` question per candidate: execute or ignore. The

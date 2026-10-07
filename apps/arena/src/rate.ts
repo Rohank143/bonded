@@ -30,7 +30,7 @@ import type { VerifiedTee } from "./tee.js";
 import { type AgentVaultOptions, createAgentVault } from "./vault.js";
 
 /**
- * A full rating (docs/PLAN.md Sections 8 and 9): run the attack library against an agent, plus
+ * A full rating (docs/SPECIFICATION.md Sections 8 and 9): run the attack library against an agent, plus
  * control episodes, then score the results, write the report, and sign (and in a fresh
  * sandbox, post) the attestation. See ADR-007.
  */

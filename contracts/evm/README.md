@@ -2,7 +2,7 @@
 
 These are the Solidity contracts behind Bonded. They hold AI agents' money under a set of rules (the **mandate**), sell insurance on those agents, and pay depositors automatically when an agent breaks its rules.
 
-This page explains what each contract does, how they fit together, and where the money goes. For the reasoning behind each design choice, see the decision records linked at the end.
+This page explains what each contract does, how they fit together, and where the money goes.
 
 **Live on:** Robinhood Chain testnet and Arbitrum Sepolia. The addresses are in [`deployments/`](deployments/README.md).
 
@@ -73,8 +73,8 @@ flowchart LR
     UW -- deposit --> POOL
     AG -- trades through execute --> V
     V -- allowed trades --> MKT
-    CM -- premiums: 80% --> POOL
-    CM -- premiums: 5% --> BB
+    CM -- premiums --> POOL
+    CM -- bounty share --> BB
     V -- pays premiums --> CM
     CE -- reads breach record --> V
     CE -- 1st: slash --> BOND
@@ -142,7 +142,7 @@ Every action is checked, and at most one breach is recorded per action:
 
 ### CoverPool
 
-**The underwriters' pool.** Underwriters deposit tUSDG and receive pool shares (`bdUSDG`). The pool earns 80% of all premiums, which raises the share price, and pays whatever part of a claim the operator's bond doesn't cover.
+**The underwriters' pool.** Underwriters deposit tUSDG and receive pool shares (`bdUSDG`). The pool earns the bulk of all premiums, which raises the share price, and pays whatever part of a claim the operator's bond doesn't cover.
 
 Withdrawals are slowed so underwriters can't run ahead of a claim:
 - a request, then a 7-day cooldown
@@ -168,7 +168,7 @@ Withdrawals are slowed so underwriters can't run ahead of a claim:
   - one agent is at most 10% of the pool (or its tier limit, if lower)
   - agents on the same AI model family are at most 40% of the pool together, because one new jailbreak could hit all of them at once
 - **Issues a policy NFT to the vault.** It can't be transferred, because it's a receipt, not something to trade. The term is 30 days, and breaches in the first day (the waiting period, 0 on our testnets for the demo) aren't covered. That stops people insuring after they've already been hacked.
-- **Streams premiums** from the vault, rounded up, and splits them: 15% to the treasury, 5% to the BountyBoard, 80% to the CoverPool.
+- **Streams premiums** from the vault, rounded up, and splits them between the CoverPool, the BountyBoard and a treasury (configurable).
 - **Gives a grace period.** If the vault can't pay a premium, coverage continues for 3 days. After that the policy lapses, and any unpaid premium is deducted from a later payout.
 
 ### ClaimsEngine
@@ -202,7 +202,7 @@ The council is a multisig for now; UMA or Kleros can replace it later without ch
 
 ### BountyBoard
 
-**Pays for new attacks on AI agents,** funded by the 5% premium share.
+**Pays for new attacks on AI agents,** funded by a share of premiums.
 1. A hunter commits to an attack without revealing it. The commitment includes their address, so nobody can copy it.
 2. They reveal it, and the Arena tests it.
 3. An attester accepts it and pays a reward, or rejects it.
@@ -244,7 +244,7 @@ Contracts that move money for each other are linked once at deployment: the fact
 | Policy term | 30 days | CoverManager |
 | Waiting period | 1 day (0 on testnets) | CoverManager |
 | Premium grace period | 3 days | CoverManager |
-| Premium split | 15% treasury / 5% bounties / 80% pool | CoverManager |
+| Premium split | Pool, bounties and treasury (configurable) | CoverManager |
 | Max total cover | 2× pool | CoverManager |
 | Max per agent | 10% of pool (2% for scores 25–44) | CoverManager |
 | Max per model family | 40% of pool | CoverManager |
@@ -286,7 +286,4 @@ pnpm contracts:smoke robinhood    # (from the repo root) run the demo loop on a 
 
 ## Further reading
 
-- [`docs/PLAN.md`](../../docs/PLAN.md), Section 6: the full on-chain design
-- [ADR-002](../../docs/decisions/002-mandate-vault.md): how the Mandate Vault detects breaches
-- [ADR-003](../../docs/decisions/003-cover-and-claims.md): cover, bonds, premiums and claims
-- [ADR-004](../../docs/decisions/004-registry-disputes-bounties.md): the registry, disputes, bounties and deployment
+- [`docs/SPECIFICATION.md`](../../docs/SPECIFICATION.md), Section 6: the full on-chain design

@@ -15,7 +15,7 @@ import {
 } from "./model.js";
 
 /**
- * Sentinel models (docs/PLAN.md Section 10, docs/SENTINEL.md): something that answers the three
+ * Sentinel models (docs/SPECIFICATION.md Section 10, docs/SENTINEL.md): something that answers the three
  * Sentinel questions about one proposed action. Laya answers all three in one forward pass;
  * an LLM stands in or double-checks. The guard only depends on `SentinelModel`.
  */
@@ -23,7 +23,7 @@ import {
 export type ActionRisk = keyof (typeof SENTINEL_QUESTIONS)["action_risk"]["criteria"];
 export const ACTION_RISKS = Object.keys(SENTINEL_QUESTIONS.action_risk.criteria) as ActionRisk[];
 
-/** What Sentinel sees: minimal context, in separate fields (plan Section 10.2). */
+/** What Sentinel sees: minimal context, in separate fields (specification Section 10.2). */
 export interface SentinelFields {
   mandate: string;
   proposedAction: { tool: string; args: unknown };

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * The public Agent Safety Leaderboard (docs/PLAN.md Section 13.2). Each entry is one Arena
+ * The public Agent Safety Leaderboard (docs/SPECIFICATION.md Section 13.2). Each entry is one Arena
  * rating of an agent, published at class level: breach counts per attack class, never the
  * seeds that broke it or its transcripts (docs/disclosures). Ratings are attested, and an entry
  * with `onchain` set can be checked against the registry.

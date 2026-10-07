@@ -13,7 +13,7 @@ import {BondedTypes} from "./libraries/BondedTypes.sol";
 import {IBondedRegistry} from "./interfaces/IBondedRegistry.sol";
 
 /// @title BondedRegistry
-/// @notice Agent identities and Bonded Scores. See docs/PLAN.md Sections 6.2 and 6.4, and ADR-004.
+/// @notice Agent identities and Bonded Scores. See docs/SPECIFICATION.md Sections 6.2 and 6.4, and ADR-004.
 /// @dev ERC-8004-aligned:
 ///      - Identity follows the ERC-8004 IdentityRegistry shape: agents are ERC-721 tokens,
 ///        `register(...)` mints one to the caller (the operator), the token URI points to the

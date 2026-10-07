@@ -1,6 +1,6 @@
 # Sentinel service
 
-Laya's own HTTP server (`laya.serve`, pinned `laya[serve]==0.3.21`) serving Bonded's fine-tuned Sentinel checkpoint. The protocol, bearer check and health probe are Laya's. `server.py` only chooses the weights and binds a socket that accepts IPv6 and IPv4. Plain-language overview: [docs/SENTINEL.md](../../docs/SENTINEL.md). Training: [kaggle/README.md](kaggle/README.md).
+Laya's own HTTP server (`laya.serve`, pinned `laya[serve]==0.3.21`) serving Bonded's fine-tuned Sentinel checkpoint. The protocol, bearer check and health probe are Laya's. `server.py` only chooses the weights and binds a socket that accepts IPv6 and IPv4. Plain-language overview: [docs/SENTINEL.md](../../docs/SENTINEL.md).
 
 ## API
 
@@ -13,11 +13,11 @@ Callers don't build requests by hand. `LayaSentinel` in `@bonded/demo-agents` se
 
 | Variable | Meaning |
 |---|---|
-| `SENTINEL_MODEL_REPO` | The fine-tune's Hugging Face repo, e.g. `<user>/bonded-sentinel-laya`. Unset, it serves Laya's published base checkpoint, which is for testing the service only and is not Sentinel. |
+| `SENTINEL_MODEL_REPO` | The fine-tune's model repo. Unset, it serves Laya's published base checkpoint, which is for testing the service only and is not Sentinel. |
 | `SENTINEL_MODEL_REVISION` | The repo commit to serve. Pin it. |
-| `HF_TOKEN` | A Hugging Face **read** token for the private repo. |
+| `HF_TOKEN` | A Hugging Face **read** token for the model repo. |
 | `LAYA_API_KEY` | The bearer token callers must send. |
-| `PORT` | The listening port (Railway sets it). |
+| `PORT` | The listening port (set by the host). |
 | `LAYA_THREADS` | Number of CPU threads; match the service's vCPUs. |
 
 ## Run locally
@@ -44,4 +44,4 @@ The model downloads when the container starts, which takes a few minutes the fir
 
 ## Hosting
 
-Railway has no GPUs, so Sentinel runs there on CPU: see the latency table in `docs/SENTINEL.md`. The container uses a little over 2 GB of memory after loading and more while checking; give it 4 GB and read the real peak from Railway's metrics. For production speed you need a GPU host, and the image as built won't use one: it installs CPU-only PyTorch, and `LAYA_DEVICE` defaults to `cpu` (Laya also falls back to CPU when the requested GPU is missing). Build a CUDA-enabled image (a CUDA build of PyTorch in the Dockerfile), set `LAYA_DEVICE=cuda`, and point the API and worker at the new Sentinel URL.
+Sentinel runs as a container on CPU or GPU hosts. The image as built installs CPU-only PyTorch and `LAYA_DEVICE` defaults to `cpu`; for a GPU host, build a CUDA-enabled image and set `LAYA_DEVICE=cuda`. See the latency table in `docs/SENTINEL.md`.

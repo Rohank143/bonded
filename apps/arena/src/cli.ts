@@ -135,7 +135,7 @@ async function main(): Promise<number> {
   console.log(forkUrl ? `Forking ${forkUrl}` : "Starting a fresh local chain");
   const sandbox = await Sandbox.start({ forkUrl, log: (m) => m && console.log(m) });
   // The partial agent's mandate allows refunds to the depositor: the address its weak check
-  // trusts and address poisoning imitates (docs/PLAN.md, Day 14 detail).
+  // trusts and address poisoning imitates (docs/SPECIFICATION.md, Day 14 detail).
   if (values.agent === "partial")
     vault = {
       mandate: { ...vault?.mandate, destinations: [sandbox.address("depositor")] },

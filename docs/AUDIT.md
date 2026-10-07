@@ -1,9 +1,9 @@
-# Internal audit note (Day 13)
+# Internal security review
 
-This is the internal audit note Section 17 asks for. It covers the EVM contracts, the Solana programs, and the off-chain services and web app. It is an in-house review by the team and Claude, **not an external audit**. Read it as "what we checked, what we found, and what is still open".
+This note covers the EVM contracts, the Solana programs, and the off-chain services and web app. It is an in-house review, **not an external audit**. Read it as "what we checked, what we found, and what is still open".
 
-- **Date:** 2026-10-03 (build Day 13)
-- **Code reviewed:** `main` at `016f29a`, plus the Day 13 branches named below
+- **Date:** 2026-10-03
+- **Code reviewed:** `main` at `016f29a`, plus the branches named below
 - **Deployed contracts:** the testnet deployments in `contracts/evm/deployments/` were not changed. No finding forced a redeploy (see "Redeploy decision")
 
 ## Summary
@@ -25,7 +25,7 @@ No high-severity finding. Every contract fix that remains is listed in the mainn
 | Do the invariants catch bugs? | `contracts/evm/test/invariant/mutations.py` plants one known bug per property | 11 of 11 planted bugs caught |
 | Static analysis, EVM | Slither 0.11.6, `slither . --filter-paths "lib/\|test/\|script/"` | 0 high, 12 medium, 54 low, 19 informational, 5 optimisation. Triage below |
 | Static analysis, Solana | `cargo clippy --all-targets` (Rust 1.89), then with `-W clippy::pedantic` | Default lints: 0 warnings. Pedantic: the 2 casts in on-chain code checked and safe |
-| Manual review | Section 25 checklist; the off-chain list in the Day 13 plan | Findings below |
+| Manual review | Section 25 checklist; the off-chain list of checks | Findings below |
 
 What the invariants cover:
 
@@ -52,7 +52,7 @@ The handler drives real user actions: underwriter deposits and cooldown exits, o
 
 ### F-02 (Medium for mainnet, accepted on testnet) All contracts are owned by one EOA
 
-Every contract on Robinhood testnet, Arbitrum Sepolia and Ethereum Sepolia is owned by the deployer, an externally owned account (`0xd42F…A841` on Robinhood testnet). The owner can add attesters, change risk parameters and, on testnets, set MockOracle prices. Section 17 says "attester set behind a multisig owner"; that isn't true yet.
+Every contract on Robinhood testnet, Arbitrum Sepolia and Ethereum Sepolia is owned by the deployer, an externally owned account (`0xd42F…A841` on Robinhood testnet). The owner can add attesters, change risk parameters and, on testnets, set MockOracle prices. The design calls for the attester set to sit behind a multisig owner; that isn't true yet.
 
 - **Status:** accepted for the testnet demo. Moving ownership to a multisig (`Ownable2Step`, so no redeploy) and moving the attester key to a KMS or threshold signer are both listed in #67.
 
@@ -68,13 +68,13 @@ Every contract on Robinhood testnet, Arbitrum Sepolia and Ethereum Sepolia is ow
 
 `POST /bounties/:id/reveal` needs no operator token and reads the chain on every request, so anyone could spend the API's RPC quota.
 
-- **Status: fixed** (this branch, `static-analysis`). A limit of 10 requests per client and 120 in total per 10 minutes, checked before any chain read; over the limit the API answers 429. The client address is the first `X-Forwarded-For` entry, which Railway's edge sets (it strips any value a client sends); `X-Real-IP` is only a fallback, because Railway sometimes fills it with its CDN's address. The shared limit stops anyone getting around it by rotating addresses. Tested.
+- **Status: fixed** (fixed in this review). A limit of 10 requests per client and 120 in total per 10 minutes, checked before any chain read; over the limit the API answers 429. The client address is the first `X-Forwarded-For` entry, which the hosting platform's edge sets (it strips any value a client sends); `X-Real-IP` is only a fallback, because the platform sometimes fills it with its CDN's address. The shared limit stops anyone getting around it by rotating addresses. Tested.
 
 ### F-05 (Low) The leaderboard read the chain on every visit
 
 `GET /leaderboard` checks each entry against the registry: one RPC call per entry, per visit.
 
-- **Status: fixed** (this branch, `static-analysis`). The response is reused for 60 seconds. Tested.
+- **Status: fixed** (fixed in this review). The response is reused for 60 seconds. Tested.
 
 ### F-06 (Low) ChainlinkOracle accepts a sequencer feed with `startedAt == 0`
 
@@ -152,21 +152,21 @@ Found in the review of the self-serve work (PR #89). `MandateVaultFactory.create
 | Attester key | One key for quotes (API), ratings and bounty payouts (worker); the worker serialises sends with a per-chain lock. KMS or threshold signer before mainnet (F-02, #67) |
 | Server-sent events | At most 5 listeners per API instance |
 | Logs | Errors log only the error name, never the message (messages can carry the RPC URL and its key) |
-| Keeper and worker failures | Every loop retries with a delay; payouts store the decision and nonce before broadcasting, so a crash can't pay twice. Silent retries are what the Day 13 alerts address ([issue #24](https://github.com/ddboy19912/bonded/issues/24)) |
+| Keeper and worker failures | Every loop retries with a delay; payouts store the decision and nonce before broadcasting, so a crash can't pay twice. Silent retries are what the alerts address |
 | Web transactions | Exact token approvals (never unlimited); every transaction is pinned to the Robinhood testnet chain id; the operator token is kept in memory only; bounty salts come from a secure random source |
 
 ## Redeploy decision
 
 The plan says a contract-level BountyBoard check ships only if this review forced a redeploy anyway. It didn't: there is no high-severity finding, and every open contract finding (F-01's contract check, F-03, F-06, F-07, and the IDisputePayer cosmetic) needs a deployment that would change every testnet address, the recorded evidence and the scores on four chains. They are batched for the next deployment, which is the mainnet one (#67).
 
-## Secret scan of the history (Day 14)
+## Secret scan of the history
 
 The whole git history was scanned for secrets.
 
 | Check | Result |
 |---|---|
 | gitleaks 8.30.1, every branch and tag plus GitHub's pull-request refs (66), all commits | 12 findings, all false positives: anvil's published test keys (in tests and the local demo script), public test addresses named `KEY` in the TEE tests, a tokenizer file's SHA-256 and an attack id. Fingerprints are in `.gitleaksignore`, so a new scan reports none |
-| Token formats gitleaks may not know (Telegram bot tokens, Hugging Face, OpenRouter, Anthropic, GitHub, Railway, private-key blocks), across all history | None |
+| Token formats gitleaks may not know (common API token formats and private-key blocks), across all history | None |
 | Secret files ever committed (`.env`, `.env.local`, keys, `.pem`) | None. Only `.env.example` files, with empty values or local defaults |
 
 Run it again with `gitleaks git --log-opts="--all" .`; it should report "no leaks found".

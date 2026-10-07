@@ -11,7 +11,7 @@ import { generateSynthetic, readSeedRows, TARGET_SETS, type TargetSet } from "./
 
 const USAGE = `Usage: pnpm sentinel:synth --seeds <jsonl> --max-usd <n> [options]
 
-Writes synthetic Sentinel training rows (docs/PLAN.md Section 10.3) seeded from real Arena rows.
+Writes synthetic Sentinel training rows (docs/SPECIFICATION.md Section 10.3) seeded from real Arena rows.
 Needs OPENROUTER_API_KEY (or LLM_API_KEY with LLM_BASE_URL) in .env.
 
   --seeds <path>            sentinel-dataset.jsonl written by \`arena rate\` (required)

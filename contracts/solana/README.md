@@ -1,6 +1,6 @@
 # Bonded on Solana
 
-Three Anchor programs, mirroring the EVM contracts (design: `docs/decisions/011-solana-programs.md`):
+Three Anchor programs, mirroring the EVM contracts (see `docs/SPECIFICATION.md` Section 7):
 
 - `bonded_registry`: agents and their attester-signed scores.
 - `bonded_vault`: checks every agent call, keeps the breach log, freezes on a breach.
@@ -37,7 +37,7 @@ The program ids come from keypairs in `target/deploy/`, which stay out of git (A
 for p in bonded_registry bonded_vault bonded_cover; do solana program deploy -u devnet --program-id target/deploy/$p-keypair.json --max-len $(stat -f%z target/deploy/$p.so) target/deploy/$p.so; done
 ```
 
-At the Day 10 sizes this costs about 5.7 SOL, with about 5.3 SOL needed at the peak of the largest deploy. The deployer becomes each program's upgrade authority, which the programs require to initialize.
+The deployer becomes each program's upgrade authority, which the programs require to initialize.
 
 **2. Set up**, once and safe to repeat: a test-USD mint, the three programs initialized, test accounts funded and the pool seeded with 1,000,000 test USD. It writes `deployments/devnet.json`.
 
@@ -67,7 +67,7 @@ The test keys (attester, operator, agent, underwriter, mint) are created on firs
   - It is stateless: each vault's breach log records what is claimed, and the cover program refuses a second claim.
   - It applies the program's own rules before sending anything: the policy is active and its claim window open, and each breach is unclaimed, not blocked, lost something and happened during the policy.
   - It publishes `solana.claim.paid` or `solana.claim.failed` events.
-  - The keeper role runs it every 15 seconds when `SOLANA_RPC_URL` and `SOLANA_KEEPER_KEY` are set (`docs/SERVICES.md`).
+  - The keeper role runs it every 15 seconds when `SOLANA_RPC_URL` and `SOLANA_KEEPER_KEY` are set.
 
 To check the keeper end to end on a local validator:
 1. Deploy the programs and run `setup` (see "Devnet", with `SOLANA_RPC_URL=http://127.0.0.1:8899`).

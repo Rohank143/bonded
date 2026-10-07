@@ -1,4 +1,4 @@
-//! Bonded cover on Solana (docs/PLAN.md Sections 7 and 11). Mirrors `CoverPool`,
+//! Bonded cover on Solana (docs/SPECIFICATION.md Sections 7 and 11). Mirrors `CoverPool`,
 //! `OperatorBond`, `CoverManager` and `ClaimsEngine` on EVM:
 //! - an underwriting pool with a share mint;
 //! - first-loss operator bonds, staked only by the agent's registry owner;

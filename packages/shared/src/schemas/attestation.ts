@@ -3,7 +3,7 @@ import { z } from "zod";
 import { bytes32, evmAddress, uintString, unixSeconds } from "./common.js";
 
 /**
- * Signed messages from the Arena's attester. See docs/PLAN.md Section 6.4.
+ * Signed messages from the Arena's attester. See docs/SPECIFICATION.md Section 6.4.
  * Attestations are posted to every chain's BondedRegistry; quotes are accepted by CoverManager.
  * The EIP-712 type strings below must match the Solidity typehashes in `BondedTypes.sol`.
  */

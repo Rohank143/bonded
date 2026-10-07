@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
 
-/** Framework template agents (docs/PLAN.md Section 8.4); they always run a model. */
+/** Framework template agents (docs/SPECIFICATION.md Section 8.4); they always run a model. */
 export const FRAMEWORK_AGENTS = ["agentkit", "solana-agent-kit"];
 
 /** The repo root's .env, resolved from src/ or dist/ alike. */

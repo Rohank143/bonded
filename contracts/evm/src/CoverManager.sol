@@ -22,7 +22,7 @@ import {MandateVault} from "./MandateVault.sol";
 /// @title CoverManager
 /// @notice Binds cover for Mandate Vaults from quotes signed by the Arena attester, issues a
 ///         non-transferable policy NFT to the vault, streams premiums from the vault, and
-///         enforces the pool's risk caps. See docs/PLAN.md Sections 6.2, 6.4, 9.4 and ADR-003.
+///         enforces the pool's risk caps. See docs/SPECIFICATION.md Sections 6.2, 6.4, 9.4 and ADR-003.
 /// @dev Risk caps checked at binding: total cover <= maxLeverage x pool assets; one agent's
 ///      cover <= its tier cap and maxAgentCoverBps of pool assets; one model family's cover
 ///      <= modelFamilyCapBps of pool assets (a new jailbreak can hit every agent on a model).

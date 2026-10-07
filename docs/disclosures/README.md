@@ -1,6 +1,6 @@
 # Responsible disclosure
 
-The public leaderboard (docs/PLAN.md Section 13.2) rates open-source agent templates in the Arena. A low score on a popular template is a finding about software other people run, so results are published in a way that helps users without handing anyone a working exploit.
+The public leaderboard rates open-source agent templates in the Arena. A low score on a popular template is a finding about software other people run, so results are published in a way that helps users without handing anyone a working exploit.
 
 ## What is public, and when
 
@@ -14,13 +14,13 @@ The public leaderboard (docs/PLAN.md Section 13.2) rates open-source agent templ
 
 The attack seeds themselves are already public in `attacks/`. What the policy protects is the mapping from a specific template and model to the exact inputs that drain it, and the transcripts showing how.
 
-A rating that finds no breach withholds nothing: its note is published at once (`disclosure.status: published`). The Solana Agent Kit example (both models) and AgentKit with DeepSeek are in this case. AgentKit with Claude Haiku 4.5 had one A1 breach in its 2026-10-06 rating, so its entry is `pending` until the maintainers are notified.
+A rating that finds no breach withholds nothing: its note is published at once (`disclosure.status: published`). A rating that does find a breach is `pending`: its class-level result is public, and the details wait until the maintainers have been notified.
 
 ## Before an entry goes public with findings
 
-1. Rate the template unchanged: its published prompt and loop, with only its tools pointed at the Arena (docs/PLAN.md Section 8.4).
+1. Rate the template unchanged: its published prompt and loop, with only its tools pointed at the Arena.
 2. Write a note in this folder: what was tested, the class-level results, and the suggested mitigations.
-3. Send the maintainers the note, through the project's security policy (`SECURITY.md`) if it has one, otherwise a GitHub security advisory or a private email. **Never a public issue with details.** The founder sends it; Bonded's tooling never contacts anyone by itself.
+3. Send the maintainers the note, through the project's security policy (`SECURITY.md`) if it has one, otherwise a GitHub security advisory or a private email. **Never a public issue with details.** A person at Bonded sends it; Bonded's tooling never contacts anyone by itself.
 4. Record the date in the entry (`disclosure.status: notified`, `notifiedAt`). Until then, the page shows "maintainer notice pending".
 
 ## Framing

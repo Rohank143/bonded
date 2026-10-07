@@ -1,6 +1,6 @@
 # Architecture
 
-How Bonded's parts fit together. The design reasoning is in `docs/PLAN.md` Sections 5–14 and the decision records in [decisions/](decisions/); this page is the map.
+How Bonded's parts fit together. The design reasoning is in `docs/SPECIFICATION.md` Sections 5–14; this page is the map.
 
 ## The picture
 
@@ -96,7 +96,7 @@ Deployed on Robinhood Chain testnet, Arbitrum Sepolia and Ethereum Sepolia; addr
 
 ## On chain (Solana)
 
-Anchor programs for the same core: `bonded_registry`, `bonded_vault`, `bonded_cover` (Section 7, [ADR-011](decisions/011-solana-programs.md)). Deployed on devnet. The keeper files Solana claims too.
+Anchor programs for the same core: `bonded_registry`, `bonded_vault`, `bonded_cover` (Section 7). Deployed on devnet. The keeper files Solana claims too.
 
 ## The Arena
 
@@ -112,27 +112,27 @@ A rating runs every attack (usually five times) plus control episodes with no at
 
 ## Off-chain services
 
-One Docker image, three roles on Railway ([SERVICES.md](SERVICES.md), [ADR-008](decisions/008-hosting-and-storage.md)), sharing Postgres:
+Three off-chain services share one database:
 
 | Service | Does |
 |---|---|
 | `api` | REST and server-sent events: signed quotes, rating jobs, scores, reports, the leaderboard, bounty reveals |
 | `arena-worker` | Runs rating jobs and validates bounty submissions in a sandbox forked from the live chain, then posts scores and pays bounties with the attester key |
-| `keeper` | Watches vaults for breaches and files claims; accrues premiums; checks TEE agents; sends Telegram alerts |
+| `keeper` | Watches vaults for breaches and files claims; accrues premiums; checks TEE agents |
 
 Jobs use a Postgres `FOR UPDATE SKIP LOCKED` queue; every transaction that moves money records its intent and nonce before broadcasting, so a crash can't pay twice.
 
 ## Sentinel
 
-`services/sentinel` serves Laya, an open-source decision model, fine-tuned on Arena episodes to answer whether an action was manipulated by planted content ([SENTINEL.md](SENTINEL.md)). An agent can put it in front of its writes as a guard. It is advisory: it can stop an agent from acting, but the vault and the claims contracts never consult it. Version 5 is in production; how it was tested is in [SENTINEL-STRESS.md](SENTINEL-STRESS.md).
+`services/sentinel` serves Laya, an open-source decision model, fine-tuned on Arena episodes to answer whether an action was manipulated by planted content ([SENTINEL.md](SENTINEL.md)). An agent can put it in front of its writes as a guard. It is advisory: it can stop an agent from acting, but the vault and the claims contracts never consult it. The current version is v5; how it was tested is in [SENTINEL-STRESS.md](SENTINEL-STRESS.md).
 
 ## TEE key custody
 
-An agent's key can be generated inside a Phala Cloud confidential VM (Intel TDX). The Arena verifies the VM's quote and puts its measurement in the signed score, and the web app shows a TEE badge. A key held on the operator's server adds expected loss to the score ([ADR-012](decisions/012-tee-custody.md), [ADR-014](decisions/014-key-custody-in-the-score.md), [TEE.md](TEE.md)).
+An agent's key can be generated inside a Phala Cloud confidential VM (Intel TDX). The Arena verifies the VM's quote and puts its measurement in the signed score, and the web app shows a TEE badge. A key held on the operator's server adds expected loss to the score ([TEE.md](TEE.md)).
 
 ## Web app
 
-`apps/web`, Vite and React on Vercel. It reads the chain directly for everything that matters (scores, vaults, policies, claims) and the API for reports, the live feed, quotes and bounties ([ADR-010](decisions/010-web-app.md)).
+`apps/web`, Vite and React. It reads the chain directly for everything that matters (scores, vaults, policies, claims) and the API for reports, the live feed, quotes and bounties.
 
 ## Trust model
 

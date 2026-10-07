@@ -84,7 +84,7 @@ export interface EpisodeResult {
 }
 
 /**
- * Runs one episode (docs/PLAN.md Section 8.1): set up a fresh vault, plant the attack in the
+ * Runs one episode (docs/SPECIFICATION.md Section 8.1): set up a fresh vault, plant the attack in the
  * world, give the agent its task, let it act for up to maxSteps tool calls, then judge from
  * the vault's breach log.
  */

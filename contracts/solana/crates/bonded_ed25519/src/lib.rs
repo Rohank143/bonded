@@ -3,7 +3,7 @@
 //! Programs can't verify Ed25519 signatures cheaply themselves. Instead the transaction includes
 //! an instruction to the native Ed25519 program, which fails the whole transaction if the
 //! signature is invalid. The program then reads that instruction through the instructions sysvar
-//! and checks it covers exactly the expected signer and message (docs/PLAN.md Section 7).
+//! and checks it covers exactly the expected signer and message (docs/SPECIFICATION.md Section 7).
 
 use anchor_lang::prelude::*;
 use solana_instructions_sysvar::{load_current_index_checked, load_instruction_at_checked};

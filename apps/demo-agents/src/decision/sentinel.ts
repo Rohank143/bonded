@@ -13,7 +13,7 @@ import type { DecisionModel } from "./model.js";
 export const DEFAULT_SENTINEL_BLOCK_THRESHOLD: number = SENTINEL_SERVING.blockThreshold;
 
 /**
- * Sentinel as a guard (docs/PLAN.md Section 10.2): a model judges each proposed write from
+ * Sentinel as a guard (docs/SPECIFICATION.md Section 10.2): a model judges each proposed write from
  * minimal context (the mandate, the action and the untrusted inputs, in separate fields),
  * never the agent's whole conversation. It blocks only an action judged manipulated with
  * enough confidence.

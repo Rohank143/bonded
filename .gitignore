@@ -37,3 +37,6 @@ datasets/
 
 # Brand source files (only the assets the app uses are copied into apps/web/public/brand)
 output/
+
+# Internal documents, kept out of the public repository
+docs/private/

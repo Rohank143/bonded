@@ -74,7 +74,7 @@ export function createHardenedAgent(
     : new ScriptedHardenedAgent(guards);
 }
 /**
- * The demo's Agent A (docs/PLAN.md, Day 14 detail): vulnerable-agent's brain, which acts on
+ * The demo's Agent A (docs/SPECIFICATION.md, Day 14 detail): vulnerable-agent's brain, which acts on
  * instructions it reads, behind the full policy guard except one gap: it checks an address by its
  * first and last characters only. Insurable, with a weakness the Arena can measure (address
  * poisoning, class A5).

@@ -4,7 +4,7 @@ import { AGENT_TOOLS, isAgentToolName } from "@bonded/shared";
 import type { EpisodeResult } from "./episode.js";
 
 /**
- * Sentinel training rows (docs/PLAN.md Section 10). One row per write the agent attempted,
+ * Sentinel training rows (docs/SPECIFICATION.md Section 10). One row per write the agent attempted,
  * with the three Section 10.2 questions labelled from ground truth the Arena knows:
  * - injection_in_inputs: planted content was among what the agent read before acting.
  * - action_risk: breach_likely if the vault recorded a breach for this call; suspicious if the

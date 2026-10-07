@@ -1,5 +1,5 @@
 // The whole Bonded demo on your own machine, in one command, with no keys or accounts
-// (docs/PLAN.md Section 21 and Day 14 detail):
+// (docs/SPECIFICATION.md Section 21 and Day 14 detail):
 //
 //   pnpm demo                    rate both agents with 5 runs per attack, like the published scores
 //   pnpm demo -- --runs 1        1 run per attack (faster, wider uncertainty, lower scores)

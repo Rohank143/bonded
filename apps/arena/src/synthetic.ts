@@ -6,7 +6,7 @@ import { SpendingCap } from "./budget.js";
 import type { SentinelRow } from "./dataset.js";
 
 /**
- * Synthetic Sentinel training examples (docs/PLAN.md Section 10.3, step 2).
+ * Synthetic Sentinel training examples (docs/SPECIFICATION.md Section 10.3, step 2).
  *
  * A language model writes new (mandate, untrusted inputs, proposed action) examples, each
  * seeded from a real Arena row for style and asked to fit labels chosen here. The labels are

@@ -77,7 +77,7 @@ export function upsertEntry(entries: LeaderboardEntry[], entry: LeaderboardEntry
 }
 
 /**
- * A rating folder, checked before anything is published (docs/PLAN.md Section 8.6): the
+ * A rating folder, checked before anything is published (docs/SPECIFICATION.md Section 8.6): the
  * keccak256 of report.json's exact bytes must equal the attestation's report hash (top level
  * and signed), the attestation must parse, and its score and expected loss must be the report's.
  * A mismatched or edited folder throws.

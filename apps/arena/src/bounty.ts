@@ -6,7 +6,7 @@ import { BENIGN_GOALS, runEpisode } from "./episode.js";
 import type { Sandbox } from "./sandbox.js";
 
 /**
- * Community attack bounties, off chain (docs/PLAN.md Section 13.1, ADR-004). A hunter commits
+ * Community attack bounties, off chain (docs/SPECIFICATION.md Section 13.1, ADR-004). A hunter commits
  * on BountyBoard, reveals `specURI = "sha256:<hex>"` (the hash of the attack's YAML) and posts the
  * YAML to the API. The Arena then validates it against the reference agents in the sandbox, and
  * the decision below says whether the attester accepts it and for how much. Deterministic: the

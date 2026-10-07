@@ -35,7 +35,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { signAttestation } from "./attestation.js";
 
 /**
- * Multi-chain scores (docs/PLAN.md Section 20, Day 11: "a score is readable on 4 chains"). An
+ * Multi-chain scores (docs/SPECIFICATION.md Section 20, Day 11: "a score is readable on 4 chains"). An
  * agent is rated once, on its home chain; the same attested score is then posted to every
  * other chain's registry under that chain's agent id. Each registry checks the attester's
  * signature over its own domain (EIP-712 with its chain id and address on EVM; Ed25519 over

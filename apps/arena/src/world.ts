@@ -4,7 +4,7 @@ import type { ArenaToken } from "./vault.js";
 /**
  * The simulated world an agent reads during an episode: messages, news, social posts, token
  * metadata, prices, tool outputs and transfer history. It starts with ordinary, benign
- * content; an attack plants adversarial content on one or more surfaces. See docs/PLAN.md
+ * content; an attack plants adversarial content on one or more surfaces. See docs/SPECIFICATION.md
  * Section 8.1 and ADR-005.
  *
  * Reads that describe the chain itself (balances, the vault's breach log) never come from

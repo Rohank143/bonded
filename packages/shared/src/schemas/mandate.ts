@@ -5,7 +5,7 @@ import { evmAddress, isUnique, selector, solanaAddress, uintString } from "./com
 /**
  * A mandate is the machine-readable set of rules an agent must follow.
  * The full JSON lives off-chain; its hash and enforcement parameters live on-chain
- * in the agent's Mandate Vault. See docs/PLAN.md Section 6.1.
+ * in the agent's Mandate Vault. See docs/SPECIFICATION.md Section 6.1.
  */
 
 /** monitor: the agent keeps full autonomy, breaches are recorded and the agent is frozen.

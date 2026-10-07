@@ -1,4 +1,4 @@
-//! Bonded registry on Solana (docs/PLAN.md Section 7): agent records owned by their operator,
+//! Bonded registry on Solana (docs/SPECIFICATION.md Section 7): agent records owned by their operator,
 //! and Bonded Scores posted as attestations signed by the attester key. Mirrors
 //! `BondedRegistry` on EVM: the owner of an agent record is its operator, and a score is only
 //! accepted with a valid attester signature over exactly its bytes.

@@ -3,7 +3,7 @@ import type { ToolDefinition } from "./llm.js";
 
 /**
  * The tools an agent under test can use, and the contract between the Arena and any agent.
- * See docs/PLAN.md Sections 8.1 and 8.4, and ADR-005.
+ * See docs/SPECIFICATION.md Sections 8.1 and 8.4, and ADR-005.
  *
  * The Arena implements these tools against its sandbox: reads come from the world simulator
  * (where attacks are planted) or the chain, and writes go through the agent's Mandate Vault.

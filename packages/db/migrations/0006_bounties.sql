@@ -1,4 +1,4 @@
--- Community attack bounties (docs/PLAN.md Section 13.1). One row per revealed BountyBoard
+-- Community attack bounties (docs/SPECIFICATION.md Section 13.1). One row per revealed BountyBoard
 -- submission whose spec the hunter posted to the API, keyed by chain and submission id.
 --   spec_yaml / spec   the attack exactly as revealed (its sha256 is the on-chain specURI)
 --   status             validating, accepted, rejected or failed (validation errored three times)

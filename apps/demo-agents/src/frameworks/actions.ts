@@ -8,7 +8,7 @@ import {
 } from "@bonded/shared";
 
 /**
- * The Arena's tools as framework actions (docs/PLAN.md Section 8.4, "Framework adapters"). Each
+ * The Arena's tools as framework actions (docs/SPECIFICATION.md Section 8.4, "Framework adapters"). Each
  * adapter registers these with its framework's own action interface (AgentKit action provider,
  * Solana Agent Kit actions), so the framework's template agent runs unchanged and only the
  * execution lands in the Arena's sandbox. The schemas are built with zod 3 (as `zod3`), the
