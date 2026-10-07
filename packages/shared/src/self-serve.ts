@@ -29,6 +29,8 @@ export type SelfServeRequest =
       vault: string;
       kind: SelfServeKind;
       mandateHash: string;
+      /** Rate the agent with Sentinel in front of it (docs/SENTINEL.md). */
+      sentinel?: boolean;
       timestamp: number;
     }
   | { action: "rate"; chainId: number; agentId: string; timestamp: number };
@@ -45,6 +47,8 @@ export function selfServeMessage(request: SelfServeRequest): string {
       `vault ${request.vault.toLowerCase()}`,
       `design ${request.kind}`,
       `mandate ${request.mandateHash.toLowerCase()}`,
+      // Only when chosen, so a registration signed before this option reads the same.
+      ...(request.sentinel ? ["sentinel on"] : []),
     );
   lines.push(`time ${request.timestamp}`);
   return lines.join("\n");

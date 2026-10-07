@@ -33,12 +33,14 @@ import { RateLimiter, clientAddress } from "./rate-limit.js";
  * vault and mandate (docs/AGENTS.md); rating the owner's own agent code is issue #84.
  */
 
-/** The code hash each design is rated under, as for the operator's agents. */
-const CODE_HASH: Record<SelfServeKind, Hex> = {
-  vulnerable: keccak256(stringToBytes("bonded/scripted-vulnerable/v0")),
-  partial: keccak256(stringToBytes("bonded/scripted-partial/v0")),
-  hardened: keccak256(stringToBytes("bonded/scripted-hardened/v0")),
-};
+/**
+ * The code hash each design is rated under, as for the operator's agents. With Sentinel in front
+ * the rated code is different, so it has its own hash: the attestation never passes a score
+ * earned behind Sentinel off as the design's score alone.
+ */
+export function selfServeCodeHash(kind: SelfServeKind, sentinel = false): Hex {
+  return keccak256(stringToBytes(`bonded/scripted-${kind}/v0${sentinel ? "+sentinel" : ""}`));
+}
 
 export interface SelfServeLimits {
   /** Runs of each attack in a self-serve rating (default 5, like the published scores). */
@@ -70,6 +72,8 @@ const registerInput = z.strictObject({
   vault: address,
   kind: z.enum(SELF_SERVE_KINDS),
   mandate: EvmMandate,
+  /** Rate with Sentinel in front of the design (docs/SENTINEL.md). */
+  sentinel: z.boolean().optional(),
   timestamp: z.number().int().positive(),
   signature,
 });
@@ -186,12 +190,13 @@ export function selfServeRoutes(
       const agentId = uint.parse(c.req.param("id"));
       const record = await db.agentRecord(rowId(agentId));
       if (!record?.enabled) return c.json({ registered: false });
-      const config = record.config as { kind: string };
+      const config = record.config as { kind: string; sentinel?: boolean };
       const last = record.last_rating_at?.getTime();
       return c.json({
         registered: true,
         source: record.source,
         kind: config.kind,
+        sentinel: config.sentinel === true,
         owner: record.owner,
         lastRatingAt: last ? new Date(last).toISOString() : null,
         nextRatingAt:
@@ -221,6 +226,7 @@ export function selfServeRoutes(
           vault: input.vault,
           kind: input.kind,
           mandateHash: hash,
+          ...(input.sentinel ? { sentinel: true } : {}),
           timestamp: input.timestamp,
         },
         input.signature,
@@ -259,11 +265,20 @@ export function selfServeRoutes(
       const stored = await db.upsertUserAgent(d.chainId, input.agentId, who, {
         kind: input.kind,
         mandate: input.mandate,
-        codeHash: CODE_HASH[input.kind],
+        codeHash: selfServeCodeHash(input.kind, input.sentinel === true),
         repeats: limits.repeats,
+        ...(input.sentinel ? { sentinel: true } : {}),
       });
       if (!stored) throw new Refused(409, "this agent is managed by Bonded's operator");
-      return c.json({ registered: true, agentId: input.agentId, kind: input.kind }, 201);
+      return c.json(
+        {
+          registered: true,
+          agentId: input.agentId,
+          kind: input.kind,
+          sentinel: input.sentinel === true,
+        },
+        201,
+      );
     }),
   );
 

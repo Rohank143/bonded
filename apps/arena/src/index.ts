@@ -96,6 +96,7 @@ export {
 } from "./tee.js";
 export {
   type ClassResult,
+  type RatingSentinel,
   type RatingTee,
   type RatingOptions,
   type RatingReport,

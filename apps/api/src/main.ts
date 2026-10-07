@@ -9,6 +9,7 @@ import { z } from "zod";
 import { createApi } from "./index.js";
 import { runTeeChecks, teeCheckInterval } from "./tee-watch.js";
 import { agentConfig, workOne } from "./worker.js";
+import { sentinelFromEnv } from "./sentinel.js";
 import { workBountyOne } from "./bounty-worker.js";
 import { Alerter, LoopHealth, Watchdog, telegramFromEnv } from "./alerts.js";
 
@@ -85,6 +86,8 @@ if (role === "migrate") {
       await delay(ms, undefined, { signal: abort.signal }).catch(() => {});
     }
   };
+  // Production Sentinel (SENTINEL_URL and LAYA_API_KEY), for checks and Sentinel-on ratings.
+  const sentinel = sentinelFromEnv();
   let server: ReturnType<typeof serve> | undefined;
   let api: ReturnType<typeof createApi> | undefined;
   if (role === "api" || role === "all") {
@@ -97,6 +100,8 @@ if (role === "migrate") {
         .split(",")
         .map((origin) => origin.trim())
         .filter(Boolean),
+      // Sentinel checks for agents, when SENTINEL_URL is set (docs/SENTINEL.md).
+      ...(sentinel ? { sentinel } : {}),
     });
     server = serve({
       fetch: api.fetch,
@@ -141,7 +146,11 @@ if (role === "migrate") {
     tasks.push(
       loop(
         "Event retention",
-        () => db.pruneEvents(new Date(Date.now() - retentionDays * 86_400_000)),
+        async () => {
+          const before = new Date(Date.now() - retentionDays * 86_400_000);
+          await db.pruneEvents(before);
+          await db.pruneSentinelChecks(before);
+        },
         3_600_000,
       ),
     );
@@ -156,7 +165,11 @@ if (role === "migrate") {
     // Separate account/nonce flow from the keeper, even in all mode.
     const worker = connectChain(deployment, rpc, key("ATTESTER_KEY"));
     tasks.push(
-      loop("The rating worker", () => workOne(db, worker, rpc, key("ATTESTER_KEY")), 1000),
+      loop(
+        "The rating worker",
+        () => workOne(db, worker, rpc, key("ATTESTER_KEY"), undefined, sentinel),
+        1000,
+      ),
     );
     // Error names only: messages can carry the RPC URL and its key.
     const bountyError = (e: unknown) =>

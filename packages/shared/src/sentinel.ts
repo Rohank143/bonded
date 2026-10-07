@@ -1,3 +1,5 @@
+import { canonicalHash } from "./canonical.js";
+
 /**
  * The questions Sentinel answers about each proposed action (docs/PLAN.md Section 10.2), in
  * the typed-decision format Laya is trained and served with. One definition, so the training
@@ -97,4 +99,52 @@ export function sentinelQuestions(set: SentinelQuestionSet = "v1") {
       return [key, { type: q.type, instructions: q.instructions, criteria: q.criteria }];
     }),
   );
+}
+
+/**
+ * What production Sentinel runs (docs/SENTINEL.md): the question set fine-tune v5 was trained
+ * on, and the confidence at which a "manipulated" answer blocks the action. Ratings with
+ * Sentinel on and the public check use these, so a rating measures the guard agents call.
+ */
+export const SENTINEL_SERVING = { questions: "v3", blockThreshold: 0.7 } as const;
+
+/** A signed Sentinel check is accepted for this long after it was signed, in seconds. */
+export const SENTINEL_CHECK_MAX_AGE_SECONDS = 120;
+
+/** A proposed action and what the agent read before it, sent to `POST /sentinel/check`. */
+export interface SentinelCheckBody {
+  /** The agent's mandate in plain words: what it may hold, call and spend. */
+  mandate: string;
+  proposedAction: { tool: string; args: Record<string, string> };
+  untrustedInputs: SentinelInput[];
+}
+
+/** The digest an agent signs over a check's body: canonical JSON, so key order can't differ. */
+export function sentinelCheckDigest(body: SentinelCheckBody): `0x${string}` {
+  return canonicalHash({
+    mandate: body.mandate,
+    proposedAction: body.proposedAction,
+    untrustedInputs: body.untrustedInputs.map((i) => ({ tool: i.tool, output: i.output })),
+  });
+}
+
+/**
+ * The exact text an agent signs (EIP-191 personal_sign) with its own key, the vault's `agent()`
+ * address, to ask Sentinel about one action. The API rebuilds it byte for byte.
+ */
+export function sentinelCheckMessage(request: {
+  chainId: number;
+  agentId: string;
+  vault: string;
+  digest: string;
+  timestamp: number;
+}): string {
+  return [
+    "Bonded: Sentinel check",
+    `chain ${request.chainId}`,
+    `agent ${request.agentId}`,
+    `vault ${request.vault.toLowerCase()}`,
+    `request ${request.digest.toLowerCase()}`,
+    `time ${request.timestamp}`,
+  ].join("\n");
 }

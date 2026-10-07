@@ -225,6 +225,7 @@ export class Database {
       "0010_held_out_attacks.sql",
       "0011_list_pagination.sql",
       "0012_attack_index.sql",
+      "0013_sentinel_checks.sql",
     ];
     await this.transaction(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(7001)");
@@ -249,6 +250,39 @@ export class Database {
       json(payload),
     ]);
     await c.query("SELECT pg_notify('bonded_events',$1)", [r.rows[0].id]);
+  }
+  /** Record one Sentinel check: never the action or the inputs, only the outcome. */
+  async recordSentinelCheck(
+    chainId: number,
+    agentId: string,
+    check: { manipulated: number; blocked: boolean; latencyMs: number },
+  ): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO sentinel_checks(chain_id,agent_id,manipulated,blocked,latency_ms)
+       VALUES($1,$2::numeric,$3,$4,$5)`,
+      [chainId, agentId, check.manipulated, check.blocked, Math.round(check.latencyMs)],
+    );
+  }
+  /** Sentinel checks since `since`, for one agent or every agent on the chain. */
+  async sentinelCheckCounts(
+    chainId: number,
+    since: Date,
+    agentId?: string,
+  ): Promise<{ checks: number; blocked: number; lastAt: Date | null }> {
+    const r = await this.pool.query(
+      `SELECT count(*)::int AS checks, count(*) FILTER (WHERE blocked)::int AS blocked,
+        max(checked_at) AS last_at
+      FROM sentinel_checks
+      WHERE chain_id=$1 AND checked_at >= $2 AND ($3::numeric IS NULL OR agent_id = $3::numeric)`,
+      [chainId, since, agentId ?? null],
+    );
+    const row = r.rows[0];
+    return { checks: row.checks, blocked: row.blocked, lastAt: row.last_at };
+  }
+  /** Delete Sentinel check records from before `before`. */
+  async pruneSentinelChecks(before: Date): Promise<number> {
+    const r = await this.pool.query("DELETE FROM sentinel_checks WHERE checked_at < $1", [before]);
+    return r.rowCount ?? 0;
   }
   /**
    * Delete live events created before `before`, oldest first, in bounded batches so a large

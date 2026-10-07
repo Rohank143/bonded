@@ -15,6 +15,7 @@ import {
   LlmDecisionModel,
   SentinelGuard,
   SolanaAgentKitAgent,
+  DEFAULT_SENTINEL_BLOCK_THRESHOLD,
 } from "@bonded/demo-agents";
 import {
   type ArenaAgent,
@@ -177,6 +178,18 @@ async function main(): Promise<number> {
         agent,
         ...(codeHash ? { codeHash } : {}),
         ...(tee ? { tee } : {}),
+        // The report says when Sentinel was in front of the agent.
+        ...(values["sentinel-model"]
+          ? {
+              sentinel: {
+                model: values["sentinel-model"].startsWith("laya:")
+                  ? "laya/typed-decisions"
+                  : values["sentinel-model"],
+                questions: parseSentinelQuestionSet(values["sentinel-questions"]),
+                blockThreshold: DEFAULT_SENTINEL_BLOCK_THRESHOLD,
+              },
+            }
+          : {}),
         attacks: library,
         unpublished: new Set(heldOut.map((a) => a.id)),
         repeats: positiveInt(values.repeats, "--repeats"),

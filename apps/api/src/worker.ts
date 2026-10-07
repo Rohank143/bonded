@@ -8,11 +8,6 @@ import {
   type SignedAttestation,
 } from "@bonded/arena";
 import {
-  createHardenedAgent,
-  createPartialAgent,
-  createVulnerableAgent,
-} from "@bonded/demo-agents";
-import {
   EvmMandate,
   mandateHash,
   attestationMessage,
@@ -24,6 +19,7 @@ import { getAbiItem, hashTypedData, type Hex } from "viem";
 import { attestationTypedData, bondedDomain } from "@bonded/shared";
 import type { ServiceChain } from "@bonded/keeper";
 import { ratingLibrary } from "./library.js";
+import { ratedAgent, type SentinelService } from "./sentinel.js";
 
 // Operators provision these records; callers cannot choose RPCs, code, commands or model URLs.
 export const agentConfig = z.strictObject({
@@ -46,6 +42,11 @@ export const agentConfig = z.strictObject({
    * worked examples use 5. The report lists the episode count, so the number is visible.
    */
   repeats: z.number().int().min(1).max(10).optional(),
+  /**
+   * Rate the agent with Sentinel in front of it (docs/SENTINEL.md). The report records it, and
+   * the rating fails if Sentinel isn't configured: it never quietly rates without it.
+   */
+  sentinel: z.boolean().optional(),
 });
 /** Process one durable rating job under the chain worker lock; retries recover accepted posts. */
 export async function workOne(
@@ -54,6 +55,7 @@ export async function workOne(
   rpcUrl: string,
   key: Hex,
   onError?: (error: unknown) => void,
+  sentinel?: SentinelService,
 ) {
   const lock = await db.pool.connect();
   const locked = (
@@ -64,7 +66,7 @@ export async function workOne(
     return false;
   }
   try {
-    return await runLocked(db, chain, rpcUrl, key, onError);
+    return await runLocked(db, chain, rpcUrl, key, onError, sentinel);
   } finally {
     await lock.query("SELECT pg_advisory_unlock(7004,$1)", [chain.deployment.chainId]);
     lock.release();
@@ -77,6 +79,7 @@ async function runLocked(
   rpcUrl: string,
   key: Hex,
   onError?: (error: unknown) => void,
+  sentinel?: SentinelService,
 ) {
   const job = await db.takeJob(chain.deployment.chainId);
   if (!job) return false;
@@ -103,6 +106,8 @@ async function runLocked(
       config.mandate.agentId !== row.onchain_id
     )
       throw new Error("agent config identity mismatch");
+    if (config.sentinel && !sentinel)
+      throw new Error("this agent is rated with Sentinel on, but SENTINEL_URL isn't set");
     await db.withLease(job, (c) =>
       c.query("UPDATE ratings SET status='running' WHERE id=$1", [job.id]),
     );
@@ -128,12 +133,8 @@ async function runLocked(
       const sandbox = await Sandbox.start({ forkUrl: rpcUrl, forkDeployment: chain.deployment });
       try {
         const result = await rateAgent(sandbox, {
-          agent:
-            config.kind === "hardened"
-              ? createHardenedAgent("scripted")
-              : config.kind === "partial"
-                ? createPartialAgent("scripted")
-                : createVulnerableAgent("scripted"),
+          agent: ratedAgent(config.kind, config.sentinel ? sentinel : undefined),
+          ...(config.sentinel && sentinel ? { sentinel: sentinel.info } : {}),
           attacks: library.attacks,
           unpublished: library.unpublished,
           codeHash: config.codeHash as Hex,
