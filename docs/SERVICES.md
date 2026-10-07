@@ -74,7 +74,7 @@ The hosted services load `config/agents.46630.json` (agent 2, the scripted harde
 
 POST endpoints require `Authorization: Bearer <API_TOKEN>`, except: a bounty reveal (the spec's hash against the chain authenticates it); the self-serve routes (signed by the agent's owner in their wallet; the exact message is `selfServeMessage` in `@bonded/shared`); and `/quotes`, which without the token caps cover at 20,000 tUSDG and is rate-limited. GET endpoints are public.
 
-Browsers can call the API only from origins listed in `WEB_ORIGINS` (comma-separated, for example `http://localhost:5173,https://bonded.vercel.app`). Other origins get no CORS headers. The hosted `api` service sets it in `.railway/railway.ts`.
+Browsers can call the API only from origins listed in `WEB_ORIGINS` (comma-separated, for example `http://localhost:5173,https://bonded.vercel.app`). An https entry may have one `*` for part of a single host label, so `https://bonded-*-ddboy19912s-projects.vercel.app` covers the web app's Vercel preview deployments. Other origins get no CORS headers. CORS only decides which pages can read responses in a browser: nothing on the API relies on it for access, since writes need the operator token or a wallet signature. The hosted `api` service sets it in `.railway/railway.ts`.
 
 | Request | Body / result |
 |---|---|
@@ -120,15 +120,15 @@ What watches the hosted services today:
 
 The `api`, `keeper` and `arena-worker` services send operations alerts to one Telegram chat through a bot, using the Bot API. Alerts are off unless both `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set on a service. The code is `apps/api/src/alerts.ts`.
 
-| Alert | Sent by | When |
-|---|---|---|
-| Started | every service with the secrets | Once per start. A deploy or restart announces itself, which doubles as each service's test alert |
-| Crashed | every service with the secrets | An error would end the process. It alerts (waiting at most 5 seconds), then exits so Railway restarts it |
-| A loop keeps failing | every service with the secrets | 3 failed iterations in a row of a service loop (EVM or Solana keeper, TEE checks, rating or bounty worker, event retention, the watchdog). Another message when it works again |
-| Keeper out of gas | keeper | The keeper's own wallet holds less than 0.002 ETH. Without gas every claim and premium accrual fails and retries |
-| Keeper lag | keeper | The keeper's scanned block is more than 10 minutes and more than 100 blocks behind the chain head. Both must hold, so a quiet chain doesn't alert |
-| Stuck claims | keeper | A breach has stayed `pending` with an error for 10 minutes (measured from when the keeper process first saw it failing, so a restart delays the alert rather than losing it) |
-| Failed rating, premium accrual, Solana claim or bounty validation | keeper | A `rating.failed`, `keeper.accrual_failed`, `solana.claim.failed` or `bounty.failed` event. Events from before the keeper started are not replayed |
+| Alert                                                             | Sent by                        | When                                                                                                                                                                           |
+| ----------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Started                                                           | every service with the secrets | Once per start. A deploy or restart announces itself, which doubles as each service's test alert                                                                               |
+| Crashed                                                           | every service with the secrets | An error would end the process. It alerts (waiting at most 5 seconds), then exits so Railway restarts it                                                                       |
+| A loop keeps failing                                              | every service with the secrets | 3 failed iterations in a row of a service loop (EVM or Solana keeper, TEE checks, rating or bounty worker, event retention, the watchdog). Another message when it works again |
+| Keeper out of gas                                                 | keeper                         | The keeper's own wallet holds less than 0.002 ETH. Without gas every claim and premium accrual fails and retries                                                               |
+| Keeper lag                                                        | keeper                         | The keeper's scanned block is more than 10 minutes and more than 100 blocks behind the chain head. Both must hold, so a quiet chain doesn't alert                              |
+| Stuck claims                                                      | keeper                         | A breach has stayed `pending` with an error for 10 minutes (measured from when the keeper process first saw it failing, so a restart delays the alert rather than losing it)   |
+| Failed rating, premium accrual, Solana claim or bounty validation | keeper                         | A `rating.failed`, `keeper.accrual_failed`, `solana.claim.failed` or `bounty.failed` event. Events from before the keeper started are not replayed                             |
 
 The keeper's checks run once a minute. Limits: the same alert is sent at most once every 30 minutes, and each service sends at most 20 messages an hour. Messages are built from fixed text and ids only: never error messages (which can carry the RPC URL and its key), secrets or attack payloads.
 
