@@ -203,7 +203,7 @@ importers:
   apps/runner:
     dependencies:
       '@bonded/shared':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/shared
       ws:
         specifier: 8.21.0
