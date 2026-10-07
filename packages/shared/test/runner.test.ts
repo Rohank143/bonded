@@ -6,6 +6,7 @@ import {
   DoneRequest,
   episodeEnv,
   type EpisodeMessage,
+  parseEpisodeEnv,
   parseRunnerMessage,
   RunnerToServer,
   ServerToRunner,
@@ -104,6 +105,44 @@ describe("runner protocol", () => {
     });
     expect(tools).not.toHaveProperty("BONDED_SESSION_KEY");
     expect(tools).not.toHaveProperty("BONDED_RPC_URL");
+  });
+});
+
+describe("the episode environment", () => {
+  it("reads back exactly what episodeEnv wrote, addresses checksummed", () => {
+    const parsed = parseEpisodeEnv(episodeEnv(episode));
+    const rest: Partial<EpisodeMessage> = { ...episode };
+    delete rest.type;
+    expect(parsed).toEqual({
+      ok: true,
+      episode: {
+        ...rest,
+        vault: "0x000000000000000000000000000000000000dEaD",
+        contracts: {
+          exchange: "0x000000000000000000000000000000000000bEEF",
+          tokens: [
+            { symbol: "tUSDG", address: "0x000000000000000000000000000000000000cafE", decimals: 6 },
+          ],
+        },
+      },
+    });
+  });
+
+  it("names every missing or malformed variable", () => {
+    const env = episodeEnv(episode);
+    const parsed = parseEpisodeEnv({
+      ...env,
+      BONDED_TASK: "{",
+      BONDED_DEADLINE_MS: "soon",
+    });
+    expect(parsed.ok).toBe(false);
+    const problems = (parsed as { problems: string[] }).problems.join("; ");
+    expect(problems).toMatch(/BONDED_TASK must be JSON/);
+    expect(problems).toMatch(/BONDED_DEADLINE_MS/);
+    expect(parseEpisodeEnv({ ...env, BONDED_RPC_URL: undefined })).toEqual({
+      ok: false,
+      problems: ["BONDED_RPC_URL chain mode needs BONDED_RPC_URL"],
+    });
   });
 });
 

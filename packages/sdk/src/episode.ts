@@ -1,6 +1,5 @@
-import type { AgentTask } from "@bonded/shared";
-import { type Address, getAddress, type Hex, isAddress } from "viem";
-import { z } from "zod";
+import { type AgentTask, EpisodeEnv, parseEpisodeEnv } from "@bonded/shared";
+import type { Address, Hex } from "viem";
 import { BondedError } from "./errors.js";
 import type { TokenInfo } from "./guarded.js";
 
@@ -36,76 +35,11 @@ export interface BondedEpisode {
   deadlineMs: number;
 }
 
-const address = z
-  .string()
-  .refine((v) => isAddress(v, { strict: false }), "must be a 0x address")
-  .transform((v) => getAddress(v));
-const url = z.url();
-const json = <T extends z.ZodType>(schema: T) =>
-  z
-    .string()
-    .transform((text, ctx) => {
-      try {
-        return JSON.parse(text) as unknown;
-      } catch {
-        ctx.addIssue({ code: "custom", message: "must be JSON" });
-        return z.NEVER;
-      }
-    })
-    .pipe(schema);
-
-const taskSchema = z.object({
-  goal: z.string(),
-  mandate: z.string(),
-  policy: z
-    .object({
-      tokens: z.array(z.string()),
-      maxTradeUsd: z.number(),
-      maxDailyUsd: z.number(),
-      transferAllowlist: z.array(z.string().regex(/^0x[0-9a-fA-F]{40}$/)),
-      approvalAllowlist: z.array(z.string().regex(/^0x[0-9a-fA-F]{40}$/)),
-    })
-    .optional(),
-  maxSteps: z.number().int().positive(),
-});
-
-/** The BONDED_* variables the runner sets for each episode. */
-export const bondedEpisodeEnv = z
-  .object({
-    BONDED_EPISODE_ID: z.string().min(1),
-    BONDED_TASK: json(taskSchema),
-    BONDED_MODE: z.enum(["tools", "chain"]),
-    BONDED_MCP_URL: url,
-    BONDED_TOOLS_URL: url,
-    BONDED_OPENAPI_URL: url,
-    BONDED_DONE_URL: url,
-    BONDED_RPC_URL: url.optional(),
-    BONDED_SESSION_KEY: z
-      .string()
-      .regex(/^0x[0-9a-fA-F]{64}$/, "must be a 0x-prefixed 32-byte private key")
-      .optional(),
-    BONDED_VAULT: address,
-    BONDED_CHAIN_ID: z.coerce.number().int().positive(),
-    BONDED_DEADLINE_MS: z.coerce.number().int().positive(),
-    BONDED_CONTRACTS: json(
-      z.object({
-        exchange: address,
-        tokens: z
-          .array(
-            z.object({
-              symbol: z.string().min(1),
-              address,
-              decimals: z.number().int().min(0).max(36),
-            }),
-          )
-          .min(1),
-      }),
-    ),
-  })
-  .refine((env) => env.BONDED_MODE !== "chain" || env.BONDED_RPC_URL, {
-    message: "chain mode needs BONDED_RPC_URL",
-    path: ["BONDED_RPC_URL"],
-  });
+/**
+ * The BONDED_* variables the runner sets for each episode. The schema lives in @bonded/shared,
+ * next to `episodeEnv` that writes them, so the runner, the gateway and the SDK can't drift.
+ */
+export const bondedEpisodeEnv = EpisodeEnv;
 
 /**
  * Reads the episode the Bonded runner set up from the environment. Throws `BondedError`
@@ -121,30 +55,12 @@ export const bondedEpisodeEnv = z
 export function fromBondedEnv(
   env: Record<string, string | undefined> = process.env,
 ): BondedEpisode {
-  const parsed = bondedEpisodeEnv.safeParse(env);
-  if (!parsed.success)
+  const parsed = parseEpisodeEnv(env);
+  if (!parsed.ok)
     throw new BondedError(
       "EPISODE_ENV",
-      `not a valid Bonded episode environment: ${parsed.error.issues
-        .map((i) => `${i.path.join(".") || "environment"} ${i.message}`)
-        .join("; ")}`,
+      `not a valid Bonded episode environment: ${parsed.problems.join("; ")}`,
     );
-  const e = parsed.data;
-  return {
-    episodeId: e.BONDED_EPISODE_ID,
-    task: e.BONDED_TASK as AgentTask,
-    mode: e.BONDED_MODE,
-    endpoints: {
-      mcp: e.BONDED_MCP_URL,
-      tools: e.BONDED_TOOLS_URL,
-      openapi: e.BONDED_OPENAPI_URL,
-      done: e.BONDED_DONE_URL,
-      ...(e.BONDED_RPC_URL ? { rpc: e.BONDED_RPC_URL } : {}),
-    },
-    vault: e.BONDED_VAULT,
-    chainId: e.BONDED_CHAIN_ID,
-    contracts: e.BONDED_CONTRACTS,
-    ...(e.BONDED_SESSION_KEY ? { sessionKey: e.BONDED_SESSION_KEY as Hex } : {}),
-    deadlineMs: e.BONDED_DEADLINE_MS,
-  };
+  const { contracts, ...episode } = parsed.episode;
+  return { ...episode, contracts: { exchange: contracts.exchange, tokens: contracts.tokens } };
 }
