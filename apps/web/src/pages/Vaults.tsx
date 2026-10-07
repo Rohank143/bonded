@@ -107,7 +107,7 @@ export function Vaults() {
           </div>
         }
       >
-        {vaults.isPending && !vaults.error && <Loading what="vaults" lines={5} />}
+        {vaults.isPending && !vaults.error && <Loading what="vaults" height="md" />}
         <ErrorText error={vaults.error} />
         {vaults.data?.length === 0 && (
           <EmptyState
