@@ -5,8 +5,9 @@ import {
   mandateVaultFactoryAbi,
   testTokenAbi,
 } from "@bonded/shared";
-import { type Abi, type Address, parseUnits } from "viem";
+import { type Abi, type Address, type Chain, parseUnits } from "viem";
 import { buildMandate, type BuiltMandate, type EvmMandateRules } from "../src/index.js";
+import { MULTICALL3_ADDRESS, MULTICALL3_RUNTIME } from "./fixtures/multicall3.js";
 
 /**
  * Test chains for the SDK: a local anvil with the protocol deployed by the production scripts
@@ -115,4 +116,16 @@ export function breachCount(sandbox: Sandbox, vault: Address): Promise<bigint> {
     abi: mandateVaultAbi,
     functionName: "breachCount",
   });
+}
+
+/**
+ * Puts Multicall3 at its canonical address (AgentKit reads token details through it) and
+ * returns the sandbox's chain with that address set, as on public chains.
+ */
+export async function withMulticall3(sandbox: Sandbox): Promise<Chain> {
+  await sandbox.publicClient.request({
+    method: "anvil_setCode" as never,
+    params: [MULTICALL3_ADDRESS, MULTICALL3_RUNTIME] as never,
+  });
+  return { ...sandbox.chain, contracts: { multicall3: { address: MULTICALL3_ADDRESS } } };
 }

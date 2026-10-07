@@ -36,13 +36,8 @@ import {
   toDryRunResult,
   type VaultBreach,
 } from "./breaches.js";
-import {
-  BlockedByMandateError,
-  BondedError,
-  CallRevertedError,
-  NotAgentError,
-  VaultFrozenError,
-} from "./errors.js";
+import { BlockedByMandateError, BondedError, VaultFrozenError } from "./errors.js";
+import { vaultRevertError } from "./revert.js";
 
 export interface BondedVaultConfig {
   /** The Mandate Vault's address. */
@@ -224,7 +219,11 @@ export class BondedVault {
           chain: wallet.chain,
         });
       } catch (error) {
-        throw this.translate(error, call);
+        throw vaultRevertError(error, {
+          vault: this.address,
+          target: call.target,
+          signer: this.agentAddress,
+        });
       }
       const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success")
@@ -287,7 +286,11 @@ export class BondedVault {
       if (result.status === "failure") {
         // An earlier step's breach froze the vault: the prediction is that breach.
         if (merged.froze) return toDryRunResult({ ...merged, executed: false });
-        throw this.translate(result.error, calls[i]!, from);
+        throw vaultRevertError(result.error, {
+          vault: this.address,
+          target: calls[i]!.target,
+          signer: from,
+        });
       }
       const outcome = readExecuteOutcome(this.address, result.logs ?? []);
       merged.breaches.push(...outcome.breaches);
@@ -349,41 +352,6 @@ export class BondedVault {
       );
     return this.walletClient;
   }
-
-  /** Turns a revert of `execute` into the SDK's typed errors. */
-  private translate(error: unknown, call: VaultCall, from?: Address): unknown {
-    // Matched by name, not instanceof: the caller's clients may come from another copy of viem.
-    const reverted = findCause(error, "ContractFunctionRevertedError") as
-      | (Error & {
-          data?: { errorName?: string };
-          reason?: string;
-          signature?: Hex;
-          raw?: Hex;
-        })
-      | undefined;
-    if (!reverted) return error;
-    switch (reverted.data?.errorName) {
-      case "NotAgent":
-        return new NotAgentError(this.address, from ?? this.agentAddress, { cause: error });
-      case "AgentFrozen":
-        return new VaultFrozenError(this.address, undefined, undefined, { cause: error });
-      case "CannotCallVault":
-        return new BondedError("INVALID_ACTION", "the vault can't call itself", { cause: error });
-    }
-    const why = reverted.reason ?? reverted.data?.errorName ?? reverted.signature;
-    return new CallRevertedError(
-      `the vault's call to ${call.target} reverted${why ? `: ${why}` : ""}; nothing changed`,
-      reverted.raw,
-      { cause: error },
-    );
-  }
-}
-
-/** The first error named `name` in `error`'s cause chain. */
-function findCause(error: unknown, name: string): Error | undefined {
-  for (let e = error, depth = 0; e instanceof Error && depth < 20; e = e.cause, depth++)
-    if (e.name === name) return e;
-  return undefined;
 }
 
 type ReadFn =

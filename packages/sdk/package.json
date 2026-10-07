@@ -12,6 +12,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./agentkit": {
+      "types": "./dist/agentkit.d.ts",
+      "import": "./dist/agentkit.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -51,6 +55,15 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@bonded/sandbox": "workspace:*"
+    "@bonded/sandbox": "workspace:*",
+    "@coinbase/agentkit": "0.10.4"
+  },
+  "peerDependencies": {
+    "@coinbase/agentkit": "^0.10.4"
+  },
+  "peerDependenciesMeta": {
+    "@coinbase/agentkit": {
+      "optional": true
+    }
   }
 }
