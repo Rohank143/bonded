@@ -2,13 +2,16 @@ import { Fragment, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ATTACK_CLASSES, AttackSurface, type BreachType } from "@bonded/shared";
-import { ApiError, api, type AttackStats, type AttackSummary } from "../lib/api";
+import { ApiError, api, type AttackStats, type AttackSummary, type ClassRecord } from "../lib/api";
 import { useListParams } from "../lib/pages";
 import { Badge, EmptyState, ErrorText, Loading, Page, buttonClass } from "../components/ui";
 import { Select } from "../components/select";
 import { Pagination } from "../components/pagination";
 
-const CLASS_NAMES = ATTACK_CLASSES as Record<string, { name: string; description: string }>;
+const CLASS_NAMES = ATTACK_CLASSES as Record<
+  string,
+  { name: string; description: string; surfaces: string[] }
+>;
 
 /** Where an attack is planted, in plain words. */
 export const SURFACE_NAMES: Record<string, string> = {
@@ -140,6 +143,84 @@ function Tile({ label, value, hint }: { label: ReactNode; value: ReactNode; hint
   );
 }
 
+/**
+ * The ten attack classes, A1 to A10: what each one is, where it's planted, how many published
+ * attacks it has and how often they got through. Choosing one filters the list below.
+ */
+function ClassGrid({
+  classes,
+  active,
+  onPick,
+}: {
+  classes?: ClassRecord[];
+  active: string;
+  onPick: (cls: string) => void;
+}) {
+  const rows =
+    classes ??
+    Object.keys(CLASS_NAMES).map((c) => ({ class: c }) as Partial<ClassRecord> & { class: string });
+  return (
+    <section>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="eyebrow">The ten classes</p>
+          <h2 className="mt-1.5 font-serif text-3xl leading-tight">
+            Ten ways an agent gets attacked
+          </h2>
+          <p className="mt-1.5 max-w-2xl text-sm text-muted">
+            Every attack belongs to one class, A1 to A10. Pick a class to see its attacks.
+          </p>
+        </div>
+      </div>
+      <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        {rows.map((c) => {
+          const info = CLASS_NAMES[c.class];
+          const on = active === c.class;
+          const rate = c.episodes ? (c.breaches ?? 0) / c.episodes : undefined;
+          return (
+            <li key={c.class}>
+              <button
+                type="button"
+                onClick={() => onPick(on ? "all" : c.class)}
+                aria-pressed={on}
+                className={`panel flex h-full w-full flex-col gap-2.5 p-4 text-left transition ${on ? "border-accent/60 bg-accent-soft" : "hover:border-accent/30 hover:bg-white/[0.02]"}`}
+              >
+                <span className="flex items-center justify-between gap-2">
+                  <ClassChip id={c.class} />
+                  {c.attacks !== undefined && (
+                    <span className="text-[11px] text-muted">
+                      {c.attacks} {c.attacks === 1 ? "attack" : "attacks"}
+                    </span>
+                  )}
+                </span>
+                <span className="text-[15px] leading-snug font-semibold">{info?.name}</span>
+                <span className="text-[13px] leading-relaxed text-muted">{info?.description}</span>
+                <span className="text-[11px] text-soft">
+                  {info?.surfaces.map((x) => SURFACE_NAMES[x] ?? x).join(" · ")}
+                </span>
+                <span className="mt-auto border-t border-line pt-2.5 text-xs text-muted">
+                  {rate === undefined ? (
+                    "No episodes on record"
+                  ) : (
+                    <span className="flex items-baseline justify-between gap-2">
+                      <span>
+                        Got through {c.breaches!.toLocaleString()} of {c.episodes!.toLocaleString()}
+                      </span>
+                      <span className={`font-mono ${c.breaches ? "text-breach" : "text-soft"}`}>
+                        {Math.round(rate * 1000) / 10}%
+                      </span>
+                    </span>
+                  )}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 function BountyCall() {
   return (
     <div className="panel flex flex-wrap items-center justify-between gap-4 bg-gradient-to-r from-breach/12 to-transparent p-6">
@@ -183,7 +264,7 @@ export function Attacks() {
     <Page
       eyebrow="The attack library"
       title="Meet the red team"
-      intro="Every rating sends these attacks at an agent, hidden in what it reads: news, DMs, token metadata, price feeds, tool output. Here is the public library, what each attack plants, and how often it gets through."
+      intro="Every rating sends these attacks at an agent, hidden in what it reads: news, DMs, token metadata, price feeds, tool output. They come in ten classes. Here is each class, every published attack in it, and how often it gets through."
     >
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Tile
@@ -208,10 +289,23 @@ export function Attacks() {
         <Tile label="Attack classes" value={Object.keys(ATTACK_CLASSES).length} hint="A1 to A10" />
       </section>
 
-      <section className="panel min-w-0 p-5 sm:p-6">
+      <ClassGrid
+        classes={attacks.data?.classes}
+        active={f.class}
+        onPick={(cls) => {
+          list.set({ class: cls });
+          document
+            .getElementById("all-attacks")
+            ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }}
+      />
+
+      <section id="all-attacks" className="panel min-w-0 scroll-mt-24 p-5 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">
           <h2 className="text-lg font-bold">
-            {attacks.data ? `${attacks.data.total} published attacks` : "Published attacks"}
+            {f.class !== "all"
+              ? `${CLASS_NAMES[f.class]?.name ?? f.class}: ${attacks.data?.total ?? "…"} attacks`
+              : `Every published attack${attacks.data ? ` (${attacks.data.total})` : ""}`}
           </h2>
           <div className="flex flex-wrap items-center gap-2">
             <Select
@@ -482,6 +576,20 @@ export function AttackDetail() {
         </section>
 
         <aside className="flex min-w-0 flex-[1_1_320px] flex-col gap-4">
+          <section className="panel p-6">
+            <p className="eyebrow">
+              About {a.class} · {CLASS_NAMES[a.class]?.name}
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-soft">
+              {CLASS_NAMES[a.class]?.description}
+            </p>
+            <Link
+              to={`/attacks?class=${a.class}`}
+              className="mt-3 inline-block text-sm text-accent hover:underline"
+            >
+              Every {a.class} attack →
+            </Link>
+          </section>
           <section className="panel p-6">
             <p className="eyebrow !text-accent">What counts as a breach</p>
             <p className="mt-2 text-sm text-muted">
