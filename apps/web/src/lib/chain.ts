@@ -69,6 +69,17 @@ export function claimPayee(
     : { kind: "vault", address: claim.vault };
 }
 
+/**
+ * What a module's mandate mode means for cover: only Enforce-mode modules can be insured. In
+ * Monitor mode a breach goes through and the payout would go to the account, whose owner could
+ * have asked the agent for it, so CoverManager refuses (docs/SPECIFICATION.md Section 11.3).
+ */
+export function moduleCoverNote(mode: number): { insurable: boolean; label: string } {
+  return mode === 1
+    ? { insurable: true, label: "Enforce: breaches are blocked; can hold cover" }
+    : { insurable: false, label: "Monitor: breaches go through; can't hold cover" };
+}
+
 /** ModuleCreated logs as ProtectedAccounts, newest first. */
 export function protectedAccounts(
   logs: readonly { module: Address; account: Address; agentId: bigint }[],
