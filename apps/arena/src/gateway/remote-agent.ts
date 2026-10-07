@@ -154,6 +154,7 @@ export class RemoteAgent implements SelfSigningAgent {
       this.options.runnerWaitMs ?? 60_000,
     );
     let episode: GatewayEpisode | undefined;
+    let sent = false;
     const cleanups: (() => void)[] = [];
     // The runner's exit report for this episode (undefined if the runner goes away first). It
     // stays subscribed past the episode's end, so a report arriving late is still caught.
@@ -251,6 +252,7 @@ export class RemoteAgent implements SelfSigningAgent {
         ...(nonce ? { nonce } : {}),
       };
       if (!runner.send(message)) throw new Error("the runner disconnected");
+      sent = true;
       const why = await ended;
       opened.close();
 
@@ -281,7 +283,7 @@ export class RemoteAgent implements SelfSigningAgent {
       for (const cleanup of cleanups) cleanup();
       episode?.close();
       // Free the runner only once its process is gone, so the next episode can't overlap it.
-      if (exited || runner.closed) gateway.releaseRunner(runner, episodeId);
+      if (!sent || exited || runner.closed) gateway.releaseRunner(runner, episodeId);
       else void exit.then(() => gateway.releaseRunner(runner, episodeId));
     }
   }

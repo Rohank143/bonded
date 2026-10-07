@@ -614,6 +614,8 @@ describe("RemoteAgent", () => {
     expect(mismatch.agentSummary.finalMessage).toBe(
       "the runner is in tools mode, but this rating is chain",
     );
+    // Nothing was sent, so the runner is free for the next episode at once.
+    expect(gateway.runner("agent-1")?.episodeId).toBeNull();
   });
 
   it("serves a TEE-bound episode only after its evidence is accepted", async () => {
