@@ -1,6 +1,6 @@
 import type { Context, Hono } from "hono";
 import { z } from "zod";
-import { recoverMessageAddress, type Hex } from "viem";
+import { keccak256, recoverMessageAddress, stringToBytes, type Hex } from "viem";
 import type { Database } from "@bonded/db";
 import type { RatingSentinel } from "@bonded/arena";
 import {
@@ -34,6 +34,8 @@ export interface SentinelService {
   model: SentinelModel;
   /** What a report records about this guard. */
   info: RatingSentinel;
+  /** Whether the service answers its health probe (optional; without it, assumed up). */
+  health?: () => Promise<boolean>;
 }
 
 /**
@@ -43,20 +45,36 @@ export interface SentinelService {
  * clearly instead of running without it.
  */
 export function sentinelFromEnv(env: NodeJS.ProcessEnv = process.env): SentinelService | undefined {
-  const url = env.SENTINEL_URL?.trim();
+  const url = env.SENTINEL_URL?.trim().replace(/\/+$/, "");
   if (!url) return undefined;
+  const repo = env.SENTINEL_MODEL_REPO?.trim();
+  const revision = env.SENTINEL_MODEL_REVISION?.trim();
   return {
     model: new LayaSentinel({
-      url: url.replace(/\/+$/, ""),
+      url,
       apiKey: env.LAYA_API_KEY,
       questions: SENTINEL_SERVING.questions,
     }),
     info: {
       model: "laya/typed-decisions",
+      // The service's own pin (Railway references it), so a report names the checkpoint.
+      ...(repo ? { repo } : {}),
+      ...(revision ? { revision } : {}),
       questions: SENTINEL_SERVING.questions,
       blockThreshold: SENTINEL_SERVING.blockThreshold,
     },
+    health: async () =>
+      (await fetch(`${url}/health`, { signal: AbortSignal.timeout(3_000) }).catch(() => undefined))
+        ?.ok === true,
   };
+}
+
+/**
+ * The code hash a rating with Sentinel in front attests: the agent's own code hash combined
+ * with Sentinel, so a score earned with it never shares a hash with the agent alone.
+ */
+export function sentinelCodeHash(codeHash: Hex): Hex {
+  return keccak256(stringToBytes(`${codeHash.toLowerCase()}+sentinel`));
 }
 
 /** One of Bonded's built-in scripted designs, with Sentinel in front of it when given. */
@@ -77,6 +95,13 @@ const uint = z
   .regex(/^\d{1,78}$/)
   .transform((v) => BigInt(v).toString());
 const address = z.string().regex(/^0x[0-9a-fA-F]{40}$/);
+/**
+ * The largest check body the API takes. The schema below allows a 4,000-character mandate, 20
+ * arguments of 2,000 and 20 reads of 4,000 characters: about 125,000 characters, plus JSON
+ * escaping, field names and the signature. 256 KB leaves room for escaped characters.
+ */
+export const SENTINEL_CHECK_MAX_BYTES = 256 * 1024;
+
 const checkInput = z.strictObject({
   agentId: uint,
   vault: address,
@@ -154,29 +179,55 @@ export function sentinelRoutes(
   });
   let running = 0;
 
-  // A vault's agent key changes only by redeploying, so each lookup is kept for a minute.
-  const keys = new Map<string, { at: number; agent: string | undefined }>();
-  async function agentKey(vault: Hex, agentId: string): Promise<string | undefined> {
-    const key = `${vault.toLowerCase()}:${agentId}`;
-    const hit = keys.get(key);
-    if (hit && now() - hit.at < 60_000) return hit.agent;
+  // Which agent a vault belongs to never changes (factory membership and agentId are set at
+  // creation), so that is cached. The signing key is not: the guardian can rotate it at any
+  // time (MandateVault.rotateAgent), so it is read on every check.
+  const owners = new Map<string, string | null>();
+  async function vaultOwner(vault: Hex): Promise<string | null> {
+    const key = vault.toLowerCase();
+    if (owners.has(key)) return owners.get(key)!;
     const isVault = await chain.read.readContract({
       address: d.factory,
       abi: mandateVaultFactoryAbi,
       functionName: "isVault",
       args: [vault],
     });
-    let agent: string | undefined;
-    if (isVault) {
-      const [owner, signer] = await Promise.all([
-        chain.read.readContract({ address: vault, abi: mandateVaultAbi, functionName: "agentId" }),
-        chain.read.readContract({ address: vault, abi: mandateVaultAbi, functionName: "agent" }),
-      ]);
-      if (owner.toString() === agentId) agent = signer.toLowerCase();
-    }
-    if (keys.size > 5_000) keys.clear();
-    keys.set(key, { at: now(), agent });
-    return agent;
+    const owner = isVault
+      ? (
+          await chain.read.readContract({
+            address: vault,
+            abi: mandateVaultAbi,
+            functionName: "agentId",
+          })
+        ).toString()
+      : null;
+    if (owners.size > 5_000) owners.clear();
+    owners.set(key, owner);
+    return owner;
+  }
+  async function agentKey(vault: Hex, agentId: string): Promise<string | undefined> {
+    if ((await vaultOwner(vault)) !== agentId) return undefined;
+    const signer = await chain.read.readContract({
+      address: vault,
+      abi: mandateVaultAbi,
+      functionName: "agent",
+    });
+    return signer.toLowerCase();
+  }
+
+  // Whether Sentinel answers, not just whether it's configured: a probe of its health route,
+  // reused for 30 seconds, and down for 2 minutes after a check failed to get an answer.
+  let probe: { at: number; ok: boolean } | undefined;
+  let failedAt = -Infinity;
+  async function healthy(): Promise<boolean> {
+    if (!sentinel) return false;
+    if (now() - failedAt < 120_000) return false;
+    if (!probe || now() - probe.at >= 30_000)
+      probe = {
+        at: now(),
+        ok: sentinel.health ? await sentinel.health().catch(() => false) : true,
+      };
+    return probe.ok;
   }
 
   const handle = (fn: (c: Context) => Promise<Response>) => async (c: Context) => {
@@ -191,7 +242,8 @@ export function sentinelRoutes(
   app.get("/sentinel", async (c) => {
     const day = await db.sentinelCheckCounts(d.chainId, new Date(now() - 86_400_000));
     return c.json({
-      available: Boolean(sentinel),
+      configured: Boolean(sentinel),
+      available: await healthy(),
       ...(sentinel ? sentinel.info : {}),
       last24h: { checks: day.checks, blocked: day.blocked },
     });
@@ -240,36 +292,38 @@ export function sentinelRoutes(
       if (running >= limits.concurrent)
         throw new Refused(503, "Sentinel is busy; try again in a few seconds");
       running++;
+      let assessment: Awaited<ReturnType<SentinelModel["assess"]>>;
       try {
-        const assessment = await sentinel.model.assess(body, {
+        assessment = await sentinel.model.assess(body, {
           signal: AbortSignal.timeout(limits.timeoutMs),
         });
-        const blocked = assessment.manipulated >= sentinel.info.blockThreshold;
-        await db.recordSentinelCheck(d.chainId, input.agentId, {
-          manipulated: assessment.manipulated,
-          blocked,
-          latencyMs: assessment.latencyMs,
-        });
-        return c.json({
-          blocked,
-          manipulated: assessment.manipulated,
-          injection: assessment.injection,
-          blockThreshold: sentinel.info.blockThreshold,
-          model: assessment.model,
-          latencyMs: Math.round(assessment.latencyMs),
-          // Advisory: the agent decides whether to go ahead; the vault still enforces the mandate.
-          advice: blocked
-            ? "Don't take this action: it looks driven by what the agent read, not its mandate."
-            : "No sign of manipulation.",
-        });
       } catch (e) {
-        if (e instanceof Refused) throw e;
+        // No answer from Sentinel: the status shows it down for a while.
+        failedAt = now();
         if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError"))
           throw new Refused(503, "Sentinel took too long; try again");
-        throw e;
+        throw new Refused(503, "Sentinel didn't answer; try again");
       } finally {
         running--;
       }
+      const blocked = assessment.manipulated >= sentinel.info.blockThreshold;
+      await db.recordSentinelCheck(d.chainId, input.agentId, {
+        manipulated: assessment.manipulated,
+        blocked,
+        latencyMs: assessment.latencyMs,
+      });
+      return c.json({
+        blocked,
+        manipulated: assessment.manipulated,
+        injection: assessment.injection,
+        blockThreshold: sentinel.info.blockThreshold,
+        model: assessment.model,
+        latencyMs: Math.round(assessment.latencyMs),
+        // Advisory: the agent decides whether to go ahead; the vault still enforces the mandate.
+        advice: blocked
+          ? "Don't take this action: it looks driven by what the agent read, not its mandate."
+          : "No sign of manipulation.",
+      });
     }),
   );
 }

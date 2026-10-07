@@ -19,35 +19,51 @@ import { getAbiItem, hashTypedData, type Hex } from "viem";
 import { attestationTypedData, bondedDomain } from "@bonded/shared";
 import type { ServiceChain } from "@bonded/keeper";
 import { ratingLibrary } from "./library.js";
-import { ratedAgent, type SentinelService } from "./sentinel.js";
+import { ratedAgent, sentinelCodeHash, type SentinelService } from "./sentinel.js";
 
 // Operators provision these records; callers cannot choose RPCs, code, commands or model URLs.
-export const agentConfig = z.strictObject({
-  kind: z.enum(["hardened", "vulnerable", "partial"]),
-  mandate: EvmMandate,
-  codeHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/),
-  /**
-   * Where the agent runs in a TEE: its https URL and the compose hash published for this
-   * `codeHash`'s deployment. When set, the rating fails unless the agent proves it (ADR-012).
-   */
-  tee: z
-    .strictObject({
-      url: z.url({ protocol: /^https$/ }),
-      composeHash: z.string().regex(/^(0x)?[0-9a-fA-F]{64}$/),
-    })
-    .optional(),
-  /**
-   * Runs of each attack seed in a rating (default 1, at most 10). More runs tighten the 90% upper
-   * bound on each breach rate, so a robust agent scores closer to what it deserves. The plan's
-   * worked examples use 5. The report lists the episode count, so the number is visible.
-   */
-  repeats: z.number().int().min(1).max(10).optional(),
-  /**
-   * Rate the agent with Sentinel in front of it (docs/SENTINEL.md). The report records it, and
-   * the rating fails if Sentinel isn't configured: it never quietly rates without it.
-   */
-  sentinel: z.boolean().optional(),
-});
+export const agentConfig = z
+  .strictObject({
+    kind: z.enum(["hardened", "vulnerable", "partial"]),
+    mandate: EvmMandate,
+    codeHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/),
+    /**
+     * Where the agent runs in a TEE: its https URL and the compose hash published for this
+     * `codeHash`'s deployment. When set, the rating fails unless the agent proves it (ADR-012).
+     */
+    tee: z
+      .strictObject({
+        url: z.url({ protocol: /^https$/ }),
+        composeHash: z.string().regex(/^(0x)?[0-9a-fA-F]{64}$/),
+      })
+      .optional(),
+    /**
+     * Runs of each attack seed in a rating (default 1, at most 10). More runs tighten the 90% upper
+     * bound on each breach rate, so a robust agent scores closer to what it deserves. The plan's
+     * worked examples use 5. The report lists the episode count, so the number is visible.
+     */
+    repeats: z.number().int().min(1).max(10).optional(),
+    /**
+     * Rate the agent with Sentinel in front of it (docs/SENTINEL.md). The report records it, and
+     * the rating fails if Sentinel isn't configured: it never quietly rates without it.
+     */
+    sentinel: z.boolean().optional(),
+  })
+  // A TEE proves the agent's own code hash; a rating with Sentinel in front attests a combined
+  // one, so the two can't be checked against each other yet.
+  .refine((c) => !(c.sentinel && c.tee), {
+    message: "a Sentinel-on rating of a TEE agent isn't supported yet",
+    path: ["sentinel"],
+  });
+
+/**
+ * The code hash a rating attests. `codeHash` is always the agent's own code; with Sentinel in
+ * front the rated code is different, so it gets the combined hash (`sentinelCodeHash`). This
+ * holds for operator configs and self-serve registrations alike.
+ */
+export function ratedCodeHash(config: { codeHash: string; sentinel?: boolean }): Hex {
+  return config.sentinel ? sentinelCodeHash(config.codeHash as Hex) : (config.codeHash as Hex);
+}
 /** Process one durable rating job under the chain worker lock; retries recover accepted posts. */
 export async function workOne(
   db: Database,
@@ -137,7 +153,7 @@ async function runLocked(
           ...(config.sentinel && sentinel ? { sentinel: sentinel.info } : {}),
           attacks: library.attacks,
           unpublished: library.unpublished,
-          codeHash: config.codeHash as Hex,
+          codeHash: ratedCodeHash(config),
           ...(config.repeats ? { repeats: config.repeats } : {}),
           ...(tee ? { tee } : {}),
           vault: { mandate: config.mandate as EvmMandateInput },
@@ -155,6 +171,12 @@ async function runLocked(
         });
         if (result.report.stoppedEarly || result.report.episodes.agentErrors)
           throw new Error("incomplete rating");
+        // A guard that couldn't answer refused the write to stay safe, but that's no evidence the
+        // guard works: never attest a score that leaned on it.
+        if (result.report.guardFailures)
+          throw new Error(
+            `incomplete rating: a guard failed to answer ${result.report.guardFailures} times`,
+          );
         const current = await chain.read.readContract({
           address: chain.deployment.registry,
           abi: bondedRegistryAbi,

@@ -14,6 +14,7 @@ import { parseEventLogs } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { createApi } from "../src/index.js";
 import { selfServeCodeHash } from "../src/self-serve.js";
+import { ratedCodeHash } from "../src/worker.js";
 import { postgres } from "./postgres.js";
 
 let pg: Awaited<ReturnType<typeof postgres>>;
@@ -319,6 +320,7 @@ it("rates with Sentinel on only when the owner signed for it, under its own code
     sentinel?: boolean;
   };
   expect(config.sentinel).toBe(true);
-  expect(config.codeHash).toBe(selfServeCodeHash("hardened", true));
-  expect(config.codeHash).not.toBe(selfServeCodeHash("hardened"));
+  // The stored hash is the design's own; the worker attests the combined one.
+  expect(config.codeHash).toBe(selfServeCodeHash("hardened"));
+  expect(ratedCodeHash(config)).not.toBe(selfServeCodeHash("hardened"));
 }, 120_000);

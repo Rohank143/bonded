@@ -44,6 +44,23 @@ describe("report PDF content", () => {
     expect(doc.verification).toMatch(/matches the report hash on chain/);
   });
 
+  it("says whether Sentinel was in front of the agent, and which checkpoint", () => {
+    expect(reportDocument(report, ctx, true).summary).toContainEqual(["Sentinel", "Off"]);
+    const withSentinel = {
+      ...report,
+      sentinel: {
+        model: "laya/typed-decisions",
+        revision: "f8d305790ca9e6811e91da88d6c00c862554b0f9",
+        questions: "v3",
+        blockThreshold: 0.7,
+      },
+    };
+    expect(reportDocument(withSentinel, ctx, true).summary).toContainEqual([
+      "Sentinel",
+      "On: laya/typed-decisions at f8d3057, questions v3, blocks at 0.7",
+    ]);
+  });
+
   it("says so when the file doesn't match the chain", () => {
     expect(reportDocument(report, ctx, false).verification).toMatch(/^Warning/);
   });

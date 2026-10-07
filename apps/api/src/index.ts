@@ -23,7 +23,12 @@ import type { ServiceChain } from "@bonded/keeper";
 import type { Hex } from "viem";
 import { issueQuote } from "./quotes.js";
 import { originAllowed } from "./origins.js";
-import { sentinelRoutes, type SentinelLimits, type SentinelService } from "./sentinel.js";
+import {
+  SENTINEL_CHECK_MAX_BYTES,
+  sentinelRoutes,
+  type SentinelLimits,
+  type SentinelService,
+} from "./sentinel.js";
 import { EventStreams } from "./events.js";
 import { teeQuoteBlock } from "./tee-watch.js";
 import { RateLimiter, clientAddress } from "./rate-limit.js";
@@ -116,12 +121,18 @@ export function createApi(options: {
       maxAge: 600,
     }),
   );
-  app.use(
-    "*",
-    bodyLimit({
-      maxSize: MAX_BODY_BYTES,
-      onError: (c) => c.json({ error: "the request body is over 16 KB" }, 413),
-    }),
+  const smallBodies = bodyLimit({
+    maxSize: MAX_BODY_BYTES,
+    onError: (c) => c.json({ error: "the request body is over 16 KB" }, 413),
+  });
+  // A Sentinel check carries what the agent read (up to 20 reads of 4,000 characters), so its
+  // route has its own, larger cap: the most its schema allows (sentinel.ts).
+  const checkBodies = bodyLimit({
+    maxSize: SENTINEL_CHECK_MAX_BYTES,
+    onError: (c) => c.json({ error: "the check is over 256 KB" }, 413),
+  });
+  app.use("*", (c, next) =>
+    c.req.path === "/sentinel/check" ? checkBodies(c, next) : smallBodies(c, next),
   );
   // POSTs that need no operator token: a bounty reveal (the hash check against the chain's
   // revealed specURI authenticates it), self-serve requests (signed by the agent's owner) and

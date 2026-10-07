@@ -54,7 +54,7 @@ The `sentinel` service is different: it builds `services/sentinel/Dockerfile` (L
 - `HF_TOKEN`: a Hugging Face **read** token (huggingface.co → Settings → Access Tokens → type Read), so it can download the private model. Not the write token used on Kaggle.
 - `LAYA_API_KEY`: the bearer key callers send. Generate one; callers read the same value.
 
-The `api` and `arena-worker` services call Sentinel (checks, and ratings with Sentinel on). `.railway/railway.ts` gives them `SENTINEL_URL` (the private address above) and `LAYA_API_KEY` as a reference to the `sentinel` service's own key, so the secret is set once. Without `SENTINEL_URL`, checks answer 503 and Sentinel-on ratings fail.
+The `api` and `arena-worker` services call Sentinel (checks, and ratings with Sentinel on). `.railway/railway.ts` gives them `SENTINEL_URL` (the private address above) and `LAYA_API_KEY`, `SENTINEL_MODEL_REPO` and `SENTINEL_MODEL_REVISION` as references to the `sentinel` service's own values, so the secret is set once and reports name the checkpoint that answered. Without `SENTINEL_URL`, checks answer 503 and Sentinel-on ratings fail.
 
 The first command waits silently: paste the read token and press Enter. It isn't echoed or stored in shell history.
 
@@ -94,7 +94,7 @@ Browsers can call the API only from origins listed in `WEB_ORIGINS` (comma-separ
 | `GET /library` | What ratings run, as counts only: published seeds, accepted bounties, and active held-out attacks with the earliest retirement date |
 | `GET /library/attacks?page=&limit=&class=&surface=&severity=&sort=` | The published attacks (no planted text), numbered pages, each with its record in the Arena episodes on record: episodes, breaches, runs, last run. `sort` is `class` (default), `breaches` or `rate`. `classes` gives all ten classes with their published attack count and combined record, whatever the filter. `statsSince` is when the oldest episode on record ran. Held-out and bounty attacks are never listed |
 | `GET /library/attacks/:id` | One published attack in full, planted text included, with its record; an unpublished id is 404 |
-| `GET /sentinel` | Whether Sentinel runs on this API, its model, question set and block threshold, and checks in the last 24 hours |
+| `GET /sentinel` | `configured` and `available` (its health probe passes and checks are answered), its model, checkpoint, question set and block threshold, and checks in the last 24 hours |
 | `GET /sentinel/agents/:id` | One agent's Sentinel checks in the last 7 days (count, blocked, last check) |
 | `POST /sentinel/check` | No token: `{ agentId, vault, timestamp, signature, mandate, proposedAction, untrustedInputs }`, signed with the vault's agent key over `sentinelCheckMessage` → `{ blocked, manipulated, injection, blockThreshold, model, latencyMs }`; 30 a minute per agent. See [SENTINEL.md](SENTINEL.md#using-sentinel) |
 | `POST /library/held-out` | Upload held-out attacks (operator token): `{ specs: [yaml, ...], retireAfter }`, up to 10 a request; ids must look like `A6-held-out-1a2b3c4d`. See ADR-007, decision 3 |

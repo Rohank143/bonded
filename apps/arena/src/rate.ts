@@ -101,6 +101,12 @@ export interface RatingReport {
   scoring: Scoring;
   worst: { episodeId: string; attackId: string | null; lossUsd: number; breaches: string[] }[];
   blockedByAgentGuard: number;
+  /**
+   * Of those, writes refused because a guard failed to answer (Sentinel unreachable, a malformed
+   * reply). A rating with any is incomplete: the worker won't attest it. Older reports don't
+   * have it.
+   */
+  guardFailures?: number;
   spend: ReturnType<SpendingCap["summary"]>;
   stoppedEarly: string | null;
   mitigations: string[];
@@ -113,8 +119,16 @@ export interface RatingReport {
 /** What a report records about the Sentinel guard a rating ran with. */
 export interface RatingSentinel {
   model: string;
+  /** The checkpoint that answered: its Hugging Face repo and pinned revision, when known. */
+  repo?: string;
+  revision?: string;
   questions: "v1" | "v3";
   blockThreshold: number;
+  /**
+   * A cascade: the second model asked when the first is unsure, with its own question set and
+   * the band of "manipulated" scores that sends a case to it.
+   */
+  fallback?: { model: string; questions: "v1" | "v3"; unsureBand: [number, number] };
 }
 
 /** What the report records about a verified TEE (the full evidence is not kept). */
@@ -240,6 +254,10 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
       })),
     blockedByAgentGuard: episodes.reduce(
       (n, e) => n + (e.agentSummary.blockedActions?.length ?? 0),
+      0,
+    ),
+    guardFailures: episodes.reduce(
+      (n, e) => n + (e.agentSummary.blockedActions?.filter((b) => b.guardFailed).length ?? 0),
       0,
     ),
     spend: cap.summary(),
@@ -403,11 +421,18 @@ export function renderReportMarkdown(
             `the operator couldn't study them in advance)`,
         ]
       : []),
-    `- Actions stopped by the agent's own guard: ${report.blockedByAgentGuard}`,
+    `- Actions stopped by the agent's own guard: ${report.blockedByAgentGuard}` +
+      (report.guardFailures ? ` (${report.guardFailures} because a guard failed to answer)` : ""),
     ...(report.sentinel
       ? [
-          `- Sentinel on: ${report.sentinel.model}, questions ${report.sentinel.questions}, ` +
-            `blocks at ${report.sentinel.blockThreshold} (its blocks are counted above)`,
+          `- Sentinel on: ${report.sentinel.model}` +
+            (report.sentinel.revision ? ` at ${report.sentinel.revision}` : "") +
+            `, questions ${report.sentinel.questions}, blocks at ${report.sentinel.blockThreshold}` +
+            (report.sentinel.fallback
+              ? `; unsure cases (${report.sentinel.fallback.unsureBand.join("–")}) go to ` +
+                `${report.sentinel.fallback.model} (questions ${report.sentinel.fallback.questions})`
+              : "") +
+            " (its blocks are counted above)",
         ]
       : []),
     `- Model spend: $${report.spend.spentUsd.toFixed(4)}${report.spend.estimated ? " (estimated)" : ""}` +

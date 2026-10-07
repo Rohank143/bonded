@@ -255,6 +255,9 @@ export interface CascadeOptions {
  * Laya first, a second model only when Laya is unsure (docs/BUSINESS.md, lever 1). The
  * escalation count is kept so the cost saving can be measured.
  */
+/** The "manipulated" scores a cascade sends to its second model by default. */
+export const DEFAULT_CASCADE_UNSURE_BAND: [number, number] = [0.25, 0.75];
+
 export class CascadeSentinel implements SentinelModel {
   readonly name: string;
   checks = 0;
@@ -268,7 +271,7 @@ export class CascadeSentinel implements SentinelModel {
     options: CascadeOptions = {},
   ) {
     this.name = `cascade/${primary.name}+${fallback.name}`;
-    this.band = options.unsureBand ?? [0.25, 0.75];
+    this.band = options.unsureBand ?? DEFAULT_CASCADE_UNSURE_BAND;
     this.minRiskConfidence = options.minRiskConfidence ?? 0.6;
   }
 

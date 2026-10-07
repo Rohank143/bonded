@@ -34,12 +34,11 @@ import { RateLimiter, clientAddress } from "./rate-limit.js";
  */
 
 /**
- * The code hash each design is rated under, as for the operator's agents. With Sentinel in front
- * the rated code is different, so it has its own hash: the attestation never passes a score
- * earned behind Sentinel off as the design's score alone.
+ * The code hash of each design, as for the operator's agents. With Sentinel on, the worker
+ * attests a combined hash instead (`ratedCodeHash` in worker.ts).
  */
-export function selfServeCodeHash(kind: SelfServeKind, sentinel = false): Hex {
-  return keccak256(stringToBytes(`bonded/scripted-${kind}/v0${sentinel ? "+sentinel" : ""}`));
+export function selfServeCodeHash(kind: SelfServeKind): Hex {
+  return keccak256(stringToBytes(`bonded/scripted-${kind}/v0`));
 }
 
 export interface SelfServeLimits {
@@ -265,7 +264,7 @@ export function selfServeRoutes(
       const stored = await db.upsertUserAgent(d.chainId, input.agentId, who, {
         kind: input.kind,
         mandate: input.mandate,
-        codeHash: selfServeCodeHash(input.kind, input.sentinel === true),
+        codeHash: selfServeCodeHash(input.kind),
         repeats: limits.repeats,
         ...(input.sentinel ? { sentinel: true } : {}),
       });

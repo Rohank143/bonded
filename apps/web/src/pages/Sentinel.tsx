@@ -29,8 +29,12 @@ const res = await fetch(\`\${API}/sentinel/check\`, {
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ agentId, vault, timestamp, signature, ...body }),
 });
-const { blocked, manipulated } = await res.json();
-if (blocked) return; // don't make this trade`;
+// Trade only on a clear "not blocked": throttled, busy or unreachable
+// (429 or 503) means Sentinel couldn't assess it, so don't go ahead.
+const answer = res.ok ? await res.json() : undefined;
+if (typeof answer?.blocked !== "boolean" || answer.blocked) {
+  return; // skip this trade, or retry the check after a pause
+}`;
 
 const STEPS: [string, string][] = [
   [
@@ -80,8 +84,10 @@ export function Sentinel() {
           {
             label: "Status",
             value: s ? (
-              <span className={s.available ? "text-safe" : "text-muted"}>
-                {s.available ? "Running" : "Off"}
+              <span
+                className={s.available ? "text-safe" : s.configured ? "text-breach" : "text-muted"}
+              >
+                {s.available ? "Running" : s.configured ? "Not answering" : "Off"}
               </span>
             ) : (
               <StatLoading />

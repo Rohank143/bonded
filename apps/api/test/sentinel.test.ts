@@ -5,8 +5,14 @@ import type { SentinelModel } from "@bonded/demo-agents";
 import { sentinelCheckDigest, sentinelCheckMessage, type SentinelCheckBody } from "@bonded/shared";
 import { privateKeyToAccount } from "viem/accounts";
 import { createApi } from "../src/index.js";
-import { ratedAgent, sentinelFromEnv, type SentinelService } from "../src/sentinel.js";
-import { workOne } from "../src/worker.js";
+import {
+  ratedAgent,
+  sentinelCodeHash,
+  sentinelFromEnv,
+  type SentinelService,
+} from "../src/sentinel.js";
+import { agentConfig, ratedCodeHash, workOne } from "../src/worker.js";
+import { mandateVaultAbi } from "@bonded/shared";
 import { postgres } from "./postgres.js";
 
 let pg: Awaited<ReturnType<typeof postgres>>;
@@ -35,9 +41,19 @@ const fake: SentinelModel = {
     };
   },
 };
+// Switches for the fake service: whether its health probe answers, and whether checks fail.
+let up = true;
+let broken = false;
 const service: SentinelService = {
-  model: fake,
+  model: {
+    ...fake,
+    assess: async (fields, options) => {
+      if (broken) throw new Error("fetch failed: connect ECONNREFUSED");
+      return fake.assess(fields, options);
+    },
+  },
   info: { model: "fake-sentinel", questions: "v3", blockThreshold: 0.7 },
+  health: async () => up,
 };
 
 beforeAll(async () => {
@@ -194,6 +210,14 @@ it("reads production Sentinel from the environment, and rates designs behind it"
     questions: "v3",
     blockThreshold: 0.7,
   });
+  // With the service's pin, a report names the exact checkpoint.
+  expect(
+    sentinelFromEnv({
+      SENTINEL_URL: "http://s",
+      SENTINEL_MODEL_REPO: "ddboy19912/bonded-sentinel-laya",
+      SENTINEL_MODEL_REVISION: "f8d3057",
+    })?.info,
+  ).toMatchObject({ repo: "ddboy19912/bonded-sentinel-laya", revision: "f8d3057" });
   expect(ratedAgent("vulnerable", service).name).toMatch(/\+sentinel$/);
   expect(ratedAgent("partial", service).name).toMatch(/\+sentinel$/);
   expect(ratedAgent("vulnerable").name).not.toMatch(/sentinel/);
@@ -220,3 +244,71 @@ it("fails a Sentinel-on rating when Sentinel isn't configured, instead of rating
   ).toBe(true);
   expect(String(errors[0])).toMatch(/Sentinel on, but SENTINEL_URL isn't set/);
 }, 60_000);
+
+it("authorises the vault's current agent key, right after the guardian rotates it", async () => {
+  clock += 120_000;
+  const next = privateKeyToAccount(ANVIL_KEYS.depositor);
+  // Warm any cache with a good check by the current key.
+  expect((await check(benign)).status).toBe(200);
+  const guardian = connectChain(sandbox.deployment, sandbox.rpcUrl, ANVIL_KEYS.operator);
+  await guardian.send(vault.address, mandateVaultAbi, "rotateAgent", [next.address]);
+  try {
+    // At once: the old key is refused and the new one accepted.
+    expect((await check(benign)).status).toBe(403);
+    expect((await check(benign, { signer: next })).status).toBe(200);
+  } finally {
+    await guardian.send(vault.address, mandateVaultAbi, "rotateAgent", [agentKey.address]);
+  }
+}, 60_000);
+
+it("reports Sentinel down when its health probe fails or a check gets no answer", async () => {
+  clock += 120_000;
+  expect(await json(await app.request("/sentinel"))).toMatchObject({
+    configured: true,
+    available: true,
+  });
+  up = false;
+  clock += 31_000;
+  expect(await json(await app.request("/sentinel"))).toMatchObject({
+    configured: true,
+    available: false,
+  });
+  up = true;
+  clock += 31_000;
+  // A check that gets no answer: 503, and the status shows it down for a while.
+  broken = true;
+  const failed = await check(benign);
+  expect(failed.status).toBe(503);
+  expect((await json(failed)).error).toMatch(/didn't answer/);
+  broken = false;
+  expect(await json(await app.request("/sentinel"))).toMatchObject({ available: false });
+  clock += 121_000;
+  expect(await json(await app.request("/sentinel"))).toMatchObject({ available: true });
+}, 60_000);
+
+it("takes a check as large as its schema allows", async () => {
+  clock += 120_000;
+  const big: SentinelCheckBody = {
+    ...benign,
+    untrustedInputs: Array.from({ length: 20 }, (_, i) => ({
+      tool: `read_${i}`,
+      output: "x".repeat(4_000),
+    })),
+  };
+  expect((await check(big)).status).toBe(200);
+}, 60_000);
+
+it("attests a combined code hash whenever Sentinel is on, and refuses Sentinel with a TEE", () => {
+  const codeHash = `0x${"cd".repeat(32)}` as const;
+  expect(ratedCodeHash({ codeHash })).toBe(codeHash);
+  expect(ratedCodeHash({ codeHash, sentinel: true })).toBe(sentinelCodeHash(codeHash));
+  expect(sentinelCodeHash(codeHash)).not.toBe(codeHash);
+  const base = { kind: "hardened", mandate: vault.mandate, codeHash, sentinel: true };
+  expect(agentConfig.safeParse(base).success).toBe(true);
+  expect(
+    agentConfig.safeParse({
+      ...base,
+      tee: { url: "https://agent.example", composeHash: `0x${"ab".repeat(32)}` },
+    }).success,
+  ).toBe(false);
+});

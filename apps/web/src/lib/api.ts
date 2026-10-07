@@ -27,6 +27,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 /** GET /sentinel: whether Sentinel runs on this API, and checks in the last day. */
 export interface SentinelStatus {
+  /** Sentinel is set up on this API. */
+  configured: boolean;
+  /** It answers: its health probe passes and checks aren't failing. */
   available: boolean;
   model?: string;
   questions?: string;
@@ -236,7 +239,14 @@ export interface Report {
     tcbStatus: string;
   } | null;
   /** Sentinel was in front of the agent for this rating; older reports don't have it. */
-  sentinel?: { model: string; questions: string; blockThreshold: number } | null;
+  sentinel?: {
+    model: string;
+    repo?: string;
+    revision?: string;
+    questions: string;
+    blockThreshold: number;
+    fallback?: { model: string; questions: string; unsureBand: [number, number] };
+  } | null;
   classes: {
     class: string;
     name: string;

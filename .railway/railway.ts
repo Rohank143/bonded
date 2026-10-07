@@ -80,6 +80,9 @@ export default defineRailway(() => {
   const sentinelClient = {
     SENTINEL_URL: "http://sentinel.railway.internal:8000",
     LAYA_API_KEY: sentinel.env.LAYA_API_KEY,
+    // The checkpoint it serves, so a rating's report names it.
+    SENTINEL_MODEL_REPO: sentinel.env.SENTINEL_MODEL_REPO,
+    SENTINEL_MODEL_REVISION: sentinel.env.SENTINEL_MODEL_REVISION,
   };
 
   const api = service("api", {

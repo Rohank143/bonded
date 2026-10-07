@@ -64,6 +64,17 @@ export function reportDocument(report: Report, ctx: ReportContext, verified: boo
           ]
         : []),
       ["Runs in a TEE", report.tee ? `Yes (${report.tee.tcbStatus})` : "No"],
+      [
+        "Sentinel",
+        report.sentinel
+          ? `On: ${report.sentinel.model}` +
+            (report.sentinel.revision ? ` at ${report.sentinel.revision.slice(0, 7)}` : "") +
+            `, questions ${report.sentinel.questions}, blocks at ${report.sentinel.blockThreshold}` +
+            (report.sentinel.fallback
+              ? `; unsure cases go to ${report.sentinel.fallback.model}`
+              : "")
+          : "Off",
+      ],
     ] as [string, string][],
     classes: report.classes.map((c) => [
       c.class,

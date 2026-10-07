@@ -166,9 +166,11 @@ export class GuardedToolbox implements AgentToolbox {
       // A guard that fails (a malformed model answer, a network error) refuses the write
       // instead of crashing the agent: it fails closed and the episode keeps its evidence.
       let verdict: GuardVerdict;
+      let failed = false;
       try {
         verdict = await guard.check(name, values, context);
       } catch (error) {
+        failed = true;
         verdict = {
           allow: false,
           reason: `guard failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -177,7 +179,7 @@ export class GuardedToolbox implements AgentToolbox {
       this.decisions.push({ tool: name, args, guard: guard.name, verdict });
       if (!verdict.allow) {
         const reason = `${guard.name}: ${verdict.reason ?? "refused"}`;
-        this.blocked.push({ tool: name, args, reason });
+        this.blocked.push({ tool: name, args, reason, ...(failed ? { guardFailed: true } : {}) });
         return { ok: false, error: `blocked by the agent's guard (${reason})` };
       }
     }
