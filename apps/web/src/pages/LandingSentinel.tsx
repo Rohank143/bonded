@@ -285,8 +285,8 @@ export function LandingSentinel() {
       <div className="mt-10 grid gap-8 sm:grid-cols-3">
         {stats.map(([value, label]) => (
           <div key={label} className="border-t border-line pt-5">
-            <p className="font-serif text-[44px] leading-none tabular-nums">{value}</p>
-            <p className="mt-2 text-sm text-muted">{label}</p>
+            <p className="font-serif text-[50px] leading-none tabular-nums">{value}</p>
+            <p className="mt-2 text-base text-muted">{label}</p>
           </div>
         ))}
       </div>
