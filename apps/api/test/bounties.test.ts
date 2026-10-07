@@ -141,12 +141,12 @@ it("validates a revealed attack, pays the hunter and adds it to the library", as
   });
   expect(after - before).toBe(usd(500));
 
-  const { items: list, next } = (await (await app.request("/bounties")).json()) as {
+  const { items: list, total } = (await (await app.request("/bounties")).json()) as {
     items: Record<string, unknown>[];
-    next: string | null;
+    total: number;
   };
   expect(list).toHaveLength(1);
-  expect(next).toBeNull();
+  expect(total).toBe(1);
   expect(list[0]).toMatchObject({
     submissionId: "1",
     attackId: "A2-counterparty-relay-901",
