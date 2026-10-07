@@ -45,7 +45,7 @@ export function Underwrite() {
     return (
       <Page title="Cover pool">
         <Card>
-          <Loading what="the pool" lines={4} />
+          <Loading what="the pool" height="md" />
         </Card>
       </Page>
     );

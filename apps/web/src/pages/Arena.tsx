@@ -6,7 +6,7 @@ import { api } from "../lib/api";
 import type { EpisodeCard } from "../lib/events";
 import { rulingView } from "../lib/ruling";
 import { RulingBadge, RulingDot, VerdictCard } from "../components/ruling";
-import { isPrivate, useEpisodeSnapshot, type EpisodeFilters } from "../lib/episodes";
+import { isPrivate, newestEpisode, useEpisodeSnapshot, type EpisodeFilters } from "../lib/episodes";
 import { useListParams } from "../lib/pages";
 import { useAgents } from "../lib/chain";
 import {
@@ -70,8 +70,21 @@ export function Arena() {
   const counts = feed.counts;
   const filtered = Object.keys(filters).length > 0;
   const selected = shown.find((c) => c.eventId === picked) ?? shown[0];
-  // The newest episode overall: streamed, or the top of an unfiltered first page.
-  const latest = feed.newest ?? (filtered || list.page > 1 ? undefined : shown[0]);
+  // The newest episode overall: streamed, the top of an unfiltered first page, or else one row
+  // asked for on its own (filters or a later page hide it from this list).
+  const onFirstPage = !filtered && list.page === 1;
+  const newestAlone = useQuery({
+    queryKey: ["episodes", "newest"],
+    queryFn: () => api.episodes({ limit: 1 }),
+    enabled: !feed.newest && !onFirstPage,
+    staleTime: 10_000,
+  });
+  const latest = newestEpisode({
+    streamed: feed.newest,
+    onFirstPage,
+    topRow: shown[0],
+    fetched: newestAlone.data?.items[0],
+  });
   const clear = () =>
     list.set({
       outcome: "all",
@@ -166,7 +179,7 @@ export function Arena() {
             </p>
           ) : (
             <p className="mt-3.5 text-sm text-muted">
-              {counts?.total ? "Clear the filters to see it" : "Waiting for episodes"}
+              {newestAlone.isFetching ? "…" : "Waiting for episodes"}
             </p>
           )}
           {runId && (

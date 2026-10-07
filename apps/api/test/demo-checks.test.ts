@@ -42,3 +42,19 @@ describe("quoteApiUrl", () => {
     );
   });
 });
+
+it("sees a port held on one loopback address as taken, as a dev server holds it", async () => {
+  const { createServer } = await import("node:net");
+  const { portIsFree } = await import("../src/demo-checks.js");
+  for (const host of ["127.0.0.1", "::1"]) {
+    const server = createServer();
+    const held = await new Promise<number | undefined>((resolve) => {
+      server.once("error", () => resolve(undefined)); // no IPv6 on this machine
+      server.listen(0, host, () => resolve((server.address() as { port: number }).port));
+    });
+    if (held === undefined) continue;
+    expect(await portIsFree(held), host).toBe(false);
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    expect(await portIsFree(held), `${host} after closing`).toBe(true);
+  }
+});

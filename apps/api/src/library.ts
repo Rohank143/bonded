@@ -128,6 +128,27 @@ export function pageOfAttacks(
   };
 }
 
+/**
+ * The ten classes, A1 to A10, each with how many published attacks it has and their combined
+ * record. Always the whole library, whatever filter the list below uses.
+ */
+export function classSummary(
+  library: readonly AttackSpec[],
+  stats: ReadonlyMap<string, AttackStats>,
+) {
+  return AttackClassId.options.map((cls) => {
+    const attacks = library.filter((a) => a.class === cls);
+    const sum = (k: "episodes" | "breaches") =>
+      attacks.reduce((n, a) => n + (stats.get(a.id)?.[k] ?? 0), 0);
+    return {
+      class: cls,
+      attacks: attacks.length,
+      episodes: sum("episodes"),
+      breaches: sum("breaches"),
+    };
+  });
+}
+
 const upload = z.strictObject({
   /** Each held-out attack's YAML, as pnpm heldout:generate wrote it (16 KB a request in all). */
   specs: z.array(z.string().min(1).max(4_000)).min(1).max(MAX_UPLOAD_SPECS),
@@ -162,6 +183,7 @@ export function libraryRoutes(
     const { stats, since } = await attackStats();
     return c.json({
       ...pageOfAttacks(library, stats, q),
+      classes: classSummary(library, stats),
       statsSince: since?.toISOString() ?? null,
     });
   });

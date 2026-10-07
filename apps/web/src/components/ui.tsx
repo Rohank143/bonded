@@ -268,10 +268,10 @@ export function LinkButton({
   );
 }
 
-export function Spinner() {
+export function Spinner({ large = false }: { large?: boolean }) {
   return (
     <span
-      className="size-3.5 animate-spin rounded-full border-2 border-current border-r-transparent"
+      className={`animate-spin rounded-full ${large ? "size-7 border-[3px] border-white/10 border-t-accent" : "size-3.5 border-2 border-current border-r-transparent"}`}
       aria-hidden
     />
   );
@@ -365,14 +365,27 @@ export function Skeleton({ className = "h-4 w-full" }: { className?: string }) {
   );
 }
 
-/** A loading placeholder: a few shimmering lines, with the words for screen readers. */
-export function Loading({ what, lines = 3 }: { what: string; lines?: number }) {
+/** Roughly how much room the loaded content takes, so the page doesn't jump when it arrives. */
+const LOADING_HEIGHT = { sm: "min-h-24", md: "min-h-40", lg: "min-h-64" } as const;
+
+/**
+ * A loading state: a spinner and what's loading, centred where the content will be. Grey bars
+ * shaped like nothing in particular looked like broken content, so this says what it's doing.
+ */
+export function Loading({
+  what,
+  height = "sm",
+}: {
+  what: string;
+  height?: keyof typeof LOADING_HEIGHT;
+}) {
   return (
-    <div className="flex flex-col gap-2.5 py-1" role="status">
-      <span className="sr-only">Loading {what}…</span>
-      {Array.from({ length: lines }, (_, i) => (
-        <Skeleton key={i} className={`h-4 ${i === lines - 1 ? "w-2/3" : "w-full"}`} />
-      ))}
+    <div
+      className={`flex flex-col items-center justify-center gap-3 text-sm text-muted ${LOADING_HEIGHT[height]}`}
+      role="status"
+    >
+      <Spinner large />
+      <span>Loading {what}…</span>
     </div>
   );
 }

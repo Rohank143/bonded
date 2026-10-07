@@ -99,7 +99,7 @@ function VaultView({ vault }: { vault: Address }) {
     return (
       <Page title={`Vault ${short(vault)}`} back={back}>
         <Card>
-          <Loading what="vault" lines={4} />
+          <Loading what="vault" height="md" />
         </Card>
       </Page>
     );

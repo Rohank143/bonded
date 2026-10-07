@@ -24,6 +24,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
+import { portIsFree } from "../dist/demo-checks.js";
 import { randomBytes } from "node:crypto";
 import { parseArgs } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
@@ -113,14 +114,6 @@ async function stop(code = 0) {
 }
 process.once("SIGINT", () => void stop(0));
 process.once("SIGTERM", () => void stop(0));
-
-/** True if nothing on this machine is listening on `port` (any interface). */
-const portIsFree = (port) =>
-  new Promise((resolve) => {
-    const s = createServer();
-    s.once("error", () => resolve(false));
-    s.listen(port, () => s.close(() => resolve(true)));
-  });
 
 try {
   // Fail before starting anything if a port the demo needs is taken.
