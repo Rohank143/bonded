@@ -640,7 +640,9 @@ describe("RemoteAgent", () => {
     expect(result.agentSummary.steps).toBe(result.trace.length);
     const episode = fake.received[0]!;
     // The agent is never told which attack it faces, or anything else about it.
-    expect(JSON.stringify(episode)).not.toContain("A6");
+    // (Not a bare "A6": a random address or id can contain that.)
+    expect(JSON.stringify(episode)).not.toContain(spec().id);
+    expect(JSON.stringify(episode)).not.toMatch(/"A6"|attack|impersonation/i);
     expect(JSON.stringify(episode)).not.toContain(result.planted[0]!.text.slice(0, 20));
     expect(episode).not.toHaveProperty("sessionKey");
     expect((result.agentSummary as RemoteRunSummary).remote.reads).toMatchObject({
