@@ -1,4 +1,4 @@
-import { breachTypeFromCode, mandateVaultAbi } from "@bonded/shared";
+import { breachTypeFromCode, mandateModuleAbi, mandateVaultAbi } from "@bonded/shared";
 import {
   type Account,
   type Address,
@@ -40,7 +40,10 @@ import { BlockedByMandateError, BondedError, VaultFrozenError } from "./errors.j
 import { vaultRevertError } from "./revert.js";
 
 export interface BondedVaultConfig {
-  /** The Mandate Vault's address. */
+  /**
+   * The Mandate Vault's address, or a MandateModule's (the mandate on an ERC-7579 smart
+   * account). The SDK tells them apart on chain.
+   */
   vault: Address;
   /** Reads the chain. Built from `chain` (and `rpcUrl`) when left out. */
   publicClient?: PublicClient<Transport, Chain | undefined>;
@@ -58,8 +61,12 @@ export interface BondedVaultConfig {
   router?: Address | SwapRouter;
 }
 
-/** What the vault is and whether it will act. */
+/** What the vault (or module) is and whether it will act. */
 export interface VaultStatus {
+  /** A Mandate Vault holds the funds itself; a MandateModule guards a smart account's. */
+  kind: "vault" | "module";
+  /** Where the funds are: the vault itself, or the module's smart account. */
+  holder: Address;
   /** The agent can't act until the guardian unfreezes the vault. */
   frozen: boolean;
   /** Monitor lets breaches through and records them; Enforce blocks and records them. */
@@ -97,6 +104,7 @@ export class BondedVault {
   readonly publicClient: PublicClient<Transport, Chain | undefined>;
   readonly walletClient: WalletClient<Transport, Chain | undefined, Account> | undefined;
   private readonly router: SwapRouter | undefined;
+  private identity: Promise<{ kind: "vault" | "module"; holder: Address }> | undefined;
 
   constructor(config: BondedVaultConfig) {
     this.address = getAddress(config.vault);
@@ -138,7 +146,10 @@ export class BondedVault {
         read("agentId"),
         read("freezeOnBreach"),
       ]);
+    const { kind, holder } = await this.identify();
     return {
+      kind,
+      holder,
       frozen,
       mode: mode === 1 ? "enforce" : "monitor",
       breachCount,
@@ -148,6 +159,27 @@ export class BondedVault {
       agentId,
       freezeOnBreach,
     };
+  }
+
+  /**
+   * Whether this is a Mandate Vault or a MandateModule, and where its funds are (the vault
+   * itself, or the module's account). Read once from the chain: a module has `account()`.
+   */
+  identify(): Promise<{ kind: "vault" | "module"; holder: Address }> {
+    this.identity ??= this.publicClient
+      .readContract({ address: this.address, abi: mandateModuleAbi, functionName: "account" })
+      .then(
+        (account) => ({ kind: "module" as const, holder: account }),
+        (error: unknown) => {
+          // A vault has no `account()`: the call reverts. Anything else (network) is an error.
+          if (!isMissingFunction(error)) {
+            this.identity = undefined;
+            throw error;
+          }
+          return { kind: "vault" as const, holder: this.address };
+        },
+      );
+    return this.identity;
   }
 
   /** The vault's breach log, oldest first (from `fromId`, default 0). */
@@ -327,15 +359,17 @@ export class BondedVault {
               `the router quotes ${quoted} for this swap, below minOut ${a.minOut}; nothing was sent`,
             );
         }
+        // A module's tokens are its account's: the account approves and receives.
+        const { holder } = await this.identify();
         const allowance = await this.publicClient.readContract({
           address: a.tokenIn,
           abi: erc20Abi,
           functionName: "allowance",
-          args: [this.address, router.address],
+          args: [holder, router.address],
         });
         const swap: VaultCall = {
           target: router.address,
-          data: router.encodeSwap({ ...a, minOut: a.minOut ?? 0n, recipient: this.address }),
+          data: router.encodeSwap({ ...a, minOut: a.minOut ?? 0n, recipient: holder }),
         };
         return allowance >= a.amountIn
           ? [swap]
@@ -363,6 +397,18 @@ type ReadFn =
   | "mandateHash"
   | "agentId"
   | "freezeOnBreach";
+
+/** A call to a function the contract doesn't have: it reverts, or returns nothing. */
+function isMissingFunction(error: unknown): boolean {
+  for (let e = error, depth = 0; e instanceof Error && depth < 20; e = e.cause, depth++)
+    if (
+      e.name === "ContractFunctionRevertedError" ||
+      e.name === "ContractFunctionZeroDataError" ||
+      e.name === "ExecutionRevertedError"
+    )
+      return true;
+  return false;
+}
 
 function isUnsupported(error: unknown): boolean {
   for (let e = error, depth = 0; e instanceof Error && depth < 20; e = e.cause, depth++) {

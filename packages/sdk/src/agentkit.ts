@@ -22,8 +22,13 @@ export interface BondedWalletProviderOptions {
    * pays gas and reads the chain; it never holds the funds.
    */
   wallet: EvmWalletProvider;
-  /** The Mandate Vault that holds the funds and whose agent key `wallet` is. */
+  /** The Mandate Vault (or MandateModule) whose agent key `wallet` is. */
   vault: Address;
+  /**
+   * Where the funds are, which AgentKit sees as the wallet's address: the vault itself, or a
+   * module's smart account. `BondedWalletProvider.create` reads it from the chain.
+   */
+  holder?: Address;
   /**
    * Check each transaction before sending it: a dry run of the vault's `execute`, refused on a
    * predicted breach, and Sentinel if configured. Off by default: the vault judges either way.
@@ -34,7 +39,7 @@ export interface BondedWalletProviderOptions {
 /**
  * A Coinbase AgentKit wallet provider whose wallet is a Mandate Vault. Every transaction an
  * action provider sends becomes `vault.execute(to, data)` from the agent key, so the vault checks
- * it against the mandate and records any breach; `getAddress()` is the vault, where the funds
+ * it against the mandate and records any breach; `getAddress()` is where the funds
  * are. Any AgentKit action provider then trades through the mandate unchanged.
  *
  * What a vault can't do is refused: native value (the vault is ERC-20 only), contract creation,
@@ -46,12 +51,15 @@ export interface BondedWalletProviderOptions {
  */
 export class BondedWalletProvider extends EvmWalletProvider {
   readonly vault: Address;
+  /** Where the funds are: the vault, or a module's smart account. */
+  readonly holder: Address;
   readonly #wallet: EvmWalletProvider;
   readonly #guard: GuardedVault | undefined;
 
   constructor(options: BondedWalletProviderOptions) {
     super();
     this.vault = getAddress(options.vault);
+    this.holder = getAddress(options.holder ?? options.vault);
     this.#wallet = options.wallet;
     if (options.guard) {
       const reader = new BondedVault({
@@ -64,8 +72,22 @@ export class BondedWalletProvider extends EvmWalletProvider {
     }
   }
 
+  /**
+   * A provider for a vault or a module, with `holder` read from the chain (a module's funds are
+   * in its smart account). Use this for modules; `new` assumes a vault unless `holder` is given.
+   */
+  static async create(options: BondedWalletProviderOptions): Promise<BondedWalletProvider> {
+    if (options.holder) return new BondedWalletProvider(options);
+    const reader = new BondedVault({
+      vault: options.vault,
+      publicClient: options.wallet.getPublicClient() as unknown as PublicClient,
+    });
+    const { holder } = await reader.identify();
+    return new BondedWalletProvider({ ...options, holder });
+  }
+
   getAddress(): string {
-    return this.vault;
+    return this.holder;
   }
 
   getNetwork(): Network {
@@ -76,9 +98,9 @@ export class BondedWalletProvider extends EvmWalletProvider {
     return "bonded_vault_wallet_provider";
   }
 
-  /** The vault's native balance. The vault holds ERC-20 tokens; gas is paid by the agent key. */
+  /** The native balance where the funds are. The mandate covers ERC-20 tokens; gas is paid by the agent key. */
   async getBalance(): Promise<bigint> {
-    return this.#wallet.getPublicClient().getBalance({ address: this.vault });
+    return this.#wallet.getPublicClient().getBalance({ address: this.holder });
   }
 
   getPublicClient(): ReturnType<EvmWalletProvider["getPublicClient"]> {

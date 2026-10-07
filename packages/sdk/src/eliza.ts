@@ -161,7 +161,9 @@ export function bondedPlugin(options: BondedElizaOptions): ElizaPlugin {
     get: async () => {
       const status = await options.vault.status();
       const text =
-        `Funds are in Bonded Mandate Vault ${options.vault.address} (${status.mode} mode). ` +
+        (status.kind === "module"
+          ? `Funds are in smart account ${status.holder}, guarded by Bonded mandate module ${options.vault.address} (${status.mode} mode). `
+          : `Funds are in Bonded Mandate Vault ${options.vault.address} (${status.mode} mode). `) +
         (status.frozen
           ? "It is frozen: no action will run until its guardian unfreezes it. "
           : "It is active. ") +
@@ -171,6 +173,8 @@ export function bondedPlugin(options: BondedElizaOptions): ElizaPlugin {
         values: { bondedVaultFrozen: status.frozen, bondedVaultMode: status.mode },
         data: {
           vault: options.vault.address,
+          kind: status.kind,
+          holder: status.holder,
           frozen: status.frozen,
           mode: status.mode,
           breachCount: status.breachCount.toString(),

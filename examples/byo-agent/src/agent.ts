@@ -85,13 +85,15 @@ export async function runOnce(
   inbox: readonly string[],
   sentinel?: SentinelGuardOptions,
 ): Promise<Outcome[]> {
+  // The funds are in the vault, or in the smart account a mandate module guards.
+  const { holder } = await vault.identify();
   const balances: Record<string, bigint> = {};
   for (const t of strategy.tokens)
     balances[t.symbol] = await vault.publicClient.readContract({
       address: t.address as Address,
       abi: erc20Abi,
       functionName: "balanceOf",
-      args: [vault.address],
+      args: [holder],
     });
   const safe = guarded(vault, sentinel ? { sentinel } : {});
   const untrustedInputs = inbox.map((output) => ({ tool: "read_inbox", output }));

@@ -34,6 +34,10 @@ const log = await vault.breaches(); // the vault's breach log, oldest first
 
 Amounts are in the token's base units (`bigint`). Each write waits for its transaction and returns `{ hashes, breaches }`. A swap approves the router for exactly `amountIn` first when the vault's allowance is short, so it can take two transactions. `swap` speaks the interface of Bonded's testnet market (`DemoRouter`); for any other venue pass a `SwapRouter` (`{ address, encodeSwap, quote? }`) as `router`, or encode the call yourself and use `call`.
 
+### Mandate modules on smart accounts
+
+The same client works for a `MandateModule`: the mandate on an ERC-7579 smart account the operator already uses (Safe through Safe7579, or any ERC-7579 account). Pass the module's address as `vault`. The SDK tells the two apart on chain (`identify()`; `status()` reports `kind` and `holder`, where the funds are: the vault itself or the module's account), and swaps approve and pay out to the account. Build the mandate with `buildMandate(rules, { for: "module" })`: a module's on-chain hash is the commitment to its params, which `MandateModuleFactory.createModule` checks. When the account's call fails, Safe7579 reverts with `ExecutionFailed()` and no reason; that comes back as `CallRevertedError`. A module not installed on its account gives code `MODULE_NOT_INSTALLED`. For AgentKit, use `await BondedWalletProvider.create(...)` so the wallet's address is the account.
+
 Without `account` or `walletClient` the vault is read-only: `status`, `breaches` and `dryRun` work, writes throw.
 
 ### Dry runs

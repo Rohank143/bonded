@@ -52,6 +52,8 @@ describe("a Monitor-mode vault", () => {
 
   it("reports its status from the chain, with the mandate hash the builder made", async () => {
     expect(await vault.status()).toEqual({
+      kind: "vault",
+      holder: v.address,
       frozen: false,
       mode: "monitor",
       breachCount: 0n,
