@@ -183,7 +183,13 @@ describe("registering your own agent", () => {
     expect(res.status).toBe(201);
     expect(await bodyOf(res)).toMatchObject({ registered: true, kind: "remote", mode: "tools" });
     const status = await bodyOf(await app.request(`/self/agents/${mine.agentId}`));
-    expect(status).toMatchObject({ kind: "remote", codeHash: CODE, mode: "tools", tee: null });
+    expect(status).toMatchObject({
+      kind: "remote",
+      codeHash: CODE,
+      mode: "tools",
+      tee: null,
+      coverCaps: { declared: 5_000, tee: 20_000 },
+    });
     const config = (await pg.db.agentRecord(key(mine)))!.config;
     expect(config).toMatchObject({ kind: "remote", codeHash: CODE, mode: "tools", repeats: 5 });
   });

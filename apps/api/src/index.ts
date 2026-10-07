@@ -439,6 +439,7 @@ export function createApi(options: {
     chain,
     ...(options.selfServe ? { limits: options.selfServe } : {}),
     ...(options.gatewayUrl ? { gatewayUrl: options.gatewayUrl } : {}),
+    ...(options.coverCaps ? { coverCaps: options.coverCaps } : {}),
   });
   observedRatesRoute(app, { db, chainId: chain.deployment.chainId });
   libraryRoutes(app, { db, chainId: chain.deployment.chainId });

@@ -11,9 +11,11 @@ import {
   REMOTE_MODES,
   SELF_SERVE_KINDS,
   SELF_SERVE_MAX_AGE_SECONDS,
+  UNDERWRITING_COVER_CAP_USD,
   selfServeMessage,
   toEvmMandateParams,
   type EvmMandate as EvmMandateType,
+  type BindingLevel,
   type SelfServeKind,
   type SelfServeRequest,
 } from "@bonded/shared";
@@ -117,6 +119,8 @@ export function selfServeRoutes(
     limits?: Partial<SelfServeLimits>;
     /** The Arena Gateway's public URL, for the runner command the owner copies. */
     gatewayUrl?: string;
+    /** Underwriting policy's cover caps by binding, shown with a remote agent's registration. */
+    coverCaps?: Readonly<Record<BindingLevel, number>>;
   },
 ) {
   const { db, chain } = options;
@@ -231,7 +235,13 @@ export function selfServeRoutes(
         sentinel: config.sentinel === true,
         // The owner's own agent: what was declared, so the page can show it.
         ...(config.kind === REMOTE_KIND
-          ? { codeHash: config.codeHash, mode: config.mode, tee: config.tee ?? null }
+          ? {
+              codeHash: config.codeHash,
+              mode: config.mode,
+              tee: config.tee ?? null,
+              // Underwriting policy, not score: the most cover it can hold, by binding.
+              coverCaps: options.coverCaps ?? UNDERWRITING_COVER_CAP_USD,
+            }
           : {}),
         owner: record.owner,
         lastRatingAt: last ? new Date(last).toISOString() : null,
