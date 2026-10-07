@@ -17,3 +17,4 @@ export * from "./leaderboard.js";
 export * from "./bounty-example.js";
 export * from "./bounty-spec.js";
 export * from "./self-serve.js";
+export * from "./observed-rates.js";
