@@ -3,16 +3,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  COMPONENT_NAMES,
-  DROP_SECTIONS,
-  EVIDENCE_DIRS,
-  FOLDERS,
-  PAGES,
-  SHORT_NAMES,
-} from "./pages.mjs";
+import { DROP_SECTIONS, EVIDENCE_DIRS, FOLDERS, PAGES, SHORT_NAMES } from "./pages.mjs";
 import { PATCHES } from "./patches.mjs";
-import { pageUrl, transform } from "./transform.mjs";
+import { BASE, pageUrl, transform } from "./transform.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../../..");
@@ -22,6 +15,11 @@ const publicDir = path.resolve(here, "../public");
 const read = (p) => fs.readFileSync(path.join(root, p), "utf8");
 const exists = (p) => fs.existsSync(path.join(root, p));
 const isFile = (p) => exists(p) && fs.statSync(path.join(root, p)).isFile();
+/** "file", "dir" or null for a repo path (never outside the repo). */
+const kind = (p) => {
+  if (p.startsWith("..") || p.includes("node_modules") || !exists(p)) return null;
+  return fs.statSync(path.join(root, p)).isDirectory() ? "dir" : "file";
+};
 
 function listFiles(dir) {
   return fs.readdirSync(path.join(root, dir), { withFileTypes: true }).flatMap((e) => {
@@ -52,6 +50,7 @@ pages.push(...folderPages);
 
 const targets = new Map(pages.map((p) => [p.src, pageUrl(p.slug)]));
 for (const f of FOLDERS) targets.set(f.dir, pageUrl(f.slug));
+targets.set("docs", `${BASE}/`);
 
 const labels = new Map(pages.filter((p) => p.label).map((p) => [p.src, p.label]));
 const leftovers = [];
@@ -61,7 +60,7 @@ const ctx = {
   exists: isFile,
   labels,
   shorts: new Map(Object.entries(SHORT_NAMES)),
-  components: new Map(Object.entries(COMPONENT_NAMES)),
+  kind,
   leftovers,
 };
 

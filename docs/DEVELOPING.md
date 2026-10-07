@@ -162,11 +162,11 @@ The hardened agent can run in a Phala Cloud confidential VM. Its keys are made i
 
 ## The documentation site
 
-`apps/docs` is a [Starlight](https://starlight.astro.build) (Astro) site served at `/docs` on the web app. It is generated from the Markdown in this repository (the README, `docs/`, the contracts' READMEs), so edit those files, not the site. `scripts/sync-content.mjs` copies them into the site at build time, turns links between them into links between pages, and drops links to source code (the pages show the path as plain text instead). Evidence files that notes cite are published under `/docs/evidence/`. The site names no file paths and links nowhere outside it, because readers can't open the repository: `scripts/patches.mjs` rewords the few sentences that point at a file, and `scripts/pages.mjs` lists which docs and sections are published (the decision records, build log, wallet research and the plan's schedule, demo and founder sections are not).
+`apps/docs` is a [Starlight](https://starlight.astro.build) (Astro) site served at `/docs` on the web app. It is generated from the Markdown in this repository (the README, `docs/`, the contracts' READMEs), so edit those files, not the site. `scripts/sync-content.mjs` copies them into the site at build time. Links between docs become links between pages; a link to code, or a path in backticks, becomes a link to that file on GitHub. The decision records, build log and wallet research are not published (`scripts/pages.mjs` lists what is, and which sections are left out), and `scripts/patches.mjs` rewords the few sentences that would otherwise point at an unpublished doc. Evidence files that notes cite are published under `/docs/evidence/`.
 
 ```bash
 pnpm docs:dev                 # the site on http://localhost:4321/docs/
 pnpm --filter @bonded/docs build
 ```
 
-`pnpm --filter @bonded/web build` builds the docs first and copies them into the web app's output, which is what Vercel deploys. In `pnpm --filter @bonded/web dev`, `/docs` is proxied to the docs dev server.
+`pnpm --filter @bonded/web build` builds the docs and copies them into the web app's output, which is what Vercel deploys. In `pnpm --filter @bonded/web dev`, `/docs` is proxied to the docs dev server.

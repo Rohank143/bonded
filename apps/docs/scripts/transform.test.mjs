@@ -2,17 +2,24 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { describe, resolveHref, transform } from "./transform.mjs";
 
+const REPO = "https://github.com/ddboy19912/bonded";
+const files = new Set([
+  "apps/api/src/main.ts",
+  "docs/progress/evidence/a.json",
+  "contracts/evm/script/Smoke.s.sol",
+]);
+const dirs = new Set(["apps/api", "contracts/evm"]);
+
 const ctx = {
   targets: new Map([
     ["docs/PLAN.md", "/docs/overview/plan/"],
-    ["docs/decisions/002-mandate-vault.md", "/docs/decisions/002-mandate-vault/"],
-    ["docs/decisions", "/docs/decisions/"],
+    ["docs", "/docs/"],
   ]),
   evidence: [{ from: "docs/progress/evidence", to: "evidence" }],
-  exists: (p) => p === "docs/progress/evidence/a.json",
-  labels: new Map([["docs/PLAN.md", "Product and build plan"]]),
+  exists: (p) => files.has(p),
+  kind: (p) => (dirs.has(p) ? "dir" : files.has(p) ? "file" : null),
+  labels: new Map([["docs/PLAN.md", "Product specification"]]),
   shorts: new Map([["docs/PLAN.md", "the plan"]]),
-  components: new Map([["apps/api", "the API"]]),
   leftovers: [],
 };
 
@@ -22,27 +29,28 @@ test("a relative link to another doc points at its page and keeps the anchor", (
     "/docs/overview/plan/#section-9",
   );
   assert.equal(resolveHref("docs/PLAN.md", "README.md", ctx), "/docs/overview/plan/");
-  assert.equal(resolveHref("decisions/", "docs/AGENTS.md", ctx), "/docs/decisions/");
 });
 
 test("a GitHub link to a doc in this repo points at the page", () => {
-  const url = "https://github.com/ddboy19912/bonded/blob/main/docs/PLAN.md#x";
-  assert.equal(resolveHref(url, "README.md", ctx), "/docs/overview/plan/#x");
   assert.equal(
-    resolveHref("https://github.com/ddboy19912/bonded/tree/main/docs/decisions", "README.md", ctx),
-    "/docs/decisions/",
+    resolveHref(`${REPO}/blob/main/docs/PLAN.md#x`, "README.md", ctx),
+    "/docs/overview/plan/#x",
   );
 });
 
-test("links to the repo itself, issues and source code are dropped", () => {
-  for (const href of [
-    "https://github.com/ddboy19912/bonded",
-    "https://github.com/ddboy19912/bonded/issues/84",
-    "https://github.com/ddboy19912/bonded/blob/main/apps/api/src/main.ts",
-    "../apps/api",
-  ]) {
-    assert.equal(resolveHref(href, "docs/AGENTS.md", ctx), null, href);
-  }
+test("a doc the site doesn't carry has no link", () => {
+  assert.equal(resolveHref("decisions/002-mandate-vault.md", "docs/AGENTS.md", ctx), null);
+  assert.equal(resolveHref(`${REPO}/tree/main/docs/decisions`, "README.md", ctx), null);
+});
+
+test("links to code go to GitHub, and issues stay as they are", () => {
+  assert.equal(
+    resolveHref("../apps/api/src/main.ts", "docs/AGENTS.md", ctx),
+    `${REPO}/blob/main/apps/api/src/main.ts`,
+  );
+  assert.equal(resolveHref("../apps/api", "docs/AGENTS.md", ctx), `${REPO}/tree/main/apps/api`);
+  assert.equal(resolveHref("../apps/missing.ts", "docs/AGENTS.md", ctx), null);
+  assert.equal(resolveHref(`${REPO}/issues/84`, "README.md", ctx), `${REPO}/issues/84`);
 });
 
 test("other sites and evidence files are kept", () => {
@@ -61,7 +69,7 @@ test("transform adds front matter, drops the h1 and rewrites links outside code 
   const md = [
     "# Agents in Bonded",
     "",
-    "What an agent is. See [the plan](PLAN.md) and [the code](../apps/api) and `docs/PLAN.md`.",
+    "See [the plan](/docs/PLAN.md), `docs/PLAN.md` and the code in `apps/api` and `script/Smoke.s.sol`.",
     "",
     "```bash",
     "git clone https://github.com/ddboy19912/bonded [x](PLAN.md)",
@@ -69,13 +77,29 @@ test("transform adds front matter, drops the h1 and rewrites links outside code 
     "",
     "Run `forge test` with `<chainId>` and <chainId> here.",
   ].join("\n");
-  const out = transform(md, "docs/AGENTS.md", ctx);
+  const out = transform(md, "contracts/evm/README.md", ctx);
   assert.match(out, /^---\ntitle: "Agents in Bonded"\n/);
   assert.doesNotMatch(out, /^# /m);
-  assert.match(out, /\[the plan\]\(\/docs\/overview\/plan\/\)/);
-  assert.match(out, /and the code and \[the plan\]\(\/docs\/overview\/plan\/\)/);
-  assert.match(out, /git clone <repository-url> \[x\]\(PLAN.md\)/);
+  assert.match(out, /\[the plan\]\(\/docs\/overview\/plan\/\), \[the plan\]/);
+  assert.match(
+    out,
+    /\[`apps\/api`\]\(https:\/\/github\.com\/ddboy19912\/bonded\/tree\/main\/apps\/api\)/,
+  );
+  assert.match(
+    out,
+    /\[`script\/Smoke\.s\.sol`\]\(.*\/blob\/main\/contracts\/evm\/script\/Smoke\.s\.sol\)/,
+  );
+  assert.match(out, /git clone https:\/\/github.com\/ddboy19912\/bonded \[x\]\(PLAN.md\)/);
   assert.match(out, /`<chainId>` and &lt;chainId&gt; here/);
+});
+
+test("a mention of an unpublished doc is dropped with its parenthetical", () => {
+  const out = transform(
+    "# T\n\nDesigned later (`docs/decisions/002.md`) as built.",
+    "docs/AGENTS.md",
+    ctx,
+  );
+  assert.match(out, /Designed later as built\./);
 });
 
 test("description is the first paragraph without markup", () => {

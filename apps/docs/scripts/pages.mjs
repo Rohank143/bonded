@@ -93,29 +93,8 @@ export const SHORT_NAMES = {
   "contracts/evm/deployments/README.md": "the deployments page",
 };
 
-/** Sections that only make sense inside the repository (its folder layout). */
+/** Sections left out of the site. */
 export const DROP_SECTIONS = {
-  "README.md": ["Repo layout"],
-  "docs/DEVELOPING.md": ["The documentation site"],
   // The build schedule, demo script, submission checklist and founder's to-do list are internal.
-  "docs/PLAN.md": ["16.", "20.", "21.", "22.", "24.", "27."],
-};
-
-/**
- * Plain names for the repository's folders, used where a folder is mentioned in running prose.
- * The site never names a path: readers can't open the repository.
- */
-export const COMPONENT_NAMES = {
-  "apps/arena": "the Arena",
-  "apps/api": "the API",
-  "apps/keeper": "the keeper",
-  "apps/web": "the web app",
-  "apps/demo-agents": "the demo agents",
-  "packages/shared": "the shared package",
-  "services/sentinel": "the Sentinel service",
-  "services/tee-agent": "the TEE agent service",
-  "contracts/evm": "the EVM contracts",
-  "contracts/solana": "the Solana programs",
-  attacks: "the attack library",
-  docs: "these docs",
+  "docs/PLAN.md": ["20.", "21.", "22.", "24.", "27."],
 };

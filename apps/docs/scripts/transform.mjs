@@ -1,6 +1,8 @@
 import path from "node:path";
 
 export const BASE = "/docs";
+/** The repository, for links to code. */
+export const GITHUB = "https://github.com/ddboy19912/bonded";
 const REPO_URL = /^https?:\/\/github\.com\/ddboy19912\/bonded(?:\/|$)/;
 const KNOWN_HTML = new Set([
   "br",
@@ -21,8 +23,8 @@ export function pageUrl(slug) {
 }
 
 /**
- * Where a link found in `srcPath` points: `{ external: href }` for other sites, `{ repoPath,
- * hash }` for something in this repository, or null for the repository itself and its issues.
+ * Where a link found in `srcPath` points: `{ external: href }` for other sites (and the
+ * repository's own issues), `{ repoPath, hash }` for a path in this repository, or null.
  */
 export function locate(href, srcPath) {
   if (href.startsWith("#")) return { repoPath: srcPath, hash: href };
@@ -34,7 +36,7 @@ export function locate(href, srcPath) {
     const url = new URL(href);
     hash = url.hash;
     const m = url.pathname.match(/^\/ddboy19912\/bonded\/(?:blob|tree)\/[^/]+\/(.*)$/);
-    if (!m) return null; // the repository itself, issues, pull requests
+    if (!m) return { external: href }; // the repository itself, issues, pull requests: keep
     repoPath = m[1];
   } else {
     const [p, ...rest] = href.split("#");
@@ -69,7 +71,19 @@ export function resolveHref(href, srcPath, ctx) {
       return `${BASE}/${to}/${repoPath.slice(from.length + 1)}`;
     }
   }
-  return null;
+  if (isUnpublishedDoc(repoPath)) return null;
+  return githubUrl(repoPath, ctx) ? githubUrl(repoPath, ctx) + hash : null;
+}
+
+/** A page of the repo's `docs/` folder that the site doesn't carry: nothing to link to. */
+function isUnpublishedDoc(repoPath) {
+  return repoPath === "docs" || repoPath.startsWith("docs/");
+}
+
+/** Link to a file or folder of the repository on GitHub, or null if it isn't there. */
+export function githubUrl(repoPath, ctx) {
+  const kind = ctx.kind(repoPath);
+  return kind ? `${GITHUB}/${kind === "dir" ? "tree" : "blob"}/main/${repoPath}` : null;
 }
 
 /** True for a path into the repository's code or config (not a file a command produces). */
@@ -125,21 +139,27 @@ function transformLine(line, srcPath, ctx) {
       else out += isRepoPath(bare) ? REPO_MARK : text;
     } else {
       const code = m[3];
-      const known = ctx.targets.get(code.replace(/\/$/, ""));
-      const named = ctx.components.get(code.replace(/\/$/, ""));
+      const key = code.replace(/\/$/, "");
+      const known = ctx.targets.get(key);
       if (known && ctx.shorts.has(code)) out += `[${ctx.shorts.get(code)}](${known})`;
       else if (known) out += m[0];
-      else if (named) out += named;
-      else if (isRepoPath(code)) out += REPO_MARK;
-      else out += m[0];
+      else if (isRepoPath(code) && isUnpublishedDoc(key)) out += REPO_MARK;
+      else if (isRepoPath(code)) {
+        // Code is shown as a link to GitHub; a path relative to the page's own folder works too.
+        const url =
+          githubUrl(key, ctx) ??
+          githubUrl(path.posix.normalize(path.posix.join(path.posix.dirname(srcPath), key)), ctx) ??
+          githubUrl(`contracts/evm/${key}`, ctx); // `script/Deploy.s.sol` and the like
+        out += url ? `[${m[0]}](${url})` : m[0];
+      } else out += m[0];
     }
   }
   return scrubReferences(out + escapePlaceholders(line.slice(last), ctx), ctx);
 }
 
 /**
- * Drop mentions that only make sense inside the repository: a parenthetical that names a file,
- * decision record numbers, issue and pull request numbers.
+ * Drop mentions of docs the site doesn't carry: a parenthetical that names such a file, and
+ * decision record numbers (the decision records are not published).
  */
 export function scrubReferences(line, ctx) {
   const filler = String.raw`(?:(?:see|in|code|e\.g\.|the code is|such as|for example)[: ]\s*)?`;
@@ -147,8 +167,7 @@ export function scrubReferences(line, ctx) {
   let out = line
     .replace(new RegExp(String.raw`\s*\(\s*${mark}\s*\)`, "g"), "")
     .replace(/\s*\((?:see |and )?\[?(?:ADR-\d+|decision records?)[^)]*\)/gi, "")
-    .replace(/\s*\((?:\[?(?:issue|PR) #\d+\]?)\)/gi, "")
-    .replace(/,? (?:see )?(?:ADR-\d+|issue #\d+)(?=[.;,)])/gi, "");
+    .replace(/,? (?:see )?ADR-\d+(?=[.;,)])/gi, "");
   if (out.includes(REPO_MARK)) {
     ctx.leftovers?.push(line.replaceAll(REPO_MARK, "⟦path⟧").trim());
     out = out.replaceAll(REPO_MARK, "");
@@ -202,7 +221,7 @@ export function transform(markdown, srcPath, ctx, { title, dropSections = [] } =
       else if (f[1][0] === fence) fence = null;
       return line;
     }
-    if (fence) return line.replaceAll("https://github.com/ddboy19912/bonded", "<repository-url>");
+    if (fence) return line;
     return transformLine(line, srcPath, ctx);
   });
 
