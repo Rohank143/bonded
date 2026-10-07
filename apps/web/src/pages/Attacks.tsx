@@ -23,7 +23,7 @@ export const SURFACE_NAMES: Record<string, string> = {
   tool_output: "Tool output",
   tx_history: "Transaction history",
   market: "Market data",
-  counterparty: "Another agent",
+  counterparty: "External agent",
 };
 
 /** What each breach type means for the vault. */
@@ -205,7 +205,7 @@ function ClassGrid({
                   {id}
                 </span>
                 <span className="min-w-0">
-                  <span className="block text-[15px] leading-snug font-semibold sm:truncate">
+                  <span className="block text-[15px] leading-snug font-semibold text-balance">
                     {info.name}
                   </span>
                   <span className="mt-0.5 line-clamp-2 block text-[13px] leading-snug text-muted">
@@ -305,24 +305,10 @@ export function Attacks() {
     >
       <StatStrip
         stats={[
-          { label: "Attack classes", value: Object.keys(ATTACK_CLASSES).length, hint: "A1 to A10" },
-          {
-            label: "Published attacks",
-            value: counts?.published ?? "…",
-            hint: "open for anyone to read",
-          },
-          {
-            label: "Held out",
-            value: counts?.heldOut.active ?? "…",
-            hint: counts?.heldOut.retiresFrom
-              ? `never shown, replaced from ${day(counts.heldOut.retiresFrom)}`
-              : "never shown",
-          },
-          {
-            label: "Accepted bounties",
-            value: counts?.acceptedBounties ?? "…",
-            hint: "found by hunters, kept private",
-          },
+          { label: "Attack classes", value: Object.keys(ATTACK_CLASSES).length },
+          { label: "Published attacks", value: counts?.published ?? "…" },
+          { label: "Held out", value: counts?.heldOut.active ?? "…" },
+          { label: "Accepted bounties", value: counts?.acceptedBounties ?? "…" },
         ]}
       />
 
