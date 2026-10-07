@@ -15,7 +15,13 @@ export {
   type RemoteEpisode,
   type RemoteRunSummary,
 } from "./remote-agent.js";
-export { checkTransaction, handleRpc, RPC_ALLOWED_METHODS, type RpcBinding } from "./rpc.js";
+export {
+  checkTransaction,
+  handleRpc,
+  liveClientVersion,
+  RPC_ALLOWED_METHODS,
+  type RpcBinding,
+} from "./rpc.js";
 export {
   hashToken,
   newCapabilityToken,

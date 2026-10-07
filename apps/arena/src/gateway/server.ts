@@ -98,6 +98,11 @@ export interface GatewayOptions {
    */
   publicUrl?: string;
   onRunnerPresence?: (event: RunnerPresenceEvent) => void;
+  /**
+   * What chain-mode RPC answers to web3_clientVersion when the sandbox isn't a fork (a fork
+   * answers with its live chain's own version). Default: the sandbox node's own answer.
+   */
+  clientVersion?: string;
   log?: (message: string) => void;
   limits?: Partial<GatewayLimits>;
 }
@@ -305,6 +310,11 @@ export class ArenaGateway {
     const port = typeof address === "object" && address ? address.port : options.port;
     this.base ??= `http://${host.includes(":") ? `[${host}]` : host}:${port}`;
     return this.base;
+  }
+
+  /** The configured web3_clientVersion for fresh (non-fork) sandboxes. */
+  get clientVersion(): string | undefined {
+    return this.options.clientVersion;
   }
 
   /** The base URL episode endpoints are built from. */

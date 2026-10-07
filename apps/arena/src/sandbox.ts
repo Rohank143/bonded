@@ -72,6 +72,8 @@ export class Sandbox {
     readonly deployment: EvmDeployment,
     readonly forked: boolean,
     readonly publicClient: PublicClient<Transport, Chain>,
+    /** The live chain's RPC a fork was made from (may hold an API key: never shown to agents). */
+    readonly forkUrl?: string,
   ) {}
 
   static async start(options: SandboxOptions = {}): Promise<Sandbox> {
@@ -127,7 +129,15 @@ export class Sandbox {
         // The addresses now live in memory; the file only existed to hand them over.
         rmSync(`${CONTRACTS_DIR}deployments/${chainId}.json`, { force: true });
       }
-      return new Sandbox(anvil, rpcUrl, chain, deployment, Boolean(options.forkUrl), publicClient);
+      return new Sandbox(
+        anvil,
+        rpcUrl,
+        chain,
+        deployment,
+        Boolean(options.forkUrl),
+        publicClient,
+        options.forkUrl,
+      );
     } catch (error) {
       anvil.kill();
       throw error;

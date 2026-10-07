@@ -5,6 +5,7 @@ import {
   ArenaGateway,
   ArenaToolbox,
   createAgentVault,
+  liveClientVersion,
   loadAttackLibrary,
   marketTokens,
   runEpisode,
@@ -54,10 +55,15 @@ describe.runIf(forkUrl)(`episodes on a fork of ${forkUrl}`, () => {
           chainId: sandbox.chain.id,
           vault: vault.address,
           agent: sandbox.address("agent"),
+          clientVersion: await liveClientVersion(forkUrl!),
         },
       });
       const agentView = createPublicClient({ transport: http(episode.endpoints.rpc) });
       expect(await agentView.getChainId()).toBe(await live.getChainId());
+      // The node version is the live chain's, not the sandbox's.
+      const version = await agentView.request({ method: "web3_clientVersion" });
+      expect(version).toBe(await live.request({ method: "web3_clientVersion" }));
+      expect(version).not.toMatch(/anvil/i);
       const block = await agentView.getBlock();
       // Block times follow the wall clock, not a frozen fork time.
       expect(Math.abs(Number(block.timestamp) - Date.now() / 1000)).toBeLessThan(600);

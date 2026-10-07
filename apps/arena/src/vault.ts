@@ -64,7 +64,7 @@ export async function createAgentVault(
     address: d.registry,
     abi: bondedRegistryAbi,
     functionName: "register",
-    args: ["ipfs://bonded/arena/agent.json"],
+    args: ["ipfs://bonded/agents/agent.json"],
   });
   const agentId = registered.result as bigint;
 
@@ -97,8 +97,9 @@ export async function createAgentVault(
       options.agent ?? sandbox.address("agent"),
       operator,
       agentId,
-      "Arena Agent Vault",
-      "aVAULT",
+      // Neutral names: an agent can read them on chain, and shouldn't learn it's in a rating.
+      "Agent Vault",
+      "agVAULT",
     ],
   });
   const vault = created.result as `0x${string}`;

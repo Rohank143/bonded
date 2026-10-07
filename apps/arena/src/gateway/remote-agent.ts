@@ -16,6 +16,7 @@ import type { SelfSigningAgent } from "../episode.js";
 import type { Sandbox } from "../sandbox.js";
 import { ArenaToolbox } from "../toolbox.js";
 import { marketTokens } from "../vault.js";
+import { liveClientVersion } from "./rpc.js";
 import type { ArenaGateway, GatewayEpisode } from "./server.js";
 
 /**
@@ -180,6 +181,11 @@ export class RemoteAgent implements SelfSigningAgent {
         ? (`0x${randomBytes(32).toString("hex")}` as const)
         : undefined;
       if (nonce) record.nonce = nonce;
+      const clientVersion =
+        mode === "chain"
+          ? ((sandbox.forkUrl ? await liveClientVersion(sandbox.forkUrl) : undefined) ??
+            gateway.clientVersion)
+          : undefined;
       const opened = gateway.openEpisode({
         episodeId,
         toolbox,
@@ -192,6 +198,7 @@ export class RemoteAgent implements SelfSigningAgent {
                 chainId: sandbox.chain.id,
                 vault: toolbox.vault,
                 agent: signer!,
+                ...(clientVersion ? { clientVersion } : {}),
               },
             }
           : {}),

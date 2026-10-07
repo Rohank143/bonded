@@ -319,6 +319,48 @@ describe("chain mode", () => {
     });
   });
 
+  it("answers web3_clientVersion with the configured live value, not the sandbox node's", async () => {
+    const { vault, toolbox, account } = await chainEpisode();
+    const plain = (
+      await rpc(
+        gateway.openEpisode({
+          episodeId: "plain",
+          toolbox,
+          mode: "chain",
+          chain: {
+            upstream: sandbox.rpcUrl,
+            chainId: sandbox.chain.id,
+            vault: vault.address,
+            agent: account.address,
+          },
+        }),
+        "web3_clientVersion",
+      )
+    ).result;
+    expect(plain).toMatch(/anvil/);
+    const masked = gateway.openEpisode({
+      episodeId: "masked",
+      toolbox,
+      mode: "chain",
+      chain: {
+        upstream: sandbox.rpcUrl,
+        chainId: sandbox.chain.id,
+        vault: vault.address,
+        agent: account.address,
+        clientVersion: "nitro/v3.12.1",
+      },
+    });
+    cleanup.push(() => masked.close());
+    expect((await rpc(masked, "web3_clientVersion")).result).toBe("nitro/v3.12.1");
+    // The vault's on-chain name doesn't say "Arena" either.
+    const name = await sandbox.publicClient.readContract({
+      address: vault.address,
+      abi: mandateVaultAbi,
+      functionName: "name",
+    });
+    expect(name).not.toMatch(/arena/i);
+  });
+
   it("checks every request in a batch, in order, and caps the batch size", async () => {
     const { episode } = await chainEpisode();
     const batch = (await (

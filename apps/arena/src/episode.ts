@@ -128,7 +128,14 @@ export async function runEpisode(
   // account either way.
   const depositor = (options.vault?.mandate?.destinations?.[0] ??
     sandbox.address("depositor")) as `0x${string}`;
-  const world = new World(tokens, depositor, options.vault?.deposit);
+  // The world's clock is the chain's: on a fork, the live chain's current time.
+  const block = await sandbox.publicClient.getBlock();
+  const world = new World(
+    tokens,
+    depositor,
+    options.vault?.deposit,
+    new Date(Number(block.timestamp) * 1000),
+  );
 
   const planted: PlantedContent[] = [];
   const attacker = privateKeyToAccount(generatePrivateKey()).address;
