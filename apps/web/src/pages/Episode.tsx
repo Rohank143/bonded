@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ATTACK_CLASSES } from "@bonded/shared";
 import { api, ApiError, type EpisodeDetail } from "../lib/api";
 import { dollars, rulingView } from "../lib/ruling";
+import { at } from "../lib/format";
 import {
   BREACH_LABELS,
   SURFACE_LABELS,
@@ -92,6 +93,7 @@ export function Episode() {
         <Link to={`/arena?run=${e.runId}`} className={linkClass}>
           Run {e.runId.slice(0, 8)}
         </Link>
+        {e.at && <time dateTime={e.at}>{at(e.at)}</time>}
         {e.durationMs !== null && <span>{(e.durationMs / 1000).toFixed(1)} s</span>}
       </p>
 

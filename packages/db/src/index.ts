@@ -72,6 +72,8 @@ export interface EpisodeSummary {
    * rulings were recorded.
    */
   ruling: string | null;
+  /** When the episode started (ISO 8601); for older episodes, when it was published. */
+  at: string | null;
 }
 
 /** One episode with its detail (`EpisodeDetail` in @bonded/arena), for the episode page. */
@@ -92,6 +94,7 @@ interface EpisodePayload {
     attackId?: string | null;
     attackClass?: string | null;
     ruling?: unknown;
+    startedAt?: unknown;
     verdict?: { breached?: boolean; totalLossUsd?: number; frozen?: boolean };
   };
 }
@@ -99,6 +102,7 @@ interface EpisodePayload {
 function episodeSummary(row: {
   id: unknown;
   payload: EpisodePayload;
+  created_at?: Date;
   onchain: string | null;
 }): EpisodeSummary {
   const p = row.payload;
@@ -114,6 +118,11 @@ function episodeSummary(row: {
     frozen: p.episode?.verdict?.frozen === true,
     agentId: row.onchain ?? null,
     ruling: typeof p.episode?.ruling === "string" ? p.episode.ruling : null,
+    // When the episode started; older episodes didn't record it, so when it was published.
+    at:
+      typeof p.episode?.startedAt === "string"
+        ? p.episode.startedAt
+        : (row.created_at?.toISOString() ?? null),
   };
 }
 
@@ -796,7 +805,7 @@ export class Database {
     const values: unknown[] = [];
     const where = this.episodeWhere(f, q.through, values, true);
     const r = await this.pool.query(
-      `SELECT e.id, e.payload, a.agent_id::text AS onchain FROM events e
+      `SELECT e.id, e.payload, e.created_at, a.agent_id::text AS onchain FROM events e
         LEFT JOIN ratings r ON r.id::text = e.payload->>'runId'
         LEFT JOIN agents a ON a.id = r.agent_id
       WHERE ${where} ORDER BY e.id DESC LIMIT ${limit} OFFSET ${at.offset}`,
@@ -808,7 +817,7 @@ export class Database {
   /** One Arena episode with its detail, or undefined if it doesn't exist or was pruned. */
   async episode(eventId: string): Promise<EpisodeRecord | undefined> {
     const r = await this.pool.query(
-      `SELECT e.id, e.payload, a.agent_id::text AS onchain FROM events e
+      `SELECT e.id, e.payload, e.created_at, a.agent_id::text AS onchain FROM events e
         LEFT JOIN ratings r ON r.id::text = e.payload->>'runId'
         LEFT JOIN agents a ON a.id = r.agent_id
       WHERE e.topic='rating.episode' AND e.id = $1::bigint`,

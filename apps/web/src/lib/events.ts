@@ -22,6 +22,8 @@ export interface EpisodeCard {
    * stream). Undefined when nothing says: lib/episodes.ts then falls back to the id.
    */
   published?: boolean | null;
+  /** When the episode started (ISO 8601); for older episodes, when it was published. */
+  at?: string | null;
 }
 
 /** Topics the API streams (docs/SERVICES.md). Unknown topics are ignored. */
@@ -42,6 +44,7 @@ export function toEpisodeCard(eventId: string, data: string): EpisodeCard | null
         attackClass?: string | null;
         verdict?: { breached?: boolean; totalLossUsd?: number; frozen?: boolean };
         ruling?: unknown;
+        startedAt?: unknown;
         detail?: { attack?: { published?: unknown } | null };
       };
     };
@@ -58,6 +61,8 @@ export function toEpisodeCard(eventId: string, data: string): EpisodeCard | null
       lossUsd: Number(p.episode.verdict.totalLossUsd ?? 0),
       frozen: p.episode.verdict.frozen === true,
       ruling: typeof p.episode.ruling === "string" ? p.episode.ruling : null,
+      // A live episode without a start time (an older worker) arrived just now.
+      at: typeof p.episode.startedAt === "string" ? p.episode.startedAt : new Date().toISOString(),
       ...(typeof p.episode.detail?.attack?.published === "boolean"
         ? { published: p.episode.detail.attack.published }
         : {}),
