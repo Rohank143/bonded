@@ -5,6 +5,37 @@
 @import "@fontsource-variable/jetbrains-mono/index.css";
 
 /*
+ * Fallback faces sized to match the web fonts, so text doesn't jump when they arrive: a local
+ * font scaled to the same width (size-adjust) with the same line box (ascent and descent).
+ * Measured in Chrome against a pangram plus page copy; Instrument Serif is about 17% narrower
+ * than Times New Roman, which is what made the big headings shift.
+ */
+@font-face {
+  font-family: "Manrope Fallback";
+  src: local("Arial"), local("ArialMT"), local("Helvetica");
+  size-adjust: 102.14%;
+  ascent-override: 104.76%;
+  descent-override: 29.37%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: "Instrument Serif Fallback";
+  src: local("Times New Roman"), local("TimesNewRomanPSMT"), local("Times");
+  size-adjust: 82.97%;
+  ascent-override: 119.32%;
+  descent-override: 37.36%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: "JetBrains Mono Fallback";
+  src: local("Courier New"), local("CourierNewPSMT"), local("Courier");
+  size-adjust: 99.98%;
+  ascent-override: 102.02%;
+  descent-override: 30%;
+  line-gap-override: 0%;
+}
+
+/*
  * Aurora tokens: the Bonded identity on a deep navy ground. Blue #1D4ED8, Ink #0F1419 and Paper
  * #F7F6F2 come from the brand (output/brand/bonded-v1). The app is dark only: `paper` is the
  * page background and `ink` the text colour, so class names read the same as before.
@@ -39,9 +70,11 @@
   --color-warn: #ffb347;
   --color-warn-soft: rgb(255 179 71 / 0.14);
 
-  --font-sans: "Manrope Variable", "Manrope", ui-sans-serif, system-ui, sans-serif;
-  --font-serif: "Instrument Serif", Georgia, serif;
-  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
+  --font-sans:
+    "Manrope Variable", "Manrope", "Manrope Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Instrument Serif", "Instrument Serif Fallback", Georgia, serif;
+  --font-mono:
+    "JetBrains Mono Variable", "JetBrains Mono", "JetBrains Mono Fallback", ui-monospace, monospace;
 
   --radius-card: 1.375rem;
   --shadow-card: inset 0 1px 0 rgb(255 255 255 / 0.04);
