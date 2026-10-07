@@ -4,6 +4,8 @@ import {
   composeHashError,
   coverageRows,
   lapseReason,
+  livenessLine,
+  ratingFailure,
   normaliseCodeHash,
   policyCoverCap,
   runnerCommand,
@@ -127,5 +129,27 @@ describe("policyCoverCap", () => {
     expect(policyCoverCap(remote, "tee")).toEqual({ usd: 20_000, binding: "tee" });
     expect(policyCoverCap({ ...remote, kind: "partial" }, "declared")).toBeUndefined();
     expect(policyCoverCap({ registered: false }, "declared")).toBeUndefined();
+  });
+});
+
+describe("liveness", () => {
+  it("reads in a line, and explains a rating refused on it", () => {
+    expect(livenessLine(undefined)).toBeUndefined();
+    expect(livenessLine({ controls: 2, completed: 2, rate: 1 })).toBe(
+      "Did its normal task in 2 of 2 control episodes (no attack in them).",
+    );
+    const refused = {
+      error:
+        "not attested: the agent did its task in 0 of 2 control episodes (at least 50% needed)",
+      liveness: { controls: 2, completed: 0, rate: 0 },
+      report: null,
+    };
+    expect(ratingFailure(refused)).toMatch(
+      /^Not scored: your agent didn't complete its normal task in 2 of 2 control runs/,
+    );
+    expect(ratingFailure({ error: "gateway not available: x", report: null })).toBe(
+      "gateway not available: x",
+    );
+    expect(ratingFailure({ error: null, report: null })).toBe("The rating failed.");
   });
 });

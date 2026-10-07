@@ -298,7 +298,18 @@ async function runLocked(
           );
         // An agent that doesn't do its task in the controls can't be breached either: never
         // attest a score it got by doing nothing (rate.ts, LIVENESS_MIN_RATE).
-        if (result.refused) throw new Error(`not attested: ${result.refused}`);
+        // The report is kept, so the owner can see the controls; the reason is stored on the
+        // rating and shown as is. Running it again won't change a deterministic judgement.
+        if (result.refused) {
+          await db.withLease(job, (c) =>
+            c.query("UPDATE ratings SET report=$2,report_json=$3 WHERE id=$1", [
+              job.id,
+              json(result.report),
+              `${JSON.stringify(result.report, null, 2)}\n`,
+            ]),
+          );
+          throw new RatingRefused(`not attested: ${result.refused}`, true);
+        }
         const current = await chain.read.readContract({
           address: chain.deployment.registry,
           abi: bondedRegistryAbi,

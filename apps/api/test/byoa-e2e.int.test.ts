@@ -7,6 +7,7 @@ import {
   realpathSync,
   rmSync,
   symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -56,6 +57,7 @@ let app: ReturnType<typeof createApi>;
 let mine: AgentVault;
 let dir: string;
 let runner: ChildProcess | undefined;
+let runnerToken = "";
 let runnerLog = "";
 const owner = privateKeyToAccount(ANVIL_KEYS.operator);
 const CODE = `0x${"c0de".repeat(16)}` as const;
@@ -161,7 +163,7 @@ it("registers, connects, rates and posts the score of an agent running on its ow
     [RUNNER_CLI, "--gateway", gatewayUrl, "--quiet", "--", process.execPath, "mcp-agent.mjs"],
     {
       cwd: dir,
-      env: { ...process.env, BONDED_RUNNER_TOKEN: made.token as string },
+      env: { ...process.env, BONDED_RUNNER_TOKEN: (runnerToken = made.token as string) },
       stdio: "pipe",
     },
   );
@@ -247,4 +249,41 @@ it("registers, connects, rates and posts the score of an agent running on its ow
   expect(
     Number((await pg.db.pool.query("SELECT count(*) FROM held_out_payloads")).rows[0].count),
   ).toBe(heldOut.attacks);
+}, 300_000);
+
+it("doesn't score an agent that never does its normal task, and says why", async () => {
+  const agentId = mine.agentId.toString();
+  // An agent that connects, reads nothing, trades nothing and says it's done.
+  writeFileSync(
+    join(dir, "idle-agent.mjs"),
+    `await fetch(process.env.BONDED_DONE_URL, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ finalMessage: "nothing to do" }) });\n`,
+  );
+  const stopped = new Promise((resolve) => runner!.once("exit", resolve));
+  runner!.kill("SIGTERM");
+  await stopped;
+  runner = spawn(
+    process.execPath,
+    [RUNNER_CLI, "--gateway", gatewayUrl, "--quiet", "--", process.execPath, "idle-agent.mjs"],
+    { cwd: dir, env: { ...process.env, BONDED_RUNNER_TOKEN: runnerToken }, stdio: "pipe" },
+  );
+  runner.stderr?.on("data", (chunk: Buffer) => (runnerLog += chunk.toString()));
+  await until(
+    async () => pg.db.runnerIsConnected(`${sandbox.deployment.chainId}:${agentId}`),
+    20_000,
+    "the runner to reconnect",
+  );
+  // Past the hourly limit: queued the way the live loop queues a renewal.
+  const runId = await pg.db.enqueue(`${sandbox.deployment.chainId}:${agentId}`);
+  await workOne(pg.db, chain, sandbox.rpcUrl, ANVIL_KEYS.deployer, undefined, undefined, {
+    remote: gatewayAgents(gateway),
+    heldOut: { perClass: 0 },
+    selectAttacks: (attacks) => attacks.filter((a) => a.id === "A6-operator-impersonation-001"),
+  });
+  const run = await json(await app.request(`/arena/runs/${runId}`));
+  // Failed at once, with the reason the owner sees, and the report kept to show the controls.
+  expect(run.status).toBe("failed");
+  expect(run.error).toMatch(/^not attested: the agent did its task in 0 of 2 control episodes/);
+  expect(run.liveness).toEqual({ controls: 2, completed: 0, rate: 0 });
+  // The registry still holds the earlier score.
+  expect((await json(await app.request(`/agents/${agentId}/score`))).runId).not.toBe(runId);
 }, 300_000);

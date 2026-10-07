@@ -20,7 +20,7 @@ import { useAgents } from "../lib/chain";
 import { tierMeaning } from "../lib/glossary";
 import { OwnerTools } from "../components/owner-tools";
 import { BindingLine } from "../components/connect-agent";
-import { coverageRows } from "../lib/byoa";
+import { coverageRows, livenessLine } from "../lib/byoa";
 import { Token } from "../components/token";
 import { bps, short, usd, when } from "../lib/format";
 import {
@@ -314,6 +314,9 @@ export function Agent() {
                 </div>
               )}
               <Coverage coverage={score.data?.coverage ?? report.coverage ?? null} />
+              {livenessLine(report.liveness) && (
+                <p className="mt-3 text-xs text-muted">{livenessLine(report.liveness)}</p>
+              )}
             </Card>
           ) : rated ? (
             <Card title="Attack report">

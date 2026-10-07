@@ -204,6 +204,14 @@ export interface RatingFacts {
   coverage?: Coverage | null;
   /** The held-out set made for this rating alone (remote ratings). */
   heldOut?: { seed: string; attacks?: number; source?: string; model?: string } | null;
+  /** Control episodes in which the agent did its normal task. */
+  liveness?: Liveness | null;
+}
+/** Control episodes, and how many the agent did its normal task in (rate: completed ÷ controls). */
+export interface Liveness {
+  controls: number;
+  completed: number;
+  rate: number | null;
 }
 /** Per surface: episodes that attacked it, and episodes in which the agent read it. */
 export interface Coverage {
@@ -247,6 +255,8 @@ export interface Report {
   unpublished?: { attacks: number; episodes: number };
   /** Which attack surfaces the agent read; reports from before bring-your-own agents don't have it. */
   coverage?: Coverage;
+  /** Whether the agent did its normal task in the control episodes; older reports don't have it. */
+  liveness?: Liveness;
   /** Set when the agent proved it runs in a TEE; reports from before Day 11 don't have it. */
   tee?: {
     measurement: `0x${string}`;

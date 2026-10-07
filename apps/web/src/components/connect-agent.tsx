@@ -7,6 +7,7 @@ import { api, type SelfAgentRecord } from "../lib/api";
 import {
   BINDING_LABELS,
   lapseReason,
+  ratingFailure,
   runnerCommand,
   runnerDockerCommand,
   runnerView,
@@ -248,7 +249,7 @@ export function ConnectAgent({
               {run.data?.status === "done" ? (
                 "The new score is above."
               ) : run.data?.status === "failed" ? (
-                (run.data.error ?? "The rating failed.")
+                ratingFailure(run.data)
               ) : (
                 <>
                   {progress.data?.total

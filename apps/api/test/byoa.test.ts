@@ -441,6 +441,7 @@ describe("binding, cover caps and the live loop", () => {
           tee: null,
           coverage: { readSurfaces: ["dm"] },
           heldOut: { seed: "abc" },
+          liveness: { controls: 2, completed: 2, rate: 1 },
           scoring: { groups: [] },
         }),
       ],
@@ -465,6 +466,7 @@ describe("binding, cover caps and the live loop", () => {
       binding: "declared",
       coverage: { readSurfaces: ["dm"] },
       heldOut: { seed: "abc" },
+      liveness: { controls: 2, completed: 2, rate: 1 },
     });
     const run = await bodyOf(await app.request(`/arena/runs/${score.runId}`));
     expect(run).toMatchObject({ binding: "declared", heldOut: { seed: "abc" } });
