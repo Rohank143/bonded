@@ -95,6 +95,19 @@ The TEE service doesn't operate a vault yet (it has no route that sends transact
 
 Then run a rating through the deployed API with `scripts/rate-live-tee.sh <agent id>`, after the config is deployed. It asks for the API token with no echo, starts the VM, runs the rating, prints the result and **always stops the VM when it ends**. When the score is posted, the agent's page shows the TEE badge.
 
+## Bring your own TEE
+
+Your own agent, running in your own TEE, can be rated with its TEE proven at every episode ([BRING-YOUR-OWN-AGENT.md](BRING-YOUR-OWN-AGENT.md#bring-your-own-tee)). The checks are the ones above, against your deployment instead of Bonded's:
+
+- **Same platform.** Phala dstack on Intel TDX, booted from an approved production OS image (`APPROVED_OS_IMAGES` in `apps/arena/src/tee.ts`).
+- **Same evidence.** Your service answers `GET /attestation?nonce=<32 bytes hex>` with `{ quote, eventLog, composeHash, codeHash, evmAddress, solanaPublicKey, nonce }`, and the quote's report data is `teeReportData` from `@bonded/shared`. `services/tee-agent` is a working reference to copy.
+- **Your compose hash and code hash.** Register both with your agent (onboarding step 1, "My own agent"), with the TEE's https URL. The code hash your TEE reports must be the one you register.
+- **At every episode.** The rating worker challenges the URL before the rating starts. Then each episode carries a fresh nonce, your runner (`--tee-url`) fetches the evidence and forwards it unchanged, and the worker verifies it. Every episode must show the same measurement and EVM key, or the rating fails.
+- **Chain mode.** The episode's vault names the TEE's attested address and no session key is sent, so your TEE signs the agent's `execute` transactions.
+- **Afterwards.** The live checks below apply as they do to Bonded's agent. When the measurement changes, new quotes stop, and a re-rating is queued if your runner is connected.
+
+For cover, the vault's (or module's) agent key must be the TEE's attested key, as for Agent 3. A TEE-bound score lifts the cover cap for an agent its operator runs from 5,000 to 20,000 tUSDG (underwriting policy).
+
 ## What the TEE does to the price
 
 A rating includes a key-custody term. It is an assumption, not a measurement: an operator-held key is assumed more likely to be stolen than a key in a verified TEE, so the same agent rates a little better in a verified TEE. The assumption is stated in the report next to the number.

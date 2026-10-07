@@ -84,11 +84,13 @@ Solidity 0.8.28, Foundry, OpenZeppelin v5. Code: `contracts/evm/src/`; one-parag
 |---|---|
 | `MandateVault` | An ERC-4626 vault per agent. The agent's key can only act through `execute`, which classifies each call against the mandate (tokens, contracts, destinations, per-trade and daily limits). **Monitor** mode records breaches and lets them through; **Enforce** blocks them. A breach can freeze the agent. The breach log is the single source of truth for ratings and claims (Section 6.3) |
 | `MandateVaultFactory` | Creates vaults. Only factory vaults can be insured |
+| `MandateModule` | The same checks as a vault (both inherit `MandateBase`), as an ERC-7579 module on a smart account the agent already uses (Safe through Safe7579, or any ERC-7579 account). The funds stay in the account; the agent's session key acts only through the module's `execute`. Not yet deployed on testnets |
+| `MandateModuleFactory` | Creates one module per smart account, checks on chain that its mandate hash commits to the rules it enforces, and vouches for which modules are real |
 | `BondedRegistry` | Agents (ERC-8004 compatible) and their latest score, signed by an attester (EIP-712) |
-| `CoverManager` | Binds cover from an attester-signed quote: checks the score's tier, the bond, and the pool's capacity, per-agent and per-model-family caps; streams premiums from the vault |
+| `CoverManager` | Binds cover from an attester-signed quote for a vault or a factory module: checks the score's tier, the bond, and the pool's capacity, per-agent and per-model-family caps; streams premiums from the vault (or the module's account) |
 | `OperatorBond` | The operator's first-loss stake |
 | `CoverPool` | Underwriters' capital (ERC-4626). Withdrawals wait a cooldown and can only use capital not backing active cover |
-| `ClaimsEngine` | Pays a claim for breaches the vault recorded: loss minus a 10% deductible, the bond first, then the pool, into the vault |
+| `ClaimsEngine` | Pays a claim for breaches the vault recorded: loss minus a 10% deductible, the bond first, then the pool, into the vault (or the module's account; Deferred breaches on a module aren't paid) |
 | `DisputeModule` | Grey-area claims the chain can't see, decided by a council after a challenge window |
 | `BountyBoard` | Community attacks: commit, reveal, then an attester accepts and pays or rejects |
 
@@ -110,17 +112,34 @@ Anchor programs for the same core: `bonded_registry`, `bonded_vault`, `bonded_co
 
 A rating runs every attack (usually five times) plus control episodes with no attack, turns breach rates into an expected loss, premium and score (Section 9; the maths is `packages/shared/src/actuarial.ts`), signs the attestation and posts it. The same code runs a single attack against a real vault for the demo's break-it run (`runLiveAttack`). The agents themselves are in `apps/demo-agents` ([AGENTS.md](AGENTS.md)).
 
+### Agents that run elsewhere
+
+An agent its operator runs on their own servers is rated through the **Arena Gateway** (`apps/arena/src/gateway`), which the rating worker serves on a public address ([BRING-YOUR-OWN-AGENT.md](BRING-YOUR-OWN-AGENT.md)):
+
+```mermaid
+flowchart LR
+  Runner["@bonded/runner<br/>(operator's server)"] -- "WebSocket out,<br/>runner token" --> Gateway["Arena Gateway<br/>(arena-worker)"]
+  Runner -- "starts per episode" --> Agent["Operator's agent"]
+  Agent -- "MCP / HTTP tools,<br/>chain-mode RPC" --> Gateway
+  Gateway --> Toolbox["Same world, toolbox<br/>and vault as in-process"]
+```
+
+- **One world, three surfaces.** The gateway serves the same tools, world simulator and toolbox an in-process agent gets, per episode, behind an unguessable capability URL: MCP over streamable HTTP, plain HTTP with an OpenAPI document, and in chain mode a JSON-RPC proxy to the sandbox that passes only standard reads and signed `execute` calls to the episode's vault.
+- **`RemoteAgent`** is just another `ArenaAgent`: it opens the episode, hands it to the agent's connected runner, and waits for it to finish, exit or run out of time. The judge, scoring and attestation don't change. Parity tests require the same verdicts through the gateway as in-process.
+- **Binding.** A TEE-bound agent's runner forwards fresh TEE evidence at every episode, verified like Bonded's own TEE agent; otherwise the score's binding is declared, and cover is capped lower.
+- **Per-rating held-out sets.** Each rating of an operator-run agent also runs attack variants made for it alone, never reused (the used payloads are kept in the database).
+
 ## Off-chain services
 
 Three off-chain services share one database:
 
 | Service | Does |
 |---|---|
-| `api` | REST and server-sent events: signed quotes, rating jobs, scores, reports, the leaderboard, bounty reveals |
-| `arena-worker` | Runs rating jobs and validates bounty submissions in a sandbox forked from the live chain, then posts scores and pays bounties with the attester key |
-| `keeper` | Watches vaults for breaches and files claims; accrues premiums; checks TEE agents |
+| `api` | REST and server-sent events: signed quotes (capped by binding for operator-run agents), rating jobs, scores with their binding, coverage and held-out set, reports, the leaderboard, bounty reveals, self-serve registration and runner tokens, and observed breach rates (`GET /stats/observed-rates`) |
+| `arena-worker` | Runs rating jobs and validates bounty submissions in a sandbox forked from the live chain, then posts scores and pays bounties with the attester key. Serves the Arena Gateway (when `GATEWAY_PORT` is set), records runner presence, and renews operator-run agents' scores while their runners are connected |
+| `keeper` | Watches vaults and modules for breaches and files claims; accrues premiums; checks TEE agents, and queues a re-rating when an operator-run agent's TEE changes |
 
-Jobs use a Postgres `FOR UPDATE SKIP LOCKED` queue; every transaction that moves money records its intent and nonce before broadcasting, so a crash can't pay twice.
+Jobs use a Postgres `FOR UPDATE SKIP LOCKED` queue; every transaction that moves money records its intent and nonce before broadcasting, so a crash can't pay twice. For operator-run agents the database also keeps runner tokens (as hashes only), runner presence, ratings the live loop had to skip and why, the held-out payloads already used, and each breach's agent, type and time (for observed rates).
 
 ## Sentinel
 
@@ -139,6 +158,8 @@ An agent's key can be generated inside a Phala Cloud confidential VM (Intel TDX)
 | Who | Can | Can't |
 |---|---|---|
 | Agent key | Act through its vault, within or (in Monitor mode) outside the mandate | Move funds without the vault recording it; touch the bond or pool |
+| Account owner (module) | Everything on their smart account: move funds, uninstall the module | Get a Deferred breach paid (an unexplained drop on an account can't be told from the owner's own withdrawal) |
+| An operator-run agent under rating | Call its episode's tools; in chain mode, send signed `execute` calls to the episode's vault | Reach another episode, use the sandbox node's cheat methods, or change a verdict: the vault's breach log decides |
 | Guardian (operator) | Freeze, unfreeze and rotate its agent; buy and cancel cover | Change a vault's mandate after creation |
 | Attester | Sign scores and quotes; judge bounties | Pay a claim: claims follow the breach log only |
 | Owner (one key on testnets) | Set risk parameters and attesters; on testnets, set MockOracle prices, which losses are measured with | Withdraw pool or bond funds |
