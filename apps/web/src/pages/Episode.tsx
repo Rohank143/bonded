@@ -40,7 +40,14 @@ export function Episode() {
         </EmptyState>
       </Page>
     );
-  if (q.isPending) return <Loading what="the episode" />;
+  if (q.isPending)
+    return (
+      <Page title="Episode" back={back}>
+        <Card>
+          <Loading what="the episode" />
+        </Card>
+      </Page>
+    );
   if (!q.data)
     return (
       <Page title="Episode" back={back}>
