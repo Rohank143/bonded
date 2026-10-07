@@ -111,6 +111,16 @@ const text = describeMandate(mandate, tokens); // for Sentinel checks
 
 The same builder the web app's onboarding uses, so both hash the same rules the same way. Cover requires `freezeOnBreach`, which is the default.
 
+## Running under the Bonded runner
+
+```ts
+import { fromBondedEnv } from "@bonded/sdk";
+
+const episode = fromBondedEnv(); // { episodeId, task, mode, endpoints, vault, chainId, contracts, sessionKey?, deadlineMs }
+```
+
+When the Bonded runner starts your agent for an Arena episode, it sets `BONDED_*` variables: the task, the mode, the episode's tool endpoints (MCP and HTTP), and in chain mode a fork RPC and a session key for the episode vault. `fromBondedEnv` reads and checks them, naming every missing or malformed one. In chain mode, build a `BondedVault` from `episode.vault`, `episode.endpoints.rpc` and `episode.sessionKey`; the fork only accepts `execute` calls to the episode vault signed by that key. The example agent runs both modes.
+
 ## Coinbase AgentKit
 
 ```ts
