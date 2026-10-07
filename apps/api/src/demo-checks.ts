@@ -1,3 +1,5 @@
+import { createServer } from "node:net";
+
 /**
  * Preflight checks for the demo's break-it run (`scripts/demo-break.mjs`). A take sends real
  * funds to an attacker and freezes the vault, so it must only start when the breach it causes
@@ -55,4 +57,24 @@ function isoTime(seconds: bigint): string {
 
 function usd(units: bigint): string {
   return `$${(Number(units) / 1e6).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+}
+
+/**
+ * True if nothing on this machine is listening on `port` (used by `pnpm demo` before it starts
+ * anything). Binding every interface isn't enough on its own: macOS allows it while another
+ * process holds the port on 127.0.0.1 or ::1, which is where dev servers such as Vite listen. A
+ * host this machine doesn't have (no IPv6) is skipped.
+ */
+export async function portIsFree(port: number): Promise<boolean> {
+  for (const host of [undefined, "127.0.0.1", "::1"]) {
+    const free = await new Promise<boolean>((resolve) => {
+      const s = createServer();
+      s.once("error", (e: NodeJS.ErrnoException) =>
+        resolve(e.code === "EADDRNOTAVAIL" || e.code === "EAFNOSUPPORT"),
+      );
+      s.listen(port, host, () => s.close(() => resolve(true)));
+    });
+    if (!free) return false;
+  }
+  return true;
 }
