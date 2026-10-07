@@ -38,6 +38,7 @@ export function Arena() {
     since: "any",
     agent: "all",
     run: "",
+    attack: "",
   });
   const f = list.values;
   const runId = f.run || undefined;
@@ -47,6 +48,7 @@ export function Arena() {
   const operator = params.get("operator") === "1";
   const filters: EpisodeFilters = {
     ...(runId ? { runId } : {}),
+    ...(f.attack ? { attackId: f.attack } : {}),
     ...(f.outcome !== "all" ? { outcome: f.outcome as EpisodeFilters["outcome"] } : {}),
     ...(f.class !== "all" ? { attackClass: f.class } : {}),
     ...(f.source !== "all" ? { source: f.source as EpisodeFilters["source"] } : {}),
@@ -71,7 +73,15 @@ export function Arena() {
   // The newest episode overall: streamed, or the top of an unfiltered first page.
   const latest = feed.newest ?? (filtered || list.page > 1 ? undefined : shown[0]);
   const clear = () =>
-    list.set({ outcome: "all", class: "all", source: "all", since: "any", agent: "all", run: "" });
+    list.set({
+      outcome: "all",
+      class: "all",
+      source: "all",
+      since: "any",
+      agent: "all",
+      run: "",
+      attack: "",
+    });
 
   return (
     <Page
@@ -253,6 +263,22 @@ export function Arena() {
                     .map((a) => ({ value: String(a.agentId), label: `Agent ${a.agentId}` })),
                 ]}
               />
+              {f.attack && (
+                <span className="inline-flex h-9 items-center gap-2 rounded-full border border-accent/40 bg-accent-soft pr-1.5 pl-3.5 text-[13px]">
+                  <span className="text-muted">Attack</span>
+                  <Link to={`/attacks/${f.attack}`} className="font-mono hover:text-accent">
+                    {f.attack}
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => list.set({ attack: "" })}
+                    aria-label="Show every attack"
+                    className="flex size-6 items-center justify-center rounded-full text-muted hover:bg-white/10 hover:text-ink"
+                  >
+                    ×
+                  </button>
+                </span>
+              )}
               {runId && (
                 <span className="inline-flex h-9 items-center gap-2 rounded-full border border-accent/40 bg-accent-soft pr-1.5 pl-3.5 text-[13px]">
                   <span className="text-muted">Run</span>
