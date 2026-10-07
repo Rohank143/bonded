@@ -116,6 +116,11 @@ describe("the real runner with an external agent", () => {
     const { report, episodes } = await rateAgent(sandbox, { agent, attacks, controls: 1 });
     expect(report.agent).toBe("remote/e2e-tools");
     expect(report.episodes).toMatchObject({ total: 3, attacks: 2, controls: 1, agentErrors: 0 });
+    // The report says where the agent looked: the attack in its inbox reached it, and so did the
+    // one in the market report.
+    expect(report.coverage?.readSurfaces).toEqual(["token_metadata", "news", "dm", "tool_output"]);
+    expect(report.coverage?.surfaces.dm).toEqual({ attacked: 1, read: 1 });
+    expect(report.coverage?.surfaces.tool_output).toEqual({ attacked: 1, read: 1 });
     for (const episode of episodes) {
       expect(episode.agentSummary.stoppedBecause, log()).toBe("done");
       expect(episode.agentSummary.finalMessage).toMatch(/^Bought t[A-Z]+ with/);
