@@ -84,10 +84,10 @@ Accepted bounty attacks join the library and trigger re-ratings ([docs/BOUNTIES.
 
 | | Today |
 |---|---|
-| **Rate an agent** | **Rate your vault:** an agent's owner picks one of Bonded's built-in agent designs (vulnerable, partial or hardened) and has it rated against their own vault and mandate from the agent's page, by signing in their wallet; one rating an hour per agent. Bonded also rates the agents in its config (2, 3 and 10) and the leaderboard agents, and anyone can rate locally with `pnpm demo` or `pnpm arena rate`. **Rate your own agent:** first open-source templates with your own prompt and model, then your own agent connecting to the Arena from wherever it runs. |
-| **Register an agent and create a vault** | From the web app (Onboard an agent): register, vault, bond and deposit from your wallet |
-| **Buy cover** | The vault's guardian gets a quote and buys from the vault page; up to 20,000 tUSDG on testnet |
-| **TEE key custody** | Agent 3, run by Bonded with Bonded's identity service (`services/tee-agent`), added by Bonded. Bringing your own TEE (run it yourself, register it yourself, with your own code verified) is not supported yet. |
+| **Rate an agent** | **Rate your vault:** an agent's owner picks one of Bonded's built-in agent designs (vulnerable, partial or hardened) and has it rated against their own vault and mandate from the agent's page, by signing in their wallet; one rating an hour per agent. Bonded also rates the agents in its config (2, 3 and 10) and the leaderboard agents, and anyone can rate locally with `pnpm demo` or `pnpm arena rate`. **Rate your own agent** (any framework or language, where it runs): built and tested. Locally today with `pnpm arena rate --agent remote` and the runner; from the agent's page once the hosted Arena Gateway is live ([BRING-YOUR-OWN-AGENT.md](BRING-YOUR-OWN-AGENT.md)). |
+| **Register an agent and create a vault** | From the web app (Onboard an agent): register, vault, bond and deposit from your wallet. Protecting a smart account the agent already uses, with a `MandateModule` instead of a vault, is built and tested but not deployed on any testnet yet |
+| **Buy cover** | The vault's guardian gets a quote and buys from the vault page; up to 20,000 tUSDG on testnet. For an agent its operator runs, cover is capped by the score's binding: 5,000 tUSDG when declared, 20,000 when TEE-bound (underwriting policy, not score) |
+| **TEE key custody** | Agent 3, run by Bonded with Bonded's identity service (`services/tee-agent`), added by Bonded. **Bring your own TEE:** register your TEE's URL and compose hash with your own agent; the Arena verifies its quote at every episode of the rating ([BRING-YOUR-OWN-AGENT.md](BRING-YOUR-OWN-AGENT.md#bring-your-own-tee)). |
 | **Deposit, underwrite, bounties** | From the web app, with a browser wallet on Robinhood testnet |
 | **See a claim paid on your own vault** | If your wallet is the vault's agent key, "Simulate a breach" on the vault page sends funds outside the mandate; in Monitor mode with cover, the keeper's claim pays |
 
@@ -95,10 +95,11 @@ How agents can plug into the Arena (specification Section 8.4):
 
 | Your agent | Status |
 |---|---|
-| Written against Bonded's SDK (`ArenaAgent`; its tools are routed through the sandbox) | Works today, for code that runs in the Arena |
-| Built on Coinbase AgentKit or Solana Agent Kit (`apps/demo-agents/src/frameworks/`; the template runs unchanged with only its tools pointed at the Arena) | Works today for the published templates; your own prompt and model are not supported yet |
+| Your own agent on your own servers, any language (`@bonded/runner` starts it per episode; it reads and trades over MCP or HTTP tools, or reads with tools and signs its own vault transactions in chain mode) | Built and tested, including parity tests that require the same verdicts through the gateway as in-process. Local ratings work today; hosted ratings need the Arena Gateway deployed |
+| Written against `ArenaAgent` from `@bonded/shared` (its tools are routed through the sandbox) | Works today, for code that runs in the Arena |
+| Built on Coinbase AgentKit or Solana Agent Kit (`apps/demo-agents/src/frameworks/`; the template runs unchanged with only its tools pointed at the Arena) | Works today for the published templates. With your own prompt and model, rate it as your own agent (above) |
+| Built on Coinbase AgentKit, Solana Agent Kit or ElizaOS, trading for real | `@bonded/sdk`'s plugins send its actions through the vault; rate it as your own agent |
 | A decision model such as Laya (`DecisionModelAgent` wraps it in a trading loop) | Works today |
-| A black box running on your own servers (point its RPC, data and tool endpoints and session key at a per-episode sandbox) | Not supported yet |
 
 A rating never needs Bonded's TEE: it runs in the Arena on the rating worker. Only an agent that keeps its key in a TEE needs that TEE online while it is rated, so the TEE can prove which code holds the key.
 
@@ -111,3 +112,5 @@ pnpm arena rate --agent partial               # Agent A: one gap
 ```
 
 Reports land in `apps/arena/ratings/<agent>/report.md`.
+
+To rate your own agent the same way, wherever it runs, follow the quick start in [BRING-YOUR-OWN-AGENT.md](BRING-YOUR-OWN-AGENT.md#quick-start-a-rated-agent-on-your-machine).

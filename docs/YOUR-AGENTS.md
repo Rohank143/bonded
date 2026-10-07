@@ -76,17 +76,16 @@ flowchart LR
 
 ## How your agent plugs in
 
-Honest status, as of this page (details in [AGENTS.md](AGENTS.md#what-works-today-and-whats-coming)):
+Honest status, as of this page (details in [AGENTS.md](AGENTS.md#what-works-today-and-whats-coming); the builder's guide is [BRING-YOUR-OWN-AGENT.md](BRING-YOUR-OWN-AGENT.md)):
 
 | Your agent | Status |
 |---|---|
-| Built on Coinbase AgentKit or Solana Agent Kit, using the published template | **Works today.** The template runs unchanged with its tools pointed at the Arena; four template and model pairs are on the leaderboard |
-| Written against Bonded's SDK (`ArenaAgent`) | **Works today** |
+| Your own agent, any framework or language, running on your own servers | **Built and tested.** A small runner next to it connects out to the Arena, which attacks the agent over MCP, plain HTTP or (chain mode) its own signed transactions. Rate it locally today; rating it from the web app needs the hosted Arena Gateway, which goes live with the next deployment of the rating service. The runner isn't on npm yet: run it from the repository |
+| Built on Coinbase AgentKit, Solana Agent Kit or ElizaOS | **Protection built and tested**: `@bonded/sdk` has a plugin for each that sends every action through the vault. Rate it as your own agent (above). The published AgentKit and Solana Agent Kit templates are also rated unchanged; four template and model pairs are on the leaderboard |
+| A smart account it already trades from (Safe through Safe7579, or another ERC-7579 account) | **Built and tested, not yet deployed**: a `MandateModule` on the account enforces the same mandate as a vault, the funds stay where they are, and cover pays into the account. It ships with the next protocol deployment; until then, use a vault |
 | A decision model such as Laya, wrapped in a trading loop | **Works today** |
 | One of Bonded's built-in agent designs, rated against your own vault | **Works today**, from the agent's page in the web app |
-| A template with your own prompt and model | Not yet |
-| An ElizaOS agent | Not yet; planned as a framework adapter (specification Section 8.4) |
-| Your own agent running on your own servers (point its RPC, data feeds and session key at the Arena's sandbox) | Not yet; this is the step that covers most agents people actually run |
+| Your agent's key in your own TEE | **Built and tested**: the Arena checks your TEE's proof at every episode, and the score carries its measurement. Without a TEE the score's binding is "declared", and cover is capped lower |
 
 ## Why this changes the game
 
@@ -106,4 +105,4 @@ People will only hand real money to AI agents at scale if two things are true: t
 
 ## What's true today
 
-Bonded runs on testnets with test tokens. The attack library is a fixed set of seeds, so scores are results against that library, not against every possible attack. The yearly attack rates used in pricing are illustrative assumptions (specification Section 9.2). Rating your own agent's code, running on your own servers, is not supported yet. The numbers above come from the [introduction](../README.md#results-measured-with-their-assumptions), where each one is listed with its assumptions.
+Bonded runs on testnets with test tokens. The attack library is a fixed set of seeds, so scores are results against that library, not against every possible attack. The yearly attack rates used in pricing are illustrative assumptions (specification Section 9.2). Rating your own agent where it runs is built and tested, and can be run locally; the hosted gateway, the published packages and the smart-account module are not live yet ([BRING-YOUR-OWN-AGENT.md](BRING-YOUR-OWN-AGENT.md#whats-live-today)). The numbers above come from the [introduction](../README.md#results-measured-with-their-assumptions), where each one is listed with its assumptions.
