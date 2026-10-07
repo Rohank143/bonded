@@ -12,26 +12,45 @@ import {ProtocolHandler} from "./ProtocolHandler.sol";
 import {ModuleHandler} from "./ModuleHandler.sol";
 
 /// @notice The protocol invariants again, now with two smart accounts guarded by MandateModules
-///         alongside the two vaults, plus the module's own properties: payouts land in the
-///         account, Deferred breaches on modules are never paid, a module never holds funds, a
-///         frozen agent never gets through, and an owner withdrawal through the account is never
-///         a breach.
+///         (one ERC-7579 reference account, one Safe with Safe7579) alongside two vaults, plus
+///         the module's own properties: payouts land in the account, Deferred breaches on
+///         modules are never paid, a module never holds funds, a frozen agent never gets
+///         anything through, and an owner withdrawal through the account is never a breach.
 contract ModuleInvariants is StdInvariant, ProtocolBase, ModuleTestBase {
+    ProtocolHandler internal vaults;
     ModuleHandler internal handler;
-    uint256[] internal agentIds;
+    uint256[] internal moduleAgentIds;
 
     function setUp() public override(ProtocolBase, ModuleTestBase) {
         super.setUp();
         vm.prank(owner);
         manager.setModuleFactory(address(moduleFactory));
 
-        MandateVault[] memory vaults = new MandateVault[](2);
-        vaults[0] = vault;
-        vaults[1] = MandateVault(
+        MandateVault[] memory vs = new MandateVault[](2);
+        vs[0] = vault;
+        vs[1] = MandateVault(
             factory.createVault(
                 _params(BondedTypes.MandateMode.Monitor), agent, guardian, agentId2, "v2", "v2"
             )
         );
+        address[] memory underwriters = new address[](3);
+        underwriters[0] = underwriter;
+        underwriters[1] = makeAddr("underwriter2");
+        underwriters[2] = makeAddr("underwriter3");
+        vaults = new ProtocolHandler(
+            usdg,
+            pool,
+            bond,
+            manager,
+            claims,
+            attesterKey,
+            guardian,
+            agent,
+            attacker,
+            vs,
+            underwriters
+        );
+        vaults.recordStake(agentId, BOND);
 
         MandateModule[] memory modules = new MandateModule[](2);
         for (uint256 i; i < modules.length; ++i) {
@@ -48,60 +67,52 @@ contract ModuleInvariants is StdInvariant, ProtocolBase, ModuleTestBase {
             _install(account, address(modules[i]), HOOK);
             usdg.mint(account, DEPOSIT);
             _stake(id, BOND);
-            agentIds.push(id);
+            moduleAgentIds.push(id);
         }
-        agentIds.push(agentId);
-        agentIds.push(agentId2);
-
-        address[] memory underwriters = new address[](3);
-        underwriters[0] = underwriter;
-        underwriters[1] = makeAddr("underwriter2");
-        underwriters[2] = makeAddr("underwriter3");
-
         handler = new ModuleHandler(
-            usdg,
-            pool,
-            bond,
-            manager,
-            claims,
-            attesterKey,
-            guardian,
-            agent,
-            attacker,
-            vaults,
-            underwriters
+            ModuleHandler.Setup({
+                usdg: usdg,
+                pool: pool,
+                bond: bond,
+                manager: manager,
+                claims: claims,
+                attesterKey: attesterKey,
+                guardian: guardian,
+                agent: agent,
+                attacker: attacker,
+                owner: safeOwner
+            }),
+            modules
         );
-        handler.setModules(modules, safeOwner);
-        handler.recordStake(agentId, BOND);
-        handler.recordStake(agentIds[0], BOND);
-        handler.recordStake(agentIds[1], BOND);
 
-        bytes4[] memory selectors = new bytes4[](22);
-        selectors[0] = ModuleHandler.moduleStake.selector;
-        selectors[1] = ModuleHandler.moduleBindCover.selector;
-        selectors[2] = ModuleHandler.moduleBindCover.selector;
-        selectors[3] = ModuleHandler.moduleUnfreeze.selector;
-        selectors[4] = ModuleHandler.moduleFund.selector;
-        selectors[5] = ModuleHandler.moduleOwnerWithdraw.selector;
-        selectors[6] = ModuleHandler.moduleBreach.selector;
-        selectors[7] = ModuleHandler.moduleBreach.selector;
-        selectors[8] = ModuleHandler.moduleSpenderPull.selector;
-        selectors[9] = ModuleHandler.moduleSpenderPull.selector;
-        selectors[10] = ModuleHandler.moduleFrozenAgentTries.selector;
-        selectors[11] = ModuleHandler.moduleFileClaim.selector;
-        selectors[12] = ModuleHandler.moduleFileClaim.selector;
-        selectors[13] = ModuleHandler.moduleFileClaim.selector;
-        selectors[14] = ModuleHandler.moduleFileClaim.selector; // the keeper files often
-        // The vault side and the shared steps keep running alongside.
-        selectors[15] = ProtocolHandler.poolDeposit.selector;
-        selectors[16] = ProtocolHandler.poolExit.selector;
-        selectors[17] = ProtocolHandler.bindCover.selector;
-        selectors[18] = ProtocolHandler.breach.selector;
-        selectors[19] = ProtocolHandler.fileClaim.selector;
-        selectors[20] = ProtocolHandler.accrue.selector;
-        selectors[21] = ProtocolHandler.warp.selector;
-        targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
+        bytes4[] memory moduleSteps = new bytes4[](16);
+        moduleSteps[0] = ModuleHandler.bindCover.selector;
+        moduleSteps[1] = ModuleHandler.bindCover.selector;
+        moduleSteps[2] = ModuleHandler.unfreeze.selector;
+        moduleSteps[3] = ModuleHandler.fund.selector;
+        moduleSteps[4] = ModuleHandler.ownerWithdraw.selector;
+        moduleSteps[5] = ModuleHandler.breach.selector;
+        moduleSteps[6] = ModuleHandler.breach.selector;
+        moduleSteps[7] = ModuleHandler.breach.selector;
+        moduleSteps[8] = ModuleHandler.spenderPull.selector;
+        moduleSteps[9] = ModuleHandler.spenderPull.selector;
+        moduleSteps[10] = ModuleHandler.frozenAgentTries.selector;
+        moduleSteps[11] = ModuleHandler.accrue.selector;
+        moduleSteps[12] = ModuleHandler.fileClaim.selector;
+        moduleSteps[13] = ModuleHandler.fileClaim.selector;
+        moduleSteps[14] = ModuleHandler.fileClaim.selector;
+        moduleSteps[15] = ModuleHandler.fileClaim.selector; // the keeper files often
+        targetSelector(FuzzSelector({addr: address(handler), selectors: moduleSteps}));
         targetContract(address(handler));
+
+        // The vault side and time keep moving alongside (ProtocolInvariants covers the rest).
+        bytes4[] memory vaultSteps = new bytes4[](4);
+        vaultSteps[0] = ProtocolHandler.bindCover.selector;
+        vaultSteps[1] = ProtocolHandler.breach.selector;
+        vaultSteps[2] = ProtocolHandler.fileClaim.selector;
+        vaultSteps[3] = ProtocolHandler.warp.selector;
+        targetSelector(FuzzSelector({addr: address(vaults), selectors: vaultSteps}));
+        targetContract(address(vaults));
     }
 
     // ----- Module properties -------------------------------------------------------------
@@ -113,7 +124,7 @@ contract ModuleInvariants is StdInvariant, ProtocolBase, ModuleTestBase {
 
     /// @notice A Deferred breach on a module is never paid (the owner can move funds outside it).
     function invariant_DeferredNeverPaidOnModules() public view {
-        assertFalse(handler.ghostDeferredPaid());
+        assertFalse(handler.deferredPaid());
         MandateModule[] memory ms = handler.modules();
         for (uint256 i; i < ms.length; ++i) {
             for (uint256 b; b < ms[i].breachCount(); ++b) {
@@ -134,8 +145,8 @@ contract ModuleInvariants is StdInvariant, ProtocolBase, ModuleTestBase {
         }
     }
 
-    /// @notice A frozen agent never gets an action through, and the owner's own withdrawals
-    ///         through the account are never recorded as breaches.
+    /// @notice A frozen agent never moves anything, and the owner's own withdrawals through the
+    ///         account are never recorded as breaches.
     function invariant_FrozenAgentBlockedAndOwnerFree() public view {
         assertFalse(handler.frozenAgentActed());
         assertFalse(handler.ownerWithdrawalWasABreach());
@@ -147,15 +158,19 @@ contract ModuleInvariants is StdInvariant, ProtocolBase, ModuleTestBase {
         assertFalse(handler.poolPaidBeforeBondWasEmpty());
         assertFalse(handler.payoutAboveLossMinusDeductible());
         assertFalse(handler.waterfallDoesNotAddUp());
+        assertFalse(vaults.poolPaidBeforeBondWasEmpty());
+        assertFalse(vaults.payoutAboveLossMinusDeductible());
+        assertFalse(vaults.waterfallDoesNotAddUp());
     }
 
     /// @notice Each breach is paid at most once, and the vault's or module's record agrees.
     function invariant_EachBreachPaidOnceAcrossVaultsAndModules() public view {
         assertFalse(handler.breachPaidTwice());
-        MandateVault[] memory vs = handler.vaults();
+        assertFalse(vaults.breachPaidTwice());
+        MandateVault[] memory vs = vaults.vaults();
         for (uint256 i; i < vs.length; ++i) {
             for (uint256 b; b < vs[i].breachCount(); ++b) {
-                assertEq(vs[i].getBreach(b).claimed, handler.ghostBreachPaid(address(vs[i]), b));
+                assertEq(vs[i].getBreach(b).claimed, vaults.ghostBreachPaid(address(vs[i]), b));
             }
         }
         MandateModule[] memory ms = handler.modules();
@@ -168,35 +183,43 @@ contract ModuleInvariants is StdInvariant, ProtocolBase, ModuleTestBase {
 
     /// @notice Exposure totals match the active policies, vault and module policies alike.
     function invariant_ActiveCoverMatchesPolicies() public view {
-        uint256[] memory ids = handler.policies();
+        uint256[] memory a = vaults.policies();
+        uint256[] memory b = handler.policies();
         uint256 total;
-        for (uint256 i; i < ids.length; ++i) {
-            ICoverManager.Policy memory p = manager.getPolicy(ids[i]);
+        for (uint256 i; i < a.length + b.length; ++i) {
+            ICoverManager.Policy memory p = manager.getPolicy(i < a.length ? a[i] : b[i - a.length]);
             if (p.status == ICoverManager.Status.Active) total += p.remainingCover;
         }
         assertEq(manager.totalActiveCover(), total);
-        for (uint256 a; a < agentIds.length; ++a) {
+        for (uint256 m; m < moduleAgentIds.length; ++m) {
             uint256 ofAgent;
-            for (uint256 i; i < ids.length; ++i) {
-                ICoverManager.Policy memory p = manager.getPolicy(ids[i]);
-                if (p.status == ICoverManager.Status.Active && p.agentId == agentIds[a]) {
+            for (uint256 i; i < b.length; ++i) {
+                ICoverManager.Policy memory p = manager.getPolicy(b[i]);
+                if (p.status == ICoverManager.Status.Active && p.agentId == moduleAgentIds[m]) {
                     ofAgent += p.remainingCover;
                 }
             }
-            assertEq(manager.activeCoverOfAgent(agentIds[a]), ofAgent);
+            assertEq(manager.activeCoverOfAgent(moduleAgentIds[m]), ofAgent);
         }
     }
 
-    /// @notice Bonds are stakes minus withdrawals and slashes, for vault and module agents.
+    /// @notice Bonds are stakes minus withdrawals and slashes, for vault and module agents, and
+    ///         the bond contract holds exactly their sum.
     function invariant_BondAccounting() public view {
         uint256 sum;
-        for (uint256 a; a < agentIds.length; ++a) {
-            uint256 id = agentIds[a];
-            uint256 slashed = handler.ghostSlashed(id);
-            assertLe(slashed, handler.ghostStaked(id));
+        uint256[2] memory vaultAgents = [agentId, agentId2];
+        for (uint256 i; i < vaultAgents.length; ++i) {
+            uint256 id = vaultAgents[i];
             assertEq(
-                bond.bondOf(id), handler.ghostStaked(id) - handler.ghostWithdrawn(id) - slashed
+                bond.bondOf(id),
+                vaults.ghostStaked(id) - vaults.ghostWithdrawn(id) - vaults.ghostSlashed(id)
             );
+            sum += bond.bondOf(id);
+        }
+        for (uint256 i; i < moduleAgentIds.length; ++i) {
+            uint256 id = moduleAgentIds[i];
+            assertLe(handler.ghostSlashed(id), BOND);
+            assertEq(bond.bondOf(id), BOND - handler.ghostSlashed(id));
             sum += bond.bondOf(id);
         }
         assertEq(usdg.balanceOf(address(bond)), sum);

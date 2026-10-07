@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import {CommonBase} from "forge-std/Base.sol";
+import {StdCheats} from "forge-std/StdCheats.sol";
+import {StdUtils} from "forge-std/StdUtils.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BondedTypes} from "../../src/libraries/BondedTypes.sol";
-import {MandateVault} from "../../src/MandateVault.sol";
 import {MandateModule} from "../../src/MandateModule.sol";
 import {CoverPool} from "../../src/CoverPool.sol";
 import {OperatorBond} from "../../src/OperatorBond.sol";
@@ -12,89 +14,67 @@ import {CoverManager} from "../../src/CoverManager.sol";
 import {ClaimsEngine} from "../../src/ClaimsEngine.sol";
 import {ICoverManager} from "../../src/interfaces/ICoverManager.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
-import {ProtocolHandler} from "./ProtocolHandler.sol";
 
 interface IOwnerExecute {
     function execute(bytes32 mode, bytes calldata executionCalldata) external payable;
 }
 
-/// @notice ProtocolHandler plus smart accounts guarded by MandateModules: cover bound to the
-///         modules, agent breaches through the module, owner withdrawals through the account,
-///         spenders pulling outside the module, and claims. The vault actions keep running, and
-///         module policies join the same policy list, so the inherited accrual and claim steps
-///         also act on them.
-contract ModuleHandler is ProtocolHandler {
+/// @notice Drives smart accounts guarded by MandateModules against the wired protocol: cover
+///         bound to the modules, agent breaches through the module, owner withdrawals through
+///         the account, spenders pulling outside the module, and the keeper's claims. It runs
+///         beside ProtocolHandler (which keeps driving the vaults, the pool and the bonds), and
+///         records what each step did so the invariant test can check it afterwards.
+contract ModuleHandler is CommonBase, StdCheats, StdUtils {
     address internal constant ENTRY_POINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
 
-    MandateModule[] internal _modules;
-    uint256[] internal _modulePolicies;
-    address internal owner;
+    struct Setup {
+        MockERC20 usdg;
+        CoverPool pool;
+        OperatorBond bond;
+        CoverManager manager;
+        ClaimsEngine claims;
+        uint256 attesterKey;
+        address guardian;
+        address agent;
+        address attacker;
+        address owner;
+    }
 
-    /// @dev Set when a step breaks a property; the invariant test asserts they stay false.
-    bool public payoutMissedTheAccount;
-    bool public frozenAgentActed;
-    bool public ownerWithdrawalWasABreach;
-    /// @dev Set if a Deferred breach on a module was ever paid.
-    bool public ghostDeferredPaid;
+    Setup internal s;
+    MandateModule[] internal _modules;
+    uint256[] internal _policies;
+    uint256 internal _quoteNonce = 1_000_000; // apart from ProtocolHandler's quote nonces
+
+    // ----- Ghost state -------------------------------------------------------------------
+
+    mapping(uint256 agentId => uint256) public ghostSlashed;
+    mapping(address module => mapping(uint256 breachId => bool)) public ghostBreachPaid;
     uint256 public ghostModuleClaims;
     uint256 public ghostDeferredRefused;
 
-    constructor(
-        MockERC20 usdg_,
-        CoverPool pool_,
-        OperatorBond bond_,
-        CoverManager manager_,
-        ClaimsEngine claims_,
-        uint256 attesterKey_,
-        address guardian_,
-        address agent_,
-        address attacker_,
-        MandateVault[] memory vaults_,
-        address[] memory underwriters_
-    )
-        ProtocolHandler(
-            usdg_,
-            pool_,
-            bond_,
-            manager_,
-            claims_,
-            attesterKey_,
-            guardian_,
-            agent_,
-            attacker_,
-            vaults_,
-            underwriters_
-        )
-    {}
+    /// @dev Set when a step breaks a property; the invariant test asserts they stay false.
+    bool public payoutMissedTheAccount;
+    bool public deferredPaid;
+    bool public frozenAgentActed;
+    bool public ownerWithdrawalWasABreach;
+    bool public breachPaidTwice;
+    bool public poolPaidBeforeBondWasEmpty;
+    bool public payoutAboveLossMinusDeductible;
+    bool public waterfallDoesNotAddUp;
 
-    /// @notice Setup only (not a fuzzed action): the modules and their accounts' owner.
-    function setModules(MandateModule[] memory modules_, address owner_) external {
-        require(_modules.length == 0, "modules already set");
+    constructor(Setup memory setup, MandateModule[] memory modules_) {
+        s = setup;
         _modules = modules_;
-        owner = owner_;
     }
 
     // ----- Operators ---------------------------------------------------------------------
 
-    function moduleStake(uint256 moduleSeed, uint256 amount) external {
-        uint256 id = _module(moduleSeed).agentId();
-        amount = bound(amount, 1e6, 10_000e6);
-        usdg.mint(guardian, amount);
-        vm.startPrank(guardian);
-        usdg.approve(address(bond), amount);
-        bond.stake(id, amount);
-        vm.stopPrank();
-        ghostStaked[id] += amount;
-    }
-
-    function moduleBindCover(uint256 moduleSeed, uint256 cover, uint256 score, uint256 rateBps)
-        external
-    {
+    function bindCover(uint256 moduleSeed, uint256 cover, uint256 score, uint256 rateBps) external {
         MandateModule m = _module(moduleSeed);
         BondedTypes.Quote memory q = BondedTypes.Quote({
             agentId: m.agentId(),
             vault: address(m),
-            coverAmount: bound(cover, 1000e6, 1000e6 + pool.totalAssets() / 10),
+            coverAmount: bound(cover, 1000e6, 1000e6 + s.pool.totalAssets() / 10),
             // forge-lint: disable-next-line(unsafe-typecast)
             premiumRateBps: uint32(bound(rateBps, 50, 2000)),
             // forge-lint: disable-next-line(unsafe-typecast)
@@ -106,127 +86,116 @@ contract ModuleHandler is ProtocolHandler {
             expiresAt: uint64(block.timestamp + 1 hours),
             nonce: ++_quoteNonce
         });
-        (uint8 sv, bytes32 r, bytes32 s) = vm.sign(attesterKey, manager.quoteDigest(q));
-        vm.prank(guardian);
-        try manager.buyCover(q, abi.encodePacked(r, s, sv)) returns (uint256 policyId) {
+        (uint8 sv, bytes32 r, bytes32 ss) = vm.sign(s.attesterKey, s.manager.quoteDigest(q));
+        vm.prank(s.guardian);
+        try s.manager.buyCover(q, abi.encodePacked(r, ss, sv)) returns (uint256 policyId) {
             _policies.push(policyId);
-            _modulePolicies.push(policyId);
-            vm.warp(block.timestamp + manager.waitingPeriod());
+            vm.warp(block.timestamp + s.manager.waitingPeriod());
         } catch {}
     }
 
-    function moduleUnfreeze(uint256 moduleSeed) external {
-        vm.prank(guardian);
+    function unfreeze(uint256 moduleSeed) external {
+        vm.prank(s.guardian);
         _module(moduleSeed).unfreeze();
     }
 
     // ----- Account owners, agents and spenders -------------------------------------------
 
     /// @dev Money arriving in the account (the module equivalent of a vault deposit).
-    function moduleFund(uint256 moduleSeed, uint256 amount) external {
-        usdg.mint(_module(moduleSeed).account(), bound(amount, 1e6, 100_000e6));
+    function fund(uint256 moduleSeed, uint256 amount) external {
+        s.usdg.mint(_module(moduleSeed).account(), bound(amount, 1e6, 100_000e6));
     }
 
     /// @dev The owner withdraws through the account's ERC-7579 execute; the hook accepts it.
-    function moduleOwnerWithdraw(uint256 moduleSeed, uint256 amount) external {
+    function ownerWithdraw(uint256 moduleSeed, uint256 amount) external {
         MandateModule m = _module(moduleSeed);
         address account = m.account();
-        uint256 balance = usdg.balanceOf(account);
+        uint256 balance = s.usdg.balanceOf(account);
         if (balance == 0) return;
         amount = bound(amount, 1, balance);
         // Anything already missing is recorded first; only then is the withdrawal checked.
         m.reconcile();
         uint256 breaches = m.breachCount();
+        bytes memory transfer = abi.encodeCall(IERC20.transfer, (s.owner, amount));
         vm.prank(ENTRY_POINT);
         IOwnerExecute(account)
-            .execute(
-                bytes32(0),
-                abi.encodePacked(
-                    address(usdg), uint256(0), abi.encodeCall(IERC20.transfer, (owner, amount))
-                )
-            );
+            .execute(bytes32(0), abi.encodePacked(address(s.usdg), uint256(0), transfer));
         m.reconcile();
         if (m.breachCount() != breaches) ownerWithdrawalWasABreach = true;
     }
 
     /// @dev The agent sends funds to an address outside the mandate: a T1 breach (Monitor mode).
-    function moduleBreach(uint256 moduleSeed, uint256 amount) external {
-        MandateModule m = _module(moduleSeed);
-        if (m.frozen()) {
-            vm.prank(guardian);
-            m.unfreeze();
-        }
-        uint256 balance = usdg.balanceOf(m.account());
+    function breach(uint256 moduleSeed, uint256 amount) external {
+        MandateModule m = _unfrozen(moduleSeed);
+        uint256 balance = s.usdg.balanceOf(m.account());
         if (balance == 0) return;
         amount = bound(amount, 1, balance);
-        vm.prank(agent);
-        m.execute(address(usdg), abi.encodeCall(IERC20.transfer, (attacker, amount)));
+        vm.prank(s.agent);
+        m.execute(address(s.usdg), abi.encodeCall(IERC20.transfer, (s.attacker, amount)));
     }
 
     /// @dev The agent approves the attacker (T1), the attacker pulls outside the module, and
     ///      anyone reconciles: a Deferred breach that ClaimsEngine must refuse to pay.
-    function moduleSpenderPull(uint256 moduleSeed, uint256 amount) external {
-        MandateModule m = _module(moduleSeed);
+    function spenderPull(uint256 moduleSeed, uint256 amount) external {
+        MandateModule m = _unfrozen(moduleSeed);
         address account = m.account();
-        uint256 balance = usdg.balanceOf(account);
+        uint256 balance = s.usdg.balanceOf(account);
         if (balance == 0) return;
         amount = bound(amount, 1, balance);
-        if (m.frozen()) {
-            vm.prank(guardian);
-            m.unfreeze();
-        }
-        vm.prank(agent);
-        m.execute(address(usdg), abi.encodeCall(IERC20.approve, (attacker, amount)));
-        vm.prank(attacker);
-        require(usdg.transferFrom(account, attacker, amount), "pull failed");
+        vm.prank(s.agent);
+        m.execute(address(s.usdg), abi.encodeCall(IERC20.approve, (s.attacker, amount)));
+        vm.prank(s.attacker);
+        require(s.usdg.transferFrom(account, s.attacker, amount), "pull failed");
         m.reconcile();
     }
 
-    /// @dev A frozen agent must not get anything through.
-    function moduleFrozenAgentTries(uint256 moduleSeed, uint256 amount) external {
+    /// @dev A frozen agent must not move anything.
+    function frozenAgentTries(uint256 moduleSeed, uint256 amount) external {
         MandateModule m = _module(moduleSeed);
         if (!m.frozen()) return;
-        amount = bound(amount, 1, 1_000_000e6);
-        uint256 before = usdg.balanceOf(attacker);
-        vm.prank(agent);
-        try m.execute(address(usdg), abi.encodeCall(IERC20.transfer, (attacker, amount))) {}
-            catch {}
-        if (usdg.balanceOf(attacker) != before) frozenAgentActed = true;
+        uint256 before = s.usdg.balanceOf(s.attacker);
+        bytes memory transfer =
+            abi.encodeCall(IERC20.transfer, (s.attacker, bound(amount, 1, 1_000_000e6)));
+        vm.prank(s.agent);
+        try m.execute(address(s.usdg), transfer) {} catch {}
+        if (s.usdg.balanceOf(s.attacker) != before) frozenAgentActed = true;
+    }
+
+    function accrue(uint256 policySeed) external {
+        if (_policies.length == 0) return;
+        s.manager.accrue(_policies[bound(policySeed, 0, _policies.length - 1)]);
     }
 
     // ----- Keeper ------------------------------------------------------------------------
 
     /// @dev Files a claim for a module policy and checks the money lands in the account.
-    function moduleFileClaim(uint256 policySeed, uint256 breachSeed) external {
-        if (_modulePolicies.length == 0) return;
-        uint256 policyId = _modulePolicies[bound(policySeed, 0, _modulePolicies.length - 1)];
-        ICoverManager.Policy memory policy = manager.getPolicy(policyId);
+    function fileClaim(uint256 policySeed, uint256 breachSeed) external {
+        if (_policies.length == 0) return;
+        uint256 policyId = _policies[bound(policySeed, 0, _policies.length - 1)];
+        ICoverManager.Policy memory policy = s.manager.getPolicy(policyId);
         MandateModule m = MandateModule(policy.vault);
         uint256 count = m.breachCount();
         if (count == 0) return;
         uint256 breachId = breachSeed % 2 == 0 ? count - 1 : bound(breachSeed, 0, count - 1);
-        BondedTypes.BreachType breachType = m.getBreach(breachId).breachType;
+        bool isDeferred = m.getBreach(breachId).breachType == BondedTypes.BreachType.Deferred;
 
         address account = m.account();
-        uint256 accountBefore = usdg.balanceOf(account);
-        uint256 bondBefore = bond.bondOf(policy.agentId);
+        // Bring premiums up to date first, so the claim's own accrual moves nothing.
+        try s.manager.accrue(policyId) {} catch {}
+        uint256 accountBefore = s.usdg.balanceOf(account);
+        uint256 bondBefore = s.bond.bondOf(policy.agentId);
         uint256[] memory ids = new uint256[](1);
         ids[0] = breachId;
         vm.recordLogs();
-        try claims.fileClaim(policyId, ids) returns (uint256 paid) {
-            Vm.Log[] memory logs = vm.getRecordedLogs();
+        try s.claims.fileClaim(policyId, ids) returns (uint256 paid) {
             if (ghostBreachPaid[address(m)][breachId]) breachPaidTwice = true;
             ghostBreachPaid[address(m)][breachId] = true;
-            _checkPayout(policy.agentId, bondBefore, paid, logs);
-            // Premium collected during the claim's accrual left the account; the payout came in.
-            uint256 premium = _premiumPaid(logs, policyId);
-            if (usdg.balanceOf(account) + premium != accountBefore + paid) {
-                payoutMissedTheAccount = true;
-            }
-            if (breachType == BondedTypes.BreachType.Deferred) ghostDeferredPaid = true;
+            _checkPayout(policy.agentId, bondBefore, paid, vm.getRecordedLogs());
+            if (s.usdg.balanceOf(account) != accountBefore + paid) payoutMissedTheAccount = true;
+            if (isDeferred) deferredPaid = true;
             ++ghostModuleClaims;
         } catch {
-            if (breachType == BondedTypes.BreachType.Deferred) ++ghostDeferredRefused;
+            if (isDeferred) ++ghostDeferredRefused;
         }
     }
 
@@ -236,22 +205,39 @@ contract ModuleHandler is ProtocolHandler {
         return _modules;
     }
 
+    function policies() external view returns (uint256[] memory) {
+        return _policies;
+    }
+
     // ----- Internals ---------------------------------------------------------------------
 
-    function _premiumPaid(Vm.Log[] memory logs, uint256 policyId)
+    /// @dev Same checks as ProtocolHandler._checkPayout, for module claims.
+    function _checkPayout(uint256 agentId, uint256 bondBefore, uint256 paid, Vm.Log[] memory logs)
         internal
-        view
-        returns (uint256 amount)
     {
         for (uint256 i; i < logs.length; ++i) {
             if (
-                logs[i].emitter == address(manager)
-                    && logs[i].topics[0] == CoverManager.PremiumPaid.selector
-                    && uint256(logs[i].topics[1]) == policyId
-            ) {
-                (uint256 paid,,,) = abi.decode(logs[i].data, (uint256, uint256, uint256, uint256));
-                amount += paid;
+                logs[i].emitter != address(s.claims)
+                    || logs[i].topics[0] != ClaimsEngine.ClaimPaid.selector
+            ) continue;
+            (uint256 lossBase, uint256 gross, uint256 netted, uint256 fromBond, uint256 fromPool,) =
+                abi.decode(logs[i].data, (uint256, uint256, uint256, uint256, uint256, uint256[]));
+            uint256 cap = lossBase * (BondedTypes.BPS - s.claims.deductibleBps()) / BondedTypes.BPS;
+            if (gross > cap) payoutAboveLossMinusDeductible = true;
+            if (fromBond + fromPool + netted != gross || fromBond + fromPool != paid) {
+                waterfallDoesNotAddUp = true;
             }
+            if (fromBond > bondBefore) waterfallDoesNotAddUp = true;
+            if (fromPool > 0 && s.bond.bondOf(agentId) != 0) poolPaidBeforeBondWasEmpty = true;
+            ghostSlashed[agentId] += fromBond;
+        }
+    }
+
+    function _unfrozen(uint256 seed) internal returns (MandateModule m) {
+        m = _module(seed);
+        if (m.frozen()) {
+            vm.prank(s.guardian);
+            m.unfreeze();
         }
     }
 
