@@ -1,6 +1,7 @@
 import { BorshCoder, type Idl } from "@anchor-lang/core";
 import {
   type AccountMeta,
+  type Commitment,
   type Connection,
   Ed25519Program,
   PublicKey,
@@ -210,8 +211,9 @@ export async function fetchCoverConfig(connection: Connection): Promise<CoverCon
 export async function fetchVault(
   connection: Connection,
   vault: PublicKey,
+  commitment?: Commitment,
 ): Promise<VaultAccount | null> {
-  const info = await connection.getAccountInfo(vault);
+  const info = await connection.getAccountInfo(vault, commitment);
   return info ? decodeVault(vault, info.data) : null;
 }
 
@@ -307,6 +309,59 @@ export function executeInstruction(
       ...remaining,
     ],
   });
+}
+
+// ---------------------------------------------------------------- reading a transaction's outcome
+
+/** A breach the vault recorded, from its `BreachRecorded` event. */
+export interface BreachEvent {
+  breachId: number;
+  type: string;
+  target: PublicKey;
+  /** Base-asset units that left the vault (0 when blocked). */
+  loss: bigint;
+  /** Enforce mode stopped the call: nothing moved. */
+  blocked: boolean;
+}
+
+/**
+ * The `BreachRecorded` events in a transaction's logs. Only events the vault program itself
+ * emitted count: a program the vault calls can print anything, so lines logged while another
+ * program is running are ignored.
+ */
+export function breachEventsFromLogs(logs: readonly string[]): BreachEvent[] {
+  const vault = PROGRAM_IDS.vault.toBase58();
+  const stack: string[] = [];
+  const events: BreachEvent[] = [];
+  for (const line of logs) {
+    const invoke = /^Program (\w+) invoke \[\d+\]$/.exec(line);
+    if (invoke) {
+      stack.push(invoke[1]!);
+      continue;
+    }
+    if (/^Program \w+ (success|failed)/.test(line)) {
+      stack.pop();
+      continue;
+    }
+    if (stack.at(-1) !== vault || !line.startsWith("Program data: ")) continue;
+    const event = coders.vault.events.decode(line.slice("Program data: ".length));
+    if (event?.name !== "BreachRecorded") continue;
+    const e = event.data as Raw;
+    events.push({
+      breachId: e.breach_id as number,
+      type: Object.keys(e.breach_type as object)[0]!,
+      target: e.target as PublicKey,
+      loss: big(e.loss),
+      blocked: e.blocked as boolean,
+    });
+  }
+  return events;
+}
+
+/** The vault program's error for a custom error code (e.g. 6000 is `Frozen`), if it is one. */
+export function vaultError(code: number): { name: string; message: string } | undefined {
+  const error = bondedVaultIdl.errors?.find((e) => e.code === code);
+  return error ? { name: error.name, message: error.msg ?? error.name } : undefined;
 }
 
 // ---------------------------------------------------------------- claims

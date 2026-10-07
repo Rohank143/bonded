@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   address,
   attestationMessage,
+  breachEventsFromLogs,
   bondedCoverIdl,
   bondedVaultIdl,
   claimable,
@@ -21,6 +22,7 @@ import {
   registerInstruction,
   TOKEN_PROGRAM,
   type Vault,
+  vaultError,
 } from "../src/index.js";
 
 const devnet = JSON.parse(
@@ -317,5 +319,53 @@ describe("vault instructions", () => {
     const decoded = coder.instruction.decode(ix.data) as { name: string; data: { data: Buffer } };
     expect(decoded.name).toBe("execute");
     expect([...decoded.data.data]).toEqual([12, 1, 2, 3]);
+  });
+});
+
+describe("reading a vault transaction's logs", () => {
+  /** A BreachRecorded event as Anchor logs it: discriminator, then the Borsh fields. */
+  function breachLog(id: number, type: number, loss: bigint, blocked: boolean) {
+    const event = bondedVaultIdl.events!.find((e) => e.name === "BreachRecorded")!;
+    const amount = Buffer.alloc(8);
+    amount.writeBigUInt64LE(loss);
+    const data = Buffer.concat([
+      Buffer.from(event.discriminator),
+      Buffer.from([id, type]),
+      key(6).toBuffer(),
+      amount,
+      Buffer.from([blocked ? 1 : 0]),
+    ]);
+    return `Program data: ${data.toString("base64")}`;
+  }
+  const vault = PROGRAM_IDS.vault.toBase58();
+  const token = TOKEN_PROGRAM.toBase58();
+
+  it("reads the vault's breach events", () => {
+    const logs = [
+      `Program ${vault} invoke [1]`,
+      "Program log: Instruction: Execute",
+      breachLog(2, 2, 500n, false),
+      `Program ${vault} consumed 20000 of 200000 compute units`,
+      `Program ${vault} success`,
+    ];
+    expect(breachEventsFromLogs(logs)).toEqual([
+      { breachId: 2, type: "UnauthorizedTransfer", target: key(6), loss: 500n, blocked: false },
+    ]);
+  });
+
+  it("ignores events printed by a program the vault calls", () => {
+    const logs = [
+      `Program ${vault} invoke [1]`,
+      `Program ${token} invoke [2]`,
+      breachLog(9, 3, 1n, true),
+      `Program ${token} success`,
+      `Program ${vault} success`,
+    ];
+    expect(breachEventsFromLogs(logs)).toEqual([]);
+  });
+
+  it("names the vault's errors", () => {
+    expect(vaultError(6000)).toEqual({ name: "Frozen", message: "the vault is frozen" });
+    expect(vaultError(1)).toBeUndefined();
   });
 });

@@ -16,6 +16,10 @@
       "types": "./dist/agentkit.d.ts",
       "import": "./dist/agentkit.js"
     },
+    "./solana-agent-kit": {
+      "types": "./dist/solana-agent-kit.d.ts",
+      "import": "./dist/solana-agent-kit.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -56,13 +60,29 @@
   },
   "devDependencies": {
     "@bonded/sandbox": "workspace:*",
-    "@coinbase/agentkit": "0.10.4"
+    "@bonded/solana": "workspace:*",
+    "@coinbase/agentkit": "0.10.4",
+    "@solana/spl-token": "0.4.15",
+    "@solana/web3.js": "^1.98.4",
+    "solana-agent-kit": "2.0.10"
   },
   "peerDependencies": {
-    "@coinbase/agentkit": "^0.10.4"
+    "@bonded/solana": "workspace:^",
+    "@coinbase/agentkit": "^0.10.4",
+    "@solana/web3.js": "^1.98.4",
+    "solana-agent-kit": "^2.0.10"
   },
   "peerDependenciesMeta": {
+    "@bonded/solana": {
+      "optional": true
+    },
     "@coinbase/agentkit": {
+      "optional": true
+    },
+    "@solana/web3.js": {
+      "optional": true
+    },
+    "solana-agent-kit": {
       "optional": true
     }
   }
