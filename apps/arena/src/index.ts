@@ -138,4 +138,15 @@ export {
 } from "./bounty.js";
 
 export { generateHeldOut, heldOutId, isHeldOutId, specFromDraft } from "./held-out.js";
+export {
+  FileHeldOutLedger,
+  freshHeldOut,
+  type FreshHeldOutOptions,
+  type FreshHeldOutResult,
+  type HeldOutLedger,
+  MemoryHeldOutLedger,
+  payloadHash,
+  rewriteVariant,
+  SeededRandom,
+} from "./held-out-fresh.js";
 export * from "./gateway/index.js";
