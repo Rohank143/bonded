@@ -18,18 +18,18 @@ const hex = (c: string) => `0x${c.repeat(64)}`;
 describe("runner commands", () => {
   const base = { gatewayUrl: "https://gw.example", token: "bonded_rt_abc", mode: "tools" as const };
 
-  it("give the gateway and token, and leave the agent command for the owner", () => {
+  it("pass the token in the environment, and leave the agent command for the owner", () => {
     expect(runnerCommand(base)).toBe(
-      "npx @bonded/runner --gateway https://gw.example --token bonded_rt_abc -- <your agent command>",
+      "BONDED_RUNNER_TOKEN=bonded_rt_abc npx @bonded/runner --gateway https://gw.example -- <your agent command>",
     );
     expect(runnerDockerCommand(base)).toBe(
-      "docker run --rm ghcr.io/ddboy19912/bonded-runner --gateway https://gw.example --token bonded_rt_abc -- <your agent command>",
+      "docker run --rm -e BONDED_RUNNER_TOKEN=bonded_rt_abc <your agent image> --gateway https://gw.example -- <your agent command>",
     );
   });
 
   it("add chain mode and the TEE's URL only when they apply", () => {
     expect(runnerCommand({ ...base, mode: "chain", teeUrl: "https://tee.example" })).toBe(
-      "npx @bonded/runner --gateway https://gw.example --token bonded_rt_abc --mode chain --tee-url https://tee.example -- <your agent command>",
+      "BONDED_RUNNER_TOKEN=bonded_rt_abc npx @bonded/runner --gateway https://gw.example --mode chain --tee-url https://tee.example -- <your agent command>",
     );
   });
 });

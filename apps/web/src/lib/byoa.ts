@@ -6,9 +6,13 @@ import type { Coverage, RunnerRecord, SelfAgentRecord } from "./api";
  * the runner's state reads, and checks on what they declare (docs/BRING-YOUR-OWN-AGENT.md).
  */
 
-/** The runner's npm package and its Docker image. */
+/** The runner's npm package. */
 export const RUNNER_PACKAGE = "@bonded/runner";
-export const RUNNER_IMAGE = "ghcr.io/ddboy19912/bonded-runner";
+/**
+ * The Docker line's image: the owner's own, built FROM the runner's image (apps/runner/Dockerfile)
+ * with their agent added.
+ */
+export const YOUR_IMAGE = "<your agent image>";
 
 /** Where the agent command goes in the copied lines, for the owner to replace. */
 export const YOUR_COMMAND = "<your agent command>";
@@ -20,25 +24,27 @@ export interface RunnerCommandInput {
   teeUrl?: string | null;
 }
 
-/** The runner's flags after the command name, in the order the docs show them. */
-function runnerArgs({ gatewayUrl, token, mode, teeUrl }: RunnerCommandInput): string {
+/** The runner's flags, in the order the docs show them. The token goes in the environment. */
+function runnerArgs({ gatewayUrl, mode, teeUrl }: RunnerCommandInput): string {
   return [
     `--gateway ${gatewayUrl}`,
-    `--token ${token}`,
     ...(mode === "chain" ? ["--mode chain"] : []),
     ...(teeUrl ? [`--tee-url ${teeUrl}`] : []),
     `-- ${YOUR_COMMAND}`,
   ].join(" ");
 }
 
-/** `npx @bonded/runner …`: run it where the agent runs. */
+/**
+ * `npx @bonded/runner …`, run where the agent runs. The token is passed as BONDED_RUNNER_TOKEN,
+ * which keeps it out of the process list (the runner reads it from there).
+ */
 export function runnerCommand(input: RunnerCommandInput): string {
-  return `npx ${RUNNER_PACKAGE} ${runnerArgs(input)}`;
+  return `BONDED_RUNNER_TOKEN=${input.token} npx ${RUNNER_PACKAGE} ${runnerArgs(input)}`;
 }
 
-/** The same in Docker: build your agent into an image from the runner's, or mount it. */
+/** The same in Docker, with the agent in an image built from the runner's. */
 export function runnerDockerCommand(input: RunnerCommandInput): string {
-  return `docker run --rm ${RUNNER_IMAGE} ${runnerArgs(input)}`;
+  return `docker run --rm -e BONDED_RUNNER_TOKEN=${input.token} ${YOUR_IMAGE} ${runnerArgs(input)}`;
 }
 
 export interface RunnerView {

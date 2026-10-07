@@ -305,7 +305,7 @@ export function Agent() {
                   ? `${report.unpublished.episodes} of the attack episodes ran ${report.unpublished.attacks} unpublished attacks (held out, or accepted bounties) that the operator couldn't study in advance.`
                   : "Published attacks only: an in-library result, not a held-out evaluation."}
                 {score.data?.heldOut &&
-                  ` The held-out set was made for this rating alone (seed ${score.data.heldOut.seed}).`}
+                  ` ${score.data.heldOut.attacks ?? "Its"} held-out attacks were made for this rating alone${score.data.heldOut.source === "rewrite" ? " (rewrites of published seeds)" : score.data.heldOut.model ? ` (drafted by ${score.data.heldOut.model})` : ""}, seed ${score.data.heldOut.seed}.`}
               </p>
               {score.data?.binding && (
                 <div className="mt-4 flex flex-col gap-1.5 border-t border-white/[0.06] pt-4">

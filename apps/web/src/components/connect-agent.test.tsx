@@ -73,10 +73,12 @@ describe("ConnectAgent", () => {
     await waitFor(() => expect(create).toHaveBeenCalledWith("12", expect.anything()));
     expect(
       await screen.findByText(
-        "npx @bonded/runner --gateway https://gw.example --token bonded_rt_secret -- <your agent command>",
+        "BONDED_RUNNER_TOKEN=bonded_rt_secret npx @bonded/runner --gateway https://gw.example -- <your agent command>",
       ),
     ).toBeTruthy();
-    expect(screen.getByText(/docker run --rm .* --token bonded_rt_secret/)).toBeTruthy();
+    expect(
+      screen.getByText(/docker run --rm -e BONDED_RUNNER_TOKEN=bonded_rt_secret/),
+    ).toBeTruthy();
     expect(await screen.findByText("Runner waiting")).toBeTruthy();
     expect(screen.getByText(/capped|Cover limit/)).toBeTruthy();
   });

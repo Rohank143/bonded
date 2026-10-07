@@ -177,7 +177,7 @@ export function ConnectAgent({
                 Copy it now: the token won't be shown again. Replace{" "}
                 <code className="font-mono text-xs">&lt;your agent command&gt;</code> with how you
                 start your agent; the runner starts it once per attack with the Arena's addresses in
-                its environment.
+                its environment. For Docker, build your agent into an image from the runner's.
               </p>
               <CommandLine label="With Node" text={runnerCommand(commandInput)} />
               <CommandLine label="With Docker" text={runnerDockerCommand(commandInput)} />
@@ -186,12 +186,12 @@ export function ConnectAgent({
             <p className="text-muted">
               Create a token to get the command. It looks like{" "}
               <code className="font-mono text-xs">
-                npx @bonded/runner --gateway … --token … -- &lt;your agent command&gt;
+                BONDED_RUNNER_TOKEN=… npx @bonded/runner --gateway … -- &lt;your agent command&gt;
               </code>
               .
             </p>
           )}
-          <p className="text-xs text-muted">{view.hint}</p>
+          <p className="text-xs text-muted">{runner.data?.problem ?? view.hint}</p>
           {runner.data?.runner && !connected && (
             <p className="text-xs text-muted">
               Last seen {when(Math.floor(Date.parse(runner.data.runner.lastHeartbeatAt) / 1000))}.

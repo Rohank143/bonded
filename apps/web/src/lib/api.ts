@@ -202,8 +202,8 @@ export interface RatingFacts {
   binding?: BindingLevel;
   /** Which attack surfaces the agent read (reports that record it). */
   coverage?: Coverage | null;
-  /** The held-out set made for this rating (remote ratings). */
-  heldOut?: { seed: string } | null;
+  /** The held-out set made for this rating alone (remote ratings). */
+  heldOut?: { seed: string; attacks?: number; source?: string; model?: string } | null;
 }
 /** Per surface: episodes that attacked it, and episodes in which the agent read it. */
 export interface Coverage {
@@ -348,6 +348,8 @@ export interface RunnerRecord {
   } | null;
   /** The latest rating the live loop had to skip, and why. */
   lastSkip: { cause: string; reason: string; at: string } | null;
+  /** Why a runner that is there doesn't count (e.g. started in the other mode), or null. */
+  problem?: string | null;
   /** The Arena Gateway's public URL, for the runner command; null when it isn't configured. */
   gatewayUrl: string | null;
 }
