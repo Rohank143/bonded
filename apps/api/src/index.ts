@@ -13,10 +13,13 @@ import {
 } from "@bonded/db";
 import {
   QuoteError,
+  REMOTE_KIND,
   SELF_SERVE_MAX_COVER_USD,
+  UNDERWRITING_COVER_CAP_USD,
   bondedRegistryAbi,
   bountyBoardAbi,
   leaderboardHeadline,
+  type BindingLevel,
 } from "@bonded/shared";
 import {
   readLeaderboard,
@@ -40,6 +43,8 @@ import { teeQuoteBlock } from "./tee-watch.js";
 import { RateLimiter, clientAddress } from "./rate-limit.js";
 import { selfServeRoutes, type SelfServeLimits } from "./self-serve.js";
 import { libraryRoutes, MAX_BODY_BYTES } from "./library.js";
+import { observedRatesRoute } from "./observed-rates.js";
+import { ratingFacts } from "./rating-facts.js";
 export { issueQuote } from "./quotes.js";
 /** A decimal id, in canonical form: "01" and "1" are the same agent, so they must be the same key. */
 const uint = z
@@ -110,6 +115,13 @@ export function createApi(options: {
   sentinel?: SentinelService;
   /** Limits on Sentinel checks (see sentinel.ts). */
   sentinelLimits?: Partial<SentinelLimits>;
+  /** The Arena Gateway's public URL, shown to owners in the runner command. */
+  gatewayUrl?: string;
+  /**
+   * Underwriting policy: total cover caps, in tUSDG, for agents their operators run, by binding
+   * (default `UNDERWRITING_COVER_CAP_USD`: 5,000 declared, 20,000 TEE).
+   */
+  coverCaps?: Readonly<Record<BindingLevel, number>>;
 }) {
   const { db, chain } = options;
   if (options.apiToken.length < 24)
@@ -122,7 +134,7 @@ export function createApi(options: {
     "*",
     cors({
       origin: (origin) => (originAllowed(origin, origins) ? origin : null),
-      allowMethods: ["GET", "POST"],
+      allowMethods: ["GET", "POST", "DELETE"],
       allowHeaders: ["Content-Type", "Authorization", "Last-Event-ID"],
       maxAge: 600,
     }),
@@ -141,22 +153,26 @@ export function createApi(options: {
     c.req.path === "/sentinel/check" ? checkBodies(c, next) : smallBodies(c, next),
   );
   // POSTs that need no operator token: a bounty reveal (the hash check against the chain's
-  // revealed specURI authenticates it), self-serve requests (signed by the agent's owner) and
-  // quotes (capped without the token; buyCover checks the guardian on chain) and Sentinel checks
-  // (signed by the agent's own key, see sentinel.ts).
+  // revealed specURI authenticates it), self-serve requests (signed by the agent's owner: register,
+  // rate, and create or revoke a runner token) and quotes (capped without the token; buyCover
+  // checks the guardian on chain) and Sentinel checks (signed by the agent's own key, see
+  // sentinel.ts). Every other POST or DELETE needs the operator token.
   const PUBLIC_POST =
-    /^\/(bounties\/\d{1,78}\/reveal|self\/agents(\/\d{1,78}\/rate)?|quotes|sentinel\/check)$/;
+    /^\/(bounties\/\d{1,78}\/reveal|self\/agents(\/\d{1,78}\/(rate|runner-token))?|quotes|sentinel\/check)$/;
+  const PUBLIC_DELETE = /^\/self\/agents\/\d{1,78}\/runner-token$/;
   const hasToken = (header: string | undefined) => {
     const token = Buffer.from(header ?? "");
     const expected = Buffer.from(`Bearer ${options.apiToken}`);
     return token.length === expected.length && timingSafeEqual(token, expected);
   };
   app.use("*", async (c, next) => {
-    if (
-      c.req.method === "POST" &&
-      !PUBLIC_POST.test(c.req.path) &&
-      !hasToken(c.req.header("Authorization"))
-    )
+    const open =
+      c.req.method === "POST"
+        ? PUBLIC_POST.test(c.req.path)
+        : c.req.method === "DELETE"
+          ? PUBLIC_DELETE.test(c.req.path)
+          : true;
+    if (!open && !hasToken(c.req.header("Authorization")))
       return c.json({ error: "unauthorized" }, 401);
     await next();
   });
@@ -172,13 +188,18 @@ export function createApi(options: {
     await db.pool.query("SELECT 1");
     return c.json({ ok: true, chainId: chain.deployment.chainId });
   });
+  // The latest posted score, with its binding level, coverage and held-out seed when the report
+  // has them (bring your own agent).
   app.get("/agents/:id/score", async (c) => {
     const id = uint.parse(c.req.param("id"));
     const r = await db.pool.query(
-      'SELECT id AS "runId",signed,tx_hash FROM attestations WHERE agent_id=$1 ORDER BY created_at DESC LIMIT 1',
+      `SELECT s.id AS "runId",s.signed,s.tx_hash,r.report FROM attestations s
+       JOIN ratings r ON r.id=s.id WHERE s.agent_id=$1 ORDER BY s.created_at DESC LIMIT 1`,
       [`${chain.deployment.chainId}:${id}`],
     );
-    return r.rowCount ? c.json(r.rows[0]) : c.json({ error: "score not found" }, 404);
+    if (!r.rowCount) return c.json({ error: "score not found" }, 404);
+    const { report, ...row } = r.rows[0];
+    return c.json({ ...row, ...ratingFacts(row.signed?.attestation?.teeMeasurement, report) });
   });
   app.get("/agents/:id/tee", async (c) => {
     const id = uint.parse(c.req.param("id"));
@@ -204,6 +225,10 @@ export function createApi(options: {
     // New cover for an agent with TEE custody needs the vault's key to be the TEE's key and no
     // outstanding failure (ADR-013, ADR-014). Decided against the same block the quote is built at.
     const teeRow = await db.teeCheck(`${chain.deployment.chainId}:${input.agentId}`);
+    // An agent its operator runs is capped by its binding (underwriting policy, not score).
+    const record = await db.agentRecord(`${chain.deployment.chainId}:${input.agentId}`);
+    const operatorRun =
+      record?.enabled === true && (record.config as { kind?: string }).kind === REMOTE_KIND;
     const signed = await issueQuote(
       chain,
       { ...input, vault: input.vault as Hex },
@@ -215,6 +240,7 @@ export function createApi(options: {
           vaultAgent,
           row: teeRow,
         }),
+      { capByBinding: operatorRun, caps: options.coverCaps ?? UNDERWRITING_COVER_CAP_USD },
     );
     await db.pool.query("INSERT INTO quotes(id,chain_id,agent_id,signed) VALUES($1,$2,$3,$4)", [
       randomUUID(),
@@ -248,7 +274,7 @@ export function createApi(options: {
               },
               202,
             );
-      return c.json(row);
+      return c.json({ ...row, ...(row.report ? ratingFacts(undefined, row.report) : {}) });
     });
   // Class-level results only (docs/disclosures). Each entry posted on this API's chain is checked
   // against the registry: `verified` means its current score has the same report hash.
@@ -408,7 +434,13 @@ export function createApi(options: {
     if (!episode) return c.json({ error: "episode not found; older episodes are pruned" }, 404);
     return c.json(withPublished(episode));
   });
-  selfServeRoutes(app, { db, chain, ...(options.selfServe ? { limits: options.selfServe } : {}) });
+  selfServeRoutes(app, {
+    db,
+    chain,
+    ...(options.selfServe ? { limits: options.selfServe } : {}),
+    ...(options.gatewayUrl ? { gatewayUrl: options.gatewayUrl } : {}),
+  });
+  observedRatesRoute(app, { db, chainId: chain.deployment.chainId });
   libraryRoutes(app, { db, chainId: chain.deployment.chainId });
   sentinelRoutes(app, {
     db,

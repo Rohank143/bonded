@@ -5,12 +5,15 @@ import {
   quoteMessage,
   QuoteError,
   MODEL_FAMILY_CODE,
+  bindingOf,
   bondedRegistryAbi,
+  underwritingCapRefusal,
   coverManagerAbi,
   coverPoolAbi,
   operatorBondAbi,
   mandateVaultAbi,
   tierForScore,
+  type BindingLevel,
   type SignedQuote,
 } from "@bonded/shared";
 import type { ServiceChain } from "@bonded/keeper";
@@ -27,6 +30,11 @@ export async function issueQuote(
     reportHash: string;
     vaultAgent: string;
   }) => string | undefined,
+  /**
+   * Underwriting policy for an agent its operator runs (bring your own agent): cover is capped by
+   * the score's binding, read from the same attestation the quote is priced from.
+   */
+  underwriting?: { capByBinding: boolean; caps?: Readonly<Record<BindingLevel, number>> },
 ): Promise<SignedQuote> {
   const { read, deployment: d } = chain;
   const block = await read.getBlock();
@@ -126,6 +134,17 @@ export async function issueQuote(
   });
   if (refusal) throw new QuoteError(refusal);
   const amount = BigInt(input.coverAmount);
+  // Policy first, so its reason is the one given: the binding cap is not about the pool's room.
+  const binding = underwriting?.capByBinding ? bindingOf(attestation.teeMeasurement) : undefined;
+  const capped =
+    binding &&
+    underwritingCapRefusal({
+      binding,
+      coverAmount: amount,
+      existingCover: existing,
+      ...(underwriting?.caps ? { caps: underwriting.caps } : {}),
+    });
+  if (capped) throw new QuoteError(capped);
   const cap = Math.min(agentCap, tierForScore(attestation.score).maxCoverBpsOfPool);
   if (total + amount > (assets * BigInt(leverage)) / 10000n)
     throw new QuoteError("pool capacity exceeded");
@@ -140,6 +159,9 @@ export async function issueQuote(
     bond,
     existingCover: existing,
     now: Number(block.timestamp),
+    ...(binding
+      ? { binding, ...(underwriting?.caps ? { coverCaps: underwriting.caps } : {}) }
+      : {}),
   });
   const signed = await signQuote(quote, {
     chainId: d.chainId,

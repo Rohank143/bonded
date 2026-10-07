@@ -12,6 +12,8 @@ import { agentConfig, workOne } from "./worker.js";
 import { sentinelFromEnv } from "./sentinel.js";
 import { workBountyOne } from "./bounty-worker.js";
 import { Alerter, LoopHealth, Watchdog, telegramFromEnv } from "./alerts.js";
+import { renewExpiringScores } from "./live-loop.js";
+import { UNDERWRITING_COVER_CAP_USD } from "@bonded/shared";
 
 loadDotEnv();
 const role = process.env.ROLE ?? "api";
@@ -43,6 +45,24 @@ const key = (name: string) =>
     .templateLiteral(["0x", z.string()])
     .refine((v) => /^0x[0-9a-fA-F]{64}$/.test(v))
     .parse(required(name));
+/** A cover cap in whole tUSDG from the environment, or its default. */
+const usdCap = (name: string, fallback: number) =>
+  z.coerce
+    .number()
+    .int()
+    .min(0)
+    .parse(process.env[name] ?? fallback);
+/**
+ * The gateway's public URL: GATEWAY_PUBLIC_URL, a full URL or a bare host (Railway's
+ * RAILWAY_PUBLIC_DOMAIN of the arena-worker), which is taken as https.
+ */
+const gatewayUrl = () => {
+  const value = process.env.GATEWAY_PUBLIC_URL?.trim();
+  if (!value) return undefined;
+  return z
+    .url({ protocol: /^https?$/ })
+    .parse(/^https?:\/\//.test(value) ? value : `https://${value}`);
+};
 const db = new Database(required("DATABASE_URL"));
 await db.migrate();
 if (role === "migrate") {
@@ -102,6 +122,13 @@ if (role === "migrate") {
         .filter(Boolean),
       // Sentinel checks for agents, when SENTINEL_URL is set (docs/SENTINEL.md).
       ...(sentinel ? { sentinel } : {}),
+      // The Arena Gateway's public URL (the arena-worker's domain), for the runner command.
+      ...(gatewayUrl() ? { gatewayUrl: gatewayUrl()! } : {}),
+      // Underwriting policy for agents their operators run: total cover caps by binding.
+      coverCaps: {
+        declared: usdCap("DECLARED_COVER_CAP_USD", UNDERWRITING_COVER_CAP_USD.declared),
+        tee: usdCap("TEE_COVER_CAP_USD", UNDERWRITING_COVER_CAP_USD.tee),
+      },
     });
     server = serve({
       fetch: api.fetch,
@@ -164,11 +191,27 @@ if (role === "migrate") {
   if (role === "arena-worker" || role === "all") {
     // Separate account/nonce flow from the keeper, even in all mode.
     const worker = connectChain(deployment, rpc, key("ATTESTER_KEY"));
+    // The Arena Gateway (bring your own agent) isn't in this build yet: without it a remote
+    // agent's rating fails at once with "gateway not available". When it is, it starts here with
+    // DbRunnerAuth (runners.ts) as its token validator and presence writer, and its RemoteAgent
+    // goes in `remote`.
     tasks.push(
       loop(
         "The rating worker",
-        () => workOne(db, worker, rpc, key("ATTESTER_KEY"), undefined, sentinel),
+        () => workOne(db, worker, rpc, key("ATTESTER_KEY"), undefined, sentinel, {}),
         1000,
+      ),
+    );
+    // Renew bring-your-own agents' scores before they lapse, while their runners are connected.
+    tasks.push(
+      loop(
+        "Score renewals",
+        () => renewExpiringScores(db, deployment.chainId),
+        z.coerce
+          .number()
+          .int()
+          .min(60_000)
+          .parse(process.env.RENEW_CHECK_MS ?? 600_000),
       ),
     );
     // Error names only: messages can carry the RPC URL and its key.

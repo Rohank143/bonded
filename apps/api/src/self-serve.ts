@@ -7,6 +7,8 @@ import {
   mandateHash,
   mandateVaultAbi,
   mandateVaultFactoryAbi,
+  REMOTE_KIND,
+  REMOTE_MODES,
   SELF_SERVE_KINDS,
   SELF_SERVE_MAX_AGE_SECONDS,
   selfServeMessage,
@@ -25,12 +27,16 @@ import {
   type Hex,
 } from "viem";
 import { RateLimiter, clientAddress } from "./rate-limit.js";
+import { newRunnerToken, runnerTokenHash } from "./runners.js";
+import { agentConfig, teeConfig } from "./worker.js";
 
 /**
  * Self-serve routes (docs/SPECIFICATION.md, Day 14 workstream 7): an agent's owner registers their agent
  * for ratings and asks for ratings by signing a message in their wallet, with no operator token.
  * What gets rated is one of Bonded's built-in scripted agent designs, run against the owner's own
- * vault and mandate (docs/AGENTS.md); rating the owner's own agent code is issue #84.
+ * vault and mandate (docs/AGENTS.md), or the owner's own agent, running on their servers and
+ * connected to the Arena Gateway by `@bonded/runner` with a runner token made here
+ * (docs/BRING-YOUR-OWN-AGENT.md).
  */
 
 /**
@@ -66,17 +72,32 @@ const uint = z
   .transform((v) => BigInt(v).toString());
 const address = z.string().regex(/^0x[0-9a-fA-F]{40}$/);
 const signature = z.string().regex(/^0x[0-9a-fA-F]{130}$/);
-const registerInput = z.strictObject({
-  agentId: uint,
-  vault: address,
-  kind: z.enum(SELF_SERVE_KINDS),
-  mandate: EvmMandate,
-  /** Rate with Sentinel in front of the design (docs/SENTINEL.md). */
-  sentinel: z.boolean().optional(),
-  timestamp: z.number().int().positive(),
-  signature,
-});
-const rateInput = z.strictObject({ timestamp: z.number().int().positive(), signature });
+const registerInput = z.union([
+  z.strictObject({
+    agentId: uint,
+    vault: address,
+    kind: z.enum(SELF_SERVE_KINDS),
+    mandate: EvmMandate,
+    /** Rate with Sentinel in front of the design (docs/SENTINEL.md). */
+    sentinel: z.boolean().optional(),
+    timestamp: z.number().int().positive(),
+    signature,
+  }),
+  // The owner's own agent: what it declares about its code, how it acts, and its TEE if any.
+  z.strictObject({
+    agentId: uint,
+    vault: address,
+    kind: z.literal(REMOTE_KIND),
+    mandate: EvmMandate,
+    codeHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/),
+    mode: z.enum(REMOTE_MODES),
+    tee: teeConfig.optional(),
+    timestamp: z.number().int().positive(),
+    signature,
+  }),
+]);
+/** A signed request with nothing else in it: rate, create or revoke a runner token. */
+const signedInput = z.strictObject({ timestamp: z.number().int().positive(), signature });
 
 /** A self-serve request the API refuses, with the status and the reason to show the user. */
 class Refused extends Error {
@@ -90,7 +111,13 @@ class Refused extends Error {
 
 export function selfServeRoutes(
   app: Hono,
-  options: { db: Database; chain: ServiceChain; limits?: Partial<SelfServeLimits> },
+  options: {
+    db: Database;
+    chain: ServiceChain;
+    limits?: Partial<SelfServeLimits>;
+    /** The Arena Gateway's public URL, for the runner command the owner copies. */
+    gatewayUrl?: string;
+  },
 ) {
   const { db, chain } = options;
   const d = chain.deployment;
@@ -189,13 +216,23 @@ export function selfServeRoutes(
       const agentId = uint.parse(c.req.param("id"));
       const record = await db.agentRecord(rowId(agentId));
       if (!record?.enabled) return c.json({ registered: false });
-      const config = record.config as { kind: string; sentinel?: boolean };
+      const config = record.config as {
+        kind: string;
+        sentinel?: boolean;
+        codeHash?: string;
+        mode?: string;
+        tee?: { url: string; composeHash: string };
+      };
       const last = record.last_rating_at?.getTime();
       return c.json({
         registered: true,
         source: record.source,
         kind: config.kind,
         sentinel: config.sentinel === true,
+        // The owner's own agent: what was declared, so the page can show it.
+        ...(config.kind === REMOTE_KIND
+          ? { codeHash: config.codeHash, mode: config.mode, tee: config.tee ?? null }
+          : {}),
         owner: record.owner,
         lastRatingAt: last ? new Date(last).toISOString() : null,
         nextRatingAt:
@@ -217,17 +254,26 @@ export function selfServeRoutes(
       limit(c);
       const input = registerInput.parse(await c.req.json());
       const hash = mandateHash(input.mandate);
+      const base = {
+        action: "register" as const,
+        chainId: d.chainId,
+        agentId: input.agentId,
+        vault: input.vault,
+        mandateHash: hash,
+        timestamp: input.timestamp,
+      };
       const who = await signer(
-        {
-          action: "register",
-          chainId: d.chainId,
-          agentId: input.agentId,
-          vault: input.vault,
-          kind: input.kind,
-          mandateHash: hash,
-          ...(input.sentinel ? { sentinel: true } : {}),
-          timestamp: input.timestamp,
-        },
+        input.kind === REMOTE_KIND
+          ? {
+              ...base,
+              kind: REMOTE_KIND,
+              remote: {
+                codeHash: input.codeHash,
+                mode: input.mode,
+                ...(input.tee ? { tee: input.tee } : {}),
+              },
+            }
+          : { ...base, kind: input.kind, ...(input.sentinel ? { sentinel: true } : {}) },
         input.signature,
       );
       if (input.mandate.chain.chainId !== d.chainId || input.mandate.agentId !== input.agentId)
@@ -261,20 +307,41 @@ export function selfServeRoutes(
         throw new Refused(400, "the mandate doesn't match the vault's on-chain mandate");
       const mismatch = await createdWith(vault, input.mandate);
       if (mismatch) throw new Refused(400, mismatch);
-      const stored = await db.upsertUserAgent(d.chainId, input.agentId, who, {
-        kind: input.kind,
-        mandate: input.mandate,
-        codeHash: selfServeCodeHash(input.kind),
-        repeats: limits.repeats,
-        ...(input.sentinel ? { sentinel: true } : {}),
-      });
+      const config = agentConfig.parse(
+        input.kind === REMOTE_KIND
+          ? {
+              kind: REMOTE_KIND,
+              mandate: input.mandate,
+              codeHash: input.codeHash,
+              mode: input.mode,
+              ...(input.tee ? { tee: input.tee } : {}),
+              repeats: limits.repeats,
+            }
+          : {
+              kind: input.kind,
+              mandate: input.mandate,
+              codeHash: selfServeCodeHash(input.kind),
+              repeats: limits.repeats,
+              ...(input.sentinel ? { sentinel: true } : {}),
+            },
+      );
+      const previous = await db.agentRecord(rowId(input.agentId));
+      const stored = await db.upsertUserAgent(d.chainId, input.agentId, who, config);
       if (!stored) throw new Refused(409, "this agent is managed by Bonded's operator");
+      // A runner connected for another mode must reconnect, so the gateway checks it again.
+      const before = previous?.config as { kind?: string; mode?: string } | undefined;
+      if (
+        before?.kind === REMOTE_KIND &&
+        (config.kind !== REMOTE_KIND || before.mode !== config.mode)
+      )
+        await db.dropRunner(rowId(input.agentId));
       return c.json(
         {
           registered: true,
           agentId: input.agentId,
           kind: input.kind,
-          sentinel: input.sentinel === true,
+          sentinel: input.kind !== REMOTE_KIND && input.sentinel === true,
+          ...(input.kind === REMOTE_KIND ? { mode: input.mode, tee: Boolean(input.tee) } : {}),
         },
         201,
       );
@@ -287,7 +354,7 @@ export function selfServeRoutes(
     handle(async (c) => {
       limit(c);
       const agentId = uint.parse(c.req.param("id"));
-      const input = rateInput.parse(await c.req.json());
+      const input = signedInput.parse(await c.req.json());
       const who = await signer(
         { action: "rate", chainId: d.chainId, agentId, timestamp: input.timestamp },
         input.signature,
@@ -299,6 +366,12 @@ export function selfServeRoutes(
       // can only be rated by its new owner.
       if ((await ownerOf(agentId)) !== who)
         throw new Refused(403, "only the agent's owner can ask for a rating");
+      // The owner's own agent is rated through its runner, so one must be connected now.
+      if (
+        (record.config as { kind?: string }).kind === REMOTE_KIND &&
+        !(await db.runnerIsConnected(rowId(agentId)))
+      )
+        throw new Refused(409, "no runner is connected for this agent; start it, then rate");
       const queued = await db.enqueueUserRating(rowId(agentId), d.chainId, {
         nowMs: now(),
         perAgentMs: limits.perAgentMs,
@@ -312,6 +385,84 @@ export function selfServeRoutes(
             : "today's self-serve ratings are used up; try again tomorrow",
         );
       return c.json({ runId: queued.runId }, 202);
+    }),
+  );
+
+  /**
+   * The owner's own agent, ready for a runner token: registered as remote, and asked for by the
+   * agent's owner (the registry's, not whoever registered it) with a fresh signature.
+   */
+  async function remoteOwner(c: Context, action: "runner-token" | "revoke-runner-token") {
+    limit(c);
+    const agentId = uint.parse(c.req.param("id"));
+    const input = signedInput.parse(await c.req.json());
+    const who = await signer(
+      { action, chainId: d.chainId, agentId, timestamp: input.timestamp },
+      input.signature,
+    );
+    const record = await db.agentRecord(rowId(agentId));
+    if (!record?.enabled) throw new Refused(404, "register the agent for ratings first");
+    if ((record.config as { kind?: string }).kind !== REMOTE_KIND)
+      throw new Refused(409, "runner tokens are for agents registered as your own agent");
+    if ((await ownerOf(agentId)) !== who)
+      throw new Refused(403, "only the agent's owner can manage its runner token");
+    return { agentId, who, timestamp: input.timestamp };
+  }
+
+  /**
+   * Create a runner token, shown once. It replaces the agent's current token, and a runner
+   * connected with the old one is dropped at its next heartbeat.
+   */
+  app.post(
+    "/self/agents/:id/runner-token",
+    handle(async (c) => {
+      const { agentId, who, timestamp } = await remoteOwner(c, "runner-token");
+      const token = newRunnerToken();
+      const made = await db.createRunnerToken(rowId(agentId), {
+        hash: runnerTokenHash(token),
+        createdBy: who,
+        signedAt: timestamp,
+      });
+      if ("refused" in made)
+        throw new Refused(409, "that signed request was already used; sign again");
+      c.header("Cache-Control", "no-store");
+      return c.json(
+        {
+          token,
+          tokenId: made.id,
+          createdAt: made.createdAt.toISOString(),
+          gatewayUrl: options.gatewayUrl ?? null,
+        },
+        201,
+      );
+    }),
+  );
+
+  /** Revoke the agent's runner token; a connected runner is dropped. */
+  app.delete(
+    "/self/agents/:id/runner-token",
+    handle(async (c) => {
+      const { agentId, timestamp } = await remoteOwner(c, "revoke-runner-token");
+      const done = await db.revokeRunnerToken(rowId(agentId), timestamp);
+      if ("refused" in done)
+        throw new Refused(409, "that signed request was already used; sign again");
+      return c.json({ revoked: done.revoked });
+    }),
+  );
+
+  /**
+   * The agent's runner token (whether there is one, never the token) and its runner: connected or
+   * not, its version, mode and TEE URL, and the last rating the live loop had to skip.
+   */
+  app.get(
+    "/self/agents/:id/runner",
+    handle(async (c) => {
+      const agentId = uint.parse(c.req.param("id"));
+      const record = await db.agentRecord(rowId(agentId));
+      if (!record?.enabled || (record.config as { kind?: string }).kind !== REMOTE_KIND)
+        return c.json({ error: "this agent isn't registered as your own agent" }, 404);
+      const status = await db.runnerStatus(rowId(agentId));
+      return c.json({ ...status, gatewayUrl: options.gatewayUrl ?? null });
     }),
   );
 }

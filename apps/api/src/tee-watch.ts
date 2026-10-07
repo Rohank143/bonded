@@ -110,11 +110,17 @@ export function teeQuoteBlock(input: {
   return undefined;
 }
 
-/** Checks every enabled agent on this chain that has a TEE configured, and stores the results. */
+/**
+ * Checks every enabled agent on this chain that has a TEE configured, Bonded's own or an operator's
+ * (bring your own agent), and stores the results. When an operator's agent no longer runs what was
+ * rated (`mismatch`), quotes stop (`teeQuoteBlock`) and a re-rating is queued if its runner is
+ * connected, at most once per `rerateGapMs`; with no runner the skip is recorded with its reason.
+ */
 export async function runTeeChecks(
   db: Database,
   chain: ServiceChain,
   attest: Attest = attestTeeAgent,
+  options: { rerateGapMs?: number } = {},
 ): Promise<number> {
   const rows = await db.pool.query(
     "SELECT agent_id,config FROM agents WHERE chain_id=$1 AND enabled",
@@ -171,9 +177,22 @@ export async function runTeeChecks(
       observedReportHash,
       ...result,
     });
+    if (result.status === "mismatch" && config.data.kind === "remote")
+      await rerateChanged(db, key, options.rerateGapMs ?? 60 * 60_000);
     checked++;
   }
   return checked;
+}
+
+/** A remote agent's TEE changed: re-rate it through its runner, or record why it can't be. */
+async function rerateChanged(db: Database, key: string, gapMs: number) {
+  if (await db.runnerIsConnected(key)) await db.enqueueIfIdle(key, gapMs);
+  else
+    await db.recordRatingSkip(
+      key,
+      "tee-changed",
+      "the agent's TEE no longer runs what was rated, and its runner is offline; connect it and rate the agent",
+    );
 }
 
 export const teeCheckInterval = z.coerce.number().int().min(60_000);
