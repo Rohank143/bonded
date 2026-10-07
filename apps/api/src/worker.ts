@@ -57,6 +57,11 @@ const repeats = z.number().int().min(1).max(10).optional();
  * account. A module enforces the mandate's commitment, so that is the hash the rating attests.
  */
 const protection = z.enum(PROTECTIONS).optional();
+/** The vault or module the owner registered (self-serve), so pages can find it. */
+const guardAddress = z
+  .string()
+  .regex(/^0x[0-9a-fA-F]{40}$/)
+  .optional();
 
 /** One of Bonded's built-in designs, run in the Arena itself. */
 const builtInConfig = z
@@ -67,6 +72,7 @@ const builtInConfig = z
     tee: teeConfig.optional(),
     repeats,
     protection,
+    vault: guardAddress,
     /**
      * Rate the agent with Sentinel in front of it (docs/SENTINEL.md). The report records it, and
      * the rating fails if Sentinel isn't configured: it never quietly rates without it.
@@ -93,6 +99,7 @@ const remoteConfig = z.strictObject({
   tee: teeConfig.optional(),
   repeats,
   protection,
+  vault: guardAddress,
 });
 
 // Operators provision these records, or owners register them signed (self-serve.ts); callers

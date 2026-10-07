@@ -138,13 +138,10 @@ it("registers a module-protected agent, and rates it under the commitment the mo
   const commitment = mandateCommitment(toEvmMandateParams(mandate));
   expect(attestedMandateHash(config)).toBe(commitment);
   expect(commitment).not.toBe(mandateHash(mandate));
-  expect(
-    (
-      (await (await app.request(`/self/agents/${agentId}`)).json()) as {
-        protection: string;
-      }
-    ).protection,
-  ).toBe("module");
+  expect(await (await app.request(`/self/agents/${agentId}`)).json()).toMatchObject({
+    protection: "module",
+    vault: module,
+  });
 }, 120_000);
 
 it("quotes cover for the module, priced from a score on its commitment", async () => {

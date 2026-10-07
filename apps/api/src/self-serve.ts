@@ -316,6 +316,7 @@ export function selfServeRoutes(
         sentinel: config.sentinel === true,
         // What protects the funds: a vault, or a module on the agent's smart account.
         protection: (record.config as { protection?: string }).protection ?? "vault",
+        vault: (record.config as { vault?: string }).vault ?? null,
         // The owner's own agent: what was declared, so the page can show it.
         ...(config.kind === REMOTE_KIND
           ? {
@@ -388,6 +389,7 @@ export function selfServeRoutes(
               ...(input.tee ? { tee: input.tee } : {}),
               repeats: limits.repeats,
               ...(module ? { protection: "module" } : {}),
+              vault: input.vault,
             }
           : {
               kind: input.kind,
@@ -396,6 +398,7 @@ export function selfServeRoutes(
               repeats: limits.repeats,
               ...(input.sentinel ? { sentinel: true } : {}),
               ...(module ? { protection: "module" } : {}),
+              vault: input.vault,
             },
       );
       const previous = await db.agentRecord(rowId(input.agentId));
