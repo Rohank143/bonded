@@ -362,6 +362,14 @@ export function createApi(options: {
     );
     return c.json({ ...result, through, counts: cached.counts });
   });
+  // One episode with its detail, for the Arena's episode page. Unpublished attacks' text is never
+  // in it: the worker leaves it out when it publishes the episode (publicEpisode).
+  app.get("/episodes/:eventId", async (c) => {
+    const eventId = uint.parse(c.req.param("eventId"));
+    const episode = await db.episode(eventId);
+    if (!episode) return c.json({ error: "episode not found; older episodes are pruned" }, 404);
+    return c.json(episode);
+  });
   selfServeRoutes(app, { db, chain, ...(options.selfServe ? { limits: options.selfServe } : {}) });
   libraryRoutes(app, { db, chainId: chain.deployment.chainId });
   app.get("/events", async (c) => {

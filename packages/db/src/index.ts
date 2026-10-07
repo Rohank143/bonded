@@ -66,6 +66,55 @@ export interface EpisodeSummary {
   frozen: boolean;
   /** The rated agent's on-chain id, when the run is in this database's ratings. */
   agentId: string | null;
+  /**
+   * Why the vault ruled as it did (`Ruling` in @bonded/arena): breach, vault_blocked,
+   * guard_blocked, ignored, unseen, no_verdict or control. Null for episodes published before
+   * rulings were recorded.
+   */
+  ruling: string | null;
+}
+
+/** One episode with its detail (`EpisodeDetail` in @bonded/arena), for the episode page. */
+export interface EpisodeRecord extends EpisodeSummary {
+  agent: string | null;
+  durationMs: number | null;
+  /** Null for episodes published before the detail was recorded. */
+  detail: unknown;
+}
+
+/** An episode event's row as the lists show it. */
+/** The parts of a rating.episode payload the lists read (published by the rating worker). */
+interface EpisodePayload {
+  runId: string;
+  index: number;
+  total?: number;
+  episode?: {
+    attackId?: string | null;
+    attackClass?: string | null;
+    ruling?: unknown;
+    verdict?: { breached?: boolean; totalLossUsd?: number; frozen?: boolean };
+  };
+}
+
+function episodeSummary(row: {
+  id: unknown;
+  payload: EpisodePayload;
+  onchain: string | null;
+}): EpisodeSummary {
+  const p = row.payload;
+  return {
+    eventId: String(row.id),
+    runId: String(p.runId),
+    index: Number(p.index),
+    total: Number(p.total ?? 0),
+    attackId: p.episode?.attackId ?? null,
+    attackClass: p.episode?.attackClass ?? null,
+    breached: p.episode?.verdict?.breached === true,
+    lossUsd: Number(p.episode?.verdict?.totalLossUsd ?? 0),
+    frozen: p.episode?.verdict?.frozen === true,
+    agentId: row.onchain ?? null,
+    ruling: typeof p.episode?.ruling === "string" ? p.episode.ruling : null,
+  };
 }
 
 /** How an episode went: a control has no attack; otherwise the vault held or recorded a breach. */
@@ -707,19 +756,27 @@ export class Database {
       WHERE ${where} ORDER BY e.id DESC LIMIT ${limit} OFFSET ${at.offset}`,
       values,
     );
-    const items = r.rows.map(({ id, payload: p, onchain }): EpisodeSummary => ({
-      eventId: String(id),
-      runId: String(p.runId),
-      index: Number(p.index),
-      total: Number(p.total ?? 0),
-      attackId: p.episode?.attackId ?? null,
-      attackClass: p.episode?.attackClass ?? null,
-      breached: p.episode?.verdict?.breached === true,
-      lossUsd: Number(p.episode?.verdict?.totalLossUsd ?? 0),
-      frozen: p.episode?.verdict?.frozen === true,
-      agentId: onchain ?? null,
-    }));
+    const items = r.rows.map((row) => episodeSummary(row));
     return { items, page: at.page, pages: at.pages, total };
+  }
+  /** One Arena episode with its detail, or undefined if it doesn't exist or was pruned. */
+  async episode(eventId: string): Promise<EpisodeRecord | undefined> {
+    const r = await this.pool.query(
+      `SELECT e.id, e.payload, a.agent_id::text AS onchain FROM events e
+        LEFT JOIN ratings r ON r.id::text = e.payload->>'runId'
+        LEFT JOIN agents a ON a.id = r.agent_id
+      WHERE e.topic='rating.episode' AND e.id = $1::bigint`,
+      [eventId],
+    );
+    const row = r.rows[0];
+    if (!row) return undefined;
+    const episode = row.payload.episode ?? {};
+    return {
+      ...episodeSummary(row),
+      agent: typeof episode.agent === "string" ? episode.agent : null,
+      durationMs: typeof episode.durationMs === "number" ? episode.durationMs : null,
+      detail: episode.detail ?? null,
+    };
   }
   /**
    * How each attack has done in the Arena episodes still on record (the events table keeps a

@@ -3,7 +3,9 @@ import { Link, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ATTACK_CLASSES } from "@bonded/shared";
 import { api } from "../lib/api";
-import { outcomeOf, type EpisodeCard } from "../lib/events";
+import type { EpisodeCard } from "../lib/events";
+import { rulingView } from "../lib/ruling";
+import { RulingBadge, RulingDot, VerdictCard } from "../components/ruling";
 import { isPrivate, newestEpisode, useEpisodeSnapshot, type EpisodeFilters } from "../lib/episodes";
 import { useListParams } from "../lib/pages";
 import { useAgents } from "../lib/chain";
@@ -25,8 +27,6 @@ import { Select } from "../components/select";
 import { Pagination } from "../components/pagination";
 
 const CLASS_NAMES = ATTACK_CLASSES as Record<string, { name: string }>;
-
-const outcome = outcomeOf;
 
 export function Arena() {
   const [picked, setPicked] = useState<string>();
@@ -347,7 +347,7 @@ export function Arena() {
               className={`mt-2 flex flex-col gap-0.5 transition-opacity ${feed.isFetching && !feed.isPending ? "opacity-60" : ""}`}
             >
               {shown.map((c) => {
-                const o = outcome(c);
+                const r = rulingView(c);
                 const isSel = selected?.eventId === c.eventId;
                 return (
                   <li key={c.eventId}>
@@ -357,9 +357,7 @@ export function Arena() {
                       aria-pressed={isSel}
                       className={`grid w-full grid-cols-[10px_minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border px-3 py-3.5 sm:grid-cols-[10px_52px_minmax(0,1fr)_auto] sm:gap-4 sm:px-4 text-left transition ${isSel ? "border-accent/40 bg-accent-soft" : "border-transparent hover:bg-white/[0.035]"}`}
                     >
-                      <span
-                        className={`size-2.5 rounded-full ${o === "breach" ? "bg-breach-solid shadow-[0_0_10px_rgb(255_122_69/.7)]" : o === "held" ? "bg-held shadow-[0_0_10px_rgb(127_160_255/.6)]" : "bg-[#5b6478]"}`}
-                      />
+                      <RulingDot r={r} />
                       <span className="hidden w-fit rounded-md bg-white/[0.06] px-1.5 py-0.5 text-center font-mono text-[11px] text-soft sm:block">
                         {c.attackClass ?? "CTRL"}
                       </span>
@@ -381,15 +379,7 @@ export function Arena() {
                         </span>
                       </span>
                       <span className="text-right sm:w-[118px]">
-                        <Badge
-                          tone={o === "breach" ? "breach" : o === "held" ? "brand" : "neutral"}
-                        >
-                          {o === "breach"
-                            ? `Breach · $${c.lossUsd.toFixed(0)}`
-                            : o === "held"
-                              ? "Held"
-                              : "Control"}
-                        </Badge>
+                        <RulingBadge r={r} />
                       </span>
                     </button>
                   </li>
@@ -521,7 +511,14 @@ function HeldOutTag() {
 
 /** One episode: what was planted, how the vault ruled, and which run it came from. */
 function EpisodeDetail({ c, onlyRun }: { c: EpisodeCard; onlyRun?: () => void }) {
-  const o = outcome(c);
+  const r = rulingView(c);
+  // The task comes with the episode's detail; the panel only needs that one line.
+  const detail = useQuery({
+    queryKey: ["episode", c.eventId],
+    queryFn: () => api.episode(c.eventId),
+    staleTime: Infinity,
+  });
+  const task = detail.data?.detail?.task;
   const name = c.attackClass
     ? (CLASS_NAMES[c.attackClass]?.name ?? c.attackClass)
     : "Control episode";
@@ -557,19 +554,23 @@ function EpisodeDetail({ c, onlyRun }: { c: EpisodeCard; onlyRun?: () => void })
         </p>
       </section>
 
+      {task && (
+        <p className="-mt-2 text-sm text-soft">
+          <span className="text-muted">Task:</span> {task}
+        </p>
+      )}
+
       <section>
         <p className="eyebrow mb-2.5 !text-accent">How the vault ruled</p>
-        <div
-          className={`rounded-2xl border p-5 ${o === "breach" ? "border-breach/40 bg-breach-soft" : "border-accent/30 bg-accent-soft"}`}
-        >
-          <p className="font-serif text-4xl leading-none">{o === "breach" ? "Breach" : "Held"}</p>
-          <p className="mt-2 text-sm text-soft">
-            {o === "breach"
-              ? `The agent broke its mandate and $${c.lossUsd.toFixed(0)} left the vault${c.frozen ? "; the agent was frozen" : ""}.`
-              : "No breach recorded: the agent did nothing its mandate forbids."}
-          </p>
-        </div>
+        <VerdictCard r={r} />
       </section>
+
+      <Link
+        to={`/arena/episodes/${c.eventId}`}
+        className="-mt-2 text-sm text-accent hover:underline"
+      >
+        See the full episode →
+      </Link>
 
       <section className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-5 text-sm">
         <span className="text-muted">

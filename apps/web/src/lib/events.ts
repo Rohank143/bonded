@@ -15,6 +15,8 @@ export interface EpisodeCard {
   frozen: boolean;
   /** The rated agent's on-chain id; from GET /episodes only, the live stream doesn't carry it. */
   agentId?: string | null;
+  /** Why the vault ruled as it did (lib/ruling.ts); null for episodes from before it was recorded. */
+  ruling?: string | null;
 }
 
 /** Topics the API streams (docs/SERVICES.md). Unknown topics are ignored. */
@@ -34,6 +36,7 @@ export function toEpisodeCard(eventId: string, data: string): EpisodeCard | null
         attackId?: string | null;
         attackClass?: string | null;
         verdict?: { breached?: boolean; totalLossUsd?: number; frozen?: boolean };
+        ruling?: unknown;
       };
     };
     if (typeof p.runId !== "string" || typeof p.index !== "number" || !p.episode?.verdict)
@@ -48,6 +51,7 @@ export function toEpisodeCard(eventId: string, data: string): EpisodeCard | null
       breached: p.episode.verdict.breached === true,
       lossUsd: Number(p.episode.verdict.totalLossUsd ?? 0),
       frozen: p.episode.verdict.frozen === true,
+      ruling: typeof p.episode.ruling === "string" ? p.episode.ruling : null,
     };
   } catch {
     return null;

@@ -40,6 +40,46 @@ export interface EpisodesPage extends Paged<EpisodeCard> {
   counts: EpisodeCounts;
 }
 
+/**
+ * What an episode's page shows (`EpisodeDetail` in apps/arena/src/report.ts). For a held-out or
+ * bounty attack, `attack.planted`, guard reasons and `finalMessage` are never sent.
+ */
+export interface EpisodeDetail {
+  task: string;
+  attack: {
+    published: boolean;
+    title?: string;
+    surfaces: string[];
+    planted?: {
+      surface: string;
+      sender?: string;
+      token?: string;
+      prices?: Record<string, number>;
+      text: string;
+    }[];
+  } | null;
+  seen: boolean | null;
+  steps: {
+    step: number;
+    tool: string;
+    write: boolean;
+    args?: Record<string, string>;
+    ok: boolean;
+    breaches: { type: string; lossUsd: number; blocked: boolean }[];
+  }[];
+  guardBlocked: { tool: string; args?: Record<string, string>; reason?: string }[];
+  drained: { token: string; amount: string }[];
+  stoppedBecause: string;
+  finalMessage?: string;
+}
+
+/** GET /episodes/:eventId. `detail` is null for episodes from before it was recorded. */
+export interface EpisodeRecord extends EpisodeCard {
+  agent: string | null;
+  durationMs: number | null;
+  detail: EpisodeDetail | null;
+}
+
 export interface EpisodeFilters {
   runId?: string;
   /** One attack's episodes, by its id. */
@@ -321,6 +361,8 @@ export const api = {
     request<{ attack: AttackSpec; stats: AttackStats; statsSince: string | null }>(
       `/library/attacks/${encodeURIComponent(id)}`,
     ),
+  /** One episode with its detail, for its page. */
+  episode: (eventId: string) => request<EpisodeRecord>(`/episodes/${eventId}`),
   /** No operator token: the API checks the spec's hash against the revealed specURI. */
   revealBounty: (id: string, yaml: string) =>
     request<{ created: boolean; status: string }>(`/bounties/${id}/reveal`, {
