@@ -1,35 +1,39 @@
-import { useEffect, useMemo, useState } from "react";
-import { useInfiniteQuery } from "@tanstack/react-query";
-import { api, type EpisodesQuery } from "./api";
+import { useEffect, useRef, useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { api, type EpisodeFilters } from "./api";
 import {
   NO_EPISODES,
   outcomeOf,
+  tally,
   useEpisodeFeed,
   type EpisodeCard,
   type EpisodeCounts,
 } from "./events";
 
-export type EpisodeFilters = Omit<EpisodesQuery, "before" | "limit">;
+export type { EpisodeFilters };
 
-/** Whether a live episode belongs in a list with these filters (the API applies the same). */
-export function matches(c: EpisodeCard, f: EpisodeFilters): boolean {
+/** Held-out and bounty attacks have ids that say so; the API reads them the same way. */
+export const isPrivate = (c: EpisodeCard) =>
+  Boolean(c.attackId && /held-out|bounty/i.test(c.attackId));
+
+/**
+ * Whether a streamed episode belongs in a list with these filters, as the API decides it. The
+ * stream doesn't say which agent a run rates, so for an agent filter `agentRuns` lists the runs
+ * already seen for that agent. A new episode is always inside a "since" window.
+ */
+export function matches(
+  c: EpisodeCard,
+  f: EpisodeFilters,
+  agentRuns: ReadonlySet<string> = new Set(),
+): boolean {
   return (
     (!f.runId || c.runId === f.runId) &&
+    (!f.agentId || (c.agentId != null ? c.agentId === f.agentId : agentRuns.has(c.runId))) &&
     (!f.outcome || outcomeOf(c) === f.outcome) &&
-    (!f.attackClass || c.attackClass === f.attackClass)
+    (!f.attackClass || c.attackClass === f.attackClass) &&
+    (!f.source ||
+      (f.source === "held-out" ? isPrivate(c) : Boolean(c.attackClass) && !isPrivate(c)))
   );
-}
-
-/** Live and paged episodes as one list: newest first by event id, each once. */
-export function mergeEpisodes(live: EpisodeCard[], paged: EpisodeCard[]): EpisodeCard[] {
-  const seen = new Set<string>();
-  const out: EpisodeCard[] = [];
-  for (const c of [...live, ...paged])
-    if (!seen.has(c.eventId)) {
-      seen.add(c.eventId);
-      out.push(c);
-    }
-  return out.sort((a, b) => (BigInt(b.eventId) > BigInt(a.eventId) ? 1 : -1));
 }
 
 export const addCounts = (a: EpisodeCounts, b: EpisodeCounts): EpisodeCounts => ({
@@ -40,54 +44,59 @@ export const addCounts = (a: EpisodeCounts, b: EpisodeCounts): EpisodeCounts => 
 });
 
 /**
- * The Arena's episodes: pages from GET /episodes (filtered in the database, newest first),
- * plus a live stream of new ones. One stream per run: it opens after the `through` of the
- * run's first page and doesn't restart when the filters change. Counts are the server's,
- * taken through that id, plus every episode streamed since, so they are exact.
+ * The Arena's episodes as numbered pages of a snapshot. The first request takes the snapshot
+ * (the API returns `through`, the newest event id); every later page and filter change reads
+ * the same snapshot, so page 3 keeps its rows while episodes arrive. A live stream after
+ * `through` counts the new ones: `fresh` is how many would join this list, and the counts
+ * include every new episode the filters allow. `refresh` takes a new snapshot.
  */
-export function useEpisodes(filters: EpisodeFilters, limit = 30) {
-  const pages = useInfiniteQuery({
-    queryKey: ["episodes", filters, limit],
-    queryFn: ({ pageParam }) =>
-      api.episodes({ ...filters, limit, ...(pageParam ? { before: pageParam } : {}) }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last) => last.next ?? undefined,
+export function useEpisodeSnapshot(filters: EpisodeFilters, page: number, limit: number) {
+  const [snapshot, setSnapshot] = useState(0);
+  const through = useRef<string | undefined>(undefined);
+  const [streamFrom, setStreamFrom] = useState<string>();
+  const list = useQuery({
+    queryKey: ["episodes", filters, page, limit, snapshot],
+    queryFn: () =>
+      api.episodes({
+        ...filters,
+        page,
+        limit,
+        ...(through.current ? { through: through.current } : {}),
+      }),
+    placeholderData: keepPreviousData,
   });
-  const runId = filters.runId;
-  const first = pages.data?.pages[0];
-  const [base, setBase] = useState<{
-    runId: string | undefined;
-    through: string;
-    counts: EpisodeCounts;
-  }>();
   useEffect(() => {
-    if (first?.through && first.counts && (!base || base.runId !== runId))
-      setBase({ runId, through: first.through, counts: first.counts });
-  }, [first, runId, base]);
-  const current = base && base.runId === runId ? base : undefined;
-  const feed = useEpisodeFeed(runId, current?.through);
-  const items = useMemo(
-    () =>
-      mergeEpisodes(
-        feed.cards.filter((c) => matches(c, filters)),
-        pages.data?.pages.flatMap((p) => p.items) ?? [],
-      ),
-    // `filters` is a new object each render; compare it by value.
-    [feed.cards, pages.data, JSON.stringify(filters)],
+    if (list.data && !through.current) {
+      through.current = list.data.through;
+      setStreamFrom(list.data.through);
+    }
+  }, [list.data]);
+  const feed = useEpisodeFeed(filters.runId, streamFrom);
+
+  const agentRuns = new Set(
+    (list.data?.items ?? []).filter((c) => c.agentId === filters.agentId).map((c) => c.runId),
   );
+  // The counts cover every outcome, so new episodes count whatever the outcome filter says.
+  const scope: EpisodeFilters = { ...filters };
+  delete scope.outcome;
+  const fresh = feed.cards.filter((c) => matches(c, filters, agentRuns)).length;
+  const streamed = feed.cards
+    .filter((c) => matches(c, scope, agentRuns))
+    .reduce(tally, NO_EPISODES);
   return {
-    items,
-    counts: current ? addCounts(current.counts, feed.added) : undefined,
-    /** The newest episode streamed since the page opened, whatever the filters. */
+    data: list.data,
+    counts: list.data ? addCounts(list.data.counts, streamed) : undefined,
+    fresh,
     newest: feed.cards[0],
     connected: feed.connected,
     failedRuns: feed.failedRuns,
-    isPending: pages.isPending,
-    error: pages.error,
-    hasMore: pages.hasNextPage,
-    loadingMore: pages.isFetchingNextPage,
-    loadMore: () => pages.fetchNextPage(),
+    isPending: list.isPending,
+    isFetching: list.isFetching,
+    error: list.error,
+    refresh: () => {
+      through.current = undefined;
+      setStreamFrom(undefined);
+      setSnapshot((s) => s + 1);
+    },
   };
 }
-
-export { NO_EPISODES };

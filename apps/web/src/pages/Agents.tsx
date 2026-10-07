@@ -1,4 +1,4 @@
-import { Link, useNavigate, useSearchParams } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { useAccount } from "wagmi";
 import { useAgents } from "../lib/chain";
 import { bps, short } from "../lib/format";
@@ -9,7 +9,6 @@ import {
   EmptyState,
   ErrorText,
   LinkButton,
-  LoadMore,
   Loading,
   Page,
   ScoreRing,
@@ -18,7 +17,11 @@ import {
   TierBadge,
   linkClass,
 } from "../components/ui";
-import { usePaged } from "../lib/paged";
+import { paginate, useListParams } from "../lib/pages";
+import { filterAgents, type AgentFilters } from "../lib/lists";
+import { Select } from "../components/select";
+import { Pagination } from "../components/pagination";
+import { TIER_RULES } from "@bonded/shared";
 
 type Show = "all" | "rated" | "mine";
 
@@ -26,14 +29,13 @@ export function Agents() {
   const agents = useAgents();
   const navigate = useNavigate();
   const { address } = useAccount();
-  // The tab lives in the address, so the sidebar's "Agents" and "Your agents" stay in step.
-  const [params, setParams] = useSearchParams();
+  // The tab and filters live in the address, so the sidebar's "Agents" and "Your agents" stay
+  // in step and a filtered view can be shared.
+  const list = useListParams({ mine: "", show: "all", tier: "all", vault: "any", sort: "newest" });
   const show: Show =
-    params.get("mine") === "1" ? "mine" : params.get("show") === "rated" ? "rated" : "all";
+    list.values.mine === "1" ? "mine" : list.values.show === "rated" ? "rated" : "all";
   const setShow = (s: Show) =>
-    setParams(s === "mine" ? { mine: "1" } : s === "rated" ? { show: "rated" } : {}, {
-      replace: true,
-    });
+    list.set({ mine: s === "mine" ? "1" : "", show: s === "rated" ? "rated" : "all" });
   const now = BigInt(Math.floor(Date.now() / 1000));
   const isMine = (owner: string) =>
     Boolean(address) && owner.toLowerCase() === address!.toLowerCase();
@@ -43,10 +45,15 @@ export function Agents() {
     rated: all.filter((a) => a.score).length,
     mine: all.filter((a) => isMine(a.owner)).length,
   };
-  const rows = all.filter((a) =>
-    show === "rated" ? Boolean(a.score) : show === "mine" ? isMine(a.owner) : true,
-  );
-  const page = usePaged(rows, 25, show);
+  const filters: AgentFilters = {
+    show,
+    tier: list.values.tier,
+    vault: list.values.vault as AgentFilters["vault"],
+    sort: list.values.sort as AgentFilters["sort"],
+  };
+  const rows = filterAgents(all, filters, address);
+  const page = paginate(rows, list.page, list.size);
+  const narrowed = filters.tier !== "all" || filters.vault !== "any";
   const tabs: [Show, string][] = [
     ["all", "All"],
     ["rated", "Rated"],
@@ -56,25 +63,56 @@ export function Agents() {
   return (
     <Page
       title="Agents"
-      intro="Every agent registered on Bonded, newest first. Open one to see its score, attack report, vault and cover."
+      intro="Every agent registered on Bonded. Open one to see its score, attack report, vault and cover."
       actions={<LinkButton to="/agents/new">Onboard an agent</LinkButton>}
     >
       <Card
         actions={
-          <div className="inline-flex rounded-full bg-white/[0.06] p-1 text-sm" role="tablist">
-            {tabs.map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                role="tab"
-                aria-selected={show === key}
-                onClick={() => setShow(key)}
-                className={`flex items-center gap-2 rounded-full px-4 py-1.5 font-semibold ${show === key ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
-              >
-                {label}
-                <span className="font-mono text-[11px] opacity-70">{counts[key]}</span>
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-full bg-white/[0.06] p-1 text-sm" role="tablist">
+              {tabs.map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={show === key}
+                  onClick={() => setShow(key)}
+                  className={`flex items-center gap-2 rounded-full px-4 py-1.5 font-semibold ${show === key ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
+                >
+                  {label}
+                  <span className="font-mono text-[11px] opacity-70">{counts[key]}</span>
+                </button>
+              ))}
+            </div>
+            <Select
+              label="Tier"
+              value={filters.tier}
+              onChange={(v) => list.set({ tier: v })}
+              options={[
+                { value: "all", label: "All" },
+                ...TIER_RULES.map((t) => ({ value: t.tier, label: t.tier })),
+                { value: "unrated", label: "Not rated" },
+              ]}
+            />
+            <Select
+              label="Vault"
+              value={filters.vault}
+              onChange={(v) => list.set({ vault: v })}
+              options={[
+                { value: "any", label: "Any" },
+                { value: "with", label: "Has a vault" },
+                { value: "without", label: "No vault" },
+              ]}
+            />
+            <Select
+              label="Sort"
+              value={filters.sort}
+              onChange={(v) => list.set({ sort: v })}
+              options={[
+                { value: "newest", label: "Newest" },
+                { value: "score", label: "Highest score" },
+              ]}
+            />
           </div>
         }
         title={agents.data ? `${rows.length} ${rows.length === 1 ? "agent" : "agents"}` : "Agents"}
@@ -83,7 +121,13 @@ export function Agents() {
         <ErrorText error={agents.error} />
         {agents.data && rows.length === 0 && (
           <EmptyState
-            title={show === "mine" ? "You haven't onboarded an agent" : "No agents here yet"}
+            title={
+              narrowed
+                ? "No agents match these filters"
+                : show === "mine"
+                  ? "You haven't onboarded an agent"
+                  : "No agents here yet"
+            }
             action={<LinkButton to="/agents/new">Onboard an agent</LinkButton>}
           >
             Register an agent, give it a vault and a bond, and get it rated.
@@ -107,7 +151,7 @@ export function Agents() {
               </tr>
             </thead>
             <tbody>
-              {page.shown.map((a) => (
+              {page.items.map((a) => (
                 <tr
                   key={a.agentId.toString()}
                   className="cursor-pointer"
@@ -172,11 +216,14 @@ export function Agents() {
             </tbody>
           </Table>
         )}
-        <LoadMore
-          hasMore={page.hasMore}
-          onMore={page.more}
-          shown={page.shown.length}
+        <Pagination
+          page={page.page}
+          pages={page.pages}
           total={page.total}
+          size={list.size}
+          onPage={(p) => list.set({ page: p })}
+          onSize={(size) => list.set({ size })}
+          noun="agents"
         />
       </Card>
     </Page>

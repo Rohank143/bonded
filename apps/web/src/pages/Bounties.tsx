@@ -1,10 +1,10 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useAccount, usePublicClient, useReadContract } from "wagmi";
 import { getAbiItem, type Hex } from "viem";
 import { ATTACK_CLASSES, BOUNTY_SPEC_EXAMPLE, bountyBoardAbi, testTokenAbi } from "@bonded/shared";
 import { deployment, faucets, isLocal, networkName } from "../config";
-import { api, type BountyRecord } from "../lib/api";
+import { api, type BountiesQuery, type BountyRecord } from "../lib/api";
 import { checkSpec, commitmentIfReady, isSalt, newSalt, specUriOf } from "../lib/bounty";
 import { short, usd } from "../lib/format";
 import { useSend } from "../components/wallet";
@@ -16,13 +16,15 @@ import {
   Card,
   EmptyState,
   ErrorText,
-  LoadMore,
   Loading,
   Page,
   TxLink,
   buttonClass,
   linkClass,
 } from "../components/ui";
+import { useListParams } from "../lib/pages";
+import { Pagination } from "../components/pagination";
+import { Select } from "../components/select";
 
 const STATUS_TONE: Record<BountyRecord["status"], "safe" | "breach" | "neutral"> = {
   accepted: "safe",
@@ -459,15 +461,26 @@ function Submit() {
 }
 
 export function Bounties() {
-  // Newest submissions first, a page at a time; refreshing re-reads only the loaded pages.
-  const list = useInfiniteQuery({
-    queryKey: ["bounties"],
-    queryFn: ({ pageParam }) => api.bounties(pageParam, 20),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last) => last.next ?? undefined,
+  const { address } = useAccount();
+  // Numbered pages with filters, all on the API, kept in the address.
+  const params = useListParams({ status: "all", class: "all", mine: "", sort: "newest" });
+  const f = params.values;
+  const query: BountiesQuery = {
+    page: params.page,
+    limit: params.size,
+    ...(f.status !== "all" ? { status: f.status as BountiesQuery["status"] } : {}),
+    ...(f.class !== "all" ? { attackClass: f.class } : {}),
+    ...(f.mine === "1" && address ? { hunter: address } : {}),
+    ...(f.sort === "reward" ? { sort: "reward" as const } : {}),
+  };
+  const list = useQuery({
+    queryKey: ["bounties", query],
+    queryFn: () => api.bounties(query),
+    placeholderData: keepPreviousData,
     refetchInterval: 15_000,
   });
-  const submissions = list.data?.pages.flatMap((p) => p.items);
+  const submissions = list.data?.items;
+  const filtered = f.status !== "all" || f.class !== "all" || f.mine === "1";
   const pool = useReadContract({
     address: deployment.usdg,
     abi: testTokenAbi,
@@ -506,13 +519,64 @@ export function Bounties() {
       <Submit />
       <Card
         title="Submissions"
-        actions={<span className="text-xs text-muted">Payloads stay private.</span>}
+        description="Payloads stay private."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              label="Status"
+              value={f.status}
+              onChange={(v) => params.set({ status: v })}
+              options={[
+                { value: "all", label: "All" },
+                { value: "accepted", label: "Accepted" },
+                { value: "rejected", label: "Rejected" },
+                { value: "validating", label: "Validating" },
+                { value: "failed", label: "Failed" },
+              ]}
+            />
+            <Select
+              label="Class"
+              value={f.class}
+              onChange={(v) => params.set({ class: v })}
+              options={[
+                { value: "all", label: "All" },
+                ...Object.entries(ATTACK_CLASSES).map(([id, c]) => ({
+                  value: id,
+                  hint: id,
+                  label: c.name,
+                })),
+              ]}
+            />
+            {address && (
+              <Select
+                label="From"
+                value={f.mine === "1" ? "mine" : "all"}
+                onChange={(v) => params.set({ mine: v === "mine" ? "1" : "" })}
+                options={[
+                  { value: "all", label: "Everyone" },
+                  { value: "mine", label: "You" },
+                ]}
+              />
+            )}
+            <Select
+              label="Sort"
+              value={f.sort}
+              onChange={(v) => params.set({ sort: v })}
+              options={[
+                { value: "newest", label: "Newest" },
+                { value: "reward", label: "Largest reward" },
+              ]}
+            />
+          </div>
+        }
       >
         {list.isPending && !list.error && <Loading what="bounties" />}
         <ErrorText error={list.error} />
         {submissions?.length === 0 && (
-          <EmptyState title="No submissions yet">
-            Be the first to find an attack we miss.
+          <EmptyState
+            title={filtered ? "No submissions match these filters" : "No submissions yet"}
+          >
+            {filtered ? "Try other filters." : "Be the first to find an attack we miss."}
           </EmptyState>
         )}
         <ul className="flex flex-col gap-3">
@@ -539,11 +603,17 @@ export function Bounties() {
             </li>
           ))}
         </ul>
-        <LoadMore
-          hasMore={list.hasNextPage}
-          loading={list.isFetchingNextPage}
-          onMore={() => void list.fetchNextPage()}
-        />
+        {list.data && (
+          <Pagination
+            page={list.data.page}
+            pages={list.data.pages}
+            total={list.data.total}
+            size={params.size}
+            onPage={(p) => params.set({ page: p })}
+            onSize={(size) => params.set({ size })}
+            noun="submissions"
+          />
+        )}
       </Card>
     </Page>
   );

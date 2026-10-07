@@ -6,19 +6,24 @@ import {
   Card,
   EmptyState,
   ErrorText,
-  LoadMore,
   Loading,
   Page,
   Term,
   TxLink,
   linkClass,
 } from "../components/ui";
-import { usePaged } from "../lib/paged";
+import { paginate, useListParams } from "../lib/pages";
+import { filterClaims, type ClaimFilters } from "../lib/lists";
+import { Select } from "../components/select";
+import { Pagination } from "../components/pagination";
 
 export function Claims() {
   const claims = useClaims();
   const all = claims.data ?? [];
-  const page = usePaged(all);
+  const listParams = useListParams({ vault: "all", sort: "newest" });
+  const filters = listParams.values as ClaimFilters;
+  const page = paginate(filterClaims(all, filters), listParams.page, listParams.size);
+  const vaults = [...new Set(all.map((c) => c.vault.toLowerCase()))];
   const sum = (f: (w: ReturnType<typeof waterfall>) => bigint) =>
     all.reduce((s, c) => s + f(waterfall(c)), 0n);
   const stat = (label: ReactNode, value: string, hint: string, tone = "") => (
@@ -83,8 +88,35 @@ export function Claims() {
           When a covered vault records a breach, the claim is filed and paid here automatically.
         </EmptyState>
       )}
+      {all.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-[17px] font-bold">
+            {page.total} {page.total === 1 ? "claim" : "claims"}
+          </h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              label="Vault"
+              value={filters.vault.toLowerCase()}
+              onChange={(v) => listParams.set({ vault: v })}
+              options={[
+                { value: "all", label: "All vaults" },
+                ...vaults.map((v) => ({ value: v, label: short(v) })),
+              ]}
+            />
+            <Select
+              label="Sort"
+              value={filters.sort}
+              onChange={(v) => listParams.set({ sort: v })}
+              options={[
+                { value: "newest", label: "Newest" },
+                { value: "amount", label: "Largest payout" },
+              ]}
+            />
+          </div>
+        </div>
+      )}
       <ul className="flex flex-col gap-4">
-        {page.shown.map((c) => {
+        {page.items.map((c) => {
           const w = waterfall(c);
           const total = w.loss > 0n ? w.loss : 1n;
           const pct = (v: bigint) => `${Number((v * 10_000n) / total) / 100}%`;
@@ -152,11 +184,14 @@ export function Claims() {
           );
         })}
       </ul>
-      <LoadMore
-        hasMore={page.hasMore}
-        onMore={page.more}
-        shown={page.shown.length}
+      <Pagination
+        page={page.page}
+        pages={page.pages}
         total={page.total}
+        size={listParams.size}
+        onPage={(p) => listParams.set({ page: p })}
+        onSize={(size) => listParams.set({ size })}
+        noun="claims"
       />
     </Page>
   );

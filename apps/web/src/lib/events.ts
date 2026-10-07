@@ -13,6 +13,8 @@ export interface EpisodeCard {
   breached: boolean;
   lossUsd: number;
   frozen: boolean;
+  /** The rated agent's on-chain id; from GET /episodes only, the live stream doesn't carry it. */
+  agentId?: string | null;
 }
 
 /** Topics the API streams (docs/SERVICES.md). Unknown topics are ignored. */
@@ -82,15 +84,15 @@ export const NO_EPISODES: EpisodeCounts = { total: 0, held: 0, breach: 0, contro
 /**
  * Subscribe to new episodes after event `after` (the `through` of GET /episodes), so nothing
  * older is replayed. EventSource reconnects on its own and sends Last-Event-ID, so the API
- * resumes where the stream left off. `added` counts every new episode, including ones that
- * fall out of the capped `cards` list. Nothing starts until `after` is known.
+ * resumes where the stream left off. `cards` keeps the newest 500. Nothing starts until
+ * `after` is known.
  */
 export function useEpisodeFeed(runId: string | undefined, after: string | undefined) {
-  const [state, setState] = useState({ cards: [] as EpisodeCard[], added: NO_EPISODES });
+  const [cards, setCards] = useState<EpisodeCard[]>([]);
   const [connected, setConnected] = useState(false);
   const [failedRuns, setFailedRuns] = useState<string[]>([]);
   useEffect(() => {
-    setState({ cards: [], added: NO_EPISODES });
+    setCards([]);
     if (after === undefined) return;
     const url = new URL(`${apiUrl}/events`);
     url.searchParams.set("after", after);
@@ -104,7 +106,7 @@ export function useEpisodeFeed(runId: string | undefined, after: string | undefi
       // Ids arrive in order; anything at or below the last one is a replay already counted.
       if (!card || BigInt(card.eventId) <= last) return;
       last = BigInt(card.eventId);
-      setState((s) => ({ cards: addCard(s.cards, card, 500), added: tally(s.added, card) }));
+      setCards((c) => addCard(c, card, 500));
     });
     source.addEventListener("rating.failed", (e) => {
       try {
@@ -116,5 +118,5 @@ export function useEpisodeFeed(runId: string | undefined, after: string | undefi
     });
     return () => source.close();
   }, [runId, after]);
-  return { ...state, connected, failedRuns };
+  return { cards, connected, failedRuns };
 }

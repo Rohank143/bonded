@@ -25,23 +25,42 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-/** One page of a newest-first list; pass `next` back as `before` for the page after it. */
+/** One numbered page of a list: `page` is 1-based, `pages` is at least 1. */
 export interface Paged<T> {
   items: T[];
-  next: string | null;
+  page: number;
+  pages: number;
+  total: number;
 }
 
-/** GET /episodes. The first page (no `before`) also has counts and the event id they run to. */
+/** GET /episodes: a page of a snapshot taken through event `through`, and its counts. */
 export interface EpisodesPage extends Paged<EpisodeCard> {
-  counts?: EpisodeCounts;
-  through?: string;
+  through: string;
+  /** By outcome, with every filter but the outcome. */
+  counts: EpisodeCounts;
 }
 
-export interface EpisodesQuery {
+export interface EpisodeFilters {
   runId?: string;
+  agentId?: string;
   outcome?: Outcome;
   attackClass?: string;
-  before?: string;
+  source?: "held-out" | "library";
+  since?: "1h" | "24h" | "7d";
+}
+
+export interface EpisodesQuery extends EpisodeFilters {
+  through?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface BountiesQuery {
+  status?: "validating" | "accepted" | "rejected" | "failed";
+  attackClass?: string;
+  hunter?: string;
+  sort?: "newest" | "reward";
+  page?: number;
   limit?: number;
 }
 
@@ -234,9 +253,9 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     }),
-  bounties: (before?: string, limit?: number) =>
-    request<Paged<BountyRecord>>(`/bounties${query({ before, limit })}`),
-  /** Arena episodes, newest first, filtered in the database. */
+  bounties: ({ attackClass, ...q }: BountiesQuery = {}) =>
+    request<Paged<BountyRecord>>(`/bounties${query({ ...q, class: attackClass })}`),
+  /** Arena episodes, newest first, as numbered pages of a snapshot, filtered in the database. */
   episodes: ({ attackClass, ...q }: EpisodesQuery = {}) =>
     request<EpisodesPage>(`/episodes${query({ ...q, class: attackClass })}`),
   /** No operator token: the API checks the spec's hash against the revealed specURI. */
