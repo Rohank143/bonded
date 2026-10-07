@@ -1,8 +1,13 @@
 {
   "name": "@bonded/shared",
   "version": "0.1.0",
-  "private": true,
-  "description": "Schemas, chain configs and signing types shared by Bonded contracts, Arena, API and web.",
+  "description": "Bonded's shared schemas, ABIs, chain configs, signing types and the agent and runner protocols.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ddboy19912/bonded.git",
+    "directory": "packages/shared"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -13,7 +18,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -21,11 +27,18 @@
     "lint": "eslint src test",
     "test": "vitest run",
     "abis": "node scripts/gen-abis.mjs",
-    "abis:check": "node scripts/gen-abis.mjs --check"
+    "abis:check": "node scripts/gen-abis.mjs --check",
+    "prepack": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
     "viem": "^2.56.9",
     "yaml": "^2.9.1",
     "zod": "^4.6.5"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

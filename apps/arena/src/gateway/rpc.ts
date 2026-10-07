@@ -72,6 +72,11 @@ export interface RpcBinding {
   vault: `0x${string}`;
   /** The only key whose transactions are accepted: the vault's agent. */
   agent: `0x${string}`;
+  /**
+   * What `web3_clientVersion` answers: the live chain's own node version on a fork, so the
+   * sandbox node doesn't name itself. Without it the sandbox's answer passes through.
+   */
+  clientVersion?: string;
   toolbox: ArenaToolbox;
 }
 
@@ -132,6 +137,8 @@ async function handleOne(
   if (!RPC_ALLOWED_METHODS.has(method))
     return failure(id, -32601, `method ${method} is not available in the Arena`);
   if (method === "eth_sendRawTransaction") return sendRaw(request, binding, limits);
+  if (method === "web3_clientVersion" && binding.clientVersion)
+    return { jsonrpc: "2.0", id, result: binding.clientVersion };
   try {
     return { ...(await forward(binding.upstream, method, params, limits)), id };
   } catch (error) {
@@ -257,4 +264,26 @@ async function readCapped(response: Response, limit: number): Promise<string | u
     chunks.push(value);
   }
   return Buffer.concat(chunks).toString("utf8");
+}
+
+/**
+ * The node version a live chain reports, asked once per URL; undefined if it can't be reached.
+ * Used so a fork answers web3_clientVersion like the chain it copies.
+ */
+const clientVersions = new Map<string, Promise<string | undefined>>();
+export function liveClientVersion(url: string): Promise<string | undefined> {
+  let found = clientVersions.get(url);
+  if (!found) {
+    found = fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "web3_clientVersion", params: [] }),
+      signal: AbortSignal.timeout(10_000),
+    })
+      .then((r) => r.json() as Promise<{ result?: unknown }>)
+      .then((r) => (typeof r.result === "string" ? r.result.slice(0, 200) : undefined))
+      .catch(() => undefined);
+    clientVersions.set(url, found);
+  }
+  return found;
 }

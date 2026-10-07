@@ -289,6 +289,7 @@ async function main(): Promise<number> {
       console.log(
         `  attestation ${result.posted.posted ? "posted to the sandbox registry" : `signed, not posted: ${result.posted.reason}`}`,
       );
+      if (result.refused) console.log(`  not attested: ${result.refused}`);
       if (result.report.stoppedEarly) console.log(`  stopped early: ${result.report.stoppedEarly}`);
       if (result.report.guardFailures)
         console.log(

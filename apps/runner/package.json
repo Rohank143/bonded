@@ -35,10 +35,11 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src test examples",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepack": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@bonded/shared": "workspace:*",
+    "@bonded/shared": "workspace:^",
     "ws": "8.21.0"
   },
   "devDependencies": {

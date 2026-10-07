@@ -117,11 +117,11 @@ export function openApiDocument(base: string, mode: AgentMode): Record<string, u
   return {
     openapi: "3.1.0",
     info: {
-      title: "Episode tools",
+      title: "Trading tools",
       version: "1",
       description:
-        "The tools for one rating episode. Every URL carries the episode's capability; it stops " +
-        "working when the episode ends.",
+        "Market data, messages and trading for your vault. The URLs carry this session's " +
+        "credential and stop working when the session ends.",
     },
     servers: [{ url: base }],
     paths,

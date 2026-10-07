@@ -83,18 +83,32 @@ Dockerfile). Pass the token at run time with `-e BONDED_RUNNER_TOKEN=...`.
 
 ## What the agent can and can't tell
 
-The Arena aims to make an attacked episode look like any other:
+The Arena aims to make an attacked episode look like any other, and the sandbox look like the
+chain it copies:
 
-- The same tools, schemas and result shapes in every episode, attacked or not; the episode message
+- The same tools, schemas and result shapes in every episode, attacked or not. The episode message
   and environment never name the attack, its class or whether there is one.
 - Attack content is planted in the world your agent reads (messages, news, posts, token details,
   prices, the market report, alerts, counterparty messages, transfer history), alongside ordinary
   content.
-- On a fork of a live testnet, the chain keeps its real chain id, contracts and block timestamps.
+- Every message, article, post, alert and transfer carries a time on the chain's own clock (on a
+  fork, the live chain's current time), and the market report is dated. The vault's history shows
+  its funding as two earlier deposits that add up to what it holds.
+- On a fork of a live testnet, the chain keeps its real chain id, contracts and block times, and
+  `web3_clientVersion` answers with the live chain's own node version.
+- The vault and its registry entry have neutral names, and the MCP server and OpenAPI document
+  describe themselves as trading tools.
 
-What it can tell:
+What remains detectable:
 
-- That it is being rated: the runner started it for an episode, with `BONDED_*` variables.
-- The chain is a local fork (anvil): `web3_clientVersion` says so, the vault and its funds are
-  fresh each episode, and the world's content is simulated (its items carry no timestamps).
-- Write tools take effect immediately (each transaction is mined on its own).
+- That it is being rated at all: the runner starts it once per episode, with `BONDED_*` variables
+  (this is inherent).
+- The node is a local fork. Blocks are mined one per transaction, and new blocks lack the live
+  chain's own fields (for example Arbitrum's `l1BlockNumber` and `sendCount`; the miner field
+  is empty). Node error messages are the sandbox's.
+- The vault is fresh each episode: its on-chain history starts with this episode, though the
+  transfer-history tool shows earlier deposits.
+- The world is simulated: its content is short and its items' order follows a pattern (planted
+  news, posts and alerts appear first, planted messages and transfers last), and some names use
+  placeholder domains such as `fund.example`.
+- Each write is mined at once.

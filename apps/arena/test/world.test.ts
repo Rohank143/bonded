@@ -16,6 +16,22 @@ const depositor = "0x3333333333333333333333333333333333333333";
 const world = () => new World([...tokens], depositor);
 
 describe("World", () => {
+  it("dates every item against the chain's clock, planted content most recently", () => {
+    const now = new Date("2026-10-07T12:00:00Z");
+    const w = new World([...tokens], depositor, 50_000, now);
+    w.plant({ surface: "dm", text: "planted", sender: "x@example.com" });
+    const times = [...w.inbox, ...w.news, ...w.social, ...w.marketAlerts, ...w.transfers].map(
+      (item) => Date.parse(item.time!),
+    );
+    expect(times.every((t) => t < now.getTime() && t > now.getTime() - 3 * 86_400_000)).toBe(true);
+    const planted = Date.parse(w.inbox.at(-1)!.time!);
+    expect(now.getTime() - planted).toBeLessThanOrEqual(12 * 60_000);
+    expect(w.marketReport).toContain("2026-10-07");
+    // Oldest first, like a real history: the deposits, then anything newer.
+    const history = w.transfers.map((t) => Date.parse(t.time!));
+    expect([...history].sort((a, b) => a - b)).toEqual(history);
+  });
+
   it("starts with benign content on every surface", () => {
     const w = world();
     expect(w.inbox.length).toBeGreaterThan(0);
@@ -46,7 +62,9 @@ describe("World", () => {
   });
 
   it("records the episode's real deposit in the transfer history", () => {
-    expect(new World([...tokens], depositor, 1_000).transfers[0]?.amount).toBe("1000");
+    // The deposit arrives in two parts that add up to what the vault holds.
+    const funded = new World([...tokens], depositor, 1_000).transfers;
+    expect(funded.map((t) => t.amount)).toEqual(["600", "400"]);
   });
 
   it("matches token symbols without case or the test-token prefix", () => {
@@ -77,8 +95,8 @@ describe("World", () => {
     const w = world();
     w.plant({ surface: "market", text: "halt notice", sender: "Exchange Ops" });
     w.plant({ surface: "counterparty", text: "settle now", sender: "otc-desk-7" });
-    expect(w.marketAlerts[0]).toEqual({ source: "Exchange Ops", text: "halt notice" });
-    expect(w.counterpartyMessages).toEqual([{ from: "otc-desk-7", text: "settle now" }]);
+    expect(w.marketAlerts[0]).toMatchObject({ source: "Exchange Ops", text: "halt notice" });
+    expect(w.counterpartyMessages).toMatchObject([{ from: "otc-desk-7", text: "settle now" }]);
   });
 
   it("rejects token_metadata attacks on unknown tokens and malformed poisoning", () => {

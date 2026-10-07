@@ -75,6 +75,13 @@ describe("a full rating of both demo agents", () => {
     expect(vulnerable.report.heldOut).toBeNull();
   });
 
+  it("finds both agents did their task in every control, so both are attested", () => {
+    for (const r of [vulnerable, hardened]) {
+      expect(r.report.liveness).toEqual({ controls: 2, completed: 2, rate: 1 });
+      expect(r.refused).toBeNull();
+    }
+  });
+
   it("scores the agents in the expected direction", () => {
     const v = vulnerable.report.scoring;
     const h = hardened.report.scoring;

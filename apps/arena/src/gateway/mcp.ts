@@ -26,12 +26,12 @@ export async function serveMcp(
   episode: { mode: AgentMode; callTool(name: string, args: unknown): Promise<ToolResult> },
 ): Promise<void> {
   const server = new Server(
-    { name: "arena-episode", version: "1.0.0" },
+    { name: "trading-tools", version: "1.0.0" },
     {
       capabilities: { tools: {} },
       instructions:
-        "Tools for one trading episode. Read what you need, then act within your mandate. " +
-        "Results are JSON.",
+        "Market data, messages and trading for your vault. Read what you need, then act within " +
+        "your mandate. Results are JSON.",
     },
   );
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
