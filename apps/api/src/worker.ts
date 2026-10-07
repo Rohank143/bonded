@@ -10,8 +10,11 @@ import {
 } from "@bonded/arena";
 import {
   EvmMandate,
+  PROTECTIONS,
   REMOTE_MODES,
+  mandateCommitment,
   mandateHash,
+  toEvmMandateParams,
   attestationMessage,
   bondedRegistryAbi,
   type ArenaAgent,
@@ -49,6 +52,11 @@ export const teeConfig = z.strictObject({
  * worked examples use 5. The report lists the episode count, so the number is visible.
  */
 const repeats = z.number().int().min(1).max(10).optional();
+/**
+ * What protects the agent's funds: its Mandate Vault (default) or a MandateModule on its smart
+ * account. A module enforces the mandate's commitment, so that is the hash the rating attests.
+ */
+const protection = z.enum(PROTECTIONS).optional();
 
 /** One of Bonded's built-in designs, run in the Arena itself. */
 const builtInConfig = z
@@ -58,6 +66,7 @@ const builtInConfig = z
     codeHash,
     tee: teeConfig.optional(),
     repeats,
+    protection,
     /**
      * Rate the agent with Sentinel in front of it (docs/SENTINEL.md). The report records it, and
      * the rating fails if Sentinel isn't configured: it never quietly rates without it.
@@ -83,12 +92,23 @@ const remoteConfig = z.strictObject({
   mode: z.enum(REMOTE_MODES),
   tee: teeConfig.optional(),
   repeats,
+  protection,
 });
 
 // Operators provision these records, or owners register them signed (self-serve.ts); callers
 // cannot choose RPCs, commands or model URLs. A remote agent's code runs on its operator's side.
 export const agentConfig = z.union([builtInConfig, remoteConfig]);
 export type AgentConfig = z.infer<typeof agentConfig>;
+
+/**
+ * The mandate hash a rating attests, which `buyCover` checks against what protects the funds: the
+ * hash of the mandate for a vault, its commitment (`mandateCommitment`) for a smart-account module.
+ */
+export function attestedMandateHash(config: AgentConfig): Hex {
+  return config.protection === "module"
+    ? mandateCommitment(toEvmMandateParams(config.mandate))
+    : mandateHash(config.mandate);
+}
 
 /** Options for the rating worker beyond its chain and key. */
 export interface WorkerOptions {
@@ -325,7 +345,7 @@ async function runLocked(
           {
             ...result.attestation.attestation,
             agentId: row.onchain_id,
-            mandateHash: mandateHash(config.mandate),
+            mandateHash: attestedMandateHash(config),
             issuedAt: now,
             expiresAt: now + 30 * 86400,
           },

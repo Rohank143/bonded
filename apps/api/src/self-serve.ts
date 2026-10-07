@@ -7,6 +7,10 @@ import {
   mandateHash,
   mandateVaultAbi,
   mandateVaultFactoryAbi,
+  mandateCommitment,
+  mandateModuleAbi,
+  mandateModuleFactoryAbi,
+  PROTECTIONS,
   REMOTE_KIND,
   REMOTE_MODES,
   SELF_SERVE_KINDS,
@@ -83,6 +87,7 @@ const registerInput = z.union([
     mandate: EvmMandate,
     /** Rate with Sentinel in front of the design (docs/SENTINEL.md). */
     sentinel: z.boolean().optional(),
+    protection: z.enum(PROTECTIONS).optional(),
     timestamp: z.number().int().positive(),
     signature,
   }),
@@ -95,6 +100,7 @@ const registerInput = z.union([
     codeHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/),
     mode: z.enum(REMOTE_MODES),
     tee: teeConfig.optional(),
+    protection: z.enum(PROTECTIONS).optional(),
     timestamp: z.number().int().positive(),
     signature,
   }),
@@ -191,6 +197,80 @@ export function selfServeRoutes(
       : undefined;
   }
 
+  /**
+   * A Mandate Vault, for this agent, guarded by the signer, enforcing exactly this mandate: its
+   * on-chain mandate hash, and the parameters its creation call passed (`createdWith`).
+   */
+  async function checkVault(
+    vault: Hex,
+    agentId: string,
+    who: string,
+    mandate: EvmMandateType,
+    hash: string,
+  ) {
+    const [isVault, vaultAgentId, guardian, onchainHash] = await Promise.all([
+      chain.read.readContract({
+        address: d.factory,
+        abi: mandateVaultFactoryAbi,
+        functionName: "isVault",
+        args: [vault],
+      }),
+      chain.read
+        .readContract({ address: vault, abi: mandateVaultAbi, functionName: "agentId" })
+        .catch(() => undefined),
+      chain.read
+        .readContract({ address: vault, abi: mandateVaultAbi, functionName: "guardian" })
+        .catch(() => undefined),
+      chain.read
+        .readContract({ address: vault, abi: mandateVaultAbi, functionName: "mandateHash" })
+        .catch(() => undefined),
+    ]);
+    if (!isVault) throw new Refused(400, "that address is not a Bonded vault");
+    if (vaultAgentId?.toString() !== agentId)
+      throw new Refused(400, "the vault belongs to another agent");
+    if (guardian?.toLowerCase() !== who)
+      throw new Refused(403, "only the vault's guardian can register it");
+    if (onchainHash?.toLowerCase() !== hash.toLowerCase())
+      throw new Refused(400, "the mandate doesn't match the vault's on-chain mandate");
+    const mismatch = await createdWith(vault, mandate);
+    if (mismatch) throw new Refused(400, mismatch);
+  }
+
+  /**
+   * A MandateModule on a smart account (ERC-7579), deployed by the module factory, for this agent,
+   * guarded by the signer. The factory only creates a module whose mandate hash is the commitment
+   * to the rules it enforces, so matching the commitment proves the module enforces this mandate.
+   */
+  async function checkModule(module: Hex, agentId: string, who: string, mandate: EvmMandateType) {
+    if (!d.moduleFactory)
+      throw new Refused(400, "smart-account modules aren't deployed on this chain yet");
+    const [isModule, moduleAgentId, guardian, onchainHash] = await Promise.all([
+      chain.read.readContract({
+        address: d.moduleFactory,
+        abi: mandateModuleFactoryAbi,
+        functionName: "isModule",
+        args: [module],
+      }),
+      chain.read
+        .readContract({ address: module, abi: mandateModuleAbi, functionName: "agentId" })
+        .catch(() => undefined),
+      chain.read
+        .readContract({ address: module, abi: mandateModuleAbi, functionName: "guardian" })
+        .catch(() => undefined),
+      chain.read
+        .readContract({ address: module, abi: mandateModuleAbi, functionName: "mandateHash" })
+        .catch(() => undefined),
+    ]);
+    if (!isModule) throw new Refused(400, "that address is not a Bonded mandate module");
+    if (moduleAgentId?.toString() !== agentId)
+      throw new Refused(400, "the module belongs to another agent");
+    if (guardian?.toLowerCase() !== who)
+      throw new Refused(403, "only the module's guardian can register it");
+    const commitment = mandateCommitment(toEvmMandateParams(mandate));
+    if (onchainHash?.toLowerCase() !== commitment.toLowerCase())
+      throw new Refused(400, "the mandate doesn't match the rules the module enforces");
+  }
+
   const ownerOf = async (agentId: string) =>
     (
       await chain.read.readContract({
@@ -234,6 +314,8 @@ export function selfServeRoutes(
         source: record.source,
         kind: config.kind,
         sentinel: config.sentinel === true,
+        // What protects the funds: a vault, or a module on the agent's smart account.
+        protection: (record.config as { protection?: string }).protection ?? "vault",
         // The owner's own agent: what was declared, so the page can show it.
         ...(config.kind === REMOTE_KIND
           ? {
@@ -265,12 +347,14 @@ export function selfServeRoutes(
       limit(c);
       const input = registerInput.parse(await c.req.json());
       const hash = mandateHash(input.mandate);
+      const module = input.protection === "module";
       const base = {
         action: "register" as const,
         chainId: d.chainId,
         agentId: input.agentId,
         vault: input.vault,
         mandateHash: hash,
+        ...(module ? { protection: "module" as const } : {}),
         timestamp: input.timestamp,
       };
       const who = await signer(
@@ -292,32 +376,8 @@ export function selfServeRoutes(
       if ((await ownerOf(input.agentId)) !== who)
         throw new Refused(403, "only the agent's owner can register it");
       const vault = input.vault as Hex;
-      const [isVault, vaultAgentId, guardian, onchainHash] = await Promise.all([
-        chain.read.readContract({
-          address: d.factory,
-          abi: mandateVaultFactoryAbi,
-          functionName: "isVault",
-          args: [vault],
-        }),
-        chain.read
-          .readContract({ address: vault, abi: mandateVaultAbi, functionName: "agentId" })
-          .catch(() => undefined),
-        chain.read
-          .readContract({ address: vault, abi: mandateVaultAbi, functionName: "guardian" })
-          .catch(() => undefined),
-        chain.read
-          .readContract({ address: vault, abi: mandateVaultAbi, functionName: "mandateHash" })
-          .catch(() => undefined),
-      ]);
-      if (!isVault) throw new Refused(400, "that address is not a Bonded vault");
-      if (vaultAgentId?.toString() !== input.agentId)
-        throw new Refused(400, "the vault belongs to another agent");
-      if (guardian?.toLowerCase() !== who)
-        throw new Refused(403, "only the vault's guardian can register it");
-      if (onchainHash?.toLowerCase() !== hash.toLowerCase())
-        throw new Refused(400, "the mandate doesn't match the vault's on-chain mandate");
-      const mismatch = await createdWith(vault, input.mandate);
-      if (mismatch) throw new Refused(400, mismatch);
+      if (module) await checkModule(vault, input.agentId, who, input.mandate);
+      else await checkVault(vault, input.agentId, who, input.mandate, hash);
       const config = agentConfig.parse(
         input.kind === REMOTE_KIND
           ? {
@@ -327,6 +387,7 @@ export function selfServeRoutes(
               mode: input.mode,
               ...(input.tee ? { tee: input.tee } : {}),
               repeats: limits.repeats,
+              ...(module ? { protection: "module" } : {}),
             }
           : {
               kind: input.kind,
@@ -334,6 +395,7 @@ export function selfServeRoutes(
               codeHash: selfServeCodeHash(input.kind),
               repeats: limits.repeats,
               ...(input.sentinel ? { sentinel: true } : {}),
+              ...(module ? { protection: "module" } : {}),
             },
       );
       const previous = await db.agentRecord(rowId(input.agentId));

@@ -66,4 +66,19 @@ describe("selfServeMessage", () => {
     expect(revoke).toBe("Bonded: revoke runner token\nchain 46630\nagent 12\ntime 9");
     expect(selfServeMessage({ action: "rate", ...req })).not.toBe(create);
   });
+  it("says when the address is a smart account's module, and only then", () => {
+    const base = {
+      action: "register" as const,
+      chainId: 46630,
+      agentId: "13",
+      vault: "0x0000000000000000000000000000000000000002",
+      kind: "partial" as const,
+      mandateHash: "0xab",
+      timestamp: 5,
+    };
+    expect(selfServeMessage({ ...base, protection: "module" })).toBe(
+      "Bonded: register agent for ratings\nchain 46630\nagent 13\nvault 0x0000000000000000000000000000000000000002\ndesign partial\nmandate 0xab\nprotection module\ntime 5",
+    );
+    expect(selfServeMessage({ ...base, protection: "vault" })).toBe(selfServeMessage(base));
+  });
 });

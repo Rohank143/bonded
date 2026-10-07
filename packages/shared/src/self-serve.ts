@@ -42,6 +42,15 @@ export interface RemoteAgentSpec {
   tee?: { url: string; composeHash: string };
 }
 
+/**
+ * What protects the agent's funds: a Bonded Mandate Vault (the default), or a MandateModule
+ * installed on the smart account the agent already uses (ERC-7579, e.g. Safe through Safe7579).
+ * For a module, `vault` in a request is the module's address, and the mandate hash the rating
+ * attests is `mandateCommitment`, the hash the module enforces.
+ */
+export const PROTECTIONS = ["vault", "module"] as const;
+export type Protection = (typeof PROTECTIONS)[number];
+
 /** A signed request is accepted for this long after it was signed, in seconds. */
 export const SELF_SERVE_MAX_AGE_SECONDS = 10 * 60;
 
@@ -58,6 +67,8 @@ export type SelfServeRequest =
       mandateHash: string;
       /** Rate the agent with Sentinel in front of it (docs/SENTINEL.md). */
       sentinel?: boolean;
+      /** "module" when `vault` is a MandateModule on a smart account. */
+      protection?: Protection;
       timestamp: number;
     }
   | {
@@ -68,6 +79,8 @@ export type SelfServeRequest =
       kind: typeof REMOTE_KIND;
       mandateHash: string;
       remote: RemoteAgentSpec;
+      /** "module" when `vault` is a MandateModule on a smart account. */
+      protection?: Protection;
       timestamp: number;
     }
   | { action: "rate"; chainId: number; agentId: string; timestamp: number }
@@ -96,6 +109,8 @@ export function selfServeMessage(request: SelfServeRequest): string {
       `design ${request.kind}`,
       `mandate ${request.mandateHash.toLowerCase()}`,
     );
+    // Only for a module, so a vault registration reads as it always has.
+    if (request.protection === "module") lines.push("protection module");
     if (request.kind === REMOTE_KIND) {
       const { codeHash, mode, tee } = request.remote;
       lines.push(`code ${codeHash.toLowerCase()}`, `mode ${mode}`);

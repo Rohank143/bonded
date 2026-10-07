@@ -1,7 +1,9 @@
 import { Database } from "@bonded/db";
 import {
   claimsEngineAbi,
+  BREACH_TYPE_CODE,
   coverManagerAbi,
+  mandateModuleFactoryAbi,
   mandateVaultAbi,
   mandateVaultFactoryAbi,
 } from "@bonded/shared";
@@ -93,6 +95,16 @@ export class Keeper {
       toBlock: to,
       strict: true,
     });
+    // MandateModules on smart accounts record breaches with the same event, and can hold cover.
+    const modules = d.moduleFactory
+      ? await read.getLogs({
+          address: d.moduleFactory,
+          event: getAbiItem({ abi: mandateModuleFactoryAbi, name: "ModuleCreated" }),
+          fromBlock: from,
+          toBlock: to,
+          strict: true,
+        })
+      : [];
     const known = await this.db.pool.query("SELECT address FROM keeper_vaults WHERE chain_id=$1", [
       d.chainId,
     ]);
@@ -100,6 +112,7 @@ export class Keeper {
       ...new Set([
         ...known.rows.map((v): Address => v.address),
         ...created.map((v) => v.args.vault.toLowerCase() as Address),
+        ...modules.map((m) => m.args.module.toLowerCase() as Address),
       ]),
     ];
     const breaches = (
@@ -191,6 +204,23 @@ export class Keeper {
           functionName: "getBreach",
           args: [BigInt(e.breach_id)],
         });
+        // A module can't tell an unexplained drop (Deferred) from its account's owner moving
+        // funds, so ClaimsEngine doesn't pay those on modules (BreachNotCovered).
+        if (
+          breach.breachType === BREACH_TYPE_CODE.T1_DEFERRED &&
+          !(await read.readContract({
+            address: d.factory,
+            abi: mandateVaultFactoryAbi,
+            functionName: "isVault",
+            args: [e.vault as Address],
+          }))
+        ) {
+          await this.db.pool.query(
+            "UPDATE handled_events SET status='ignored',error=$2 WHERE id=$1",
+            [e.id, "a deferred breach on a smart-account module isn't covered"],
+          );
+          continue;
+        }
         if (breach.claimed || breach.blocked || breach.lossUsd6 === 0n) {
           await this.db.pool.query("UPDATE handled_events SET status=$2,error=NULL WHERE id=$1", [
             e.id,
