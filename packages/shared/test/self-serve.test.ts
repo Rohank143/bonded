@@ -20,6 +20,21 @@ describe("selfServeMessage", () => {
       "Bonded: rate agent\nchain 46630\nagent 11\ntime 1",
     );
   });
+  it("adds the Sentinel line only when it's chosen, so older signatures still verify", () => {
+    const base = {
+      action: "register" as const,
+      chainId: 46630,
+      agentId: "11",
+      vault: "0x0000000000000000000000000000000000000001",
+      kind: "hardened" as const,
+      mandateHash: "0xab",
+      timestamp: 5,
+    };
+    expect(selfServeMessage({ ...base, sentinel: true })).toBe(
+      "Bonded: register agent for ratings\nchain 46630\nagent 11\nvault 0x0000000000000000000000000000000000000001\ndesign hardened\nmandate 0xab\nsentinel on\ntime 5",
+    );
+    expect(selfServeMessage({ ...base, sentinel: false })).toBe(selfServeMessage(base));
+  });
   it("offers only Bonded's built-in scripted designs", () => {
     expect(SELF_SERVE_KINDS).toEqual(["vulnerable", "partial", "hardened"]);
   });

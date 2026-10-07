@@ -25,6 +25,7 @@ const ICONS = {
   claims: "M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3",
   bounties: "M5 21V4h11l-2 4 2 4H5",
   redteam: "M12 3l8 3v6c0 5-3.5 8-8 9c-4.5-1-8-4-8-9V6zM9 10l6 6M15 10l-6 6",
+  sentinel: "M12 3l8 3v6c0 5-3.5 8-8 9c-4.5-1-8-4-8-9V6zM8.5 12l2.5 2.5 4.5-5",
   docs: "M4 5a2 2 0 0 1 2-2h14v16H6a2 2 0 0 0-2 2zM8 7h8M8 11h6",
 } as const;
 
@@ -127,6 +128,7 @@ function Sidebar() {
             }
           />
           <Item to="/attacks" icon={ICONS.redteam} label="Red team" />
+          <Item to="/sentinel" icon={ICONS.sentinel} label="Sentinel" />
           <Item to="/vaults" icon={ICONS.vaults} label="Vaults" />
         </Group>
         <Group label="Yours">

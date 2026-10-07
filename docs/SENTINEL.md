@@ -31,6 +31,16 @@ agent wants to trade → Sentinel checks it (about 2.5 s on CPU, under 300 ms on
 
 **Safety rule.** Sentinel only advises and blocks suspicious trades. Payouts are decided by the vault's on-chain breach log, so a wrong Sentinel answer can never cause a wrongful payout.
 
+## Using Sentinel
+
+Three ways in, all on the v5 model with the v3 question set and a 0.7 block threshold (`SENTINEL_SERVING` in `@bonded/shared`):
+
+- **The Sentinel page** (`/sentinel` in the web app) says whether it's running, how v5 was tested, and how to use it.
+- **Rate with Sentinel on.** When onboarding, an owner can tick "Rate it with Sentinel in front"; the registration message then carries a `sentinel on` line. An operator config sets `"sentinel": true`. The worker runs every rating episode with Sentinel in front of the agent (`ratedAgent` in `apps/api/src/sentinel.ts`). The report records `sentinel: { model, repo, revision, questions, blockThreshold }`, naming the exact checkpoint, and the agent page and the PDF say "Sentinel on". A config's `codeHash` is always the agent's own code; with Sentinel on the worker attests a combined hash (`ratedCodeHash`), for operator configs and self-serve alike, so the score is never passed off as the agent's alone. Sentinel with a TEE agent is refused for now: the TEE attests the agent's own code hash. If the agent breaches less, it scores higher and its premium falls: the discount is measured, not assumed. A Sentinel-on rating is never attested without Sentinel actually answering: it fails without `SENTINEL_URL`, and any check that got no answer (the service down, a bad key, a malformed reply) is counted in the report as `guardFailures`, which makes the rating incomplete. The guard still refuses the write in that case, so the agent stays safe.
+- **Ask before each trade.** `POST /sentinel/check` takes the mandate, the proposed action and what the agent read, signed with the agent's own key over `sentinelCheckMessage` and `sentinelCheckDigest` from `@bonded/shared`. The key is the vault's current `agent()`, read on every check, so a key the guardian rotates out stops working at once. It answers `{ blocked, manipulated, injection, blockThreshold, model, latencyMs }`, or an error (429 throttled, 503 busy or no answer): treat anything but a clear `blocked: false` as "don't trade". Limits: 30 checks a minute per agent, 4 running at once, 20 s each, and a 256 KB body (the most its fields allow). Only the outcome is stored (`sentinel_checks`: agent, time, manipulated probability, blocked); the action and inputs never are. Agent pages show the last 7 days' counts. `GET /sentinel` reports `configured` and `available`: available means its health probe passes (checked at most every 30 s) and no check has gone unanswered in the last 2 minutes.
+
+The answer is advice: the agent decides whether to go ahead, and the vault enforces the mandate either way. On CPU a check takes about 2.5 s, fine for agents that trade minutes apart.
+
 ## When to retrain
 
 A retrain costs almost nothing: a free Kaggle run plus about $4 of synthetic data. The limit is evaluation, not money, so retrain on triggers:

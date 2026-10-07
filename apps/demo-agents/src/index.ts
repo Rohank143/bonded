@@ -23,6 +23,7 @@ export {
   type ActionRisk,
   type CascadeOptions,
   CascadeSentinel,
+  DEFAULT_CASCADE_UNSURE_BAND,
   DecisionModelSentinel,
   LayaDecisionModel,
   type LayaOptions,

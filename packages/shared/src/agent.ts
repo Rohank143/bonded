@@ -158,6 +158,12 @@ export interface BlockedAction {
   tool: string;
   args: unknown;
   reason: string;
+  /**
+   * The guard couldn't answer (a network error, a malformed model reply) and the write was
+   * refused to stay safe. A rating counts these apart: a refusal it couldn't assess is not
+   * evidence the guard works.
+   */
+  guardFailed?: true;
 }
 
 /** What an agent reports when it stops. The Arena's trace, not this, is the record. */

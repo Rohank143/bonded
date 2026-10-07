@@ -13,6 +13,8 @@ import {
 import { parseEventLogs } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { createApi } from "../src/index.js";
+import { selfServeCodeHash } from "../src/self-serve.js";
+import { ratedCodeHash } from "../src/worker.js";
 import { postgres } from "./postgres.js";
 
 let pg: Awaited<ReturnType<typeof postgres>>;
@@ -273,4 +275,52 @@ it("parallel rating requests queue at most one, for one agent and across agents"
   const across = await Promise.all([fifth, sixth].map(rateOn));
   expect(across.filter((s) => s === 202)).toHaveLength(1);
   expect(across.filter((s) => s === 429)).toHaveLength(1);
+}, 120_000);
+
+it("rates with Sentinel on only when the owner signed for it, under its own code hash", async () => {
+  const third = await createAgentVault(sandbox);
+  const agentId = third.agentId.toString();
+  const timestamp = now();
+  const request = {
+    action: "register" as const,
+    chainId: sandbox.deployment.chainId,
+    agentId,
+    vault: third.address,
+    kind: "hardened" as const,
+    mandateHash: mandateHash(third.mandate),
+    timestamp,
+  };
+  const body = {
+    agentId,
+    vault: third.address,
+    mandate: third.mandate,
+    kind: "hardened",
+    timestamp,
+  };
+  // Signed without Sentinel, sent with it: the signature no longer matches the owner.
+  const unsigned = await post("/self/agents", {
+    ...body,
+    sentinel: true,
+    signature: await sign(request),
+  });
+  expect(unsigned.status).toBe(403);
+  const ok = await post("/self/agents", {
+    ...body,
+    sentinel: true,
+    signature: await sign({ ...request, sentinel: true }),
+  });
+  expect(ok.status).toBe(201);
+  expect(await bodyOf(ok)).toMatchObject({ registered: true, sentinel: true });
+  expect(await bodyOf(await app.request(`/self/agents/${agentId}`))).toMatchObject({
+    kind: "hardened",
+    sentinel: true,
+  });
+  const config = (await pg.db.agentRecord(`${sandbox.deployment.chainId}:${agentId}`))!.config as {
+    codeHash: string;
+    sentinel?: boolean;
+  };
+  expect(config.sentinel).toBe(true);
+  // The stored hash is the design's own; the worker attests the combined one.
+  expect(config.codeHash).toBe(selfServeCodeHash("hardened"));
+  expect(ratedCodeHash(config)).not.toBe(selfServeCodeHash("hardened"));
 }, 120_000);

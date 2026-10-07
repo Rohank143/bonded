@@ -27,6 +27,7 @@ import { runControls } from "./controls.js";
 import { loadDotEnv, usesLanguageModel } from "./env.js";
 import { type EpisodeResult, runEpisode, saveEpisode } from "./episode.js";
 import { rateAgent } from "./rate.js";
+import { sentinelInfo } from "./sentinel-info.js";
 import { attestTeeAgent } from "./tee.js";
 import { describeOutcome, summarise } from "./report.js";
 import { Sandbox } from "./sandbox.js";
@@ -177,6 +178,16 @@ async function main(): Promise<number> {
         agent,
         ...(codeHash ? { codeHash } : {}),
         ...(tee ? { tee } : {}),
+        // The report says when Sentinel was in front of the agent, and which guard it was.
+        ...(values["sentinel-model"]
+          ? {
+              sentinel: sentinelInfo(
+                values["sentinel-model"],
+                values["sentinel-fallback"],
+                values["sentinel-questions"],
+              ),
+            }
+          : {}),
         attacks: library,
         unpublished: new Set(heldOut.map((a) => a.id)),
         repeats: positiveInt(values.repeats, "--repeats"),
@@ -199,6 +210,10 @@ async function main(): Promise<number> {
         `  attestation ${result.posted.posted ? "posted to the sandbox registry" : `signed, not posted: ${result.posted.reason}`}`,
       );
       if (result.report.stoppedEarly) console.log(`  stopped early: ${result.report.stoppedEarly}`);
+      if (result.report.guardFailures)
+        console.log(
+          `  incomplete: a guard failed to answer ${result.report.guardFailures} times, so this score isn't a measurement of it`,
+        );
       for (const [name, path] of Object.entries(result.files))
         console.log(`  ${name.padEnd(12)}${path}`);
       return 0;

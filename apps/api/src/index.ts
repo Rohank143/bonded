@@ -29,6 +29,12 @@ import type { ServiceChain } from "@bonded/keeper";
 import type { Hex } from "viem";
 import { issueQuote } from "./quotes.js";
 import { originAllowed } from "./origins.js";
+import {
+  SENTINEL_CHECK_MAX_BYTES,
+  sentinelRoutes,
+  type SentinelLimits,
+  type SentinelService,
+} from "./sentinel.js";
 import { EventStreams } from "./events.js";
 import { teeQuoteBlock } from "./tee-watch.js";
 import { RateLimiter, clientAddress } from "./rate-limit.js";
@@ -100,6 +106,10 @@ export function createApi(options: {
   episodeCountsCacheMs?: number;
   /** Limits on self-serve ratings and quotes without the operator token (see self-serve.ts). */
   selfServe?: Partial<SelfServeLimits>;
+  /** The Sentinel guard, for `POST /sentinel/check` (see sentinel.ts). Without it, checks are refused. */
+  sentinel?: SentinelService;
+  /** Limits on Sentinel checks (see sentinel.ts). */
+  sentinelLimits?: Partial<SentinelLimits>;
 }) {
   const { db, chain } = options;
   if (options.apiToken.length < 24)
@@ -117,17 +127,25 @@ export function createApi(options: {
       maxAge: 600,
     }),
   );
-  app.use(
-    "*",
-    bodyLimit({
-      maxSize: MAX_BODY_BYTES,
-      onError: (c) => c.json({ error: "the request body is over 16 KB" }, 413),
-    }),
+  const smallBodies = bodyLimit({
+    maxSize: MAX_BODY_BYTES,
+    onError: (c) => c.json({ error: "the request body is over 16 KB" }, 413),
+  });
+  // A Sentinel check carries what the agent read (up to 20 reads of 4,000 characters), so its
+  // route has its own, larger cap: the most its schema allows (sentinel.ts).
+  const checkBodies = bodyLimit({
+    maxSize: SENTINEL_CHECK_MAX_BYTES,
+    onError: (c) => c.json({ error: "the check is over 256 KB" }, 413),
+  });
+  app.use("*", (c, next) =>
+    c.req.path === "/sentinel/check" ? checkBodies(c, next) : smallBodies(c, next),
   );
   // POSTs that need no operator token: a bounty reveal (the hash check against the chain's
   // revealed specURI authenticates it), self-serve requests (signed by the agent's owner) and
-  // quotes (capped without the token; buyCover checks the guardian on chain).
-  const PUBLIC_POST = /^\/(bounties\/\d{1,78}\/reveal|self\/agents(\/\d{1,78}\/rate)?|quotes)$/;
+  // quotes (capped without the token; buyCover checks the guardian on chain) and Sentinel checks
+  // (signed by the agent's own key, see sentinel.ts).
+  const PUBLIC_POST =
+    /^\/(bounties\/\d{1,78}\/reveal|self\/agents(\/\d{1,78}\/rate)?|quotes|sentinel\/check)$/;
   const hasToken = (header: string | undefined) => {
     const token = Buffer.from(header ?? "");
     const expected = Buffer.from(`Bearer ${options.apiToken}`);
@@ -392,6 +410,12 @@ export function createApi(options: {
   });
   selfServeRoutes(app, { db, chain, ...(options.selfServe ? { limits: options.selfServe } : {}) });
   libraryRoutes(app, { db, chainId: chain.deployment.chainId });
+  sentinelRoutes(app, {
+    db,
+    chain,
+    ...(options.sentinel ? { sentinel: options.sentinel } : {}),
+    ...(options.sentinelLimits ? { limits: options.sentinelLimits } : {}),
+  });
   app.get("/events", async (c) => {
     const after = uint.parse(c.req.header("Last-Event-ID") ?? c.req.query("after") ?? "0");
     const runId = c.req.query("runId");

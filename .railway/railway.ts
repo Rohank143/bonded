@@ -34,38 +34,6 @@ export default defineRailway(() => {
     replicas: { sfo: 1 },
   });
 
-  const api = service("api", {
-    ...role({ healthcheckPath: "/health", healthcheckTimeout: 120 }),
-    env: {
-      ...shared,
-      ROLE: "api",
-      // Browser origins allowed by CORS (comma-separated): the hosted web app on Vercel, its
-      // preview deployments (one `*`, see apps/api/src/origins.ts), and local dev.
-      WEB_ORIGINS:
-        "https://bonded-nu.vercel.app,https://bonded-*-ddboy19912s-projects.vercel.app,http://localhost:5173",
-      API_TOKEN: preserve(),
-      ATTESTER_KEY: preserve(),
-      // Telegram alerts (docs/PLAN.md, Day 13 workstream 6): set by the founder, kept here.
-      TELEGRAM_BOT_TOKEN: preserve(),
-      TELEGRAM_CHAT_ID: preserve(),
-    },
-  });
-  // The keeper and worker have no HTTP listener, so no health check.
-  const keeper = service("keeper", {
-    ...role({}),
-    env: {
-      ...shared,
-      ROLE: "keeper",
-      KEEPER_KEY: preserve(),
-      TELEGRAM_BOT_TOKEN: preserve(),
-      TELEGRAM_CHAT_ID: preserve(),
-    },
-  });
-  const arenaWorker = service("arena-worker", {
-    ...role({}),
-    env: { ...shared, ROLE: "arena-worker", ATTESTER_KEY: preserve() },
-  });
-
   // Sentinel (services/sentinel, docs/SENTINEL.md): Laya's server in its own Python image,
   // reachable only on the private network at http://sentinel.railway.internal:8000. Railway has
   // no GPUs, so it runs on CPU at about 2.5 s a check. The model downloads on start, hence the
@@ -105,6 +73,49 @@ export default defineRailway(() => {
       HF_TOKEN: preserve(),
       LAYA_API_KEY: preserve(),
     },
+  });
+
+  // The API (Sentinel checks for agents) and the worker (ratings with Sentinel on) call Sentinel
+  // on the private network, with the key it checks.
+  const sentinelClient = {
+    SENTINEL_URL: "http://sentinel.railway.internal:8000",
+    LAYA_API_KEY: sentinel.env.LAYA_API_KEY,
+    // The checkpoint it serves, so a rating's report names it.
+    SENTINEL_MODEL_REPO: sentinel.env.SENTINEL_MODEL_REPO,
+    SENTINEL_MODEL_REVISION: sentinel.env.SENTINEL_MODEL_REVISION,
+  };
+
+  const api = service("api", {
+    ...role({ healthcheckPath: "/health", healthcheckTimeout: 120 }),
+    env: {
+      ...shared,
+      ROLE: "api",
+      // Browser origins allowed by CORS (comma-separated): the hosted web app on Vercel, its
+      // preview deployments (one `*`, see apps/api/src/origins.ts), and local dev.
+      WEB_ORIGINS:
+        "https://bonded-nu.vercel.app,https://bonded-*-ddboy19912s-projects.vercel.app,http://localhost:5173",
+      ...sentinelClient,
+      API_TOKEN: preserve(),
+      ATTESTER_KEY: preserve(),
+      // Telegram alerts (docs/PLAN.md, Day 13 workstream 6): set by the founder, kept here.
+      TELEGRAM_BOT_TOKEN: preserve(),
+      TELEGRAM_CHAT_ID: preserve(),
+    },
+  });
+  // The keeper and worker have no HTTP listener, so no health check.
+  const keeper = service("keeper", {
+    ...role({}),
+    env: {
+      ...shared,
+      ROLE: "keeper",
+      KEEPER_KEY: preserve(),
+      TELEGRAM_BOT_TOKEN: preserve(),
+      TELEGRAM_CHAT_ID: preserve(),
+    },
+  });
+  const arenaWorker = service("arena-worker", {
+    ...role({}),
+    env: { ...shared, ...sentinelClient, ROLE: "arena-worker", ATTESTER_KEY: preserve() },
   });
 
   return project("zippy-spirit", {

@@ -61,6 +61,12 @@ export interface RatingOptions {
    * the rating the operator couldn't have studied in advance.
    */
   unpublished?: ReadonlySet<string>;
+  /**
+   * Sentinel was in front of the agent for this rating (docs/SENTINEL.md): which model, which
+   * questions and at what threshold it blocked. The report says so, so a score earned with
+   * Sentinel on is never read as the agent's score alone.
+   */
+  sentinel?: RatingSentinel;
   /** Called after each episode, e.g. for progress output. */
   onEpisode?: (result: EpisodeResult, index: number, total: number) => void | Promise<void>;
 }
@@ -95,11 +101,34 @@ export interface RatingReport {
   scoring: Scoring;
   worst: { episodeId: string; attackId: string | null; lossUsd: number; breaches: string[] }[];
   blockedByAgentGuard: number;
+  /**
+   * Of those, writes refused because a guard failed to answer (Sentinel unreachable, a malformed
+   * reply). A rating with any is incomplete: the worker won't attest it. Older reports don't
+   * have it.
+   */
+  guardFailures?: number;
   spend: ReturnType<SpendingCap["summary"]>;
   stoppedEarly: string | null;
   mitigations: string[];
   /** The verified TEE the agent runs in, or null when it runs on the operator's own server. */
   tee: RatingTee | null;
+  /** Sentinel in front of the agent, or null without it. Older reports don't have it. */
+  sentinel?: RatingSentinel | null;
+}
+
+/** What a report records about the Sentinel guard a rating ran with. */
+export interface RatingSentinel {
+  model: string;
+  /** The checkpoint that answered: its Hugging Face repo and pinned revision, when known. */
+  repo?: string;
+  revision?: string;
+  questions: "v1" | "v3";
+  blockThreshold: number;
+  /**
+   * A cascade: the second model asked when the first is unsure, with its own question set and
+   * the band of "manipulated" scores that sends a case to it.
+   */
+  fallback?: { model: string; questions: "v1" | "v3"; unsureBand: [number, number] };
 }
 
 /** What the report records about a verified TEE (the full evidence is not kept). */
@@ -227,6 +256,10 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
       (n, e) => n + (e.agentSummary.blockedActions?.length ?? 0),
       0,
     ),
+    guardFailures: episodes.reduce(
+      (n, e) => n + (e.agentSummary.blockedActions?.filter((b) => b.guardFailed).length ?? 0),
+      0,
+    ),
     spend: cap.summary(),
     stoppedEarly,
     mitigations: mitigations(classes, mode),
@@ -239,6 +272,7 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
           tcbStatus: options.tee.tcbStatus,
         }
       : null,
+    sentinel: options.sentinel ?? null,
   };
 
   const reportJson = `${JSON.stringify(report, null, 2)}\n`;
@@ -387,7 +421,20 @@ export function renderReportMarkdown(
             `the operator couldn't study them in advance)`,
         ]
       : []),
-    `- Actions stopped by the agent's own guard: ${report.blockedByAgentGuard}`,
+    `- Actions stopped by the agent's own guard: ${report.blockedByAgentGuard}` +
+      (report.guardFailures ? ` (${report.guardFailures} because a guard failed to answer)` : ""),
+    ...(report.sentinel
+      ? [
+          `- Sentinel on: ${report.sentinel.model}` +
+            (report.sentinel.revision ? ` at ${report.sentinel.revision}` : "") +
+            `, questions ${report.sentinel.questions}, blocks at ${report.sentinel.blockThreshold}` +
+            (report.sentinel.fallback
+              ? `; unsure cases (${report.sentinel.fallback.unsureBand.join("–")}) go to ` +
+                `${report.sentinel.fallback.model} (questions ${report.sentinel.fallback.questions})`
+              : "") +
+            " (its blocks are counted above)",
+        ]
+      : []),
     `- Model spend: $${report.spend.spentUsd.toFixed(4)}${report.spend.estimated ? " (estimated)" : ""}` +
       `, ${report.spend.inputTokens} input and ${report.spend.outputTokens} output tokens`,
     `- Duration: ${(report.durationMs / 1000).toFixed(1)} s`,

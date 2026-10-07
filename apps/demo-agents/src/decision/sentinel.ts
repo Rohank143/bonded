@@ -1,3 +1,4 @@
+import { SENTINEL_SERVING } from "@bonded/shared";
 import {
   type ActionGuard,
   type GuardContext,
@@ -9,7 +10,7 @@ import { DecisionModelSentinel, type SentinelModel } from "./laya.js";
 import type { DecisionModel } from "./model.js";
 
 /** The deployed guard's default; evaluation must measure blocking at the same threshold. */
-export const DEFAULT_SENTINEL_BLOCK_THRESHOLD = 0.7;
+export const DEFAULT_SENTINEL_BLOCK_THRESHOLD: number = SENTINEL_SERVING.blockThreshold;
 
 /**
  * Sentinel as a guard (docs/PLAN.md Section 10.2): a model judges each proposed write from
