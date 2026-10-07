@@ -29,6 +29,8 @@ describe("episodes", () => {
     expect(matches(c, { runId: "r1" })).toBe(false);
     expect(matches(c, { outcome: "held" })).toBe(false);
     expect(matches(c, { attackClass: "A1" })).toBe(false);
+    expect(matches(c, { attackId: "A3-x" })).toBe(true);
+    expect(matches(c, { attackId: "A3-y" })).toBe(false);
   });
 
   it("reads held-out and bounty attacks as private, as the API does", () => {

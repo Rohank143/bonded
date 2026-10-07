@@ -1,4 +1,4 @@
-import type { SelfServeKind } from "@bonded/shared";
+import type { AttackSpec, SelfServeKind } from "@bonded/shared";
 import { apiUrl } from "../config";
 import type { EpisodeCard, EpisodeCounts, Outcome } from "./events";
 
@@ -42,6 +42,8 @@ export interface EpisodesPage extends Paged<EpisodeCard> {
 
 export interface EpisodeFilters {
   runId?: string;
+  /** One attack's episodes, by its id. */
+  attackId?: string;
   agentId?: string;
   outcome?: Outcome;
   attackClass?: string;
@@ -53,6 +55,47 @@ export interface EpisodesQuery extends EpisodeFilters {
   through?: string;
   page?: number;
   limit?: number;
+}
+
+/** An attack's record in the Arena episodes still on record. */
+export interface AttackStats {
+  episodes: number;
+  breaches: number;
+  runs: number;
+  lastAt: string | null;
+}
+
+/** A published attack in the red team list (no planted text). */
+export interface AttackSummary {
+  id: string;
+  class: string;
+  title: string;
+  description: string;
+  surfaces: string[];
+  severity: "low" | "medium" | "high" | "critical";
+  tags: string[];
+  stats: AttackStats;
+}
+
+export interface AttacksPage extends Paged<AttackSummary> {
+  /** When the oldest episode on record ran: the stats cover episodes since then. */
+  statsSince: string | null;
+}
+
+export interface AttacksQuery {
+  attackClass?: string;
+  surface?: string;
+  severity?: string;
+  sort?: "class" | "breaches" | "rate";
+  page?: number;
+  limit?: number;
+}
+
+/** GET /library. */
+export interface LibraryCounts {
+  published: number;
+  acceptedBounties: number;
+  heldOut: { active: number; retiresFrom: string | null };
 }
 
 export interface BountiesQuery {
@@ -256,8 +299,18 @@ export const api = {
   bounties: ({ attackClass, ...q }: BountiesQuery = {}) =>
     request<Paged<BountyRecord>>(`/bounties${query({ ...q, class: attackClass })}`),
   /** Arena episodes, newest first, as numbered pages of a snapshot, filtered in the database. */
-  episodes: ({ attackClass, ...q }: EpisodesQuery = {}) =>
-    request<EpisodesPage>(`/episodes${query({ ...q, class: attackClass })}`),
+  episodes: ({ attackClass, attackId, ...q }: EpisodesQuery = {}) =>
+    request<EpisodesPage>(`/episodes${query({ ...q, class: attackClass, attack: attackId })}`),
+  /** What ratings run, as counts: published, accepted bounties and the held-out set. */
+  library: () => request<LibraryCounts>("/library"),
+  /** The published attacks, a numbered page, each with its record in the Arena. */
+  attacks: ({ attackClass, ...q }: AttacksQuery = {}) =>
+    request<AttacksPage>(`/library/attacks${query({ ...q, class: attackClass })}`),
+  /** One published attack in full, planted text included. */
+  attack: (id: string) =>
+    request<{ attack: AttackSpec; stats: AttackStats; statsSince: string | null }>(
+      `/library/attacks/${encodeURIComponent(id)}`,
+    ),
   /** No operator token: the API checks the spec's hash against the revealed specURI. */
   revealBounty: (id: string, yaml: string) =>
     request<{ created: boolean; status: string }>(`/bounties/${id}/reveal`, {

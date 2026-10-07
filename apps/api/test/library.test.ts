@@ -3,7 +3,7 @@ import { stringify } from "yaml";
 import { heldOutId, loadAttackLibrary } from "@bonded/arena";
 import type { ServiceChain } from "@bonded/keeper";
 import { createApi } from "../src/index.js";
-import { MAX_BODY_BYTES, ratingLibrary, uploadBatches } from "../src/library.js";
+import { MAX_BODY_BYTES, pageOfAttacks, ratingLibrary, uploadBatches } from "../src/library.js";
 import { postgres } from "./postgres.js";
 
 // The library routes only need the chain id; nothing here reads the chain.
@@ -104,4 +104,76 @@ it("batches an upload by its size in bytes, not by a count of files", () => {
   expect(() => uploadBatches(["y".repeat(20_000)], retireAfter, ["huge.yaml"])).toThrow(
     /huge.yaml is too large/,
   );
+});
+
+it("lists the published attacks with their Arena record, and never an unpublished one", async () => {
+  const library = loadAttackLibrary();
+  const [first, second] = library;
+  const episode = (attackId: string, breached: boolean, runId: string) =>
+    pg.db.publish("rating.episode", {
+      runId,
+      index: 0,
+      total: 1,
+      episode: {
+        attackId,
+        attackClass: attackId.split("-")[0],
+        verdict: { breached, totalLossUsd: 0, frozen: false },
+      },
+    });
+  await episode(first!.id, true, "r1");
+  await episode(first!.id, false, "r2");
+  await episode(second!.id, false, "r1");
+  // A held-out attack's episode: counted nowhere on this page.
+  await episode("A6-held-out-1a2b3c4d", true, "r1");
+
+  type Page = {
+    items: { id: string; stats: { episodes: number; breaches: number; runs: number } }[];
+    total: number;
+    pages: number;
+    statsSince: string | null;
+  };
+  const list = (await (await app.request("/library/attacks?limit=100")).json()) as Page;
+  expect(list.total).toBe(library.length);
+  expect(list.statsSince).not.toBeNull();
+  expect(list.items.find((a) => a.id === first!.id)?.stats).toMatchObject({
+    episodes: 2,
+    breaches: 1,
+    runs: 2,
+  });
+  expect(list.items.some((a) => a.id.includes("held-out"))).toBe(false);
+  // The list leaves out the planted text; the detail has it.
+  expect(JSON.stringify(list)).not.toContain(first!.payloadTemplate);
+  const one = await app.request(`/library/attacks/${first!.id}`);
+  expect(one.status).toBe(200);
+  expect(await one.json()).toMatchObject({
+    attack: { id: first!.id, payloadTemplate: first!.payloadTemplate },
+    stats: { episodes: 2, breaches: 1 },
+  });
+  expect((await app.request("/library/attacks/A6-held-out-1a2b3c4d")).status).toBe(404);
+
+  const filtered = (await (
+    await app.request(`/library/attacks?class=${second!.class}&severity=${second!.severityHint}`)
+  ).json()) as Page;
+  expect(filtered.items.every((a) => a.id.startsWith(`${second!.class}-`))).toBe(true);
+  for (const q of ["class=A11", "surface=sky", "severity=extreme", "sort=size", "limit=0"])
+    expect((await app.request(`/library/attacks?${q}`)).status, q).toBe(400);
+});
+
+it("sorts attacks by class, by breaches or by breach rate, and pages them", () => {
+  const library = loadAttackLibrary();
+  const [a1, a2, a3] = [library[0]!, library[1]!, library[2]!];
+  const stats = new Map([
+    [a1.id, { episodes: 10, breaches: 1, runs: 2, lastAt: null }],
+    [a2.id, { episodes: 2, breaches: 2, runs: 1, lastAt: null }],
+    [a3.id, { episodes: 20, breaches: 3, runs: 4, lastAt: null }],
+  ]);
+  const ids = (q: Parameters<typeof pageOfAttacks>[2]) =>
+    pageOfAttacks(library, stats, q).items.map((a) => a.id);
+  expect(ids({ sort: "breaches", limit: 3 })).toEqual([a3.id, a2.id, a1.id]);
+  expect(ids({ sort: "rate", limit: 3 })).toEqual([a2.id, a3.id, a1.id]);
+  // By class: A2 after A1, and A10 after A9, not after A1.
+  const byClass = pageOfAttacks(library, stats, { limit: 100 }).items.map((a) => a.class);
+  expect(byClass.indexOf("A10")).toBeGreaterThan(byClass.lastIndexOf("A9"));
+  const page = pageOfAttacks(library, stats, { limit: 7, page: 99 });
+  expect(page).toMatchObject({ page: page.pages, total: library.length });
 });

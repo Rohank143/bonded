@@ -22,6 +22,7 @@ import { NotFound } from "./pages/NotFound";
 import { NewAgent } from "./pages/NewAgent";
 import { Agents } from "./pages/Agents";
 import { Overview } from "./pages/Overview";
+import { AttackDetail, Attacks } from "./pages/Attacks";
 import "./index.css";
 
 const router = createBrowserRouter([
@@ -31,6 +32,8 @@ const router = createBrowserRouter([
     children: [
       { path: "/overview", element: <Overview /> },
       { path: "/arena", element: <Arena /> },
+      { path: "/attacks", element: <Attacks /> },
+      { path: "/attacks/:id", element: <AttackDetail /> },
       { path: "/agents", element: <Agents /> },
       { path: "/agents/new", element: <NewAgent /> },
       { path: "/agents/:id", element: <Agent /> },

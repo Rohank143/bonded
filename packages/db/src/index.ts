@@ -94,6 +94,8 @@ const pageOf = (page: number | undefined, total: number, limit: number) => {
 /** Episode filters. Everything but `outcome` also narrows the outcome counts. */
 export interface EpisodeFilters {
   runId?: string;
+  /** One attack's episodes, by its id (e.g. "A4-honeypot-otc-004"). */
+  attackId?: string;
   /** An on-chain agent id; with `chainId`, its ratings' episodes only. */
   agentId?: string;
   chainId?: number;
@@ -111,6 +113,14 @@ const SINCE: Record<NonNullable<EpisodeFilters["since"]>, string> = {
 };
 /** The same reading as the web's: held-out and bounty attacks have ids that say so. */
 const PRIVATE_ATTACK = "e.payload->'episode'->>'attackId' ~* '(held-out|bounty)'";
+
+/** One attack's record in the Arena episodes still on record. */
+export interface AttackStats {
+  episodes: number;
+  breaches: number;
+  runs: number;
+  lastAt: Date | null;
+}
 
 /** Episode counts by outcome. */
 export type EpisodeCounts = Record<EpisodeOutcome | "total", number>;
@@ -165,6 +175,7 @@ export class Database {
       "0009_self_serve_agents.sql",
       "0010_held_out_attacks.sql",
       "0011_list_pagination.sql",
+      "0012_attack_index.sql",
     ];
     await this.transaction(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(7001)");
@@ -644,6 +655,7 @@ export class Database {
     const param = (v: unknown) => `$${values.push(v)}`;
     const where = ["e.topic='rating.episode'", `e.id <= ${param(through)}::bigint`];
     if (f.runId) where.push(`e.payload->>'runId' = ${param(f.runId)}`);
+    if (f.attackId) where.push(`e.payload->'episode'->>'attackId' = ${param(f.attackId)}`);
     if (f.agentId && f.chainId !== undefined)
       where.push(
         `e.payload->>'runId' IN (SELECT r.id::text FROM ratings r JOIN agents a ON a.id = r.agent_id
@@ -708,6 +720,37 @@ export class Database {
       agentId: onchain ?? null,
     }));
     return { items, page: at.page, pages: at.pages, total };
+  }
+  /**
+   * How each attack has done in the Arena episodes still on record (the events table keeps a
+   * retention window): episodes, breaches, distinct runs and the latest episode, keyed by
+   * attack id, plus when the oldest episode on record ran.
+   */
+  async attackStats(ids: readonly string[]): Promise<{
+    stats: Map<string, AttackStats>;
+    since: Date | null;
+  }> {
+    const r = await this.pool.query(
+      `SELECT e.payload->'episode'->>'attackId' AS id, count(*)::int AS episodes,
+        count(*) FILTER (WHERE (e.payload->'episode'->'verdict'->>'breached')::boolean IS TRUE)::int AS breaches,
+        count(DISTINCT e.payload->>'runId')::int AS runs, max(e.created_at) AS last_at
+      FROM events e
+      WHERE e.topic='rating.episode' AND e.payload->'episode'->>'attackId' = ANY($1::text[])
+      GROUP BY 1`,
+      [ids],
+    );
+    const since = await this.pool.query(
+      "SELECT min(created_at) AS since FROM events WHERE topic='rating.episode'",
+    );
+    return {
+      stats: new Map(
+        r.rows.map((row) => [
+          row.id as string,
+          { episodes: row.episodes, breaches: row.breaches, runs: row.runs, lastAt: row.last_at },
+        ]),
+      ),
+      since: since.rows[0].since,
+    };
   }
   /**
    * The newest event id. Counts taken through it plus a live stream opened after it miss

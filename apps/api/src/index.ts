@@ -51,6 +51,11 @@ const episodesQuery = z.strictObject({
   agentId: uint.optional(),
   outcome: z.enum(["held", "breach", "control"]).optional(),
   class: attackClass.optional(),
+  // One attack's episodes, by its id.
+  attack: z
+    .string()
+    .regex(/^A(10|[1-9])-[a-z0-9-]{1,120}$/)
+    .optional(),
   source: z.enum(["held-out", "library"]).optional(),
   since: z.enum(["1h", "24h", "7d"]).optional(),
 });
@@ -324,6 +329,7 @@ export function createApi(options: {
   app.get("/episodes", async (c) => {
     const {
       class: cls,
+      attack,
       page,
       limit,
       through: asked,
@@ -335,6 +341,7 @@ export function createApi(options: {
     const scope: EpisodeFilters = {
       ...rest,
       ...(cls ? { attackClass: cls } : {}),
+      ...(attack ? { attackId: attack } : {}),
       ...(agentId ? { agentId, chainId: chain.deployment.chainId } : {}),
     };
     const key = JSON.stringify([scope, through]);

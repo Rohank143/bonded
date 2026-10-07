@@ -1,8 +1,15 @@
 import type { Hono } from "hono";
 import { z } from "zod";
-import type { Database } from "@bonded/db";
+import { PAGE_LIMIT, type AttackStats, type Database } from "@bonded/db";
 import { isHeldOutId, loadAttackLibrary } from "@bonded/arena";
-import { AttackSpec, BountySpecError, parseBountySpec } from "@bonded/shared";
+import {
+  AttackClassId,
+  AttackSpec,
+  AttackSurface,
+  BountySpecError,
+  Severity,
+  parseBountySpec,
+} from "@bonded/shared";
 import { chainLibrary } from "./bounty-worker.js";
 
 /**
@@ -59,6 +66,68 @@ export function uploadBatches(
   return batches;
 }
 
+const attacksQuery = z.strictObject({
+  page: z.coerce.number().int().min(1).max(1_000_000).optional(),
+  limit: z.coerce.number().int().min(1).max(PAGE_LIMIT.max).optional(),
+  class: AttackClassId.optional(),
+  surface: AttackSurface.optional(),
+  severity: Severity.optional(),
+  sort: z.enum(["class", "breaches", "rate"]).optional(),
+});
+
+const NO_STATS: AttackStats = { episodes: 0, breaches: 0, runs: 0, lastAt: null };
+const classOrder = (id: string) => Number(id.slice(1, id.indexOf("-")));
+
+/** An attack in the red team list: everything but the planted text and the variant guidance. */
+export function attackSummary(a: AttackSpec, stats: AttackStats) {
+  return {
+    id: a.id,
+    class: a.class,
+    title: a.title,
+    description: a.description,
+    surfaces: a.surfaces,
+    severity: a.severityHint,
+    tags: a.tags,
+    stats,
+  };
+}
+
+/**
+ * The published attacks, filtered and sorted, as one numbered page. By class (then id), by
+ * breaches, or by breach rate (attacks with no episodes last).
+ */
+export function pageOfAttacks(
+  library: readonly AttackSpec[],
+  stats: ReadonlyMap<string, AttackStats>,
+  q: z.infer<typeof attacksQuery>,
+) {
+  const of = (a: AttackSpec) => stats.get(a.id) ?? NO_STATS;
+  const rate = (a: AttackSpec) => (of(a).episodes ? of(a).breaches / of(a).episodes : -1);
+  const kept = library
+    .filter(
+      (a) =>
+        (!q.class || a.class === q.class) &&
+        (!q.surface || a.surfaces.includes(q.surface)) &&
+        (!q.severity || a.severityHint === q.severity),
+    )
+    .sort((x, y) =>
+      q.sort === "breaches"
+        ? of(y).breaches - of(x).breaches || x.id.localeCompare(y.id)
+        : q.sort === "rate"
+          ? rate(y) - rate(x) || of(y).episodes - of(x).episodes || x.id.localeCompare(y.id)
+          : classOrder(x.id) - classOrder(y.id) || x.id.localeCompare(y.id),
+    );
+  const limit = q.limit ?? PAGE_LIMIT.default;
+  const pages = Math.max(1, Math.ceil(kept.length / limit));
+  const page = Math.min(q.page ?? 1, pages);
+  return {
+    items: kept.slice((page - 1) * limit, page * limit).map((a) => attackSummary(a, of(a))),
+    page,
+    pages,
+    total: kept.length,
+  };
+}
+
 const upload = z.strictObject({
   /** Each held-out attack's YAML, as pnpm heldout:generate wrote it (16 KB a request in all). */
   specs: z.array(z.string().min(1).max(4_000)).min(1).max(MAX_UPLOAD_SPECS),
@@ -68,12 +137,46 @@ const upload = z.strictObject({
 
 /**
  * GET /library: what ratings run, as counts only (never a held-out payload or id).
+ * GET /library/attacks: the published attacks, a numbered page with each one's Arena record.
+ * GET /library/attacks/:id: one published attack in full, planted text included. Held-out and
+ * bounty attacks are never listed here: an unpublished id is "not found", like any other.
  * POST /library/held-out: upload a held-out set (operator token; see index.ts).
  */
-export function libraryRoutes(app: Hono, options: { db: Database; chainId: number }) {
+export function libraryRoutes(
+  app: Hono,
+  options: { db: Database; chainId: number; statsCacheMs?: number },
+) {
   const { db, chainId } = options;
+  // The published library is the repo's files; it changes only with a deploy.
+  const library = loadAttackLibrary();
+  // Stats scan the episodes on record, so one read serves every visitor for a minute.
+  const statsCacheMs = options.statsCacheMs ?? 60_000;
+  let cached: { at: number; value: Awaited<ReturnType<Database["attackStats"]>> } | undefined;
+  const attackStats = async () => {
+    if (!cached || Date.now() - cached.at >= statsCacheMs)
+      cached = { at: Date.now(), value: await db.attackStats(library.map((a) => a.id)) };
+    return cached.value;
+  };
+  app.get("/library/attacks", async (c) => {
+    const q = attacksQuery.parse(c.req.query());
+    const { stats, since } = await attackStats();
+    return c.json({
+      ...pageOfAttacks(library, stats, q),
+      statsSince: since?.toISOString() ?? null,
+    });
+  });
+  app.get("/library/attacks/:id", async (c) => {
+    const attack = library.find((a) => a.id === c.req.param("id"));
+    if (!attack) return c.json({ error: "attack not found" }, 404);
+    const { stats, since } = await attackStats();
+    return c.json({
+      attack,
+      stats: stats.get(attack.id) ?? NO_STATS,
+      statsSince: since?.toISOString() ?? null,
+    });
+  });
   app.get("/library", async (c) => {
-    const published = loadAttackLibrary().length;
+    const published = library.length;
     const all = await chainLibrary(db, chainId);
     const heldOut = await db.heldOutSummary(chainId);
     return c.json({
