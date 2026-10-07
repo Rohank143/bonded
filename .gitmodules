@@ -4,3 +4,24 @@
 [submodule "contracts/evm/lib/openzeppelin-contracts"]
 	path = contracts/evm/lib/openzeppelin-contracts
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
+[submodule "contracts/evm/lib/safe7579"]
+	path = contracts/evm/lib/safe7579
+	url = https://github.com/rhinestonewtf/safe7579
+[submodule "contracts/evm/lib/erc7579-implementation"]
+	path = contracts/evm/lib/erc7579-implementation
+	url = https://github.com/erc7579/erc7579-implementation
+[submodule "contracts/evm/lib/sentinellist"]
+	path = contracts/evm/lib/sentinellist
+	url = https://github.com/rhinestonewtf/sentinellist
+[submodule "contracts/evm/lib/checknsignatures"]
+	path = contracts/evm/lib/checknsignatures
+	url = https://github.com/rhinestonewtf/checknsignatures
+[submodule "contracts/evm/lib/account-abstraction"]
+	path = contracts/evm/lib/account-abstraction
+	url = https://github.com/eth-infinitism/account-abstraction
+[submodule "contracts/evm/lib/safe-smart-account"]
+	path = contracts/evm/lib/safe-smart-account
+	url = https://github.com/safe-global/safe-smart-account
+[submodule "contracts/evm/lib/solady"]
+	path = contracts/evm/lib/solady
+	url = https://github.com/vectorized/solady
