@@ -126,28 +126,38 @@ h1#_top {
   color: #dbe5ff;
 }
 
-/* Tables: the app's glass panel look. */
-.sl-markdown-content table {
-  display: block;
+/* Tables: the app's glass panel look. Each sits in a box that scrolls sideways if it must. */
+.table-wrap {
   overflow-x: auto;
+  margin: 1.5rem 0;
   border: 1px solid var(--bonded-line);
   border-radius: 1rem;
   background: var(--bonded-surface);
+}
+.sl-markdown-content .table-wrap table {
+  display: table;
+  width: 100%;
+  margin: 0;
+  border: 0;
   font-size: 0.9rem;
 }
-.sl-markdown-content :is(th, td) {
+.sl-markdown-content .table-wrap :is(th, td) {
   border-color: var(--bonded-line);
   padding: 0.6rem 0.9rem;
+  vertical-align: top;
 }
-.sl-markdown-content thead {
+.sl-markdown-content .table-wrap thead {
   background: var(--bonded-raised);
 }
-.sl-markdown-content th {
+.sl-markdown-content .table-wrap th {
   color: var(--sl-color-gray-1);
   font-weight: 650;
 }
-.sl-markdown-content tr:nth-child(2n) {
+.sl-markdown-content .table-wrap tr:nth-child(2n) {
   background: transparent;
+}
+.sl-markdown-content .table-wrap tbody tr:last-child td {
+  border-bottom: 0;
 }
 
 /* Quotes */

@@ -3,7 +3,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { EVIDENCE_DIRS, FOLDERS, PAGES } from "./pages.mjs";
+import {
+  COMPONENT_NAMES,
+  DROP_SECTIONS,
+  EVIDENCE_DIRS,
+  FOLDERS,
+  PAGES,
+  SHORT_NAMES,
+} from "./pages.mjs";
+import { PATCHES } from "./patches.mjs";
 import { pageUrl, transform } from "./transform.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -22,11 +30,9 @@ function listFiles(dir) {
   });
 }
 
-// Start clean so a renamed or removed doc doesn't linger.
-for (const sub of new Set(
-  [...PAGES.map((p) => p.slug), ...FOLDERS.map((f) => f.slug)].map((s) => s.split("/")[0]),
-)) {
-  fs.rmSync(path.join(outDir, sub), { recursive: true, force: true });
+// Start clean so a renamed or removed doc doesn't linger. index.mdx is the one page written by hand.
+for (const entry of fs.readdirSync(outDir)) {
+  if (entry !== "index.mdx") fs.rmSync(path.join(outDir, entry), { recursive: true, force: true });
 }
 fs.rmSync(path.join(publicDir, "evidence"), { recursive: true, force: true });
 
@@ -47,12 +53,41 @@ pages.push(...folderPages);
 const targets = new Map(pages.map((p) => [p.src, pageUrl(p.slug)]));
 for (const f of FOLDERS) targets.set(f.dir, pageUrl(f.slug));
 
-const ctx = { targets, evidence: EVIDENCE_DIRS, exists: isFile };
+const labels = new Map(pages.filter((p) => p.label).map((p) => [p.src, p.label]));
+const leftovers = [];
+const ctx = {
+  targets,
+  evidence: EVIDENCE_DIRS,
+  exists: isFile,
+  labels,
+  shorts: new Map(Object.entries(SHORT_NAMES)),
+  components: new Map(Object.entries(COMPONENT_NAMES)),
+  leftovers,
+};
+
+/** The source text with this page's wording patches applied. */
+function patched(src) {
+  let text = read(src);
+  for (const patch of PATCHES.filter((p) => p.src === src)) {
+    if (!text.includes(patch.from)) {
+      console.warn(`docs: patch for ${src} no longer matches: ${patch.from.slice(0, 60)}`);
+      continue;
+    }
+    text = text.replaceAll(patch.from, patch.to);
+  }
+  return text;
+}
 
 for (const page of pages) {
   const dest = path.join(outDir, `${page.slug}.md`);
   fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.writeFileSync(dest, transform(read(page.src), page.src, ctx, { title: page.title }));
+  fs.writeFileSync(
+    dest,
+    transform(patched(page.src), page.src, ctx, {
+      title: page.title,
+      dropSections: DROP_SECTIONS[page.src],
+    }),
+  );
 }
 
 // Index pages for the folders.
@@ -60,7 +95,7 @@ for (const folder of FOLDERS) {
   const entries = folderPages
     .filter((p) => p.slug.startsWith(`${folder.slug}/`))
     .map((p) => {
-      const m = read(p.src).match(/^# (.+)$/m);
+      const m = patched(p.src).match(/^# (.+)$/m);
       return `- [${m ? m[1].replace(/`/g, "") : p.slug}](${pageUrl(p.slug)})`;
     });
   const dest = path.join(outDir, folder.slug, "index.md");
@@ -91,4 +126,6 @@ for (const { from, to, only } of EVIDENCE_DIRS) {
   }
 }
 
+for (const line of leftovers)
+  console.warn(`docs: repository path left in prose: ${line.slice(0, 160)}`);
 console.log(`docs: wrote ${pages.length} pages`);

@@ -10,6 +10,10 @@ const ctx = {
   ]),
   evidence: [{ from: "docs/progress/evidence", to: "evidence" }],
   exists: (p) => p === "docs/progress/evidence/a.json",
+  labels: new Map([["docs/PLAN.md", "Product and build plan"]]),
+  shorts: new Map([["docs/PLAN.md", "the plan"]]),
+  components: new Map([["apps/api", "the API"]]),
+  leftovers: [],
 };
 
 test("a relative link to another doc points at its page and keeps the anchor", () => {
@@ -69,7 +73,7 @@ test("transform adds front matter, drops the h1 and rewrites links outside code 
   assert.match(out, /^---\ntitle: "Agents in Bonded"\n/);
   assert.doesNotMatch(out, /^# /m);
   assert.match(out, /\[the plan\]\(\/docs\/overview\/plan\/\)/);
-  assert.match(out, /and the code and \[`docs\/PLAN.md`\]\(\/docs\/overview\/plan\/\)/);
+  assert.match(out, /and the code and \[the plan\]\(\/docs\/overview\/plan\/\)/);
   assert.match(out, /git clone <repository-url> \[x\]\(PLAN.md\)/);
   assert.match(out, /`<chainId>` and &lt;chainId&gt; here/);
 });

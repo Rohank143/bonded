@@ -6,7 +6,12 @@
  */
 export const PAGES = [
   { src: "README.md", slug: "overview/introduction", label: "Introduction", title: "Introduction" },
-  { src: "docs/PLAN.md", slug: "overview/plan", label: "Product and build plan" },
+  {
+    src: "docs/PLAN.md",
+    slug: "overview/plan",
+    label: "Product specification",
+    title: "Product specification",
+  },
   { src: "docs/BUSINESS.md", slug: "overview/business", label: "Business model and costs" },
 
   { src: "docs/ARCHITECTURE.md", slug: "concepts/architecture", label: "Architecture" },
@@ -55,39 +60,10 @@ export const PAGES = [
     slug: "reference/deployments",
     label: "Deployments",
   },
-  {
-    src: "docs/WALLET-INTEGRATION-RESEARCH.md",
-    slug: "research/wallet-integration",
-    label: "Wallet integration research",
-  },
 ];
 
-/** Folders whose Markdown files each become a page, in file-name order. */
-export const FOLDERS = [
-  {
-    dir: "docs/decisions",
-    slug: "decisions",
-    index: {
-      title: "Decision records",
-      description: "Every design decision behind Bonded, written down when it was made.",
-      intro:
-        "Each record states the context, the decision and what it costs. They are numbered in the order they were made.",
-    },
-    name: (file) => file.replace(/\.md$/, ""),
-  },
-  {
-    dir: "docs/progress",
-    slug: "progress",
-    index: {
-      title: "Build log",
-      description:
-        "Daily notes from the 16-day build: what shipped, what was measured, what is open.",
-      intro:
-        "One note per build day, in order. Each links to the plan section it delivers and the evidence behind its numbers.",
-    },
-    name: (file) => file.replace(/\.md$/, "").toLowerCase(),
-  },
-];
+/** Folders whose Markdown files each become a page, in file-name order. None for now. */
+export const FOLDERS = [];
 
 /** Where evidence files live on the site. Linked from the notes that cite them. */
 export const EVIDENCE_DIRS = [
@@ -95,3 +71,51 @@ export const EVIDENCE_DIRS = [
   { from: "contracts/evm/deployments", to: "evidence/deployments", only: /\.json$/ },
   { from: "contracts/solana/deployments", to: "evidence/solana", only: /\.json$/ },
 ];
+
+/** How a doc is named in running prose when a bare mention of its file turns into a link. */
+export const SHORT_NAMES = {
+  "README.md": "the introduction",
+  "SECURITY.md": "the security policy",
+  "docs/PLAN.md": "the product specification",
+  "docs/BUSINESS.md": "the business page",
+  "docs/ARCHITECTURE.md": "the architecture page",
+  "docs/AGENTS.md": "the agents page",
+  "docs/BOUNTIES-EXPLAINED.md": "the bounty overview",
+  "docs/BOUNTIES.md": "the bounty guide",
+  "docs/DEVELOPING.md": "the developer guide",
+  "docs/SERVICES.md": "the hosted services page",
+  "docs/TEE.md": "the TEE runbook",
+  "docs/SENTINEL.md": "the Sentinel page",
+  "docs/SENTINEL-STRESS.md": "the stress suite page",
+  "docs/AUDIT.md": "the audit note",
+  "docs/disclosures/README.md": "the disclosure policy",
+  "contracts/evm/README.md": "the contracts page",
+  "contracts/evm/deployments/README.md": "the deployments page",
+};
+
+/** Sections that only make sense inside the repository (its folder layout). */
+export const DROP_SECTIONS = {
+  "README.md": ["Repo layout"],
+  "docs/DEVELOPING.md": ["The documentation site"],
+  // The build schedule, demo script, submission checklist and founder's to-do list are internal.
+  "docs/PLAN.md": ["16.", "20.", "21.", "22.", "24.", "27."],
+};
+
+/**
+ * Plain names for the repository's folders, used where a folder is mentioned in running prose.
+ * The site never names a path: readers can't open the repository.
+ */
+export const COMPONENT_NAMES = {
+  "apps/arena": "the Arena",
+  "apps/api": "the API",
+  "apps/keeper": "the keeper",
+  "apps/web": "the web app",
+  "apps/demo-agents": "the demo agents",
+  "packages/shared": "the shared package",
+  "services/sentinel": "the Sentinel service",
+  "services/tee-agent": "the TEE agent service",
+  "contracts/evm": "the EVM contracts",
+  "contracts/solana": "the Solana programs",
+  attacks: "the attack library",
+  docs: "these docs",
+};

@@ -8,11 +8,32 @@ const pages = (prefix) =>
     (p) => ({ slug: p.slug, label: p.label }),
   );
 
+/** Wraps every table in a div so a wide table scrolls inside its own box. */
+function rehypeWrapTables() {
+  const wrap = (node) => {
+    if (!node.children) return;
+    node.children = node.children.map((child) => {
+      if (child.type === "element" && child.tagName === "table") {
+        return {
+          type: "element",
+          tagName: "div",
+          properties: { className: ["table-wrap"] },
+          children: [child],
+        };
+      }
+      wrap(child);
+      return child;
+    });
+  };
+  return wrap;
+}
+
 // Served at /docs on the same domain as the web app (see apps/web/build/include-docs.mjs).
 export default defineConfig({
   site: "https://bonded-nu.vercel.app",
   base: "/docs",
   trailingSlash: "always",
+  markdown: { rehypePlugins: [rehypeWrapTables] },
   integrations: [
     mermaid({
       theme: "base",
