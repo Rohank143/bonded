@@ -291,9 +291,6 @@ export function SiteLayout() {
             className="mx-auto hidden items-center gap-7 text-sm text-soft md:flex"
             aria-label="Site"
           >
-            <a href="#product" className="hover:text-ink">
-              Product
-            </a>
             <a href="#numbers" className="hover:text-ink">
               Live numbers
             </a>
