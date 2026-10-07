@@ -77,7 +77,17 @@ export interface AttackSummary {
   stats: AttackStats;
 }
 
+/** One attack class with its published attacks' combined record. */
+export interface ClassRecord {
+  class: string;
+  attacks: number;
+  episodes: number;
+  breaches: number;
+}
+
 export interface AttacksPage extends Paged<AttackSummary> {
+  /** All ten classes, whatever the list's filter. */
+  classes: ClassRecord[];
   /** When the oldest episode on record ran: the stats cover episodes since then. */
   statsSince: string | null;
 }
