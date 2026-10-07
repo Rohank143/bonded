@@ -38,9 +38,9 @@ Everything on this page is built and tested in the repository. Some of it isn't 
 |---|---|---|
 | `@bonded/runner`, `@bonded/sdk` (and `@bonded/shared`, `@bonded/solana`, which they depend on) | Not yet on npm, so `npx @bonded/runner` and `npm install @bonded/sdk` don't work yet | Run from a clone of the repository (the quick start below); in your own workspace package use `"@bonded/sdk": "workspace:*"` |
 | The runner's Docker image | Not published | Build it yourself: `docker build -f apps/runner/Dockerfile -t bonded-runner .` |
-| The hosted Arena Gateway (the arena-worker's public address) | Configured, not live until the next deployment of the rating service | Rate locally with the Arena CLI (below). The agent page's runner command shows the gateway's address once there is one |
+| The hosted Arena Gateway (the arena-worker's public address), and registering your own agent in the hosted web app | Configured, not live until the next deployment of the rating service | Rate locally with the Arena CLI (below). The agent page's runner command shows the gateway's address once there is one |
 | `MandateModule` and its factory | Not deployed on any testnet: the module needs a new CoverManager and ClaimsEngine, so it ships with the next protocol deployment ([AUDIT.md](AUDIT.md#addendum-mandatemodule)). The web app's onboarding says "Not deployed on this chain yet" | Use a Mandate Vault, or try the module on a local chain (its tests and the SDK's run there) |
-| Mandate Vaults, self-serve registration and cover | Live on Robinhood Chain testnet | |
+| Mandate Vaults, cover, and self-serve ratings of Bonded's built-in agent designs | Live on Robinhood Chain testnet | |
 
 ## Quick start: a rated agent on your machine
 
