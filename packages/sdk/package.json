@@ -20,6 +20,10 @@
       "types": "./dist/solana-agent-kit.d.ts",
       "import": "./dist/solana-agent-kit.js"
     },
+    "./eliza": {
+      "types": "./dist/eliza.d.ts",
+      "import": "./dist/eliza.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -49,7 +53,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.eliza.json",
     "lint": "eslint src test",
     "test": "vitest run"
   },
@@ -62,6 +66,7 @@
     "@bonded/sandbox": "workspace:*",
     "@bonded/solana": "workspace:*",
     "@coinbase/agentkit": "0.10.4",
+    "@elizaos/core": "1.7.2",
     "@solana/spl-token": "0.4.15",
     "@solana/web3.js": "^1.98.4",
     "solana-agent-kit": "2.0.10"
@@ -69,6 +74,7 @@
   "peerDependencies": {
     "@bonded/solana": "workspace:^",
     "@coinbase/agentkit": "^0.10.4",
+    "@elizaos/core": "^1.7.2",
     "@solana/web3.js": "^1.98.4",
     "solana-agent-kit": "^2.0.10"
   },
@@ -77,6 +83,9 @@
       "optional": true
     },
     "@coinbase/agentkit": {
+      "optional": true
+    },
+    "@elizaos/core": {
       "optional": true
     },
     "@solana/web3.js": {
