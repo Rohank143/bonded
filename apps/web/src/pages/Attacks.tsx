@@ -4,7 +4,15 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ATTACK_CLASSES, AttackSurface, type BreachType } from "@bonded/shared";
 import { ApiError, api, type AttackStats, type AttackSummary, type ClassRecord } from "../lib/api";
 import { useListParams } from "../lib/pages";
-import { Badge, EmptyState, ErrorText, Loading, Page, buttonClass } from "../components/ui";
+import {
+  Badge,
+  EmptyState,
+  ErrorText,
+  Loading,
+  Page,
+  Spinner,
+  buttonClass,
+} from "../components/ui";
 import { Select } from "../components/select";
 import { Pagination } from "../components/pagination";
 
@@ -139,6 +147,16 @@ function AttackCard({ a, since }: { a: AttackSummary; since: string | null }) {
 }
 
 /** A row of key numbers in one panel, split by hairlines: no card per number. */
+/** A stat that's still loading: a small spinner where the number will be. */
+function StatLoading() {
+  return (
+    <span className="inline-flex h-10 items-center text-muted" role="status">
+      <Spinner />
+      <span className="sr-only">Loading…</span>
+    </span>
+  );
+}
+
 function StatStrip({
   stats,
 }: {
@@ -167,10 +185,13 @@ function StatStrip({
  */
 function ClassGrid({
   classes,
+  loading = false,
   active,
   onPick,
 }: {
   classes?: ClassRecord[];
+  /** The counts are on their way: a spinner holds each row's figures until they arrive. */
+  loading?: boolean;
   active: string;
   onPick: (cls: string) => void;
 }) {
@@ -223,6 +244,12 @@ function ClassGrid({
                   </span>
                 </span>
                 <span className="w-[72px] text-right">
+                  {loading && (
+                    <span className="inline-flex text-muted" role="status">
+                      <Spinner />
+                      <span className="sr-only">Loading {id}'s figures…</span>
+                    </span>
+                  )}
                   {rate !== undefined && (
                     <>
                       <span
@@ -306,14 +333,15 @@ export function Attacks() {
       <StatStrip
         stats={[
           { label: "Attack classes", value: Object.keys(ATTACK_CLASSES).length },
-          { label: "Published attacks", value: counts?.published ?? "…" },
-          { label: "Held out", value: counts?.heldOut.active ?? "…" },
-          { label: "Accepted bounties", value: counts?.acceptedBounties ?? "…" },
+          { label: "Published attacks", value: counts?.published ?? <StatLoading /> },
+          { label: "Held out", value: counts?.heldOut.active ?? <StatLoading /> },
+          { label: "Accepted bounties", value: counts?.acceptedBounties ?? <StatLoading /> },
         ]}
       />
 
       <ClassGrid
         classes={attacks.data?.classes}
+        loading={attacks.isPending && !attacks.error}
         active={f.class}
         onPick={(cls) => {
           list.set({ class: cls });
