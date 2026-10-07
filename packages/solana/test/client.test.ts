@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { BorshCoder } from "@anchor-lang/core";
-import { Ed25519Program, Keypair, PublicKey } from "@solana/web3.js";
+import { Ed25519Program, Keypair, PublicKey, TransactionInstruction } from "@solana/web3.js";
 import BN from "bn.js";
 import { describe, expect, it } from "vitest";
 import {
@@ -9,13 +9,17 @@ import {
   bondedCoverIdl,
   bondedVaultIdl,
   claimable,
+  createVaultInstruction,
   decodePolicy,
   decodeVault,
+  depositInstruction,
+  executeInstruction,
   fileClaimInstruction,
   type Policy,
   PROGRAM_IDS,
   postScoreInstructions,
   registerInstruction,
+  TOKEN_PROGRAM,
   type Vault,
 } from "../src/index.js";
 
@@ -71,7 +75,16 @@ describe("decoding accounts from the IDL", () => {
     };
     const data = await new BorshCoder(bondedVaultIdl).accounts.encode("Vault", raw);
     const v = decodeVault(key(9), data);
-    expect(v).toMatchObject({ agentId: 7n, frozen: true });
+    expect(v).toMatchObject({
+      agentId: 7n,
+      frozen: true,
+      enforce: false,
+      freezeOnBreach: true,
+      maxOutflowPerCall: 5_000_000_000n,
+    });
+    expect(v.baseAccount.equals(key(4))).toBe(true);
+    expect(v.allowedPrograms.map((p) => p.toBase58())).toEqual([key(5).toBase58()]);
+    expect([...v.mandateHash]).toEqual(Array(32).fill(7));
     expect(v.guardian.equals(key(1))).toBe(true);
     expect(v.breaches.map((b) => [b.id, b.type, b.blocked, b.loss])).toEqual([
       [0, "UnauthorizedTransfer", false, 1_000_000_000n],
@@ -239,5 +252,70 @@ describe("registry scores", () => {
       isSigner: true,
       isWritable: true,
     });
+  });
+});
+
+describe("vault instructions", () => {
+  const coder = new BorshCoder(bondedVaultIdl);
+  const guardian = key(1);
+  const agent = key(2);
+  const mint = key(3);
+
+  it("creates a vault at the guardian's PDA for the agent id, with the params encoded", () => {
+    const ix = createVaultInstruction(guardian, mint, {
+      agentId: 7n,
+      agent,
+      mandateHash: new Uint8Array(32).fill(9),
+      enforce: true,
+      freezeOnBreach: true,
+      allowedPrograms: [TOKEN_PROGRAM],
+      maxOutflowPerCall: 1_000n,
+    });
+    const vault = address.vault(guardian, 7n);
+    expect(ix.keys[0]!.pubkey.equals(vault)).toBe(true);
+    expect(ix.keys[1]!.pubkey.equals(address.vaultBase(vault))).toBe(true);
+    const decoded = coder.instruction.decode(ix.data) as {
+      name: string;
+      data: { params: { agent: PublicKey; enforce: boolean; max_outflow_per_call: BN } };
+    };
+    expect(decoded.name).toBe("create_vault");
+    expect(decoded.data.params.agent.equals(agent)).toBe(true);
+    expect(decoded.data.params.enforce).toBe(true);
+    expect(decoded.data.params.max_outflow_per_call.toString()).toBe("1000");
+  });
+
+  it("deposits into the vault's base account", () => {
+    const vault = address.vault(guardian, 7n);
+    const ix = depositInstruction({ address: vault, baseMint: mint }, key(4), key(5), 25n);
+    expect(ix.keys[1]!.pubkey.equals(address.vaultBase(vault))).toBe(true);
+    expect((coder.instruction.decode(ix.data) as { name: string }).name).toBe("deposit");
+  });
+
+  it("wraps an instruction in execute: agent signs, the inner accounts follow, the vault never signs", () => {
+    const vault = address.vault(guardian, 7n);
+    const inner = new TransactionInstruction({
+      programId: TOKEN_PROGRAM,
+      data: Buffer.from([12, 1, 2, 3]),
+      keys: [
+        { pubkey: key(4), isSigner: false, isWritable: true },
+        { pubkey: vault, isSigner: true, isWritable: false },
+      ],
+    });
+    const ix = executeInstruction({ address: vault, agent }, inner);
+    expect(ix.programId.equals(PROGRAM_IDS.vault)).toBe(true);
+    expect(ix.keys.slice(0, 4).map((k) => k.pubkey.toBase58())).toEqual([
+      vault.toBase58(),
+      agent.toBase58(),
+      address.vaultBase(vault).toBase58(),
+      TOKEN_PROGRAM.toBase58(),
+    ]);
+    expect(ix.keys[1]!.isSigner).toBe(true);
+    expect(ix.keys.slice(4)).toEqual([
+      { pubkey: key(4), isSigner: false, isWritable: true },
+      { pubkey: vault, isSigner: false, isWritable: false },
+    ]);
+    const decoded = coder.instruction.decode(ix.data) as { name: string; data: { data: Buffer } };
+    expect(decoded.name).toBe("execute");
+    expect([...decoded.data.data]).toEqual([12, 1, 2, 3]);
   });
 });
