@@ -63,7 +63,7 @@ export function Agents() {
   return (
     <Page
       title="Agents"
-      intro="Every agent registered on Bonded. Open one to see its score, attack report, vault and cover."
+      intro="Every agent registered on Bonded. Open one to see its score, attack report, vault and cover. All are scored on the same scale, which is what lets the Bonded Score serve as the bar for agent safety."
       actions={<LinkButton to="/agents/new">Onboard an agent</LinkButton>}
     >
       <Card
