@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { useAccount, useReadContracts } from "wagmi";
 import type { Address } from "viem";
+import { useQuery } from "@tanstack/react-query";
 import {
   bondedRegistryAbi,
   coverManagerAbi,
@@ -11,8 +12,8 @@ import {
   tierForScore,
 } from "@bonded/shared";
 import { deployment } from "../config";
+import { api } from "../lib/api";
 import { useAgents, useClaims, useVaults, waterfall, type AgentRow } from "../lib/chain";
-import { useEpisodeFeed } from "../lib/events";
 import { short, usd } from "../lib/format";
 import { Badge, ScoreRing, Skeleton, TierBadge, buttonClass, linkClass } from "../components/ui";
 import { TokenLogo } from "../components/token";
@@ -358,7 +359,14 @@ function AcrossBonded() {
     .filter((a) => a.score)
     .sort((x, y) => y.score!.score - x.score!.score)
     .slice(0, 4);
-  const feed = useEpisodeFeed();
+  // Four rows don't need a live stream (each holds a database connection on the API): a small
+  // page, refreshed every ten seconds, is enough.
+  const recent = useQuery({
+    queryKey: ["episodes", "recent"],
+    queryFn: () => api.episodes({ limit: 4 }),
+    refetchInterval: 10_000,
+  });
+  const feed = { cards: recent.data?.items ?? [] };
   const latest = claims.data?.[0];
   const w = latest ? waterfall(latest) : undefined;
   const stat = (label: string, value: string | undefined, hint: string) => (

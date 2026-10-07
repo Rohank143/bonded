@@ -11,6 +11,7 @@ import {
   EmptyState,
   ErrorText,
   LinkButton,
+  LoadMore,
   Loading,
   Page,
   Table,
@@ -18,12 +19,14 @@ import {
   TierBadge,
   linkClass,
 } from "../components/ui";
+import { usePaged } from "../lib/paged";
 
 export function Vaults() {
   const vaults = useVaults();
   const agents = useAgents();
   const navigate = useNavigate();
   const list = vaults.data ?? [];
+  const page = usePaged(list);
   const reads = useReadContracts({
     contracts: list.flatMap((v) => [
       { address: v.vault, abi: mandateVaultAbi, functionName: "totalAssets" as const },
@@ -77,79 +80,87 @@ export function Vaults() {
           </EmptyState>
         )}
         {list.length > 0 && (
-          <Table>
-            <thead>
-              <tr>
-                <th>Vault</th>
-                <th>Agent</th>
-                <th className="!pr-10 !text-right">Assets</th>
-                <th>
-                  <Term term="cover">Cover</Term>
-                </th>
-                <th>State</th>
-                <th className="hidden lg:table-cell">
-                  <Term term="guardian">Guardian</Term>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((v, i) => {
-                const score = agents.data?.find((a) => a.agentId === v.agentId)?.score?.score;
-                const assets = at(i, 0) as bigint | undefined;
-                return (
-                  <tr
-                    key={v.vault}
-                    className="cursor-pointer"
-                    onClick={() => navigate(`/vaults/${v.vault}`)}
-                  >
-                    <td>
-                      <Link
-                        to={`/vaults/${v.vault}`}
-                        className={`font-mono text-[13px] ${linkClass}`}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {short(v.vault)}
-                      </Link>
-                    </td>
-                    <td>
-                      <span className="flex items-center gap-2">
+          <>
+            <Table>
+              <thead>
+                <tr>
+                  <th>Vault</th>
+                  <th>Agent</th>
+                  <th className="!pr-10 !text-right">Assets</th>
+                  <th>
+                    <Term term="cover">Cover</Term>
+                  </th>
+                  <th>State</th>
+                  <th className="hidden lg:table-cell">
+                    <Term term="guardian">Guardian</Term>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {page.shown.map((v, i) => {
+                  const score = agents.data?.find((a) => a.agentId === v.agentId)?.score?.score;
+                  const assets = at(i, 0) as bigint | undefined;
+                  return (
+                    <tr
+                      key={v.vault}
+                      className="cursor-pointer"
+                      onClick={() => navigate(`/vaults/${v.vault}`)}
+                    >
+                      <td>
                         <Link
-                          to={`/agents/${v.agentId}`}
-                          className="font-semibold hover:text-accent"
+                          to={`/vaults/${v.vault}`}
+                          className={`font-mono text-[13px] ${linkClass}`}
                           onClick={(e) => e.stopPropagation()}
                         >
-                          Agent {v.agentId.toString()}
+                          {short(v.vault)}
                         </Link>
-                        {score !== undefined && <TierBadge score={score} />}
-                      </span>
-                    </td>
-                    <td className="pr-10 text-right font-mono tabular-nums">
-                      {assets !== undefined ? `$${usd(assets, 0)}` : "…"}
-                    </td>
-                    <td>
-                      {at(i, 2) ? <Badge tone="brand">Covered</Badge> : <Badge>No cover</Badge>}
-                    </td>
-                    <td>
-                      {at(i, 1) === true ? (
-                        <Badge tone="breach" dot>
-                          Frozen
-                        </Badge>
-                      ) : at(i, 1) === false ? (
-                        <Badge tone="safe" dot>
-                          Active
-                        </Badge>
-                      ) : (
-                        "…"
-                      )}
-                    </td>
-                    <td className="hidden lg:table-cell" onClick={(e) => e.stopPropagation()}>
-                      <AddressLink address={v.guardian} />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </Table>
+                      </td>
+                      <td>
+                        <span className="flex items-center gap-2">
+                          <Link
+                            to={`/agents/${v.agentId}`}
+                            className="font-semibold hover:text-accent"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            Agent {v.agentId.toString()}
+                          </Link>
+                          {score !== undefined && <TierBadge score={score} />}
+                        </span>
+                      </td>
+                      <td className="pr-10 text-right font-mono tabular-nums">
+                        {assets !== undefined ? `$${usd(assets, 0)}` : "…"}
+                      </td>
+                      <td>
+                        {at(i, 2) ? <Badge tone="brand">Covered</Badge> : <Badge>No cover</Badge>}
+                      </td>
+                      <td>
+                        {at(i, 1) === true ? (
+                          <Badge tone="breach" dot>
+                            Frozen
+                          </Badge>
+                        ) : at(i, 1) === false ? (
+                          <Badge tone="safe" dot>
+                            Active
+                          </Badge>
+                        ) : (
+                          "…"
+                        )}
+                      </td>
+                      <td className="hidden lg:table-cell" onClick={(e) => e.stopPropagation()}>
+                        <AddressLink address={v.guardian} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+            <LoadMore
+              hasMore={page.hasMore}
+              onMore={page.more}
+              shown={page.shown.length}
+              total={page.total}
+            />
+          </>
         )}
       </Card>
     </Page>

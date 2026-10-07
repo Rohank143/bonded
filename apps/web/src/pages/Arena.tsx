@@ -3,13 +3,15 @@ import { Link, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ATTACK_CLASSES } from "@bonded/shared";
 import { api } from "../lib/api";
-import { useEpisodeFeed, type EpisodeCard } from "../lib/events";
+import { outcomeOf, type EpisodeCard } from "../lib/events";
+import { useEpisodes } from "../lib/episodes";
 import {
   Badge,
   Button,
   EmptyState,
   ErrorText,
   Input,
+  LoadMore,
   Page,
   Term,
   TierBadge,
@@ -27,8 +29,7 @@ const CLASS_NAMES = ATTACK_CLASSES as Record<string, { name: string }>;
 /** Held-out and bounty attacks have ids that say so; their text is never shown. */
 const isPrivate = (c: EpisodeCard) => Boolean(c.attackId && /held-out|bounty/i.test(c.attackId));
 
-const outcome = (c: EpisodeCard): Exclude<Filter, "all"> =>
-  !c.attackClass ? "control" : c.breached ? "breach" : "held";
+const outcome = outcomeOf;
 
 export function Arena() {
   const [runId, setRunId] = useState<string>();
@@ -38,7 +39,11 @@ export function Arena() {
   const [params] = useSearchParams();
   // The operator form needs the server API token, which only the Bonded operator has.
   const operator = params.get("operator") === "1";
-  const feed = useEpisodeFeed(runId);
+  const feed = useEpisodes({
+    ...(runId ? { runId } : {}),
+    ...(filter !== "all" ? { outcome: filter } : {}),
+    ...(cls !== "all" ? { attackClass: cls } : {}),
+  });
   const run = useQuery({
     queryKey: ["run", runId],
     queryFn: () => api.run(runId!),
@@ -47,14 +52,13 @@ export function Arena() {
       q.state.data?.status === "done" || q.state.data?.status === "failed" ? false : 3000,
   });
 
-  const cards = feed.cards;
-  const held = cards.filter((c) => outcome(c) === "held").length;
-  const breached = cards.filter((c) => c.breached).length;
-  const shown = cards.filter(
-    (c) => (filter === "all" || outcome(c) === filter) && (cls === "all" || c.attackClass === cls),
-  );
-  const selected = cards.find((c) => c.eventId === picked) ?? shown[0];
-  const latest = cards[0];
+  // Filters run on the API, so `shown` is already the filtered list, a page at a time.
+  const shown = feed.items;
+  const counts = feed.counts;
+  const filtered = filter !== "all" || cls !== "all";
+  const selected = shown.find((c) => c.eventId === picked) ?? shown[0];
+  // The newest episode overall: streamed, or the top of an unfiltered list.
+  const latest = feed.newest ?? (filtered ? undefined : shown[0]);
 
   return (
     <Page
@@ -91,12 +95,19 @@ export function Arena() {
         </span>
       </div>
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Tile label="Episodes shown" value={String(cards.length)} />
-        <Tile label={<Term term="held">Held</Term>} value={String(held)} tone="text-held" />
+        <Tile
+          label={runId ? "Episodes in this run" : "Episodes"}
+          value={counts ? counts.total.toLocaleString() : "…"}
+        />
+        <Tile
+          label={<Term term="held">Held</Term>}
+          value={counts ? counts.held.toLocaleString() : "…"}
+          tone="text-held"
+        />
         <Tile
           label={<Term term="breach">Breached</Term>}
-          value={String(breached)}
-          tone={breached ? "text-breach" : ""}
+          value={counts ? counts.breach.toLocaleString() : "…"}
+          tone={counts?.breach ? "text-breach" : ""}
         />
         <div className="panel min-w-0 p-5">
           <p className="eyebrow">{runId ? "This run" : "Latest run"}</p>
@@ -125,7 +136,9 @@ export function Arena() {
               {latest.runId.slice(0, 8)} · {latest.index + 1} of {latest.total}
             </p>
           ) : (
-            <p className="mt-3.5 text-sm text-muted">Waiting for episodes</p>
+            <p className="mt-3.5 text-sm text-muted">
+              {counts?.total ? "Clear the filters to see it" : "Waiting for episodes"}
+            </p>
           )}
           {runId && (
             <button
@@ -177,19 +190,28 @@ export function Arena() {
               />
             </div>
           </div>
-          {shown.length === 0 ? (
+          <ErrorText error={feed.error} />
+          {feed.isPending ? (
+            <div className="flex flex-col gap-2 p-2">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="h-[66px] animate-pulse rounded-2xl bg-white/[0.03]" />
+              ))}
+            </div>
+          ) : shown.length === 0 ? (
             <div className="p-4">
               <EmptyState
-                title={cards.length ? "No episodes match these filters" : "No episodes yet"}
+                title={
+                  filtered && counts?.total ? "No episodes match these filters" : "No episodes yet"
+                }
               >
-                {cards.length
+                {filtered && counts?.total
                   ? "Try another class or outcome."
                   : "Episodes appear here the moment a rating runs. Agent owners can start one from their agent's page."}
               </EmptyState>
             </div>
           ) : (
             <ul className="mt-2 flex flex-col gap-0.5">
-              {shown.slice(0, 60).map((c) => {
+              {shown.map((c) => {
                 const o = outcome(c);
                 const isSel = selected?.eventId === c.eventId;
                 return (
@@ -236,6 +258,13 @@ export function Arena() {
               })}
             </ul>
           )}
+          <LoadMore
+            hasMore={feed.hasMore}
+            loading={feed.loadingMore}
+            onMore={() => void feed.loadMore()}
+            shown={shown.length}
+            {...(!filtered && counts ? { total: counts.total } : {})}
+          />
           {feed.failedRuns.length > 0 && (
             <p className="px-3 pt-3 text-xs text-muted">{feed.failedRuns.length} run(s) failed.</p>
           )}

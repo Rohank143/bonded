@@ -58,24 +58,53 @@ export function addCard(cards: EpisodeCard[], card: EpisodeCard, limit = 200): E
   return [card, ...cards].slice(0, limit);
 }
 
+/** Episode counts by outcome, as GET /episodes returns them. */
+export interface EpisodeCounts {
+  total: number;
+  held: number;
+  breach: number;
+  control: number;
+}
+
+/** How an episode went: a control has no attack; otherwise the vault held or recorded a breach. */
+export type Outcome = "held" | "breach" | "control";
+export const outcomeOf = (c: EpisodeCard): Outcome =>
+  !c.attackClass ? "control" : c.breached ? "breach" : "held";
+
+/** Add one episode to a tally. */
+export function tally(counts: EpisodeCounts, card: EpisodeCard): EpisodeCounts {
+  const o = outcomeOf(card);
+  return { ...counts, total: counts.total + 1, [o]: counts[o] + 1 };
+}
+
+export const NO_EPISODES: EpisodeCounts = { total: 0, held: 0, breach: 0, control: 0 };
+
 /**
- * Subscribe to the API's server-sent events. EventSource reconnects on its own and sends
- * Last-Event-ID, so the API replays what was missed.
+ * Subscribe to new episodes after event `after` (the `through` of GET /episodes), so nothing
+ * older is replayed. EventSource reconnects on its own and sends Last-Event-ID, so the API
+ * resumes where the stream left off. `added` counts every new episode, including ones that
+ * fall out of the capped `cards` list. Nothing starts until `after` is known.
  */
-export function useEpisodeFeed(runId?: string) {
-  const [cards, setCards] = useState<EpisodeCard[]>([]);
+export function useEpisodeFeed(runId: string | undefined, after: string | undefined) {
+  const [state, setState] = useState({ cards: [] as EpisodeCard[], added: NO_EPISODES });
   const [connected, setConnected] = useState(false);
   const [failedRuns, setFailedRuns] = useState<string[]>([]);
   useEffect(() => {
-    setCards([]);
+    setState({ cards: [], added: NO_EPISODES });
+    if (after === undefined) return;
     const url = new URL(`${apiUrl}/events`);
+    url.searchParams.set("after", after);
     if (runId) url.searchParams.set("runId", runId);
     const source = new EventSource(url);
+    let last = BigInt(after);
     source.onopen = () => setConnected(true);
     source.onerror = () => setConnected(false);
     source.addEventListener("rating.episode", (e) => {
       const card = toEpisodeCard(e.lastEventId, e.data);
-      if (card) setCards((c) => addCard(c, card));
+      // Ids arrive in order; anything at or below the last one is a replay already counted.
+      if (!card || BigInt(card.eventId) <= last) return;
+      last = BigInt(card.eventId);
+      setState((s) => ({ cards: addCard(s.cards, card, 500), added: tally(s.added, card) }));
     });
     source.addEventListener("rating.failed", (e) => {
       try {
@@ -86,6 +115,6 @@ export function useEpisodeFeed(runId?: string) {
       }
     });
     return () => source.close();
-  }, [runId]);
-  return { cards, connected, failedRuns };
+  }, [runId, after]);
+  return { ...state, connected, failedRuns };
 }

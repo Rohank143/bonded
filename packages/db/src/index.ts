@@ -53,6 +53,42 @@ export interface BountySummary {
   createdAt: Date;
 }
 
+/** One Arena episode from the live events table (topic `rating.episode`). */
+export interface EpisodeSummary {
+  eventId: string;
+  runId: string;
+  index: number;
+  total: number;
+  attackId: string | null;
+  attackClass: string | null;
+  breached: boolean;
+  lossUsd: number;
+  frozen: boolean;
+}
+
+/** How an episode went: a control has no attack; otherwise the vault held or recorded a breach. */
+export type EpisodeOutcome = "held" | "breach" | "control";
+
+/** One page of a newest-first list. `next` is the cursor for the page after it, or null. */
+export interface Page<T> {
+  items: T[];
+  next: string | null;
+}
+
+/** Page sizes the list endpoints accept. */
+export const PAGE_LIMIT = { default: 30, max: 100 } as const;
+
+const clampLimit = (limit?: number) =>
+  Math.min(Math.max(Math.trunc(limit ?? PAGE_LIMIT.default), 1), PAGE_LIMIT.max);
+
+// The SQL for each outcome, matching the web's reading: no attack class means a control.
+const OUTCOME_SQL: Record<EpisodeOutcome, string> = {
+  control: "payload->'episode'->>'attackClass' IS NULL",
+  breach:
+    "payload->'episode'->>'attackClass' IS NOT NULL AND (payload->'episode'->'verdict'->>'breached')::boolean IS TRUE",
+  held: "payload->'episode'->>'attackClass' IS NOT NULL AND (payload->'episode'->'verdict'->>'breached')::boolean IS NOT TRUE",
+};
+
 /** Raised when a caller tries to queue an agent outside the configured set. */
 export class AgentNotConfiguredError extends Error {}
 
@@ -94,6 +130,7 @@ export class Database {
       "0008_bounty_nonce.sql",
       "0009_self_serve_agents.sql",
       "0010_held_out_attacks.sql",
+      "0011_list_pagination.sql",
     ];
     await this.transaction(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(7001)");
@@ -568,14 +605,82 @@ export class Database {
       );
     });
   }
-  /** Every bounty on a chain, newest first, without payloads. */
-  async bounties(chainId: number): Promise<BountySummary[]> {
+  /**
+   * Arena episodes, newest first, one page at a time. `before` is the `next` cursor of the
+   * previous page (an event id); filters run in the database so every page is full.
+   */
+  async episodes(
+    q: {
+      runId?: string;
+      outcome?: EpisodeOutcome;
+      attackClass?: string;
+      before?: string;
+      limit?: number;
+    } = {},
+  ): Promise<Page<EpisodeSummary>> {
+    const limit = clampLimit(q.limit);
+    const where = ["topic='rating.episode'"];
+    const values: unknown[] = [];
+    const param = (v: unknown) => `$${values.push(v)}`;
+    if (q.before !== undefined) where.push(`id < ${param(q.before)}::bigint`);
+    if (q.runId) where.push(`payload->>'runId' = ${param(q.runId)}`);
+    if (q.attackClass) where.push(`payload->'episode'->>'attackClass' = ${param(q.attackClass)}`);
+    if (q.outcome) where.push(OUTCOME_SQL[q.outcome]);
+    const r = await this.pool.query(
+      `SELECT id,payload FROM events WHERE ${where.join(" AND ")} ORDER BY id DESC LIMIT ${param(limit + 1)}`,
+      values,
+    );
+    const rows = r.rows.slice(0, limit);
+    const items = rows.map(({ id, payload: p }): EpisodeSummary => ({
+      eventId: String(id),
+      runId: String(p.runId),
+      index: Number(p.index),
+      total: Number(p.total ?? 0),
+      attackId: p.episode?.attackId ?? null,
+      attackClass: p.episode?.attackClass ?? null,
+      breached: p.episode?.verdict?.breached === true,
+      lossUsd: Number(p.episode?.verdict?.totalLossUsd ?? 0),
+      frozen: p.episode?.verdict?.frozen === true,
+    }));
+    return { items, next: r.rows.length > limit ? String(rows.at(-1)!.id) : null };
+  }
+  /** Episode counts by outcome up to and including event `through`, for every run or one. */
+  async episodeCounts(
+    through: string,
+    runId?: string,
+  ): Promise<Record<EpisodeOutcome | "total", number>> {
+    const r = await this.pool.query(
+      `SELECT count(*)::int AS total,
+        count(*) FILTER (WHERE ${OUTCOME_SQL.held})::int AS held,
+        count(*) FILTER (WHERE ${OUTCOME_SQL.breach})::int AS breach,
+        count(*) FILTER (WHERE ${OUTCOME_SQL.control})::int AS control
+      FROM events WHERE topic='rating.episode' AND id <= $1::bigint
+        AND ($2::text IS NULL OR payload->>'runId' = $2)`,
+      [through, runId ?? null],
+    );
+    return r.rows[0];
+  }
+  /**
+   * The newest event id. Counts taken through it plus a live stream opened after it miss
+   * nothing and count nothing twice (ids are allocated in commit order, see `publish`).
+   */
+  async latestEventId(): Promise<string> {
+    const r = await this.pool.query("SELECT coalesce(max(id),0)::text AS id FROM events");
+    return r.rows[0].id;
+  }
+  /** Bounties on a chain, newest submission first, one page at a time, without payloads. */
+  async bounties(
+    chainId: number,
+    q: { before?: string; limit?: number } = {},
+  ): Promise<Page<BountySummary>> {
+    const limit = clampLimit(q.limit);
     const r = await this.pool.query(
       `SELECT submission_id,hunter,spec_uri,spec,status,verdict,tx_hash,created_at FROM bounties
-      WHERE chain_id=$1 ORDER BY created_at DESC`,
-      [chainId],
+      WHERE chain_id=$1 AND ($2::numeric IS NULL OR submission_id < $2::numeric)
+      ORDER BY submission_id DESC LIMIT $3`,
+      [chainId, q.before ?? null, limit + 1],
     );
-    return r.rows.map((row) => {
+    const items = r.rows.slice(0, limit).map((row) => {
       const spec = row.spec as { id: string; class: string; title: string; surfaces: string[] };
       const verdict = row.verdict as { reward?: string; reason?: string } | null;
       return {
@@ -593,6 +698,7 @@ export class Database {
         createdAt: row.created_at,
       };
     });
+    return { items, next: r.rows.length > limit ? items.at(-1)!.submissionId : null };
   }
   /** Accepted attacks plus uncertain acceptance broadcasts reserve bounty eligibility. */
   async bountyValidationAttacks(chainId: number, submissionId: string): Promise<unknown[]> {

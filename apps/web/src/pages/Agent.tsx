@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useReadContract, useReadContracts } from "wagmi";
@@ -10,7 +10,8 @@ import {
   tierForScore,
 } from "@bonded/shared";
 import type { Address } from "viem";
-import { apiUrl, deployment } from "../config";
+import { deployment } from "../config";
+import { downloadReportJson, downloadReportPdf, type ReportContext } from "../lib/report";
 import { ApiError, api } from "../lib/api";
 import { liveCheckView, teeView } from "../lib/tee";
 import { isRpcUnavailable } from "../lib/errors";
@@ -344,14 +345,15 @@ export function Agent() {
               )}
             </dl>
             {score.data && (
-              <a
-                className={`${buttonClass("secondary")} mt-5 w-full`}
-                href={`${apiUrl}/arena/runs/${score.data.runId}/report`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Download the full report
-              </a>
+              <ReportDownloads
+                ctx={{
+                  agentId: id,
+                  runId: score.data.runId,
+                  reportHash: a?.reportHash ?? score.data.signed.attestation.reportHash,
+                  txHash: score.data.tx_hash,
+                  ...(a?.mandateHash ? { mandateHash: a.mandateHash } : {}),
+                }}
+              />
             )}
             {score.error && !(score.error instanceof ApiError && score.error.status === 404) && (
               <ErrorText error={score.error} />
@@ -434,5 +436,43 @@ function VaultSummary({ vault }: { vault: Address }) {
         <p className="mt-4 text-xs text-muted">No active cover.</p>
       )}
     </Card>
+  );
+}
+
+/** The report as a readable PDF, or as the original JSON whose hash is on chain. */
+function ReportDownloads({ ctx }: { ctx: ReportContext }) {
+  const [busy, setBusy] = useState<"pdf" | "json">();
+  const [error, setError] = useState<string>();
+  const run = async (kind: "pdf" | "json") => {
+    setBusy(kind);
+    setError(undefined);
+    try {
+      await (kind === "pdf" ? downloadReportPdf(ctx) : downloadReportJson(ctx));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "The download failed. Try again.");
+    } finally {
+      setBusy(undefined);
+    }
+  };
+  return (
+    <div className="mt-5 flex flex-col gap-2">
+      <button
+        type="button"
+        onClick={() => void run("pdf")}
+        disabled={busy !== undefined}
+        className={`${buttonClass("secondary")} w-full`}
+      >
+        {busy === "pdf" ? "Making the PDF…" : "Download the report (PDF)"}
+      </button>
+      <button
+        type="button"
+        onClick={() => void run("json")}
+        disabled={busy !== undefined}
+        className="text-center text-xs text-accent hover:underline disabled:opacity-60"
+      >
+        {busy === "json" ? "Downloading…" : "Original JSON (matches the on-chain hash)"}
+      </button>
+      {error && <p className="text-center text-xs text-breach">{error}</p>}
+    </div>
   );
 }

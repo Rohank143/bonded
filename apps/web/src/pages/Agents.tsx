@@ -9,6 +9,7 @@ import {
   EmptyState,
   ErrorText,
   LinkButton,
+  LoadMore,
   Loading,
   Page,
   ScoreRing,
@@ -17,6 +18,7 @@ import {
   TierBadge,
   linkClass,
 } from "../components/ui";
+import { usePaged } from "../lib/paged";
 
 type Show = "all" | "rated" | "mine";
 
@@ -44,6 +46,7 @@ export function Agents() {
   const rows = all.filter((a) =>
     show === "rated" ? Boolean(a.score) : show === "mine" ? isMine(a.owner) : true,
   );
+  const page = usePaged(rows, 25, show);
   const tabs: [Show, string][] = [
     ["all", "All"],
     ["rated", "Rated"],
@@ -104,7 +107,7 @@ export function Agents() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((a) => (
+              {page.shown.map((a) => (
                 <tr
                   key={a.agentId.toString()}
                   className="cursor-pointer"
@@ -169,6 +172,12 @@ export function Agents() {
             </tbody>
           </Table>
         )}
+        <LoadMore
+          hasMore={page.hasMore}
+          onMore={page.more}
+          shown={page.shown.length}
+          total={page.total}
+        />
       </Card>
     </Page>
   );

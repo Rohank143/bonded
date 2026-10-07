@@ -86,7 +86,8 @@ try {
 
   let record;
   for (let i = 0; i < 90; i++) {
-    const list = await (await fetch(`${API}/bounties`)).json();
+    // Ask for the page that starts at this submission.
+    const { items: list } = await (await fetch(`${API}/bounties?before=${id + 1n}&limit=1`)).json();
     record = list.find((b) => String(b.submissionId) === id.toString());
     if (record && record.status !== "validating" && record.txHash) break;
     if (i % 6 === 0) console.log(`  ${record?.status ?? "waiting"}…`);

@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { z } from "zod";
-import { Database, json, AgentNotConfiguredError } from "@bonded/db";
+import { Database, json, AgentNotConfiguredError, PAGE_LIMIT } from "@bonded/db";
 import {
   QuoteError,
   SELF_SERVE_MAX_COVER_USD,
@@ -26,6 +26,25 @@ const uint = z
   .string()
   .regex(/^\d{1,78}$/)
   .transform((v) => BigInt(v).toString());
+/** Query parameters shared by the paginated lists: a cursor from the previous page and a size. */
+const pageQuery = {
+  limit: z.coerce.number().int().min(1).max(PAGE_LIMIT.max).optional(),
+};
+const episodesQuery = z.strictObject({
+  ...pageQuery,
+  // An event id (bigint) from the previous page's `next`.
+  before: z
+    .string()
+    .regex(/^\d{1,18}$/)
+    .optional(),
+  runId: z.uuid().optional(),
+  outcome: z.enum(["held", "breach", "control"]).optional(),
+  class: z
+    .string()
+    .regex(/^A\d{1,2}$/)
+    .optional(),
+});
+const bountiesQuery = z.strictObject({ ...pageQuery, before: uint.optional() });
 const quoteInput = z.strictObject({
   agentId: uint,
   vault: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
@@ -46,6 +65,8 @@ export function createApi(options: {
   revealLimit?: ConstructorParameters<typeof RateLimiter>[0];
   /** How long a leaderboard response is reused before the chain is read again. */
   leaderboardCacheMs?: number;
+  /** How long GET /episodes reuses its outcome counts (default 10 seconds). */
+  episodeCountsCacheMs?: number;
   /** Limits on self-serve ratings and quotes without the operator token (see self-serve.ts). */
   selfServe?: Partial<SelfServeLimits>;
 }) {
@@ -263,7 +284,32 @@ export function createApi(options: {
     });
     return c.json(result, result.created ? 202 : 200);
   });
-  app.get("/bounties", async (c) => c.json(await db.bounties(chain.deployment.chainId)));
+  app.get("/bounties", async (c) => {
+    const q = bountiesQuery.parse(c.req.query());
+    return c.json(await db.bounties(chain.deployment.chainId, q));
+  });
+  // The first page also carries outcome counts and `through`, the event id they were counted
+  // up to: a live stream opened after `through` adds exactly the episodes the counts don't have
+  // (the web drops the ones it already has from the pages). Counting scans a run's, or the
+  // retention window's, episodes, so a count is reused briefly: the Arena page must not turn
+  // every visit into a full count. A reused count is still exact up to its own `through`.
+  const countsCacheMs = options.episodeCountsCacheMs ?? 10_000;
+  const countsCache = new Map<string, { at: number; through: string; counts: unknown }>();
+  app.get("/episodes", async (c) => {
+    const { class: attackClass, ...q } = episodesQuery.parse(c.req.query());
+    const filters = { ...q, ...(attackClass ? { attackClass } : {}) };
+    if (q.before !== undefined) return c.json(await db.episodes(filters));
+    const key = q.runId ?? "all";
+    let cached = countsCache.get(key);
+    if (!cached || Date.now() - cached.at >= countsCacheMs) {
+      const through = await db.latestEventId();
+      cached = { at: Date.now(), through, counts: await db.episodeCounts(through, q.runId) };
+      if (countsCache.size > 500) countsCache.clear();
+      countsCache.set(key, cached);
+    }
+    const page = await db.episodes(filters);
+    return c.json({ ...page, counts: cached.counts, through: cached.through });
+  });
   selfServeRoutes(app, { db, chain, ...(options.selfServe ? { limits: options.selfServe } : {}) });
   libraryRoutes(app, { db, chainId: chain.deployment.chainId });
   app.get("/events", async (c) => {

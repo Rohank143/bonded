@@ -84,9 +84,10 @@ Browsers can call the API only from origins listed in `WEB_ORIGINS` (comma-separ
 | `GET /arena/runs/:id/report` | Report or 202 while pending |
 | `GET /agents/:id/score` | Latest worker-posted signed attestation and transaction hash |
 | `POST /quotes` | `{ "agentId": "1", "vault": "0x…", "coverAmount": "20000000000" }` → signed quote |
-| `GET /events?runId=<uuid>` | SSE episode feed; optional run filter, `Last-Event-ID` replay |
+| `GET /episodes?runId=&outcome=&class=&before=&limit=` | Arena episodes, newest first, one page at a time (default 30, at most 100). Filters (`outcome` is `held`, `breach` or `control`) run in the database. Pass a page's `next` back as `before`. The first page also has outcome `counts` and `through`, the event id they were counted up to |
+| `GET /events?runId=<uuid>&after=<id>` | SSE episode feed after event `after` (the web passes the first page's `through`); optional run filter, `Last-Event-ID` replay |
 | `POST /bounties/:id/reveal` | The attack's YAML as the body (no token) → 202 `{ created, status }`; see [BOUNTIES.md](BOUNTIES.md) |
-| `GET /bounties` | Submissions with status, reward, reason and transaction, without payloads |
+| `GET /bounties?before=&limit=` | Submissions with status, reward, reason and transaction, without payloads; newest submission first, one page at a time (`{ items, next }`) |
 | `GET /library` | What ratings run, as counts only: published seeds, accepted bounties, and active held-out attacks with the earliest retirement date |
 | `POST /library/held-out` | Upload held-out attacks (operator token): `{ specs: [yaml, ...], retireAfter }`, up to 10 a request; ids must look like `A6-held-out-1a2b3c4d`. See ADR-007, decision 3 |
 | `GET /self/agents/:id` | Whether an agent is registered for self-serve ratings, its design, and when it can be rated next |

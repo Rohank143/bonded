@@ -1,5 +1,6 @@
 import type { SelfServeKind } from "@bonded/shared";
 import { apiUrl } from "../config";
+import type { EpisodeCard, EpisodeCounts, Outcome } from "./events";
 
 /** Error from the Bonded API, carrying its HTTP status and the API's error message. */
 export class ApiError extends Error {
@@ -22,6 +23,34 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(response.status, message || `request failed (${response.status})`);
   }
   return body as T;
+}
+
+/** One page of a newest-first list; pass `next` back as `before` for the page after it. */
+export interface Paged<T> {
+  items: T[];
+  next: string | null;
+}
+
+/** GET /episodes. The first page (no `before`) also has counts and the event id they run to. */
+export interface EpisodesPage extends Paged<EpisodeCard> {
+  counts?: EpisodeCounts;
+  through?: string;
+}
+
+export interface EpisodesQuery {
+  runId?: string;
+  outcome?: Outcome;
+  attackClass?: string;
+  before?: string;
+  limit?: number;
+}
+
+/** A query string from the defined values only. */
+function query(params: Record<string, string | number | undefined>): string {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== undefined) q.set(k, String(v));
+  const s = q.toString();
+  return s ? `?${s}` : "";
 }
 
 /**
@@ -205,7 +234,11 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     }),
-  bounties: () => request<BountyRecord[]>("/bounties"),
+  bounties: (before?: string, limit?: number) =>
+    request<Paged<BountyRecord>>(`/bounties${query({ before, limit })}`),
+  /** Arena episodes, newest first, filtered in the database. */
+  episodes: ({ attackClass, ...q }: EpisodesQuery = {}) =>
+    request<EpisodesPage>(`/episodes${query({ ...q, class: attackClass })}`),
   /** No operator token: the API checks the spec's hash against the revealed specURI. */
   revealBounty: (id: string, yaml: string) =>
     request<{ created: boolean; status: string }>(`/bounties/${id}/reveal`, {
