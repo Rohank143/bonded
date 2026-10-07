@@ -135,3 +135,4 @@ export {
 } from "./bounty.js";
 
 export { generateHeldOut, heldOutId, isHeldOutId, specFromDraft } from "./held-out.js";
+export * from "./gateway/index.js";

@@ -1,0 +1,241 @@
+import { mandateVaultAbi } from "@bonded/shared";
+import {
+  decodeFunctionData,
+  isAddressEqual,
+  parseTransaction,
+  recoverTransactionAddress,
+  type TransactionSerialized,
+  toFunctionSelector,
+} from "viem";
+import type { ArenaToolbox } from "../toolbox.js";
+
+/**
+ * The chain-mode JSON-RPC endpoint (`POST /e/{t}/rpc`): a proxy to the episode's sandbox chain
+ * for an agent that signs its own transactions.
+ *
+ * The agent under test is untrusted, and the sandbox is an anvil node whose cheat methods could
+ * rewrite balances, mine blocks, impersonate accounts or reveal the node's setup. So:
+ * - only the methods below pass: standard reads, gas and fee queries, and one write,
+ *   eth_sendRawTransaction. Every anvil_, hardhat_, evm_, debug_, trace_, ots_, txpool_, personal_
+ *   and eth_sign* method, eth_sendTransaction (anvil would sign it with an unlocked development
+ *   key), eth_accounts, filters and subscriptions are refused;
+ * - a raw transaction must be signed by the episode's agent key, call the episode's vault's
+ *   execute() with no ETH, and be a plain (legacy, EIP-2930 or EIP-1559) transaction for this
+ *   chain. The anvil development keys are public, so without the signer check an agent could act
+ *   as the operator, depositor or attester;
+ * - each transaction is a step in the toolbox's trace (ArenaToolbox.recordTransaction): it counts
+ *   toward the step cap, stops when the episode ends, and its breaches are read back.
+ *
+ * Reads see the whole sandbox chain, as an agent on a public chain would. Attack content never
+ * lives on chain (it is planted in the world simulator, served only through the episode's tools),
+ * so reading other contracts' state reveals nothing about the attack.
+ */
+export const RPC_ALLOWED_METHODS: ReadonlySet<string> = new Set([
+  "eth_chainId",
+  "eth_blockNumber",
+  "eth_syncing",
+  "eth_gasPrice",
+  "eth_maxPriorityFeePerGas",
+  "eth_feeHistory",
+  "eth_blobBaseFee",
+  "eth_getBalance",
+  "eth_getCode",
+  "eth_getStorageAt",
+  "eth_getTransactionCount",
+  "eth_getProof",
+  "eth_call",
+  "eth_estimateGas",
+  "eth_createAccessList",
+  "eth_getBlockByNumber",
+  "eth_getBlockByHash",
+  "eth_getBlockReceipts",
+  "eth_getBlockTransactionCountByNumber",
+  "eth_getBlockTransactionCountByHash",
+  "eth_getTransactionByHash",
+  "eth_getTransactionByBlockNumberAndIndex",
+  "eth_getTransactionByBlockHashAndIndex",
+  "eth_getTransactionReceipt",
+  "eth_getLogs",
+  "eth_sendRawTransaction",
+  "net_version",
+  "web3_clientVersion",
+]);
+
+const EXECUTE_SELECTOR = toFunctionSelector("execute(address,bytes)");
+const ALLOWED_TX_TYPES = new Set(["legacy", "eip2930", "eip1559"]);
+
+/** What the proxy needs to know about one episode. */
+export interface RpcBinding {
+  /** The sandbox's own RPC URL (never shown to the agent). */
+  upstream: string;
+  chainId: number;
+  vault: `0x${string}`;
+  /** The only key whose transactions are accepted: the vault's agent. */
+  agent: `0x${string}`;
+  toolbox: ArenaToolbox;
+}
+
+export interface RpcLimits {
+  /** Most requests in one batch. */
+  batch: number;
+  /** Per upstream call. */
+  timeoutMs: number;
+  /** Largest upstream response passed on (a wide eth_getLogs on a fork can be huge). */
+  responseBytes: number;
+}
+
+type Id = string | number | null;
+interface RpcRequest {
+  jsonrpc: "2.0";
+  id: Id;
+  method: string;
+  params: unknown[];
+}
+interface RpcError {
+  code: number;
+  message: string;
+}
+type RpcResponse = { jsonrpc: "2.0"; id: Id } & ({ result: unknown } | { error: RpcError });
+
+const failure = (id: Id, code: number, message: string): RpcResponse => ({
+  jsonrpc: "2.0",
+  id,
+  error: { code, message },
+});
+
+/** Handles a JSON-RPC body: one request or a batch. Never throws. */
+export async function handleRpc(
+  body: unknown,
+  binding: RpcBinding,
+  limits: RpcLimits,
+): Promise<RpcResponse | RpcResponse[]> {
+  if (Array.isArray(body)) {
+    if (body.length === 0) return failure(null, -32600, "empty batch");
+    if (body.length > limits.batch)
+      return failure(null, -32600, `a batch can hold at most ${limits.batch} requests`);
+    const out: RpcResponse[] = [];
+    // In order, one at a time: a batch that sends a transaction then reads its receipt works.
+    for (const item of body) out.push(await handleOne(item, binding, limits));
+    return out;
+  }
+  return handleOne(body, binding, limits);
+}
+
+async function handleOne(
+  raw: unknown,
+  binding: RpcBinding,
+  limits: RpcLimits,
+): Promise<RpcResponse> {
+  const request = parseRequest(raw);
+  if (!("method" in request)) return request;
+  const { id, method, params } = request;
+  if (!RPC_ALLOWED_METHODS.has(method))
+    return failure(id, -32601, `method ${method} is not available in the Arena`);
+  if (method === "eth_sendRawTransaction") return sendRaw(request, binding, limits);
+  try {
+    return { ...(await forward(binding.upstream, method, params, limits)), id };
+  } catch (error) {
+    return failure(id, -32603, error instanceof Error ? error.message : String(error));
+  }
+}
+
+function parseRequest(raw: unknown): RpcRequest | RpcResponse {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw))
+    return failure(null, -32600, "invalid request");
+  const r = raw as Record<string, unknown>;
+  const id: Id =
+    typeof r.id === "string" || typeof r.id === "number" || r.id === null ? (r.id as Id) : null;
+  if (r.jsonrpc !== "2.0" || typeof r.method !== "string" || r.method.length > 64)
+    return failure(id, -32600, "invalid request");
+  if (r.params !== undefined && !Array.isArray(r.params))
+    return failure(id, -32602, "params must be an array");
+  return { jsonrpc: "2.0", id, method: r.method, params: (r.params as unknown[]) ?? [] };
+}
+
+/**
+ * Checks a signed transaction before it reaches the chain, then sends it as a toolbox step. The
+ * response is the chain's own (the hash, or its error), so the agent sees what a real node says.
+ */
+async function sendRaw(
+  request: RpcRequest,
+  binding: RpcBinding,
+  limits: RpcLimits,
+): Promise<RpcResponse> {
+  const { id, params } = request;
+  const raw = params[0];
+  if (params.length !== 1 || typeof raw !== "string" || !/^0x[0-9a-fA-F]+$/.test(raw))
+    return failure(id, -32602, "expected one signed transaction as hex");
+  const checked = await checkTransaction(raw as TransactionSerialized, binding);
+  if ("error" in checked) return failure(id, -32000, checked.error);
+
+  let response: RpcResponse | undefined;
+  const result = await binding.toolbox.recordTransaction(checked.call, async () => {
+    response = { ...(await forward(binding.upstream, request.method, params, limits)), id };
+    if ("error" in response) throw new Error(response.error.message);
+    return response.result as `0x${string}`;
+  });
+  // No response means the transaction was never sent: the step cap or the episode's end.
+  if (!response) return failure(id, -32000, result.ok ? "not sent" : result.error);
+  return response;
+}
+
+/** The checks on a raw transaction, and its decoded vault call for the trace. */
+export async function checkTransaction(
+  raw: TransactionSerialized,
+  binding: Pick<RpcBinding, "chainId" | "vault" | "agent">,
+): Promise<{ call: { target: `0x${string}`; data: `0x${string}` } } | { error: string }> {
+  let tx;
+  let from: `0x${string}`;
+  try {
+    tx = parseTransaction(raw);
+    from = await recoverTransactionAddress({ serializedTransaction: raw as never });
+  } catch {
+    return { error: "not a valid signed transaction" };
+  }
+  if (!tx.type || !ALLOWED_TX_TYPES.has(tx.type))
+    return { error: `transaction type ${tx.type} is not accepted (use EIP-1559 or legacy)` };
+  if (tx.chainId !== binding.chainId)
+    return { error: `the transaction must be signed for chain ${binding.chainId}` };
+  if (!isAddressEqual(from, binding.agent))
+    return { error: "the transaction must be signed by this episode's agent key" };
+  if (!tx.to || !isAddressEqual(tx.to, binding.vault))
+    return { error: "transactions may only call this episode's vault" };
+  if ((tx.value ?? 0n) !== 0n) return { error: "the vault takes no ETH" };
+  if (!tx.data || tx.data.slice(0, 10).toLowerCase() !== EXECUTE_SELECTOR)
+    return { error: "only the vault's execute(target, data) may be called" };
+  try {
+    const { args } = decodeFunctionData({ abi: mandateVaultAbi, data: tx.data });
+    const [target, data] = args as readonly [`0x${string}`, `0x${string}`];
+    return { call: { target, data } };
+  } catch {
+    return { error: "the execute() call could not be decoded" };
+  }
+}
+
+/** One call to the sandbox node, with a time and size limit. */
+async function forward(
+  upstream: string,
+  method: string,
+  params: unknown[],
+  limits: RpcLimits,
+): Promise<{ jsonrpc: "2.0"; result: unknown } | { jsonrpc: "2.0"; error: RpcError }> {
+  const response = await fetch(upstream, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    signal: AbortSignal.timeout(limits.timeoutMs),
+  });
+  const text = await response.text();
+  if (text.length > limits.responseBytes)
+    return {
+      jsonrpc: "2.0",
+      error: { code: -32005, message: "response too large; narrow the request" },
+    };
+  const parsed = JSON.parse(text) as { result?: unknown; error?: RpcError };
+  if (parsed.error)
+    return {
+      jsonrpc: "2.0",
+      error: { code: parsed.error.code ?? -32603, message: String(parsed.error.message ?? "") },
+    };
+  return { jsonrpc: "2.0", result: parsed.result ?? null };
+}
