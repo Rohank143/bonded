@@ -31,8 +31,8 @@ MUTATIONS = [
     (
         "Waterfall: pool pays before the bond is used up",
         "src/ClaimsEngine.sol",
-        "if (toVault > 0) p.fromBond = bond.slash(policy.agentId, toVault, policy.vault);",
-        "if (toVault > 0) p.fromBond = bond.slash(policy.agentId, toVault / 2, policy.vault);",
+        "if (toVault > 0) p.fromBond = bond.slash(policy.agentId, toVault, payee);",
+        "if (toVault > 0) p.fromBond = bond.slash(policy.agentId, toVault / 2, payee);",
         "invariant_BondPaysBeforePool",
     ),
     (
@@ -83,6 +83,42 @@ MUTATIONS = [
         "        return 6;",
         "        return 0;",
         "testFuzz_InflationAttackDoesNotPay",
+    ),
+    (
+        "Module claims pay the module instead of the account it guards",
+        "src/ClaimsEngine.sol",
+        "return isVault ? guard : IMandateModule(guard).account();",
+        "return guard;",
+        "invariant_ModulePayoutsReachTheAccount",
+    ),
+    (
+        "Deferred breaches on modules are paid",
+        "src/ClaimsEngine.sol",
+        "if (!isVault && breach.breachType == BondedTypes.BreachType.Deferred) {",
+        "if (false) {",
+        "invariant_DeferredNeverPaidOnModules",
+    ),
+    (
+        "Module hook doesn't accept the owner's own withdrawals",
+        "src/MandateModule.sol",
+        "if (hookData.length != 0) _snapshotBalances();",
+        "",
+        "invariant_FrozenAgentBlockedAndOwnerFree",
+    ),
+    (
+        "A frozen agent can still act",
+        "src/MandateBase.sol",
+        "if (frozen) revert MandateErrors.AgentFrozen();",
+        "",
+        "invariant_FrozenAgentBlockedAndOwnerFree",
+        ("src/MandateBase.sol", 'if (frozen) return "";', ""),
+    ),
+    (
+        "Module drops the target's return data (vault and module disagree)",
+        "src/MandateModule.sol",
+        'return (true, results.length > 0 ? results[0] : bytes(""));',
+        'return (true, bytes(""));',
+        "test_EveryBreachTypeAgrees",
     ),
     (
         "Bounty accepted twice (status check removed)",

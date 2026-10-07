@@ -8,11 +8,13 @@ import * as prettier from "prettier";
 const OUT = fileURLToPath(new URL("../../../contracts/evm/out/", import.meta.url));
 const TARGET = fileURLToPath(new URL("../src/abis.ts", import.meta.url));
 
-// Every contract in a deployment, plus the per-agent vault.
+// Every contract in a deployment, plus the per-agent vault and smart-account module.
 const CONTRACTS = [
   "BondedRegistry",
   "MandateVaultFactory",
   "MandateVault",
+  "MandateModuleFactory",
+  "MandateModule",
   "CoverPool",
   "OperatorBond",
   "CoverManager",
