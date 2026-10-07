@@ -58,3 +58,4 @@ export {
   type SentinelVerdict,
 } from "./errors.js";
 export type { BreachType } from "@bonded/shared";
+export { bondedEpisodeEnv, fromBondedEnv, type BondedEpisode } from "./episode.js";
