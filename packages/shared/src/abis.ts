@@ -2308,7 +2308,7 @@ export const mandateVaultAbi = [
       {
         name: "",
         type: "tuple",
-        internalType: "struct MandateVault.Breach",
+        internalType: "struct MandateBase.Breach",
         components: [
           {
             name: "breachType",

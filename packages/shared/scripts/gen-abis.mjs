@@ -30,7 +30,16 @@ let body =
 for (const name of CONTRACTS) {
   const artifact = JSON.parse(readFileSync(`${OUT}${name}.sol/${name}.json`, "utf8"));
   const key = name.charAt(0).toLowerCase() + name.slice(1);
-  body += `\nexport const ${key}Abi = ${JSON.stringify(artifact.abi, null, 2)} as const;\n`;
+  // solc lists an error twice when a contract declares it and also reverts with a shared
+  // library's error of the same signature (MandateVault and MandateErrors); keep one copy.
+  const seen = new Set();
+  const abi = artifact.abi.filter((item) => {
+    const id = JSON.stringify(item);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+  body += `\nexport const ${key}Abi = ${JSON.stringify(abi, null, 2)} as const;\n`;
 }
 
 const options = (await prettier.resolveConfig(TARGET)) ?? {};

@@ -48,7 +48,11 @@ MUTATIONS = [
         "if (breach.claimed) revert BreachAlreadyClaimed(breachId);",
         "",
         "invariant_EachBreachPaidOnce",
-        ("src/MandateVault.sol", "if (breach.claimed) revert BreachAlreadyClaimed(breachId);", ""),
+        (
+            "src/MandateBase.sol",
+            "if (breach.claimed) revert MandateErrors.BreachAlreadyClaimed(breachId);",
+            "",
+        ),
     ),
     (
         "Closing a policy leaves model-family exposure behind",
