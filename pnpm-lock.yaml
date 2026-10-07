@@ -284,6 +284,22 @@ importers:
         specifier: 8.3.1
         version: 8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
 
+  examples/byo-agent:
+    dependencies:
+      '@bonded/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
+      viem:
+        specifier: ^2.56.9
+        version: 2.56.9(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@6.0.6)(zod@4.6.5)
+    devDependencies:
+      '@bonded/sandbox':
+        specifier: workspace:*
+        version: link:../../packages/sandbox
+      '@bonded/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+
   packages/db:
     dependencies:
       drizzle-orm:
