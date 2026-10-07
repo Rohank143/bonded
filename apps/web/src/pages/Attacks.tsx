@@ -144,8 +144,9 @@ function Tile({ label, value, hint }: { label: ReactNode; value: ReactNode; hint
 }
 
 /**
- * The ten attack classes, A1 to A10: what each one is, where it's planted, how many published
- * attacks it has and how often they got through. Choosing one filters the list below.
+ * The ten attack classes, A1 to A10, as an index: each row has the class, what it is, where
+ * it's planted, how many published attacks it has and how often they got through. Choosing a
+ * row filters the list below; choosing it again clears the filter.
  */
 function ClassGrid({
   classes,
@@ -156,9 +157,7 @@ function ClassGrid({
   active: string;
   onPick: (cls: string) => void;
 }) {
-  const rows =
-    classes ??
-    Object.keys(CLASS_NAMES).map((c) => ({ class: c }) as Partial<ClassRecord> & { class: string });
+  const byClass = new Map((classes ?? []).map((c) => [c.class, c]));
   return (
     <section>
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -167,49 +166,60 @@ function ClassGrid({
           <h2 className="mt-1.5 font-serif text-3xl leading-tight">
             Ten ways an agent gets attacked
           </h2>
-          <p className="mt-1.5 max-w-2xl text-sm text-muted">
-            Every attack belongs to one class, A1 to A10. Pick a class to see its attacks.
-          </p>
         </div>
+        <p className="text-sm text-muted">
+          Every attack belongs to one. Pick a class to see its attacks.
+        </p>
       </div>
-      <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-        {rows.map((c) => {
-          const info = CLASS_NAMES[c.class];
-          const on = active === c.class;
-          const rate = c.episodes ? (c.breaches ?? 0) / c.episodes : undefined;
+      <ul className="panel mt-5 grid overflow-hidden p-0 md:grid-cols-2">
+        {Object.entries(CLASS_NAMES).map(([id, info]) => {
+          const c = byClass.get(id);
+          const on = active === id;
+          const rate = c?.episodes ? c.breaches / c.episodes : undefined;
           return (
-            <li key={c.class}>
+            <li
+              key={id}
+              className="border-b border-line md:[&:nth-child(odd)]:border-r md:[&:nth-last-child(-n+2)]:border-b-0 [&:last-child]:border-b-0"
+            >
               <button
                 type="button"
-                onClick={() => onPick(on ? "all" : c.class)}
+                onClick={() => onPick(on ? "all" : id)}
                 aria-pressed={on}
-                className={`panel flex h-full w-full flex-col gap-2.5 p-4 text-left transition ${on ? "border-accent/60 bg-accent-soft" : "hover:border-accent/30 hover:bg-white/[0.02]"}`}
+                className={`group grid h-full w-full grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-4 px-5 py-4 text-left transition ${on ? "bg-accent-soft" : "hover:bg-white/[0.03]"}`}
               >
-                <span className="flex items-center justify-between gap-2">
-                  <ClassChip id={c.class} />
-                  {c.attacks !== undefined && (
-                    <span className="text-[11px] text-muted">
-                      {c.attacks} {c.attacks === 1 ? "attack" : "attacks"}
-                    </span>
-                  )}
+                <span
+                  className={`font-serif text-[32px] leading-none tabular-nums transition ${on ? "text-accent" : "text-muted group-hover:text-ink"}`}
+                >
+                  {id}
                 </span>
-                <span className="text-[15px] leading-snug font-semibold">{info?.name}</span>
-                <span className="text-[13px] leading-relaxed text-muted">{info?.description}</span>
-                <span className="text-[11px] text-soft">
-                  {info?.surfaces.map((x) => SURFACE_NAMES[x] ?? x).join(" · ")}
+                <span className="min-w-0">
+                  <span className="block truncate text-[15px] font-semibold">{info.name}</span>
+                  <span className="mt-0.5 line-clamp-2 block text-[13px] leading-snug text-muted">
+                    {info.description}
+                  </span>
+                  <span className="mt-1.5 block truncate text-[11px] text-muted/80">
+                    {info.surfaces.map((x) => SURFACE_NAMES[x] ?? x).join(" · ")}
+                    {c ? ` · ${c.attacks} ${c.attacks === 1 ? "attack" : "attacks"}` : ""}
+                  </span>
                 </span>
-                <span className="mt-auto border-t border-line pt-2.5 text-xs text-muted">
-                  {rate === undefined ? (
-                    "No episodes on record"
-                  ) : (
-                    <span className="flex items-baseline justify-between gap-2">
-                      <span>
-                        Got through {c.breaches!.toLocaleString()} of {c.episodes!.toLocaleString()}
+                <span className="w-[72px] text-right">
+                  {rate !== undefined && (
+                    <>
+                      <span
+                        className={`block font-mono text-[17px] tabular-nums ${c!.breaches ? "text-breach" : "text-soft"}`}
+                      >
+                        {Math.round(rate * 100)}%
                       </span>
-                      <span className={`font-mono ${c.breaches ? "text-breach" : "text-soft"}`}>
-                        {Math.round(rate * 1000) / 10}%
+                      <span className="mt-1 block h-1 overflow-hidden rounded-full bg-white/[0.07]">
+                        <span
+                          className={`block h-full rounded-full ${c!.breaches ? "bg-breach-solid" : "bg-held/60"}`}
+                          style={{ width: c!.breaches ? `${Math.max(rate * 100, 4)}%` : "100%" }}
+                        />
                       </span>
-                    </span>
+                      <span className="mt-1 block text-[10.5px] text-muted">
+                        {c!.breaches} of {c!.episodes.toLocaleString()}
+                      </span>
+                    </>
                   )}
                 </span>
               </button>
@@ -217,6 +227,11 @@ function ClassGrid({
           );
         })}
       </ul>
+      {classes && (
+        <p className="mt-2.5 text-xs text-muted">
+          The percentage is how often a class's published attacks got through in the Arena.
+        </p>
+      )}
     </section>
   );
 }
