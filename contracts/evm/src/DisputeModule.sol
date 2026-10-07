@@ -7,6 +7,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {ICoverManager} from "./interfaces/ICoverManager.sol";
+import {IMandateModuleFactory} from "./interfaces/IMandateModuleFactory.sol";
 
 /// @notice The part of ClaimsEngine DisputeModule calls.
 interface IDisputePayer {
@@ -78,6 +79,7 @@ contract DisputeModule is Ownable2Step, ReentrancyGuard {
     error WrongStatus(Status status);
     error ChallengePeriodOver();
     error ChallengePeriodActive();
+    error CouncilDecisionRequired();
 
     constructor(
         address owner_,
@@ -139,11 +141,14 @@ contract DisputeModule is Ownable2Step, ReentrancyGuard {
         emit DisputeChallenged(disputeId, msg.sender);
     }
 
-    /// @notice Pays an unchallenged proposal after its deadline. Anyone can call.
+    /// @notice Pays an unchallenged proposal after its deadline. Anyone can call. Not for a
+    ///         MandateModule's policy: there the payout goes to the smart account, whose owner may
+    ///         be the proposer, so only the council can approve it (`resolve`).
     function finalize(uint256 disputeId) external nonReentrant returns (uint256 paid) {
         Dispute storage d = _existing(disputeId);
         if (d.status != Status.Proposed) revert WrongStatus(d.status);
         if (block.timestamp < d.challengeDeadline) revert ChallengePeriodActive();
+        if (_isModulePolicy(d.policyId)) revert CouncilDecisionRequired();
         d.status = Status.Paid;
         paid = claimsEngine.payDispute(d.policyId, d.lossBase);
         if (d.bond > 0) asset.safeTransfer(d.proposer, d.bond);
@@ -152,6 +157,8 @@ contract DisputeModule is Ownable2Step, ReentrancyGuard {
 
     /// @notice Council decision. For a challenged dispute the winner takes both bonds. For an
     ///         unchallenged one, rejecting returns the proposer's bond (used for unpayable claims).
+    ///         An unchallenged proposal on a MandateModule's policy is paid only when the council
+    ///         approves it, after the challenge period, and the proposer gets their bond back.
     function resolve(uint256 disputeId, bool approve) external nonReentrant returns (uint256 paid) {
         if (msg.sender != council) revert NotCouncil();
         Dispute storage d = _existing(disputeId);
@@ -166,6 +173,12 @@ contract DisputeModule is Ownable2Step, ReentrancyGuard {
                 if (d.bond > 0) asset.safeTransfer(d.challenger, d.bond * 2);
                 emit DisputeRejected(disputeId);
             }
+        } else if (d.status == Status.Proposed && approve && _isModulePolicy(d.policyId)) {
+            if (block.timestamp < d.challengeDeadline) revert ChallengePeriodActive();
+            d.status = Status.Paid;
+            paid = claimsEngine.payDispute(d.policyId, d.lossBase);
+            if (d.bond > 0) asset.safeTransfer(d.proposer, d.bond);
+            emit DisputePaid(disputeId, paid);
         } else if (d.status == Status.Proposed && !approve) {
             d.status = Status.Rejected;
             if (d.bond > 0) asset.safeTransfer(d.proposer, d.bond);
@@ -195,6 +208,13 @@ contract DisputeModule is Ownable2Step, ReentrancyGuard {
         proposalBond = proposalBond_;
         challengePeriod = challengePeriod_;
         emit ParamsSet(proposalBond_, challengePeriod_);
+    }
+
+    function _isModulePolicy(uint256 policyId) internal view returns (bool) {
+        IMandateModuleFactory modules = coverManager.moduleFactory();
+        return
+            address(modules) != address(0)
+                && modules.isModule(coverManager.getPolicy(policyId).vault);
     }
 
     function _existing(uint256 disputeId) internal view returns (Dispute storage d) {

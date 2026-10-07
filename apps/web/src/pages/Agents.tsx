@@ -100,8 +100,8 @@ export function Agents() {
               onChange={(v) => list.set({ vault: v })}
               options={[
                 { value: "any", label: "Any" },
-                { value: "with", label: "Has a vault" },
-                { value: "without", label: "No vault" },
+                { value: "with", label: "Has a vault or account" },
+                { value: "without", label: "Neither" },
               ]}
             />
             <Select
@@ -204,6 +204,11 @@ export function Agents() {
                       >
                         {short(a.vault)}
                       </Link>
+                    ) : a.protected ? (
+                      <span className="text-[13px]">
+                        <span className="text-muted">account </span>
+                        <span className="font-mono">{short(a.protected.account)}</span>
+                      </span>
                     ) : (
                       <span className="text-muted">none</span>
                     )}

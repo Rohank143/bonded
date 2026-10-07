@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {IPriceOracle} from "./IPriceOracle.sol";
+import {BondedTypes} from "../libraries/BondedTypes.sol";
 import {MandateBase} from "../MandateBase.sol";
 
 /// @title IMandateGuard
@@ -15,6 +16,8 @@ interface IMandateGuard {
     function mandateHash() external view returns (bytes32);
 
     function freezeOnBreach() external view returns (bool);
+
+    function mode() external view returns (BondedTypes.MandateMode);
 
     /// @notice Base asset: premiums are paid and payouts are made in it.
     function asset() external view returns (address);

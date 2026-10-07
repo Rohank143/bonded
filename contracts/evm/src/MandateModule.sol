@@ -46,6 +46,7 @@ contract MandateModule is MandateBase, IERC7579Hook {
     error CannotCallAccount();
     error CannotCallModule();
     error PremiumTransferFailed();
+    error NotCurrentModule();
 
     modifier onlyAccount() {
         if (msg.sender != _account) revert NotAccount();
@@ -96,7 +97,10 @@ contract MandateModule is MandateBase, IERC7579Hook {
 
     /// @dev Called once per installed type. The first install takes the balances as the
     ///      starting point (what happened before isn't the agent's doing).
+    ///      Only the account's current module (the last one it created) can be installed, so an
+    ///      account never has two modules recording the same outflow.
     function onInstall(bytes calldata) external onlyAccount {
+        if (factory.moduleOf(_account) != address(this)) revert NotCurrentModule();
         if (installs++ == 0) _snapshotBalances();
     }
 
@@ -153,6 +157,28 @@ contract MandateModule is MandateBase, IERC7579Hook {
     // ---------------------------------------------------------------------------------------
     // MandateBase hooks
     // ---------------------------------------------------------------------------------------
+
+    /// @dev A token call (approve, increaseAllowance, setApprovalForAll, transfer, transferFrom) on
+    ///      a token outside the mandate's asset list is T1 UnauthorizedTarget. A smart account may
+    ///      hold other tokens the module doesn't measure; without this an allowed spender or
+    ///      recipient could be used to move them. (The vault keeps MandateBase's rule unchanged,
+    ///      so its behaviour and published scores stay as they are.)
+    function _classify(address target, bytes calldata data)
+        internal
+        view
+        override
+        returns (Verdict memory v)
+    {
+        v = super._classify(target, data);
+        bytes4 s = v.selector;
+        bool tokenCall = s == APPROVE || s == INCREASE_ALLOWANCE || s == SET_APPROVAL_FOR_ALL
+            || s == TRANSFER || s == TRANSFER_FROM;
+        if (tokenCall && !isAsset[target]) {
+            v.allowed = false;
+            v.leakCheck = true;
+            v.breachType = BondedTypes.BreachType.UnauthorizedTarget;
+        }
+    }
 
     /// @dev Calls into the account or this module could change the account's setup, so they are
     ///      refused in both modes, like a vault refusing calls to itself.
