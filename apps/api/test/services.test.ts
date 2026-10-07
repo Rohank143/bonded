@@ -391,6 +391,15 @@ it("runs a queued rating, persists episodes and report, posts the attestation", 
     new Date(Date.now() + 86_400_000),
   );
   const run = await pg.db.enqueue(id);
+  // An earlier attempt of this run that crashed part-way left episodes behind; a fresh attempt
+  // starts from the first episode, so these must not stay next to its own.
+  for (let index = 0; index < 3; index++)
+    await pg.db.publish("rating.episode", {
+      runId: run,
+      index,
+      total: 84,
+      episode: { attackId: null, attackClass: null, verdict: { breached: false } },
+    });
   const worker = connectChain(chain.deployment, sandbox.rpcUrl, ANVIL_KEYS.deployer);
   await workOne(pg.db, worker, sandbox.rpcUrl, ANVIL_KEYS.deployer, console.error);
   const result = (await pg.db.pool.query("SELECT * FROM ratings WHERE id=$1", [run])).rows[0];

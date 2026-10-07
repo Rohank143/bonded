@@ -562,6 +562,17 @@ export class Database {
     });
   }
   /** Serialize rating writes with cancellation so an old worker cannot overwrite failed status. */
+  /**
+   * Remove the episodes a rating run has published so far: called when an attempt starts, so a
+   * restarted run doesn't show an abandoned attempt's episodes alongside its own.
+   */
+  async clearRunEpisodes(runId: string, c: pg.Pool | Connection = this.pool): Promise<number> {
+    const r = await c.query(
+      "DELETE FROM events WHERE topic='rating.episode' AND payload->>'runId' = $1",
+      [runId],
+    );
+    return r.rowCount ?? 0;
+  }
   async withLease<T>(
     job: { id: string; token: string },
     fn: (c: Connection) => Promise<T>,

@@ -267,7 +267,11 @@ export function LandingSentinel() {
             Catch the trick before the trade.
           </h2>
           <p className="mt-5 max-w-[62ch] text-lg leading-relaxed text-muted">
-            Sentinel is the guard we built for Bonded, powered by Laya: an open-source decision model fast enough to run inline before every trade, and fine-tuned on attacks from our own Arena. It reads the mandate, the proposed action, and what the agent saw in real time, then blocks the trade when outside text is pulling the strings. The vault on chain stays the backstop.
+            Sentinel is the guard we built for Bonded, powered by Laya: an open-source decision
+            model fast enough to run inline before every trade, and fine-tuned on attacks from our
+            own Arena. It reads the mandate, the proposed action, and what the agent saw in real
+            time, then blocks the trade when outside text is pulling the strings. The vault on chain
+            stays the backstop.
           </p>
         </div>
         <Link to="/sentinel" className={buttonClass("secondary", "lg")}>
