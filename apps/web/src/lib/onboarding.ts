@@ -125,6 +125,8 @@ export function validateOnboarding(deployment: EvmDeployment, input: OnboardingI
   } catch (e) {
     const issues = (e as { issues?: { path: (string | number)[]; message: string }[] }).issues;
     for (const issue of issues ?? [{ path: [], message: String(e) }]) {
+      // Checked above in plain words: the refund address, and the daily limit covering a trade.
+      if (issue.path.includes("destinations") || /must be at least/.test(issue.message)) continue;
       const field = String(issue.path.at(-1));
       const name = MANDATE_FIELD[field] ?? issue.path.join(".");
       problems.push(

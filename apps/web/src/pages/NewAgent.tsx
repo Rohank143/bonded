@@ -32,6 +32,13 @@ import {
   type OnboardingProgress,
   type OnboardingStep,
 } from "../lib/onboarding";
+import {
+  addressError,
+  amountOrZeroError,
+  dailyLimitError,
+  descriptionError,
+  limitError,
+} from "../lib/validate";
 import { registerForRatings } from "../lib/self-serve";
 import {
   Button,
@@ -367,6 +374,7 @@ export function NewAgent() {
                   onChange={setMaxTx}
                   inputMode="decimal"
                   suffix="USD"
+                  error={limitError(maxTx)}
                 />
                 <Input
                   label="Daily limit"
@@ -374,6 +382,7 @@ export function NewAgent() {
                   onChange={setMaxDaily}
                   inputMode="decimal"
                   suffix="USD"
+                  error={dailyLimitError(maxDaily, maxTx)}
                 />
               </div>
               <Input
@@ -382,6 +391,7 @@ export function NewAgent() {
                 value={refund}
                 onChange={setRefund}
                 placeholder={user ?? "0x…"}
+                error={addressError(refund, true)}
               />
               <Input
                 label="Description"
@@ -389,6 +399,7 @@ export function NewAgent() {
                 value={description}
                 onChange={setDescription}
                 mono={false}
+                error={descriptionError(description)}
               />
             </div>
           </StepCard>
@@ -420,7 +431,12 @@ export function NewAgent() {
                 </div>
                 {!selfAgent && (
                   <div className="mt-3">
-                    <Input label="Agent key address" value={agentKey} onChange={setAgentKey} />
+                    <Input
+                      label="Agent key address"
+                      value={agentKey}
+                      onChange={setAgentKey}
+                      error={agentKey ? addressError(agentKey) : null}
+                    />
                   </div>
                 )}
               </fieldset>
@@ -431,6 +447,7 @@ export function NewAgent() {
                   onChange={setBond}
                   inputMode="decimal"
                   suffix="tUSDG"
+                  error={amountOrZeroError(bond)}
                 />
                 <Input
                   label="Deposit"
@@ -438,6 +455,7 @@ export function NewAgent() {
                   onChange={setDeposit}
                   inputMode="decimal"
                   suffix="tUSDG"
+                  error={amountOrZeroError(deposit)}
                 />
               </div>
               <p className="text-xs text-muted">
