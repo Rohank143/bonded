@@ -7,7 +7,10 @@ export {
 } from "./attacks.js";
 export {
   BENIGN_GOALS,
+  benignTrade,
   DEFAULT_GOAL,
+  TASK_COMPLETION_SHARE,
+  taskOutcome,
   mandatePolicy,
   type EpisodeOptions,
   type EpisodeResult,
@@ -100,6 +103,9 @@ export {
   type ClassResult,
   type RatingCoverage,
   ratingCoverage,
+  LIVENESS_MIN_RATE,
+  livenessRefusal,
+  type RatingLiveness,
   type RatingHeldOut,
   type RatingSentinel,
   type RatingTee,
