@@ -102,7 +102,7 @@ function AttackCard({ a, since }: { a: AttackSummary; since: string | null }) {
     <li>
       <Link
         to={`/attacks/${a.id}`}
-        className="panel group flex h-full flex-col gap-3 p-5 transition hover:border-accent/40 hover:bg-white/[0.02]"
+        className="panel group flex h-full flex-col gap-3 p-5 transition duration-200 hover:-translate-y-0.5 hover:border-accent/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:translate-y-0 active:scale-[0.99]"
       >
         <span className="flex items-center justify-between gap-2">
           <span className="flex items-center gap-2">
@@ -115,15 +115,8 @@ function AttackCard({ a, since }: { a: AttackSummary; since: string | null }) {
           {a.title}
         </span>
         <span className="line-clamp-2 text-sm leading-relaxed text-muted">{a.description}</span>
-        <span className="flex flex-wrap gap-1.5">
-          {a.surfaces.map((s) => (
-            <span
-              key={s}
-              className="rounded-full border border-line-strong px-2 py-0.5 text-[11px] text-soft"
-            >
-              {SURFACE_NAMES[s] ?? s}
-            </span>
-          ))}
+        <span className="text-xs text-soft">
+          Planted in {a.surfaces.map((s) => (SURFACE_NAMES[s] ?? s).toLowerCase()).join(" and ")}
         </span>
         <span className="mt-auto border-t border-line pt-3">
           <Record s={a.stats} since={since} />
@@ -133,13 +126,25 @@ function AttackCard({ a, since }: { a: AttackSummary; since: string | null }) {
   );
 }
 
-function Tile({ label, value, hint }: { label: ReactNode; value: ReactNode; hint?: ReactNode }) {
+/** A row of key numbers in one panel, split by hairlines: no card per number. */
+function StatStrip({
+  stats,
+}: {
+  stats: { label: ReactNode; value: ReactNode; hint?: ReactNode }[];
+}) {
   return (
-    <div className="panel min-w-0 p-5">
-      <p className="eyebrow">{label}</p>
-      <p className="mt-2 font-serif text-[40px] leading-none tabular-nums">{value}</p>
-      {hint && <p className="mt-1.5 text-xs text-muted">{hint}</p>}
-    </div>
+    <section className="panel grid grid-cols-2 overflow-hidden p-0 lg:grid-cols-4">
+      {stats.map((t, i) => (
+        <div
+          key={i}
+          className="min-w-0 border-line p-5 [&:nth-child(-n+2)]:border-b max-lg:[&:nth-child(odd)]:border-r lg:border-b-0 lg:[&:not(:last-child)]:border-r"
+        >
+          <p className="text-[13px] text-muted">{t.label}</p>
+          <p className="mt-2 font-serif text-[40px] leading-none tabular-nums">{t.value}</p>
+          {t.hint && <p className="mt-1.5 text-xs text-muted">{t.hint}</p>}
+        </div>
+      ))}
+    </section>
   );
 }
 
@@ -160,17 +165,12 @@ function ClassGrid({
   const byClass = new Map((classes ?? []).map((c) => [c.class, c]));
   return (
     <section>
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="eyebrow">The ten classes</p>
-          <h2 className="mt-1.5 font-serif text-3xl leading-tight">
-            Ten ways an agent gets attacked
-          </h2>
-        </div>
-        <p className="text-sm text-muted">
-          Every attack belongs to one. Pick a class to see its attacks.
-        </p>
-      </div>
+      <h2 className="font-serif text-3xl leading-tight text-balance">
+        Ten ways an agent gets attacked
+      </h2>
+      <p className="mt-1.5 max-w-[65ch] text-sm text-muted">
+        Every attack belongs to one class. Pick a class to see its attacks.
+      </p>
       <ul className="panel mt-5 grid overflow-hidden p-0 md:grid-cols-2">
         {Object.entries(CLASS_NAMES).map(([id, info]) => {
           const c = byClass.get(id);
@@ -185,7 +185,7 @@ function ClassGrid({
                 type="button"
                 onClick={() => onPick(on ? "all" : id)}
                 aria-pressed={on}
-                className={`group grid h-full w-full grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-4 px-5 py-4 text-left transition ${on ? "bg-accent-soft" : "hover:bg-white/[0.03]"}`}
+                className={`group grid h-full w-full grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-4 px-5 py-4 text-left transition duration-200 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent active:bg-white/[0.05] ${on ? "bg-accent-soft" : "hover:bg-white/[0.03]"}`}
               >
                 <span
                   className={`font-serif text-[32px] leading-none tabular-nums transition ${on ? "text-accent" : "text-muted group-hover:text-ink"}`}
@@ -193,7 +193,9 @@ function ClassGrid({
                   {id}
                 </span>
                 <span className="min-w-0">
-                  <span className="block truncate text-[15px] font-semibold">{info.name}</span>
+                  <span className="block text-[15px] leading-snug font-semibold sm:truncate">
+                    {info.name}
+                  </span>
                   <span className="mt-0.5 line-clamp-2 block text-[13px] leading-snug text-muted">
                     {info.description}
                   </span>
@@ -236,9 +238,11 @@ function ClassGrid({
   );
 }
 
-function BountyCall() {
+function BountyCall({ inline = false }: { inline?: boolean }) {
   return (
-    <div className="panel flex flex-wrap items-center justify-between gap-4 bg-gradient-to-r from-breach/12 to-transparent p-6">
+    <div
+      className={`flex flex-wrap items-center justify-between gap-4 bg-gradient-to-r from-breach/12 to-transparent p-6 ${inline ? "border-t border-line" : "panel"}`}
+    >
       <span>
         <strong className="block text-lg">Found an attack we miss?</strong>
         <span className="mt-1 block text-sm text-muted">
@@ -281,28 +285,28 @@ export function Attacks() {
       title="Meet the red team"
       intro="Every rating sends these attacks at an agent, hidden in what it reads: news, DMs, token metadata, price feeds, tool output. They come in ten classes. Here is each class, every published attack in it, and how often it gets through."
     >
-      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Tile
-          label="Published attacks"
-          value={counts?.published ?? "…"}
-          hint="open for anyone to read"
-        />
-        <Tile
-          label="Held out"
-          value={counts?.heldOut.active ?? "…"}
-          hint={
-            counts?.heldOut.retiresFrom
-              ? `never shown; replaced from ${day(counts.heldOut.retiresFrom)}`
-              : "never shown"
-          }
-        />
-        <Tile
-          label="Accepted bounties"
-          value={counts?.acceptedBounties ?? "…"}
-          hint="found by hunters, kept private"
-        />
-        <Tile label="Attack classes" value={Object.keys(ATTACK_CLASSES).length} hint="A1 to A10" />
-      </section>
+      <StatStrip
+        stats={[
+          { label: "Attack classes", value: Object.keys(ATTACK_CLASSES).length, hint: "A1 to A10" },
+          {
+            label: "Published attacks",
+            value: counts?.published ?? "…",
+            hint: "open for anyone to read",
+          },
+          {
+            label: "Held out",
+            value: counts?.heldOut.active ?? "…",
+            hint: counts?.heldOut.retiresFrom
+              ? `never shown, replaced from ${day(counts.heldOut.retiresFrom)}`
+              : "never shown",
+          },
+          {
+            label: "Accepted bounties",
+            value: counts?.acceptedBounties ?? "…",
+            hint: "found by hunters, kept private",
+          },
+        ]}
+      />
 
       <ClassGrid
         classes={attacks.data?.classes}
@@ -409,30 +413,30 @@ export function Attacks() {
         )}
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2">
-        <div className="panel p-6">
-          <p className="eyebrow">Attacks you can't see</p>
-          <h2 className="mt-2 text-lg font-bold">
-            {counts ? `${counts.heldOut.active} held-out attacks` : "Held-out attacks"}
-          </h2>
-          <p className="mt-2 text-sm leading-relaxed text-muted">
-            Written fresh from the library's seeds and never published, so no one can tune an agent
-            to pass them. Every rating includes them, and the report says how many episodes ran
-            them. A new set replaces them each quarter.
-          </p>
+      <section className="panel overflow-hidden p-0">
+        <div className="grid md:grid-cols-2">
+          <div className="border-b border-line p-6 md:border-r md:border-b-0">
+            <h2 className="text-lg font-bold">
+              {counts ? `${counts.heldOut.active} held-out attacks` : "Held-out attacks"}
+            </h2>
+            <p className="mt-2 max-w-[60ch] text-sm leading-relaxed text-muted">
+              Written fresh from the library's seeds and never published, so no one can tune an
+              agent to pass them. Every rating includes them, and its report says how many episodes
+              ran them. A new set replaces them each quarter.
+            </p>
+          </div>
+          <div className="p-6">
+            <h2 className="text-lg font-bold">
+              {counts ? `${counts.acceptedBounties} accepted bounties` : "Accepted bounties"}
+            </h2>
+            <p className="mt-2 max-w-[60ch] text-sm leading-relaxed text-muted">
+              Attacks hunters submitted that broke the reference agents. They join every later
+              rating, and their text stays private for the same reason.
+            </p>
+          </div>
         </div>
-        <div className="panel p-6">
-          <p className="eyebrow">Found by hunters</p>
-          <h2 className="mt-2 text-lg font-bold">
-            {counts ? `${counts.acceptedBounties} accepted bounties` : "Accepted bounties"}
-          </h2>
-          <p className="mt-2 text-sm leading-relaxed text-muted">
-            Attacks submitted on the Bounties page that broke the reference agents. They join every
-            later rating, and their text stays private for the same reason.
-          </p>
-        </div>
+        <BountyCall inline />
       </section>
-      <BountyCall />
     </Page>
   );
 }
@@ -524,26 +528,28 @@ export function AttackDetail() {
         ))}
       </div>
 
-      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Tile label="Episodes" value={s.episodes.toLocaleString()} hint={`in ${s.runs} ratings`} />
-        <Tile
-          label="Got through"
-          value={
-            <span className={s.breaches ? "text-breach" : ""}>{s.breaches.toLocaleString()}</span>
-          }
-          hint="episodes the vault recorded a breach"
-        />
-        <Tile label="Breach rate" value={pct(s)} hint="of its episodes" />
-        <Tile
-          label="Last run"
-          value={<span className="text-[28px]">{s.lastAt ? day(s.lastAt) : "–"}</span>}
-          hint={statsSince ? `records since ${day(statsSince)}` : undefined}
-        />
-      </section>
+      <StatStrip
+        stats={[
+          { label: "Episodes", value: s.episodes.toLocaleString(), hint: `in ${s.runs} ratings` },
+          {
+            label: "Got through",
+            value: (
+              <span className={s.breaches ? "text-breach" : ""}>{s.breaches.toLocaleString()}</span>
+            ),
+            hint: "episodes the vault recorded a breach",
+          },
+          { label: "Breach rate", value: pct(s), hint: "of its episodes" },
+          {
+            label: "Last run",
+            value: <span className="text-[28px]">{s.lastAt ? day(s.lastAt) : "–"}</span>,
+            ...(statsSince ? { hint: `records since ${day(statsSince)}` } : {}),
+          },
+        ]}
+      />
 
       <div className="flex flex-wrap items-start gap-4">
         <section className="panel min-w-0 flex-[999_1_520px] p-6">
-          <p className="eyebrow !text-breach">What the agent reads</p>
+          <h2 className="text-lg font-bold">What the agent reads</h2>
           <div className="mt-4 overflow-hidden rounded-2xl border border-line bg-[#070a12]">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line px-4 py-2.5 text-xs text-muted">
               <span>{a.surfaces.map((x) => SURFACE_NAMES[x] ?? x).join(" · ")}</span>
@@ -584,7 +590,7 @@ export function AttackDetail() {
           )}
           {a.goal && (
             <div className="mt-6">
-              <p className="eyebrow">The task the agent is given</p>
+              <h3 className="text-sm font-semibold">The task the agent is given</h3>
               <p className="mt-2 text-sm leading-relaxed text-soft">{a.goal}</p>
             </div>
           )}
@@ -592,9 +598,9 @@ export function AttackDetail() {
 
         <aside className="flex min-w-0 flex-[1_1_320px] flex-col gap-4">
           <section className="panel p-6">
-            <p className="eyebrow">
-              About {a.class} · {CLASS_NAMES[a.class]?.name}
-            </p>
+            <h2 className="text-lg font-bold">
+              About {a.class}: {CLASS_NAMES[a.class]?.name}
+            </h2>
             <p className="mt-2 text-sm leading-relaxed text-soft">
               {CLASS_NAMES[a.class]?.description}
             </p>
@@ -606,7 +612,7 @@ export function AttackDetail() {
             </Link>
           </section>
           <section className="panel p-6">
-            <p className="eyebrow !text-accent">What counts as a breach</p>
+            <h2 className="text-lg font-bold">What counts as a breach</h2>
             <p className="mt-2 text-sm text-muted">
               It got through if the vault records any of these. The vault decides, not a model.
             </p>
@@ -620,7 +626,7 @@ export function AttackDetail() {
             </ul>
           </section>
           <section className="panel p-6">
-            <p className="eyebrow">How the Arena varies it</p>
+            <h2 className="text-lg font-bold">How the Arena varies it</h2>
             <p className="mt-2 text-sm leading-relaxed text-soft">{a.variantPrompt}</p>
             <p className="mt-3 text-xs text-muted">
               Each rating runs every attack several times, so an agent can't pass by luck.
