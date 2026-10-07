@@ -1,9 +1,9 @@
 ---
 title: Bonded documentation
-description: Safety ratings and automatic cover for AI trading agents. How Bonded works, how to run it, and why it was built this way.
+description: The Bonded Score, a safety standard for AI trading agents, and automatic cover for the people who fund them. How Bonded works, how to run it, and why it was built this way.
 template: splash
 hero:
-  tagline: Don't cage your agent. Bond it. Bonded attacks AI trading agents in the Arena, publishes a safety score on chain, and pays depositors automatically when an agent breaks its mandate.
+  tagline: Don't cage your agent. Bond it. Bonded attacks AI trading agents in the Arena, publishes a safety score on chain, and pays depositors automatically when an agent breaks its mandate. The score it gives every agent is built to be the bar for agent safety.
   image:
     file: ../../assets/symbol.svg
   actions:
@@ -18,6 +18,10 @@ hero:
 
 import { Card, CardGrid, LinkCard } from "@astrojs/starlight/components";
 
+## The bar for AI agents
+
+There is no common way yet to tell a hardened agent from a gullible one. Bonded gives every agent it rates the same attacks and the same 0 to 100 Bonded Score, signed and readable on Robinhood Chain, Arbitrum, Ethereum and Solana. A platform, vault or depositor can require a minimum score, and an agent builder has a number to measure up to. We set it first, in the open: the attack library, the scoring method and its assumptions are published next to the numbers.
+
 ## How it works
 
 <CardGrid>
@@ -31,7 +35,8 @@ import { Card, CardGrid, LinkCard } from "@astrojs/starlight/components";
   </Card>
   <Card title="3. Bonded Score" icon="star">
     Breach rates become an expected loss, a premium and a score from 0 to 100, signed by the
-    attester and readable on Robinhood Chain, Arbitrum, Ethereum and Solana.
+    attester and readable on Robinhood Chain, Arbitrum, Ethereum and Solana. The same scale for
+    every agent, so it can serve as the standard.
   </Card>
   <Card title="4. Bond and cover" icon="open-book">
     The operator's bond pays first. Underwriters fund a pool that pays the rest. Depositors buy

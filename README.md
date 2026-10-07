@@ -6,6 +6,8 @@ AI agents now trade with real money. When one gets tricked (a poisoned token des
 
 Runs on **Robinhood Chain**, with scores readable on **Arbitrum, Ethereum and Solana**.
 
+**The score is the bar.** Every agent Bonded rates gets a Bonded Score from 0 to 100, earned by being attacked and signed so any chain can read it. There is no common way yet to tell a hardened agent from a gullible one. We're setting that standard first, in the open: the attack library, the scoring method and its assumptions are published, and every agent is judged on the same scale. A platform, vault or depositor can require a minimum score, and every agent builder has a number to measure up to.
+
 ## Try it
 
 | | |

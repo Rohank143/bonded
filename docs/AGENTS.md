@@ -76,6 +76,8 @@ Its live rating (2026-10-05, five runs per attack, 280 attack episodes on a fork
 3. The verdict of each episode is the **vault's breach log**, not the agent's own report.
 4. Breach rates per class group become an expected loss, a premium and a score (Section 9). The attester signs the score and posts it to the registry on Robinhood Chain. The same signed score can be cross-posted to Arbitrum Sepolia, Ethereum Sepolia and Solana devnet; agent 3's was, on Day 11.
 
+Because every agent, Bonded's own or a third party's, faces the same library and the same scale, scores compare. That is the point: the Bonded Score is meant to be the bar for AI agents, a number a platform can require and a builder can aim for. Bonded sets it in the open, with the method and its assumptions published.
+
 On the hosted services, the arena worker rates the agents listed in `config/agents.46630.json` (see `docs/SERVICES.md`); accepted bounty attacks join the library and trigger re-ratings ([docs/BOUNTIES.md](BOUNTIES.md)).
 
 ## What works today and what's coming

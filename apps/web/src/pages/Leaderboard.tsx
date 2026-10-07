@@ -63,7 +63,7 @@ export function Leaderboard() {
     <Page
       eyebrow="Arena results"
       title="Leaderboard"
-      intro="Popular open-source agents and Bonded's own, attacked with the same library and scored on the same scale."
+      intro="Popular open-source agents and Bonded's own, attacked with the same library and scored on the same scale. That shared scale is what lets the Bonded Score serve as the bar for agent safety."
     >
       {h && h.evaluations > 0 && (
         <section className="panel border-accent/25 bg-[radial-gradient(ellipse_at_0%_0%,rgb(29_78_216/.25),transparent_60%)] p-7 sm:p-9">

@@ -61,6 +61,8 @@ AI agents now hold and move real money. Robinhood opened its Trading MCP to thir
 4. **Cover.** Depositors in agent-run vaults are protected. When the agent breaches its mandate, the operator's bond is slashed first, then the underwriting pool pays. The payout is automatic and takes **minutes, not months**.
 5. **Bonded Sentinel.** A fast guard (about 33 ms per check on a T4 GPU by the author's benchmark; about 2.5 s on CPU, measured) built on **Laya**, an open-source "System One" decision model, fine-tuned on Arena data. Agents that use it earn a premium discount.
 
+**The bar for agents.** Every agent gets the same attacks and the same 0–100 scale, so scores compare. Bonded sets out to make the Bonded Score the standard that platforms, vaults and depositors require ("Bonded agents only") and that agent builders aim for: first to publish an open attack library and scoring method, with the assumptions next to the numbers.
+
 **Why it wins:**
 - It is AI-native twice over: the insured customers are AIs, and so is the underwriter.
 - It is crypto-native for real reasons: open underwriting capital, instant on-chain claims, ERC-8004 agent identity.
