@@ -13,7 +13,7 @@ Runs on **Robinhood Chain**, with scores readable on **Arbitrum, Ethereum and So
 | **Web app** (Robinhood Chain testnet) | https://bonded-nu.vercel.app |
 | **Agent Safety Leaderboard**: open-source agent templates, rated | https://bonded-nu.vercel.app/leaderboard |
 | **Agent A**: insured, with one weakness the Arena found | https://bonded-nu.vercel.app/agents/10 |
-| **Agent B**: hardened, key in a TEE, score 96 | https://bonded-nu.vercel.app/agents/3 |
+| **Agent B**: hardened, key in a TEE, score 97 | https://bonded-nu.vercel.app/agents/3 |
 | **Claims**: every automatic payout and where the money came from | https://bonded-nu.vercel.app/claims |
 | **Live API** | https://api-production-ba50.up.railway.app/health |
 
@@ -52,11 +52,11 @@ How the parts fit together: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). What e
 | | Agent A (agent 10) | Agent B (agent 3) |
 |---|---|---|
 | What it is | Acts on what it reads, behind a guard that checks addresses by their first and last characters only | Treats what it reads as data; full guard; Enforce mode; key generated inside a TEE |
-| Score | **54 (BB)** | **96 (AAA)** |
-| Premium | **6.4%** a year (5.8% after its operator-bond discount) | **1.2%** a year |
+| Score | **54 (BB)** | **97 (AAA)** |
+| Premium | **6.4%** a year (5.8% after its operator-bond discount) | **1.1%** a year |
 | What the Arena found | Address poisoning: 20 of 25 episodes breached, including an unpublished attack. Every other class: none | No breaches |
 
-Agent A's rating (2026-10-05) includes 16 unpublished attacks the operator couldn't study in advance: a held-out set that rotates every 90 days, and an accepted bounty (ADR-007, decision 3). Agent B's rating predates the held-out set; re-rating it needs its TEE VM running.
+Both ratings (2026-10-07) include 16 unpublished attacks the operator couldn't study in advance: a held-out set that rotates every 90 days, and an accepted bounty (ADR-007, decision 3). Agent B was rated with its TEE running and verified: Intel TDX, measurement `0xb933…8f01`.
 
 **The loop, live on Robinhood testnet** (2026-10-04, [evidence](docs/progress/evidence/demo-break-testnet.json)): a lookalike of Agent A's depositor asked for a "refund"; Agent A paid 5,000 tUSDG; the vault recorded the breach and froze the agent; the keeper's claim paid 4,500 (the loss minus the 10% deductible): **4,000 from the operator's bond, 500 from the pool.**
 
