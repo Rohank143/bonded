@@ -2,6 +2,7 @@ import { type TypedDataDomain, verifyTypedData } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { bondDiscountedPremium, priceExpectedLoss } from "./actuarial.js";
 import { type Attestation, bondedDomain, Quote, quoteTypedData } from "./schemas/attestation.js";
+import { isTeeMeasurement } from "./tee.js";
 import { type Tier, tierForScore } from "./tiers.js";
 
 /**
@@ -78,6 +79,46 @@ export function priceCover(input: {
   };
 }
 
+/**
+ * How firmly a score is tied to the code that runs (bring your own agent):
+ * - tee: the rated code proved, with a TEE quote at every episode, that it is what runs, and the
+ *   attestation carries its measurement;
+ * - declared: the operator says which code it is (`codeHash`), and nothing checks it.
+ */
+export type BindingLevel = "declared" | "tee";
+
+/** The binding of an attestation: `tee` when it carries a TEE measurement. */
+export function bindingOf(teeMeasurement: string): BindingLevel {
+  return isTeeMeasurement(teeMeasurement) ? "tee" : "declared";
+}
+
+/**
+ * Underwriting policy, not score: the most cover one operator-run agent can hold in total, in
+ * tUSDG, by binding. A declared agent's score may describe different code from what trades, so
+ * the pool takes less of that risk. Configurable per API (`createApi`'s `coverCaps`).
+ */
+export const UNDERWRITING_COVER_CAP_USD: Readonly<Record<BindingLevel, number>> = {
+  declared: 5_000,
+  tee: 20_000,
+};
+
+/**
+ * Why the policy refuses `coverAmount` on top of `existingCover` for an agent with this binding,
+ * or undefined when it fits. Amounts are in base-asset units (6 decimals).
+ */
+export function underwritingCapRefusal(input: {
+  binding: BindingLevel;
+  coverAmount: bigint;
+  existingCover?: bigint;
+  caps?: Readonly<Record<BindingLevel, number>>;
+}): string | undefined {
+  const caps = input.caps ?? UNDERWRITING_COVER_CAP_USD;
+  const cap = BigInt(Math.floor(caps[input.binding])) * 1_000_000n;
+  if ((input.existingCover ?? 0n) + input.coverAmount <= cap) return undefined;
+  const label = input.binding === "tee" ? "a TEE-bound agent" : "an agent with a declared binding";
+  return `underwriting policy: cover for ${label} is capped at ${caps[input.binding].toLocaleString("en-US")} tUSDG in total`;
+}
+
 export interface BuildQuoteInput {
   /** The agent's current attestation. The quote copies its score, hashes and model family. */
   attestation: Attestation;
@@ -93,6 +134,13 @@ export interface BuildQuoteInput {
   /** Defaults to a random 128-bit number. */
   nonce?: bigint;
   ttlSeconds?: number;
+  /**
+   * The operator-run agent's binding, when the underwriting cap applies (bring-your-own agents).
+   * Omitted for Bonded's built-in designs, which keep the pool's own capacity limits only.
+   */
+  binding?: BindingLevel;
+  /** Caps by binding (default `UNDERWRITING_COVER_CAP_USD`). */
+  coverCaps?: Readonly<Record<BindingLevel, number>>;
 }
 
 /**
@@ -103,6 +151,15 @@ export function buildQuote(input: BuildQuoteInput): { quote: Quote; pricing: Quo
   const { attestation } = input;
   const now = input.now ?? Math.floor(Date.now() / 1000);
   if (attestation.expiresAt <= now) throw new QuoteError("the attestation has expired");
+  if (input.binding) {
+    const refusal = underwritingCapRefusal({
+      binding: input.binding,
+      coverAmount: input.coverAmount,
+      existingCover: input.existingCover ?? 0n,
+      ...(input.coverCaps ? { caps: input.coverCaps } : {}),
+    });
+    if (refusal) throw new QuoteError(refusal);
+  }
 
   const pricing = priceCover({
     expectedLossBps: attestation.expectedLossBps,
