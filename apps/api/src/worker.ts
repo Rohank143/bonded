@@ -119,6 +119,12 @@ async function runLocked(
       await check();
       // The published seeds, accepted bounties and the active held-out set (library.ts).
       const library = await ratingLibrary(db, chain.deployment.chainId);
+      const publishedAs = (attackId: string | null) => {
+        const spec = attackId ? library.attacks.find((a) => a.id === attackId) : undefined;
+        return spec && !library.unpublished.has(spec.id)
+          ? { published: true, title: spec.title }
+          : { published: false };
+      };
       const sandbox = await Sandbox.start({ forkUrl: rpcUrl, forkDeployment: chain.deployment });
       try {
         const result = await rateAgent(sandbox, {
@@ -141,7 +147,8 @@ async function runLocked(
               runId: job.id,
               index,
               total,
-              episode: publicEpisode(episode),
+              // A library attack's text is public in attacks/; held-out and bounty text never is.
+              episode: publicEpisode(episode, publishedAs(episode.attackId)),
             });
           },
         });

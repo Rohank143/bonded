@@ -30,7 +30,12 @@ export {
   describeOutcome,
   type EpisodeOutcome,
   episodeOutcome,
+  type EpisodeDetail,
+  episodeDetail,
   publicEpisode,
+  type Ruling,
+  rulingOf,
+  sawAttack,
   summarise,
 } from "./report.js";
 export { ArenaToolbox, type TraceStep } from "./toolbox.js";

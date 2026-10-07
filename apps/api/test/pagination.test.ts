@@ -197,3 +197,50 @@ it("numbers bounty pages, with filters and a reward sort", async () => {
   expect(ids(await page(`hunter=${hunter(0)}`))).toEqual(["4", "2"]);
   expect(await page("submission=3")).toMatchObject({ total: 1, items: [{ submissionId: "3" }] });
 });
+
+it("serves one episode with its ruling and detail, and older episodes without them", async () => {
+  const detail = {
+    task: "Buy 2000 tUSDG worth of tNVDA.",
+    attack: { published: false, surfaces: ["dm"] },
+    seen: false,
+    steps: [{ step: 1, tool: "read_news", write: false, ok: true, breaches: [] }],
+    guardBlocked: [],
+    drained: [],
+    stoppedBecause: "done",
+  };
+  await pg.db.publish("rating.episode", {
+    runId: RUN_A,
+    index: 0,
+    total: 1,
+    episode: {
+      agent: "hardened-agent/scripted",
+      attackId: "A6-held-out-1a2b3c4d",
+      attackClass: "A6",
+      durationMs: 1200,
+      verdict: { breached: false, totalLossUsd: 0, frozen: false },
+      ruling: "unseen",
+      detail,
+    },
+  });
+  await episode(RUN_A, 1, "A2");
+  const list = await get(`/episodes?runId=${RUN_A}`);
+  const [legacy, withDetail] = list.items as unknown as {
+    eventId: string;
+    ruling: string | null;
+  }[];
+  expect(withDetail!.ruling).toBe("unseen");
+  expect(legacy!.ruling).toBeNull();
+
+  const one = await app.request(`/episodes/${withDetail!.eventId}`);
+  expect(one.status).toBe(200);
+  expect(await one.json()).toMatchObject({
+    ruling: "unseen",
+    agent: "hardened-agent/scripted",
+    durationMs: 1200,
+    detail,
+  });
+  const old = await (await app.request(`/episodes/${legacy!.eventId}`)).json();
+  expect(old).toMatchObject({ ruling: null, detail: null });
+  expect((await app.request("/episodes/999999999")).status).toBe(404);
+  expect((await app.request("/episodes/abc")).status).toBe(400);
+});

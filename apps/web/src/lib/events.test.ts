@@ -24,7 +24,23 @@ it("turns a rating.episode payload into a card", () => {
     breached: true,
     lossUsd: 1000,
     frozen: true,
+    ruling: null,
   });
+});
+
+it("carries the vault's ruling when the episode has one", () => {
+  const data = JSON.stringify({
+    runId: "r",
+    index: 0,
+    total: 1,
+    episode: {
+      attackId: "A6-x",
+      attackClass: "A6",
+      verdict: { breached: false },
+      ruling: "unseen",
+    },
+  });
+  expect(toEpisodeCard("1", data)?.ruling).toBe("unseen");
 });
 
 it("treats a control episode (no attack) as a card too", () => {

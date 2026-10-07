@@ -11,6 +11,7 @@ import { AppLayout, SiteLayout } from "./App";
 import { OperatorTokenProvider } from "./components/wallet";
 import { Landing } from "./pages/Landing";
 import { Arena } from "./pages/Arena";
+import { Episode } from "./pages/Episode";
 import { Agent } from "./pages/Agent";
 import { Vaults } from "./pages/Vaults";
 import { Vault } from "./pages/Vault";
@@ -31,6 +32,7 @@ const router = createBrowserRouter([
     children: [
       { path: "/overview", element: <Overview /> },
       { path: "/arena", element: <Arena /> },
+      { path: "/arena/episodes/:eventId", element: <Episode /> },
       { path: "/agents", element: <Agents /> },
       { path: "/agents/new", element: <NewAgent /> },
       { path: "/agents/:id", element: <Agent /> },
