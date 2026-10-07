@@ -7,7 +7,7 @@ import {
 import type { SentinelRow } from "./dataset.js";
 
 /**
- * Held-out Sentinel evaluation (docs/PLAN.md Section 10.3, step 4): real Arena episodes from
+ * Held-out Sentinel evaluation (docs/SPECIFICATION.md Section 10.3, step 4): real Arena episodes from
  * the attack classes Sentinel never trained on, plus control episodes as benign traffic.
  * Identical cases are scored once, so repeated scripted episodes can't inflate the numbers.
  */

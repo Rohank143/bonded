@@ -1,4 +1,4 @@
--- Self-serve agents (docs/PLAN.md, Day 14 workstream 7). An agent is either configured by the
+-- Self-serve agents (docs/SPECIFICATION.md, Day 14 workstream 7). An agent is either configured by the
 -- operator (the AGENTS_FILE, reconciled on start) or registered by its owner through the API.
 --   source   'operator' or 'user'. Reconciling the operator's file only touches operator agents.
 --   owner    for user agents, the address that signed the registration (the agent's owner).

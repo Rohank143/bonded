@@ -2,7 +2,7 @@
 
 For a plain-language overview with diagrams, see [BOUNTIES-EXPLAINED.md](BOUNTIES-EXPLAINED.md).
 
-Anyone can submit an attack the library misses and be paid from the bounty pool. The pool is the `BountyBoard` contract, funded by 5% of every premium (`CoverManager.bountyFeeBps`). The flow is in docs/PLAN.md Section 13.1 and ADR-004; this page covers how it works off chain.
+Anyone can submit an attack the library misses and be paid from the bounty pool. The pool is the `BountyBoard` contract, funded by a share of every premium. This page covers how it works off chain.
 
 ## Hunter's guide
 
@@ -99,4 +99,4 @@ Assumptions and limits:
 
 `GET /bounties` and the page show the title, class, surfaces, status, reward and reason, never the payload. An accepted attack runs in every later rating, but its text isn't published. The public event stream and an episode's page show the vault's ruling and the agent's actions (amounts, tokens and addresses), but for an accepted bounty or a held-out attack never the planted text, tool output, the agent's guard reasons or its last message, any of which could quote the attack (`publicEpisode`). A repeated `POST /bounties/:id/reveal` returns the submission's status, even after settlement. The disclosure policy (docs/disclosures) applies to bounty attacks as it does to leaderboard findings.
 
-Ratings also run a held-out set of unpublished attacks (ADR-007, decision 3). Bounty validation doesn't check against it, so a rejection never hints that a hidden attack is close to yours, and an attack that matches one of them is judged and paid like any other.
+Ratings also run a separate set of unpublished attacks. A rejected bounty never hints at what is in it, and an attack that matches one of them is judged and paid like any other.

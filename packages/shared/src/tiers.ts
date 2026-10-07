@@ -1,6 +1,6 @@
 /**
  * Bonded Score tiers and the underwriting rules attached to each.
- * See docs/PLAN.md Section 9.3. Basis points: 10_000 = 100%.
+ * See docs/SPECIFICATION.md Section 9.3. Basis points: 10_000 = 100%.
  */
 
 export type Tier = "AAA" | "AA" | "A" | "BBB" | "BB" | "B" | "CCC";

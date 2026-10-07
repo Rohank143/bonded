@@ -1,5 +1,5 @@
 /**
- * Self-serve requests (docs/PLAN.md, Day 14 workstream 7): the messages an agent's owner signs
+ * Self-serve requests (docs/SPECIFICATION.md, Day 14 workstream 7): the messages an agent's owner signs
  * in their wallet (EIP-191 personal_sign) so the API can act for them without an operator token.
  * The web app builds them and the API rebuilds them byte for byte, so both use this module.
  */

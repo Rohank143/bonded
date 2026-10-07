@@ -1,4 +1,4 @@
-//! Bonded mandate vault on Solana (docs/PLAN.md Sections 6.3 and 7). Mirrors `MandateVault`:
+//! Bonded mandate vault on Solana (docs/SPECIFICATION.md Sections 6.3 and 7). Mirrors `MandateVault`:
 //! the vault account owns the agent's funds, the agent's key can only act through `execute`,
 //! every action is classified against the mandate first, breaches are logged in the vault, and
 //! the vault freezes on a breach. The breach log is what pays claims, so no model output can

@@ -6,7 +6,7 @@ import { type Tier, tierForScore } from "./tiers.js";
 
 /**
  * Cover quotes: priced from a signed attestation, signed by the attester, and accepted by
- * `CoverManager.buyCover` (docs/PLAN.md Sections 6.4 and 9, ADR-009).
+ * `CoverManager.buyCover` (docs/SPECIFICATION.md Sections 6.4 and 9, ADR-009).
  *
  * The quote is priced only from the attestation's expected loss and the operator's bond, so
  * anyone holding the attestation can recompute the premium and check it.

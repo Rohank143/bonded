@@ -15,7 +15,7 @@ import {IMandateVaultFactory} from "./interfaces/IMandateVaultFactory.sol";
 /// @title MandateVault
 /// @notice Holds an AI agent's funds and checks every action against the agent's mandate.
 ///         Depositors hold ERC-4626 shares. The agent acts only through `execute`.
-/// @dev See docs/PLAN.md Section 6.3 and docs/decisions/002-mandate-vault.md.
+/// @dev See docs/SPECIFICATION.md Section 6.3 and docs/decisions/002-mandate-vault.md.
 ///
 ///      Breach detection:
 ///      - T1 (before the call): target, selector, approval spender and transfer recipient are

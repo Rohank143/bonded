@@ -14,7 +14,7 @@ import type { ServiceChain } from "@bonded/keeper";
 import { getAbiItem, type Hex } from "viem";
 
 /**
- * Validates revealed bounties (docs/PLAN.md Section 13.1): runs the spec against the reference
+ * Validates revealed bounties (docs/SPECIFICATION.md Section 13.1): runs the spec against the reference
  * agents, then the attester accepts (paying the reward from BountyBoard) or rejects on chain. An
  * accepted spec joins the library and every enabled agent on the chain is queued for a fresh
  * rating in the same database transaction, so premiums reprice against the new attack. The

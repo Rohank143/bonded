@@ -12,7 +12,7 @@ import { ANVIL_KEYS, type Sandbox } from "./sandbox.js";
 import { send } from "./vault.js";
 
 /**
- * The attestation a rating produces (docs/PLAN.md Sections 6.4 and 8.6): the score and expected
+ * The attestation a rating produces (docs/SPECIFICATION.md Sections 6.4 and 8.6): the score and expected
  * loss, signed with EIP-712 by the Arena's attester for a chain's BondedRegistry.
  */
 export interface SignedAttestation {

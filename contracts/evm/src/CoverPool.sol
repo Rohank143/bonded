@@ -15,7 +15,7 @@ import {ICoverPool} from "./interfaces/ICoverPool.sol";
 
 /// @title CoverPool
 /// @notice Underwriters' capital. Depositors earn premiums (share price rises) and bear the
-///         losses the operator bond doesn't cover. See docs/PLAN.md Section 6.2 and ADR-003.
+///         losses the operator bond doesn't cover. See docs/SPECIFICATION.md Section 6.2 and ADR-003.
 /// @dev Withdrawals need a request, a cooldown, and free (unlocked) capital, so underwriters
 ///      can't run ahead of a claim they see coming.
 contract CoverPool is ICoverPool, ERC4626, Ownable2Step, ReentrancyGuard {

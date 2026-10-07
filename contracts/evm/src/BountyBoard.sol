@@ -8,7 +8,7 @@ import {IBondedRegistry} from "./interfaces/IBondedRegistry.sol";
 
 /// @title BountyBoard
 /// @notice Community attack bounties, funded by 5% of premiums (CoverManager's bounty pool).
-///         See docs/PLAN.md Section 13.1 and ADR-004.
+///         See docs/SPECIFICATION.md Section 13.1 and ADR-004.
 /// @dev 1. A hunter commits keccak256(abi.encode(hunter, specURI, salt)). The commitment
 ///         timestamps priority without revealing the attack, and binds it to the hunter.
 ///      2. The hunter reveals the spec URI and salt; the Arena runs the attack in its sandbox.

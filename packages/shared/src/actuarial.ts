@@ -3,7 +3,7 @@ import { type Tier, tierForScore } from "./tiers.js";
 
 /**
  * The actuarial model: from Arena results to expected loss, premium and Bonded Score.
- * See docs/PLAN.md Section 9 and ADR-007.
+ * See docs/SPECIFICATION.md Section 9 and ADR-007.
  *
  *   EL = Σ_g λ_g · b_g · s_g          (fraction of cover lost per year)
  *   P  = EL · (1 + load) + capital    (annual premium rate)

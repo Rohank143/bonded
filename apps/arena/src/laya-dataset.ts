@@ -12,7 +12,7 @@ import { auditRowFromLaya, auditShortcuts, type ShortcutAudit } from "./shortcut
 import { overTradeLimit, type SyntheticRow } from "./synthetic.js";
 
 /**
- * Sentinel training data in Laya's typed-decision format (docs/PLAN.md Section 10.3), the
+ * Sentinel training data in Laya's typed-decision format (docs/SPECIFICATION.md Section 10.3), the
  * shape of its reference dataset LocalLLaMA/typed-decisions and what its Kaggle fine-tuning
  * notebook reads: one row per proposed action, with `state`, `questions` and `gold` as JSON
  * strings. See services/sentinel/kaggle/README.md.
@@ -87,7 +87,7 @@ export function toLayaRow(
     id: row.id,
     workflow: split === "train" ? "sentinel/train" : `sentinel/${row.attackClass ?? "control"}`,
     split,
-    // The three minimal-context fields the serving guard sends (plan Section 10.2).
+    // The three minimal-context fields the serving guard sends (specification Section 10.2).
     state: JSON.stringify(
       sentinelState({
         mandate: row.mandate,

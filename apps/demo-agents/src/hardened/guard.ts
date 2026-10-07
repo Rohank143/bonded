@@ -60,7 +60,7 @@ export class PolicyGuard implements ActionGuard {
   /**
    * @param options.matchAddressEnds compare addresses by their first 6 and last 4 characters
    *   only. Off by default. The demo's Agent A turns it on: a realistic gap that address
-   *   poisoning exploits, which the Arena measures and the premium prices. See docs/PLAN.md,
+   *   poisoning exploits, which the Arena measures and the premium prices. See docs/SPECIFICATION.md,
    *   Day 14 detail.
    */
   constructor(private readonly options: { matchAddressEnds?: boolean } = {}) {}

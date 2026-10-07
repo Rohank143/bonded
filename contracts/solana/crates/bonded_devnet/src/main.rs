@@ -1,4 +1,4 @@
-//! Runs the Bonded Solana programs on devnet (docs/PLAN.md Section 20, Day 10: "Solana E2E
+//! Runs the Bonded Solana programs on devnet (docs/SPECIFICATION.md Section 20, Day 10: "Solana E2E
 //! breach → claim on devnet").
 //!
 //! - `bonded-devnet setup`: once, and safe to repeat. Creates a test-USD mint, initializes the

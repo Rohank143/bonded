@@ -105,24 +105,15 @@ pnpm format:check && pnpm --filter @bonded/shared abis:check && pnpm typecheck &
 cd contracts/evm && forge fmt --check && forge test
 ```
 
-Design records: [ADR-004](decisions/004-registry-disputes-bounties.md) (registry and deploys), [ADR-005](decisions/005-arena-core.md) (Arena), [ADR-006](decisions/006-provider-neutral-llm.md) (language models), [ADR-007](decisions/007-ratings.md) (ratings).
-
 ## API, keeper and the Gate 1 loop
 
 `pnpm test:services` runs real Postgres and Anvil tests without Docker. `pnpm gate:local` runs the complete rating → attestation → quote → cover → injected breach → automatic payout loop, using embedded Postgres and a fresh Anvil deployment. Results go to `artifacts/gate-1-local.json`.
 
 `pnpm gate:testnet` broadcasts the same demo on Robinhood Chain testnet using `DEPLOYER_PRIVATE_KEY` from `.env`. It spends test ETH and faucet tokens, creates a new demo agent and vault, and requires the existing deployment to have a zero waiting period. Review the command before running it. Results go to `artifacts/gate-1-testnet.json`; partial results are saved if a step fails.
 
-**The held-out attack set** (ADR-007, decision 3). It needs `OPENROUTER_API_KEY` in `.env`, and `API_TOKEN` for the upload:
-- `pnpm heldout:generate -- --max-usd 2` drafts new attacks and keeps those that pass the checks. They're written as YAML to `~/.config/bonded/held-out/<date>`, outside the repository; keep that folder private.
-- `pnpm heldout:upload -- --dir <that folder>` sends them to the hosted API with a 90-day retirement date.
-- `arena rate --held-out <that folder>` includes them in a local rating, as the leaderboard ratings do.
-
-Long-running service setup and API requests: [docs/SERVICES.md](SERVICES.md). Day 7 evidence and the Section 25 checklist: [docs/progress/DAY-07.md](progress/DAY-07.md).
-
 ## Web app
 
-`apps/web` is a Vite + React app for the demo flow on Robinhood Chain testnet: the live Arena feed, agent profiles, vaults (deposit, withdraw, buy cover), underwriting (pool deposit, withdrawal, test tUSDG) and the claims feed ([ADR-010](decisions/010-web-app.md)).
+`apps/web` is a Vite + React app for the demo flow on Robinhood Chain testnet: the live Arena feed, agent profiles, vaults (deposit, withdraw, buy cover), underwriting (pool deposit, withdrawal, test tUSDG) and the claims feed.
 
 ```bash
 pnpm --filter @bonded/web dev
@@ -132,23 +123,23 @@ It reads the chain directly and talks to the hosted API by default. Point it at 
 
 Wallet selection, connection, account management, disconnection and network switching use RainbowKit's standard UI. Phantom, Rabby and detected EIP-6963 browser wallets such as MetaMask work without service credentials. In Phantom, enable testnet mode to use Robinhood Chain Testnet.
 
-To enable WalletConnect QR/mobile connections, create a project at [Reown Dashboard](https://dashboard.reown.com), allow the app's deployment origins, and set `VITE_WALLETCONNECT_PROJECT_ID` in `apps/web/.env.local` and the hosting environment. Restart the dev server or rebuild the deployment after setting it; Vite embeds this public project ID at build time. Without a project ID, the app offers browser wallets and omits WalletConnect options. Library versions and the choice of RainbowKit are documented in [Wallet integration research](WALLET-INTEGRATION-RESEARCH.md).
+To enable WalletConnect QR/mobile connections, create a project at [Reown Dashboard](https://dashboard.reown.com), allow the app's deployment origins, and set `VITE_WALLETCONNECT_PROJECT_ID` in `apps/web/.env.local` and the hosting environment. Restart the dev server or rebuild the deployment after setting it; Vite embeds this public project ID at build time. Without a project ID, the app offers browser wallets and omits WalletConnect options.
 
 ## Synthetic Sentinel data
 
-`pnpm sentinel:synth` writes synthetic training rows for Sentinel (plan Section 10.3), seeded from the `sentinel-dataset.jsonl` a rating writes. Labels are chosen by the generator, never by the model. It needs `OPENROUTER_API_KEY` in `.env` and a spending cap:
+`pnpm sentinel:synth` writes synthetic training rows for Sentinel (specification Section 10.3), seeded from the `sentinel-dataset.jsonl` a rating writes. Labels are chosen by the generator, never by the model. It needs `OPENROUTER_API_KEY` in `.env` and a spending cap:
 
 ```bash
 pnpm sentinel:synth --seeds ratings/vulnerable-agent_scripted/sentinel-dataset.jsonl --count 300 --max-usd 0.5
 ```
 
-Paths are relative to `apps/arena`. Output goes to `apps/arena/datasets/sentinel-synthetic.jsonl` (gitignored); rerun the same command to resume. By default it keeps the held-out attack classes, A7 and A10 (`SENTINEL_HELD_OUT_CLASSES`), out of the data, so Day 10's evaluation tests classes Sentinel never trained on; `--exclude-classes none` turns that off. Results and limits of the first run: [docs/progress/DAY-08.md](progress/DAY-08.md).
+Paths are relative to `apps/arena`. Output goes to `apps/arena/datasets/sentinel-synthetic.jsonl` (gitignored); rerun the same command to resume. By default it keeps the held-out attack classes out of the data, so the evaluation tests classes Sentinel never trained on; `--exclude-classes none` turns that off.
 
-Fine-tuning Laya on it: `pnpm sentinel:dataset` turns real and synthetic rows into Laya's typed-decision format, with a held-out test split, and [services/sentinel/kaggle/README.md](../services/sentinel/kaggle/README.md) walks through running Laya's own Kaggle notebook on it.
+Fine-tuning Laya on it: `pnpm sentinel:dataset` turns real and synthetic rows into Laya's typed-decision format, with a held-out test split.
 
 ## Solana programs
 
-`contracts/solana` is an Anchor workspace with the Solana versions of the registry, mandate vault and cover (plan Section 7, [ADR-011](decisions/011-solana-programs.md)). It needs Rust, the Solana CLI 3.x and Anchor 1.x.
+`contracts/solana` is an Anchor workspace with the Solana versions of the registry, mandate vault and cover (specification Section 7). It needs Rust, the Solana CLI 3.x and Anchor 1.x.
 
 ```bash
 pnpm solana:test
@@ -158,15 +149,15 @@ This builds the three programs and their IDLs, then runs the LiteSVM tests again
 
 ## TEE key custody
 
-The hardened agent can run in a Phala Cloud confidential VM. Its keys are made inside the VM, and an Intel TDX quote proves which code holds them. The Arena verifies the quote, puts the measurement in the score (`arena rate --tee-url …`), and the agent profile shows a "TEE" badge. Why and how: [ADR-012](decisions/012-tee-custody.md). Deploying it yourself: [docs/TEE.md](TEE.md).
+The hardened agent can run in a Phala Cloud confidential VM. Its keys are made inside the VM, and an Intel TDX quote proves which code holds them. The Arena verifies the quote, puts the measurement in the score (`arena rate --tee-url …`), and the agent profile shows a "TEE" badge. Why and how: [TEE.md](TEE.md). Deploying it yourself: [docs/TEE.md](TEE.md).
 
 ## The documentation site
 
-`apps/docs` is a [Starlight](https://starlight.astro.build) (Astro) site served at `/docs` on the web app. It is generated from the Markdown in this repository (the README, `docs/`, the contracts' READMEs), so edit those files, not the site. `scripts/sync-content.mjs` copies them into the site at build time. Links between docs become links between pages; a link to code, or a path in backticks, becomes a link to that file on GitHub. The decision records, build log and wallet research are not published (`scripts/pages.mjs` lists what is, and which sections are left out), and `scripts/patches.mjs` rewords the few sentences that would otherwise point at an unpublished doc. Evidence files that notes cite are published under `/docs/evidence/`.
+`apps/docs` is a [Starlight](https://starlight.astro.build) (Astro) site served at `/docs` on the web app. It is generated from the Markdown in this repository (the README, `docs/`, the contracts' READMEs), so edit those files, not the site. Links between docs become links between pages; a link to code, or a path in backticks, becomes a link to that file on GitHub. Evidence files that notes cite are published under `/docs/evidence/`.
 
 ```bash
 pnpm docs:dev                 # the site on http://localhost:4321/docs/
 pnpm --filter @bonded/docs build
 ```
 
-`pnpm --filter @bonded/web build` builds the docs and copies them into the web app's output, which is what Vercel deploys. In `pnpm --filter @bonded/web dev`, `/docs` is proxied to the docs dev server.
+`pnpm --filter @bonded/web build` builds the docs and copies them into the web app's output. In `pnpm --filter @bonded/web dev`, `/docs` is proxied to the docs dev server.

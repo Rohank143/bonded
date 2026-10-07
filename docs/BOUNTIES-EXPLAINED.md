@@ -1,6 +1,6 @@
 # How Bonded's attack bounties work
 
-A plain-language guide for people new to Bonded, and a starting point for the product and feature videos. The technical reference is [BOUNTIES.md](BOUNTIES.md).
+A plain-language guide for people new to Bonded. The technical reference is [BOUNTIES.md](BOUNTIES.md).
 
 ## The idea in one paragraph
 
@@ -14,7 +14,7 @@ Bonded rates AI trading agents by attacking them in the Arena with a library of 
 | **BountyBoard** | A smart contract. It holds the bounty pool, records each submission, and pays rewards. |
 | **The Arena** | Bonded's sandbox. It runs the attack against two reference agents and decides by a fixed rule. No AI judges the result. |
 | **The attester** | Bonded's signing key. It sends the Arena's decision to BountyBoard. The contract only accepts decisions from registered attesters. |
-| **Cover buyers** | Fund the pool without doing anything: 5% of every premium goes to it. |
+| **Cover buyers** | Fund the pool without doing anything: a share of every premium goes to it. |
 
 ## The flow
 
@@ -84,7 +84,7 @@ The attack's text stays private. The public list shows its title, type, surfaces
 - **Payouts don't depend on AI.** The reference agents are scripts and the rule is code (`apps/arena/src/bounty.ts`), so anyone can rerun a submission and get the same verdict.
 - **A payout can't happen twice.** The decision is stored before it's sent, and a retry checks the chain first.
 - **It raises the bar for everyone.** Every accepted attack is run against every rated agent, so the library, and the standard the Bonded Score sets, gets harder to pass over time instead of going stale.
-- **The pool pays for itself.** It's funded from premiums, so better attacks lead to better pricing, and that keeps the pool funded.
+- **The pool is funded by cover.** A share of every premium goes to it, so it keeps paying hunters as long as cover is bought.
 
 ## Limits
 
@@ -96,4 +96,4 @@ The attack's text stays private. The public list shows its title, type, surfaces
 
 - The Bounties page is at https://bonded-nu.vercel.app/bounties. Connect a wallet on Robinhood Chain testnet to submit.
 - The pool holds test tUSDG, which has no value.
-- The first submission was a live end-to-end test made by the Bonded team from a separate test wallet (see [Day 12](progress/DAY-12.md)). It is not an outside hunter.
+- The first submission was a live end-to-end test made by the Bonded team from a separate test wallet. It is not an outside hunter.

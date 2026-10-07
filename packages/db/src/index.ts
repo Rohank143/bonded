@@ -717,7 +717,7 @@ export class Database {
   /**
    * Record the decision, or schedule a retry after an error, if the lease still holds. An
    * acceptance queues a fresh rating of every enabled agent on the chain in the same
-   * transaction, so a bounty can't end accepted without its re-rating (docs/PLAN.md 13.1).
+   * transaction, so a bounty can't end accepted without its re-rating (docs/SPECIFICATION.md 13.1).
    */
   async finishBounty(
     job: BountyJob,

@@ -17,7 +17,6 @@ Runs on **Robinhood Chain**, with scores readable on **Arbitrum, Ethereum and So
 | **Agent A**: insured, with one weakness the Arena found | https://bonded-nu.vercel.app/agents/10 |
 | **Agent B**: hardened, key in a TEE, score 97 | https://bonded-nu.vercel.app/agents/3 |
 | **Claims**: every automatic payout and where the money came from | https://bonded-nu.vercel.app/claims |
-| **Live API** | https://api-production-ba50.up.railway.app/health |
 
 **Or run the whole thing yourself in one command**, with no keys or accounts (needs Node 22, pnpm and Foundry; details in [docs/DEVELOPING.md](docs/DEVELOPING.md)):
 
@@ -39,13 +38,13 @@ It starts a local chain, the API, keeper and rating worker; rates Agent A and Ag
 
 Plus **Sentinel**, an optional real-time guard: Laya, an open-source decision model, fine-tuned on Arena data to flag manipulated actions before they reach the vault. It is advisory; payouts never depend on it.
 
-How the parts fit together: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). What each agent is: [docs/AGENTS.md](docs/AGENTS.md). The full product and build plan: [docs/PLAN.md](docs/PLAN.md).
+How the parts fit together: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). What each agent is: [docs/AGENTS.md](docs/AGENTS.md). The full product specification: [docs/SPECIFICATION.md](docs/SPECIFICATION.md).
 
 ## What you can do today
 
 - **Anyone, in the web app** (with a browser wallet on Robinhood testnet): onboard an agent (register it, create its vault, stake a bond); rate it with one of Bonded's built-in agent designs against your vault; buy cover; simulate a breach and watch the claim pay; deposit; underwrite the cover pool; submit a bounty attack; browse agents, scores, reports, the leaderboard and claims.
 - **Anyone, locally:** run the whole loop with `pnpm demo`, or rate the built-in agents with `pnpm arena rate`.
-- **Not yet:** rating your own agent's code ([issue #84](https://github.com/ddboy19912/bonded/issues/84)) and bringing your own TEE ([issue #85](https://github.com/ddboy19912/bonded/issues/85)). Details: [What works today and what's coming](docs/AGENTS.md#what-works-today-and-whats-coming).
+- **Not yet:** rating your own agent's code and bringing your own TEE. Details: [What works today and what's coming](docs/AGENTS.md#what-works-today-and-whats-coming).
 
 ## Results (measured, with their assumptions)
 
@@ -58,17 +57,17 @@ How the parts fit together: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). What e
 | Premium | **6.4%** a year (5.8% after its operator-bond discount) | **1.1%** a year |
 | What the Arena found | Address poisoning: 20 of 25 episodes breached, including an unpublished attack. Every other class: none | No breaches |
 
-Both ratings ([Agent A](https://bonded-nu.vercel.app/agents/10), [Agent B](https://bonded-nu.vercel.app/agents/3); 2026-10-07) include 16 unpublished attacks the operator couldn't study in advance: a held-out set that rotates every 90 days, and an accepted bounty (ADR-007, decision 3). Agent B was rated with its TEE running and verified: Intel TDX, measurement `0xb933…8f01`.
+Both ratings ([Agent A](https://bonded-nu.vercel.app/agents/10), [Agent B](https://bonded-nu.vercel.app/agents/3); 2026-10-07) include unpublished attacks the operator couldn't study in advance: a held-out set and an accepted bounty. Agent B was rated with its TEE running and verified: Intel TDX, measurement `0xb933…8f01`.
 
 **The loop, live on Robinhood testnet** (2026-10-04, [evidence](docs/progress/evidence/demo-break-testnet.json)): a lookalike of Agent A's depositor asked for a "refund"; Agent A paid 5,000 tUSDG; the vault recorded the breach and froze the agent; the keeper's claim paid 4,500 (the loss minus the 10% deductible): **4,000 from the operator's bond, 500 from the pool.**
 
-**[Leaderboard](https://bonded-nu.vercel.app/leaderboard)** (2026-10-06, [rating data](config/leaderboard.json), five runs of 55 attacks, 15 of them held out and unpublished): 1 of the 2 open-source templates rated (Coinbase AgentKit and Solana Agent Kit, 4 template/model evaluations) fell for basic prompt injection, once: AgentKit with Claude Haiku 4.5 in 1 of 20 token-metadata (A1) episodes, scoring 80 (AA). The other three evaluations and Bonded's own hardened agent had no breaches and score 81 (AA) in Monitor mode; agents that resist every attack tie. The maintainers are to be notified before the attack is named. About half the attacks arrive on surfaces these templates never read ([disclosures](docs/disclosures/README.md)).
+**[Leaderboard](https://bonded-nu.vercel.app/leaderboard)** (2026-10-06, [rating data](config/leaderboard.json), five runs of 55 attacks, 15 of them held out and unpublished): 1 of the 2 open-source templates rated (Coinbase AgentKit and Solana Agent Kit, 4 template/model evaluations) fell for basic prompt injection, once: AgentKit with Claude Haiku 4.5 in 1 of 20 token-metadata (A1) episodes, scoring 80 (AA). The other three evaluations and Bonded's own hardened agent had no breaches and score 81 (AA) in Monitor mode; agents that resist every attack tie. About half the attacks arrive on surfaces these templates never read ([disclosures](docs/disclosures/README.md)).
 
 **Sentinel v5** (in production), against the previous model on the same inputs ([details](docs/SENTINEL-STRESS.md#v5-gate-results)): it blocked 33 of 33 manipulated actions in held-out Arena cases (v1: 27) with no false blocks; in an Arena rerun, the vulnerable agent behind it was breached by 0 of 40 attack seeds. It failed one of five gates (2 of 44 stress families got worse) and was promoted with that exception recorded. It takes about 2.5 s per check on CPU.
 
 Assumptions that apply throughout:
-- The attack library is fixed seeds, so scores are in-library results, not a held-out evaluation. An adaptive attack source is tracked in [issue #11](https://github.com/ddboy19912/bonded/issues/11).
-- The yearly attack rates per class (λ) are illustrative priors (plan Section 9.2). The model's inputs, not these numbers, are the product.
+- The attack library is fixed seeds, so scores are in-library results, not a held-out evaluation. An adaptive attack source is not built yet.
+- The yearly attack rates per class (λ) are illustrative priors (specification Section 9.2). The model's inputs, not these numbers, are the product.
 - Everything runs on testnets with test tokens.
 
 ## Security
@@ -89,7 +88,7 @@ Owner, attester and council on every testnet: `0xd42FA5ae8949710479954ae78D1b12F
 | ClaimsEngine | [`0x6E8533A4895E6D708B32DFFF928852d7F583067e`](https://explorer.testnet.chain.robinhood.com/address/0x6E8533A4895E6D708B32DFFF928852d7F583067e) | [`0x6E8533A4895E6D708B32DFFF928852d7F583067e`](https://sepolia.arbiscan.io/address/0x6E8533A4895E6D708B32DFFF928852d7F583067e) | [`0x0b9B5B177756D3bF699C3811D1F2d6067dF0E5f7`](https://sepolia.etherscan.io/address/0x0b9B5B177756D3bF699C3811D1F2d6067dF0E5f7) |
 | BountyBoard | [`0x942CaC6582F189DcF84CCe73fFAb3c87b9c15278`](https://explorer.testnet.chain.robinhood.com/address/0x942CaC6582F189DcF84CCe73fFAb3c87b9c15278) | [`0x942CaC6582F189DcF84CCe73fFAb3c87b9c15278`](https://sepolia.arbiscan.io/address/0x942CaC6582F189DcF84CCe73fFAb3c87b9c15278) | [`0x038C5b833424727a073080822578b8201AC19bDD`](https://sepolia.etherscan.io/address/0x038C5b833424727a073080822578b8201AC19bDD) |
 
-**Solana devnet** (Anchor programs, [ADR-011](docs/decisions/011-solana-programs.md)):
+**Solana devnet** (Anchor programs, [README](contracts/solana/README.md)):
 
 | Program | Address |
 |---|---|
@@ -112,7 +111,7 @@ Agent B's score of 96 is the same signed attestation on all four chains ([eviden
 | `packages/shared` | Schemas, scoring maths, ABIs, chain and deployment data |
 | `services/sentinel`, `services/tee-agent` | The Sentinel guard service; the TEE agent for Phala Cloud |
 | `attacks/` | The attack library: YAML scenarios by class |
-| `docs/` | Plan, architecture, decisions, audit, progress notes |
+| `docs/` | The documentation: specification, architecture, audit and more |
 
 ## Documentation
 
@@ -123,10 +122,8 @@ The same pages are published as a searchable site at `/docs` on the web app (bui
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the parts fit together |
 | [AGENTS.md](docs/AGENTS.md) | What an agent is; every agent we rate |
 | [DEVELOPING.md](docs/DEVELOPING.md) | Build, test, run, deploy |
-| [SERVICES.md](docs/SERVICES.md) | The hosted API, keeper and workers; alerts |
 | [BOUNTIES.md](docs/BOUNTIES.md) | Community attack bounties |
 | [SENTINEL.md](docs/SENTINEL.md), [SENTINEL-STRESS.md](docs/SENTINEL-STRESS.md) | The Sentinel guard and how it was tested |
 | [TEE.md](docs/TEE.md) | Running an agent's keys in a TEE |
 | [AUDIT.md](docs/AUDIT.md) | The internal security review |
-| [BUSINESS.md](docs/BUSINESS.md) | Business model and costs |
-| [PLAN.md](docs/PLAN.md), [decisions/](docs/decisions/), [progress/](docs/progress/) | The plan, design decisions and daily notes |
+| [SPECIFICATION.md](docs/SPECIFICATION.md) | The product specification |

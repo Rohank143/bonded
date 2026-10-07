@@ -1,4 +1,4 @@
-// Creates the demo's Agent A on Robinhood testnet (docs/PLAN.md, Day 14 detail): the partly
+// Creates the demo's Agent A on Robinhood testnet (docs/SPECIFICATION.md, Day 14 detail): the partly
 // hardened agent whose guard checks addresses by their first and last characters only. It
 // registers the agent, creates its Monitor-mode vault (refunds to the depositor allowed, which is
 // the address its weak check trusts), stakes the minimum bond for tier BB at the planned cover,

@@ -7,12 +7,11 @@
 export const PAGES = [
   { src: "README.md", slug: "overview/introduction", label: "Introduction", title: "Introduction" },
   {
-    src: "docs/PLAN.md",
-    slug: "overview/plan",
+    src: "docs/SPECIFICATION.md",
+    slug: "overview/specification",
     label: "Product specification",
     title: "Product specification",
   },
-  { src: "docs/BUSINESS.md", slug: "overview/business", label: "Business model and costs" },
 
   { src: "docs/ARCHITECTURE.md", slug: "concepts/architecture", label: "Architecture" },
   { src: "docs/AGENTS.md", slug: "concepts/agents", label: "Agents" },
@@ -75,8 +74,7 @@ export const EVIDENCE_DIRS = [
 export const SHORT_NAMES = {
   "README.md": "the introduction",
   "SECURITY.md": "the security policy",
-  "docs/PLAN.md": "the product specification",
-  "docs/BUSINESS.md": "the business page",
+  "docs/SPECIFICATION.md": "the product specification",
   "docs/ARCHITECTURE.md": "the architecture page",
   "docs/AGENTS.md": "the agents page",
   "docs/BOUNTIES-EXPLAINED.md": "the bounty overview",
@@ -94,6 +92,4 @@ export const SHORT_NAMES = {
 /** Sections left out of the site. */
 export const DROP_SECTIONS = {
   "docs/DEVELOPING.md": ["The documentation site"],
-  // The build schedule, demo script, submission checklist and founder's to-do list are internal.
-  "docs/PLAN.md": ["20.", "21.", "22.", "24.", "27."],
 };

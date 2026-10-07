@@ -13,6 +13,9 @@ const outDir = path.resolve(here, "../src/content/docs");
 const publicDir = path.resolve(here, "../public");
 
 const read = (p) => fs.readFileSync(path.join(root, p), "utf8");
+/** Hosting, model-repo and local-path names that must not reach the public site. */
+const PRIVATE_EVIDENCE =
+  /bonded-sentinel-laya|sentinel\/kaggle\/README|railway\.app|\/Users\/|\.railway\.internal/;
 const exists = (p) => fs.existsSync(path.join(root, p));
 const isFile = (p) => exists(p) && fs.statSync(path.join(root, p)).isFile();
 /** "file", "dir" or null for a repo path (never outside the repo). */
@@ -57,7 +60,7 @@ const leftovers = [];
 const ctx = {
   targets,
   evidence: EVIDENCE_DIRS,
-  exists: isFile,
+  exists: (p) => isFile(p) && !PRIVATE_EVIDENCE.test(read(p)),
   labels,
   shorts: new Map(Object.entries(SHORT_NAMES)),
   kind,
@@ -114,11 +117,15 @@ for (const folder of FOLDERS) {
   );
 }
 
-// Evidence files the pages cite, served as they are.
+// Evidence files the pages cite, served as they are, except any that name something private.
 for (const { from, to, only } of EVIDENCE_DIRS) {
   if (!exists(from)) continue;
   for (const file of listFiles(from)) {
     if (only && !only.test(file)) continue;
+    if (PRIVATE_EVIDENCE.test(read(file))) {
+      console.warn(`docs: evidence not published (names something private): ${file}`);
+      continue;
+    }
     const dest = path.join(publicDir, to, file.slice(from.length + 1));
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.copyFileSync(path.join(root, file), dest);

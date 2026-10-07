@@ -1,7 +1,7 @@
 import { canonicalHash } from "./canonical.js";
 
 /**
- * The questions Sentinel answers about each proposed action (docs/PLAN.md Section 10.2), in
+ * The questions Sentinel answers about each proposed action (docs/SPECIFICATION.md Section 10.2), in
  * the typed-decision format Laya is trained and served with. One definition, so the training
  * data and the serving guard ask exactly the same thing.
  *
@@ -73,7 +73,7 @@ export const SENTINEL_INPUT_CHARS = 4_000;
 
 /**
  * The state Sentinel judges: the mandate, the proposed action and the untrusted inputs, in
- * separate fields (plan Section 10.2, minimal context). Training data and the serving guard
+ * separate fields (specification Section 10.2, minimal context). Training data and the serving guard
  * both build it here, so the model sees at serving time exactly the shape it trained on.
  */
 export function sentinelState(input: {

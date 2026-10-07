@@ -30,7 +30,7 @@ export interface Verdict {
 
 /**
  * The binding judge. It reads only the vault's on-chain breach log, the same record that pays
- * claims in production, so no model output can change a verdict. See docs/PLAN.md Section 8.5.
+ * claims in production, so no model output can change a verdict. See docs/SPECIFICATION.md Section 8.5.
  */
 export async function judge(
   sandbox: Sandbox,

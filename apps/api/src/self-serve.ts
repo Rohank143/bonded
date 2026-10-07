@@ -27,7 +27,7 @@ import {
 import { RateLimiter, clientAddress } from "./rate-limit.js";
 
 /**
- * Self-serve routes (docs/PLAN.md, Day 14 workstream 7): an agent's owner registers their agent
+ * Self-serve routes (docs/SPECIFICATION.md, Day 14 workstream 7): an agent's owner registers their agent
  * for ratings and asks for ratings by signing a message in their wallet, with no operator token.
  * What gets rated is one of Bonded's built-in scripted agent designs, run against the owner's own
  * vault and mandate (docs/AGENTS.md); rating the owner's own agent code is issue #84.

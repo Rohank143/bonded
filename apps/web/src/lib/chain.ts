@@ -9,7 +9,7 @@ import {
 } from "@bonded/shared";
 import { deployment } from "../config";
 
-/** A paid claim, as emitted by ClaimsEngine.ClaimPaid (docs/PLAN.md Section 11.2). */
+/** A paid claim, as emitted by ClaimsEngine.ClaimPaid (docs/SPECIFICATION.md Section 11.2). */
 export interface PaidClaim {
   policyId: bigint;
   vault: Address;

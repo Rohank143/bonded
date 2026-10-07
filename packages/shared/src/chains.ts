@@ -1,5 +1,5 @@
 /**
- * Chain facts for every network Bonded deploys to. See docs/PLAN.md Section 15.
+ * Chain facts for every network Bonded deploys to. See docs/SPECIFICATION.md Section 15.
  *
  * Every fact records where it came from. "docs" means read from official docs or
  * explorers on the date in `checkedOn`; "unverified" means it still needs an on-chain
@@ -92,7 +92,7 @@ export const EVM_CHAINS: Record<EvmChainKey, EvmChainConfig> = {
     stablecoin: { value: { symbol: "USDC", address: null, decimals: 6 }, source: "unverified" },
     erc8004: { value: null, source: "unverified" },
     notes: [
-      "Optional capped mainnet deployment on Day 14 (docs/PLAN.md Section 15).",
+      "Optional capped mainnet deployment on Day 14 (docs/SPECIFICATION.md Section 15).",
       "Chainlink feeds exist for Stock Tokens (total return value) and crypto assets.",
     ],
     checkedOn: "2026-09-27",

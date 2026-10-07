@@ -15,7 +15,7 @@ interface IDisputePayer {
 
 /// @title DisputeModule
 /// @notice Optimistic resolution for grey-area (T4) claims the vault can't prove on its own,
-///         such as a drawdown blamed on agent misbehaviour. See docs/PLAN.md Section 11 and ADR-004.
+///         such as a drawdown blamed on agent misbehaviour. See docs/SPECIFICATION.md Section 11 and ADR-004.
 /// @dev 1. Anyone proposes a claim with evidence (e.g. the AI adjudicator's report hash) and a bond.
 ///      2. If nobody challenges within the challenge period, anyone can finalize: ClaimsEngine
 ///         pays it and the proposer's bond is returned.

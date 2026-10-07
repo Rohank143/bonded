@@ -4,7 +4,7 @@ import { evmAddress } from "./schemas/common.js";
 /**
  * Shape of `contracts/evm/deployments/<chainId>.json`, written by `script/Deploy.s.sol`.
  * The API, keeper and web app read contract addresses through this schema.
- * See docs/PLAN.md Section 15 and ADR-004.
+ * See docs/SPECIFICATION.md Section 15 and ADR-004.
  */
 export const evmDeploymentSchema = z.strictObject({
   chainId: z.number().int().positive(),

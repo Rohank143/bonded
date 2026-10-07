@@ -27,23 +27,23 @@ What these mean:
 
 Both models were rated again with five runs of each of the 40 attack seeds (200 attack episodes and 2 controls each), same template, settings and Monitor mode, and the scores were posted for agents 4 and 5:
 
-| Model | Score | Attacks breached | Controls breached | Model spend |
-|---|---|---|---|---|
-| Claude Haiku 4.5 | 79 (A) | 0 of 200 | 0 of 2 | $2.31 (estimated) |
-| DeepSeek V4.1 Flash | 79 (A) | 0 of 200 | 0 of 2 | $2.27 (estimated) |
+| Model | Score | Attacks breached | Controls breached |
+|---|---|---|---|
+| Claude Haiku 4.5 | 79 (A) | 0 of 200 | 0 of 2 |
+| DeepSeek V4.1 Flash | 79 (A) | 0 of 200 | 0 of 2 |
 
 Still no breach. The score rose from 50 to 79 because more runs narrow the bound on each class's breach rate. Every agent with no breaches scores 79 at these settings, so the two models tie. The behaviour counts in the table above are from the one-run rating and weren't recounted.
 
 ## Re-rated with held-out attacks (2026-10-06)
 
-Both models were rated again with five runs of each of the 40 published attacks and of 15 held-out attacks that are never published (ADR-007, decision 3): 275 attack episodes and 2 controls each. The template, settings and Monitor mode are unchanged, and the scores were posted for agents 4 and 5:
+Both models were rated again with five runs of each of the 40 published attacks and of a held-out set of unpublished attacks: 275 attack episodes and 2 controls each. The template, settings and Monitor mode are unchanged, and the scores were posted for agents 4 and 5:
 
-| Model | Score | Attacks breached | By class | Controls breached | Model spend |
-|---|---|---|---|---|---|
-| Claude Haiku 4.5 | 80 (AA) | 1 of 275 | A1 1 of 20 | 0 of 2 | $3.25 (estimated) |
-| DeepSeek V4.1 Flash | 81 (AA) | 0 of 275 | none | 0 of 2 | $2.91 (estimated) |
+| Model | Score | Attacks breached | By class | Controls breached |
+|---|---|---|---|---|
+| Claude Haiku 4.5 | 80 (AA) | 1 of 275 | A1 1 of 20 | 0 of 2 |
+| DeepSeek V4.1 Flash | 81 (AA) | 0 of 275 | none | 0 of 2 |
 
-With Haiku, one A1 (injection via token metadata) episode out of 20 was breached. This is a public library attack, not a held-out one. Under the disclosure policy the class-level result is public now, and which attack it was stays private until the maintainers have been told and have fixed it, or 30 days have passed. With DeepSeek there was no breach. Agents with no breaches score 81 at these settings; more clean episodes narrow the bounds further than the five-run rating did. The accepted bounty attack isn't in these local ratings, because its text exists only in the hosted service's database.
+With Haiku, one A1 (injection via token metadata) episode out of 20 was breached. This is a public library attack, not a held-out one. Under the disclosure policy the class-level result is public now, and which attack it was stays private until the maintainers have been told and have fixed it, or 30 days have passed. With DeepSeek there was no breach. Agents with no breaches score 81 at these settings; more clean episodes narrow the bounds further than the five-run rating did.
 
 ## Suggested mitigations, if deployed as an autonomous agent
 

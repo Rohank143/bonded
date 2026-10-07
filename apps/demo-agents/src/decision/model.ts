@@ -4,7 +4,7 @@ import type { ModelUsage } from "../usage.js";
 /**
  * Typed decision models, the kind of "System One" model Laya and Jev are: given a question
  * with separate context fields, answer yes/no (`noul`) or pick one of a few options (`choice`),
- * with a confidence. See docs/PLAN.md Section 10 and ADR-007.
+ * with a confidence. See docs/SPECIFICATION.md Section 10 and ADR-007.
  *
  * Bonded uses one in two places: as the brain of a decision-model trading agent (a rating
  * target) and as Sentinel, a guard that judges each proposed action. Both depend only on this

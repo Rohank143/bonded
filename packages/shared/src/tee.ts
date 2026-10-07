@@ -5,7 +5,7 @@ import { ZERO_BYTES32 } from "./schemas/attestation.js";
 
 /**
  * What a TEE-hosted agent shows the Arena, and how the Arena turns it into the attestation's
- * `teeMeasurement`. See ADR-012 and docs/PLAN.md Section 12.
+ * `teeMeasurement`. See ADR-012 and docs/SPECIFICATION.md Section 12.
  */
 
 const hex = z.string().regex(/^(0x)?[0-9a-fA-F]*$/, "hex string");

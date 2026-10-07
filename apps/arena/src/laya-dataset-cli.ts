@@ -17,7 +17,7 @@ import { readSeedRows } from "./synthetic.js";
 
 const USAGE = `Usage: pnpm sentinel:dataset --arena <jsonl> [--arena <jsonl> ...] --synthetic <jsonl> [--out <dir>]
 
-Builds the Laya fine-tuning set (docs/PLAN.md Section 10.3) from real Arena rows (written by
+Builds the Laya fine-tuning set (docs/SPECIFICATION.md Section 10.3) from real Arena rows (written by
 \`arena rate\`) and synthetic rows (written by \`sentinel:synth\`). Writes train.jsonl, test.jsonl
 and manifest.json. Test holds only real rows from the held-out classes plus control episodes.
 

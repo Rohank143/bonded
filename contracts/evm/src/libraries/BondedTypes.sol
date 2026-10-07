@@ -6,13 +6,13 @@ pragma solidity 0.8.28;
 /// @dev Codes and type strings must match packages/shared (TypeScript). The cross-language
 ///      tests in test/BondedTypes.t.sol and packages/shared/test/attestation.test.ts pin them.
 library BondedTypes {
-    /// @notice How a Mandate Vault treats a breach. See docs/PLAN.md Section 6.
+    /// @notice How a Mandate Vault treats a breach. See docs/SPECIFICATION.md Section 6.
     enum MandateMode {
         Monitor, // breach executes, is recorded, agent is frozen
         Enforce // breach is blocked (no effect), the attempt is recorded, agent is frozen
     }
 
-    /// @notice Breach types recorded by a Mandate Vault. See docs/PLAN.md Sections 6.3 and 11.1.
+    /// @notice Breach types recorded by a Mandate Vault. See docs/SPECIFICATION.md Sections 6.3 and 11.1.
     enum BreachType {
         UnauthorizedTarget, // T1: call to a contract or function outside the mandate
         UnauthorizedApproval, // T1: approval to a spender outside the mandate

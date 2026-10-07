@@ -15,7 +15,7 @@ import {MandateVault} from "./MandateVault.sol";
 
 /// @title ClaimsEngine
 /// @notice Pays parametric claims automatically. Anyone can file (the keeper does it within
-///         seconds of a breach). See docs/PLAN.md Section 11 and ADR-003.
+///         seconds of a breach). See docs/SPECIFICATION.md Section 11 and ADR-003.
 /// @dev For each claim:
 ///      1. bring premiums up to date (this may lapse or expire the policy, ending coverage);
 ///      2. check each breach was recorded by the covered vault, unclaimed, not blocked, and

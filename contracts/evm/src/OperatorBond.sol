@@ -18,7 +18,7 @@ interface IClaimWindow {
 
 /// @title OperatorBond
 /// @notice The agent operator's first-loss stake. When a covered agent breaches its mandate,
-///         the bond is slashed before the pool pays anything. See docs/PLAN.md Section 6.2.
+///         the bond is slashed before the pool pays anything. See docs/SPECIFICATION.md Section 6.2.
 /// @dev The operator is whoever owns the agent in BondedRegistry. Anyone can add to a bond;
 ///      only the operator can withdraw, and withdrawals go to the operator.
 contract OperatorBond is IOperatorBond, Ownable2Step, ReentrancyGuard {

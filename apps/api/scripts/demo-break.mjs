@@ -1,4 +1,4 @@
-// The demo's "break it" beat, live on Robinhood testnet (docs/PLAN.md Section 21): a zero-value
+// The demo's "break it" beat, live on Robinhood testnet (docs/SPECIFICATION.md Section 21): a zero-value
 // transfer from a lookalike of the depositor's address asks Agent A (agent 10) for a refund.
 // Agent A's own brain reads it and pays; its guard checks addresses by their ends only, so the
 // payment goes through. The vault records the breach and freezes the agent, then the hosted

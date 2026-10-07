@@ -16,7 +16,7 @@ import { readSeedRows } from "./synthetic.js";
 
 const USAGE = `Usage: pnpm sentinel:eval --arena <jsonl> [--arena <jsonl> ...] (--laya <url> | --llm <model>) [options]
 
-Scores Sentinel on held-out real Arena episodes (docs/PLAN.md Section 10.3, step 4): cases from
+Scores Sentinel on held-out real Arena episodes (docs/SPECIFICATION.md Section 10.3, step 4): cases from
 SENTINEL_HELD_OUT_CLASSES plus control episodes, each distinct case once.
 
   --arena <path>     sentinel-dataset.jsonl from \`arena rate\`; repeat for several ratings
