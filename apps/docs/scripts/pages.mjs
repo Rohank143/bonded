@@ -7,6 +7,11 @@
 export const PAGES = [
   { src: "README.md", slug: "overview/introduction", label: "Introduction", title: "Introduction" },
   {
+    src: "docs/YOUR-AGENTS.md",
+    slug: "overview/your-agents",
+    label: "Bonded and your agents",
+  },
+  {
     src: "docs/SPECIFICATION.md",
     slug: "overview/specification",
     label: "Product specification",
@@ -77,6 +82,7 @@ export const SHORT_NAMES = {
   "docs/SPECIFICATION.md": "the product specification",
   "docs/ARCHITECTURE.md": "the architecture page",
   "docs/AGENTS.md": "the agents page",
+  "docs/YOUR-AGENTS.md": "Bonded and your agents",
   "docs/BOUNTIES-EXPLAINED.md": "the bounty overview",
   "docs/BOUNTIES.md": "the bounty guide",
   "docs/DEVELOPING.md": "the developer guide",
