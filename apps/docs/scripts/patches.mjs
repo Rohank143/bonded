@@ -68,6 +68,13 @@ export const PATCHES = [
     [" Results and limits of the first run: [docs/progress/DAY-08.md](progress/DAY-08.md).", ""],
   ]),
 
+  ...at("docs/ARCHITECTURE.md", [
+    [
+      " Sections 5–14 and the decision records in [decisions/](decisions/); this page is the map.",
+      " Sections 5–14; this page is the map.",
+    ],
+  ]),
+
   ...at("docs/SERVICES.md", [
     ["Setup (founder action items 13 and 14 in `docs/PLAN.md`):", "Setup:"],
   ]),

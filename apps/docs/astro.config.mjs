@@ -136,7 +136,6 @@ export default defineConfig({
           collapsed: true,
           items: [{ autogenerate: { directory: f.slug } }],
         })),
-        { label: "Research", items: pages("research") },
       ],
     }),
   ],

@@ -4,45 +4,75 @@ How Bonded's parts fit together. The design reasoning is in `docs/PLAN.md` Secti
 
 ## The picture
 
+Six small diagrams, each showing one idea. Click any of them to enlarge.
+
+### 1. The loop in one line
+
 ```mermaid
 flowchart LR
-  subgraph Off chain
-    Agent["AI agent<br/>(brain + guard)"]
-    Sentinel["Sentinel<br/>(Laya, advisory)"]
-    Arena["Arena<br/>(sandbox: a copy of the chain)"]
-    API["API<br/>(quotes, ratings, bounties)"]
-    Keeper["Keeper<br/>(claims, premiums)"]
-    Web["Web app"]
-  end
-  subgraph "Robinhood Chain"
-    Vault["MandateVault<br/>(one per agent)"]
-    Registry["BondedRegistry<br/>(signed scores)"]
-    Manager["CoverManager<br/>(policies)"]
-    Claims["ClaimsEngine"]
-    Bond["OperatorBond"]
-    Pool["CoverPool"]
-    Bounty["BountyBoard"]
-  end
-  Other["Registries on Arbitrum,<br/>Ethereum, Solana"]
-
-  Agent -- "every action" --> Vault
-  Sentinel -. "may refuse an action" .-> Agent
-  Arena -- "attacks the agent; reads the vault's breach log" --> Agent
-  Arena -- "signed score" --> Registry
-  Registry -. "same signed score" .-> Other
-  API -- "quote priced from the score" --> Manager
-  Vault -- "breach recorded" --> Keeper
-  Keeper -- "fileClaim" --> Claims
-  Claims -- "1. slash" --> Bond
-  Claims -- "2. pay the rest" --> Pool
-  Bond -- "payout" --> Vault
-  Pool -- "payout" --> Vault
-  Bounty -- "accepted attacks join the library" --> Arena
-  Web --- API
-  Web --- Vault
+  A["1. The Arena<br/>attacks the agent"] --> B["2. The Bonded Score<br/>is signed on chain"]
+  B --> C["3. Cover is priced<br/>from the score"]
+  C --> D["4. A breach pays<br/>the claim automatically"]
 ```
 
-The solid arrows that decide money (vault → keeper → claims → bond and pool) are all on chain and deterministic. Every AI component (the agent, the Arena's attackers, Sentinel) sits off chain and can only cause actions that the vault then judges.
+### 2. How an agent gets rated
+
+```mermaid
+flowchart LR
+  Arena["Arena"] -- "plants attacks" --> Agent["AI agent"]
+  Agent -- "acts through" --> Vault["MandateVault"]
+  Vault -- "breach log" --> Arena
+  Arena -- "signed score" --> Registry["BondedRegistry"]
+  Registry -. "same score" .-> Other["Arbitrum, Ethereum, Solana"]
+```
+
+The Arena judges by the vault's breach log, never by what the agent says.
+
+### 3. Who puts money where
+
+```mermaid
+flowchart LR
+  Depositor["Depositor"] -- "pays a premium" --> Manager["CoverManager"]
+  Operator["Agent operator"] -- "stakes a bond" --> Bond["OperatorBond"]
+  Underwriters["Underwriters"] -- "supply capital" --> Pool["CoverPool"]
+```
+
+The premium is quoted from the agent's score. The bond pays first and the pool pays the rest.
+
+### 4. What happens on a breach
+
+```mermaid
+flowchart TB
+  Vault["MandateVault<br/>records the breach"] --> Keeper["Keeper<br/>files the claim"]
+  Keeper --> Claims["ClaimsEngine"]
+  Claims -- "1. slash" --> Bond["OperatorBond"]
+  Claims -- "2. pay the rest" --> Pool["CoverPool"]
+  Bond --> Back["Money goes back<br/>into the vault"]
+  Pool --> Back
+```
+
+Every step here is on chain and deterministic.
+
+### 5. Where the AI sits
+
+```mermaid
+flowchart LR
+  Sentinel["Sentinel<br/>(AI, advisory)"] -. "may refuse" .-> Agent["AI agent"]
+  Agent -- "every action" --> Vault["MandateVault<br/>(deterministic)"]
+```
+
+Every AI component (the agent, the Arena's attackers, Sentinel) sits off chain and can only cause actions that the vault then judges.
+
+### 6. How the attack library grows
+
+```mermaid
+flowchart LR
+  Hunter["Bounty hunter"] -- "submits an attack" --> Board["BountyBoard"]
+  Board -- "accepted attacks join" --> Library["Attack library"]
+  Library --> Arena["Arena"]
+```
+
+Every accepted attack is run against every rated agent, so the bar rises over time.
 
 The Bonded Score is the output everything else builds on, and the one other systems can read. A vault, a lending market or a trading platform can require a minimum score before it accepts an agent, the same way a lender looks at a credit score. Because every agent faces the same attack library on the same scale, scores compare across agents and models, and that is what lets the score serve as the standard for agent safety.
 
