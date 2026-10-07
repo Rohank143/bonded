@@ -5,12 +5,14 @@ import {
   TeeVerificationError,
   verifyTeeEvidence,
   type QuoteFacts,
+  type ArenaGateway,
   type QuoteVerifier,
+  type Sandbox,
   type VerifiedTee,
 } from "@bonded/arena";
 import { teeReportData, type ArenaAgent } from "@bonded/shared";
 import type { Hex } from "viem";
-import { RatingRefused, TeeBinding, remoteAgentFor } from "../src/remote-agent.js";
+import { RatingRefused, TeeBinding, gatewayAgents, remoteAgentFor } from "../src/remote-agent.js";
 import { agentConfig } from "../src/worker.js";
 
 // Evidence a dstack TEE would return, built from the spec's rules (as in apps/arena/test/tee.test.ts),
@@ -143,7 +145,7 @@ describe("remoteAgentFor", () => {
   it("fails clearly, and for good, when the worker has no gateway", () => {
     let error: unknown;
     try {
-      remoteAgentFor(undefined, request);
+      remoteAgentFor(undefined, request, {} as Sandbox);
     } catch (e) {
       error = e;
     }
@@ -163,9 +165,56 @@ describe("remoteAgentFor", () => {
           return agent;
         },
         { ...request, tee: { evmAddress: KEY, verify } },
+        {} as Sandbox,
       ),
     ).toBe(agent);
     expect(seen).toMatchObject({ ...request, tee: { evmAddress: KEY } });
+  });
+});
+
+describe("gatewayAgents", () => {
+  const request = {
+    agentKey: "46630:12",
+    chainId: 46630,
+    agentId: "12",
+    codeHash: CODE,
+  };
+  const optionsOf = (agent: ArenaAgent) =>
+    (agent as unknown as { options: Record<string, unknown> }).options;
+
+  it("asks for the agent's runner by its key, in its mode", () => {
+    const gateway = {} as ArenaGateway;
+    const agent = gatewayAgents(gateway)({ ...request, mode: "tools" }, {} as Sandbox);
+    expect(agent.name).toBe("remote/agent-12");
+    expect(optionsOf(agent)).toMatchObject({ gateway, runner: "46630:12", mode: "tools" });
+    expect(optionsOf(agent).tee).toBeUndefined();
+  });
+
+  it("sends a TEE agent's evidence to the binding check, and names its key as the vault's agent in chain mode", async () => {
+    const seen: unknown[] = [];
+    const verify = async (evidence: unknown, nonce: Hex) => {
+      seen.push([evidence, nonce]);
+      return {} as VerifiedTee;
+    };
+    const tee = { evmAddress: KEY, verify };
+    const chain = gatewayAgents({} as ArenaGateway)(
+      { ...request, mode: "chain", tee },
+      {} as Sandbox,
+    );
+    expect(optionsOf(chain).agentAddress).toBe(KEY);
+    const onEvidence = (
+      optionsOf(chain).tee as {
+        onEvidence: (evidence: unknown, context: { episodeId: string; nonce: Hex }) => unknown;
+      }
+    ).onEvidence;
+    await onEvidence({ quote: "x" }, { episodeId: "e1", nonce: hash(3) });
+    expect(seen).toEqual([[{ quote: "x" }, hash(3)]]);
+    const tools = gatewayAgents({} as ArenaGateway)(
+      { ...request, mode: "tools", tee },
+      {} as Sandbox,
+    );
+    expect(optionsOf(tools).agentAddress).toBeUndefined();
+    expect(optionsOf(tools).tee).toBeDefined();
   });
 });
 

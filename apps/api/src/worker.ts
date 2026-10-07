@@ -1,6 +1,7 @@
 import { Database, json } from "@bonded/db";
 import {
   Sandbox,
+  freshHeldOut,
   rateAgent,
   attestTeeAgent,
   publicEpisode,
@@ -14,6 +15,8 @@ import {
   attestationMessage,
   bondedRegistryAbi,
   type ArenaAgent,
+  type AttackSpec,
+  type ChatClient,
   type EvmMandateInput,
 } from "@bonded/shared";
 import { z } from "zod";
@@ -23,11 +26,13 @@ import type { ServiceChain } from "@bonded/keeper";
 import { ratingLibrary } from "./library.js";
 import { ratedAgent, sentinelCodeHash, type SentinelService } from "./sentinel.js";
 import {
+  GATEWAY_UNAVAILABLE,
   RatingRefused,
   TeeBinding,
   remoteAgentFor,
   type RemoteAgentFactory,
 } from "./remote-agent.js";
+import { DbHeldOutLedger } from "./runners.js";
 
 const codeHash = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
 /**
@@ -92,6 +97,14 @@ export interface WorkerOptions {
    * `RemoteAgent`). Without it such ratings fail at once with "gateway not available".
    */
   remote?: RemoteAgentFactory;
+  /**
+   * The held-out set made for each remote rating alone (an operator sees every attack its agent
+   * reads, so no payload is used twice; the ledger is in the database). `perClass` variants per
+   * attack class (default 1); drafted by `llm` when given, else deterministic rewrites.
+   */
+  heldOut?: { perClass?: number; llm?: { client: ChatClient; model: string; maxUsd: number } };
+  /** Narrows the attack library a rating runs (tests and local checks only). */
+  selectAttacks?: (attacks: AttackSpec[]) => AttackSpec[];
 }
 
 /**
@@ -205,31 +218,56 @@ async function runLocked(
               composeHash: config.tee.composeHash,
             })
           : undefined;
-      const agent: ArenaAgent =
-        config.kind === "remote"
-          ? remoteAgentFor(options.remote, {
-              agentKey: row.agent_id,
-              chainId: chain.deployment.chainId,
-              agentId: String(row.onchain_id),
-              mode: config.mode,
-              codeHash: config.codeHash as Hex,
-              ...(binding && tee
-                ? {
-                    tee: {
-                      evmAddress: tee.evmAddress,
-                      verify: (evidence: unknown, nonce: Hex) => binding.check(evidence, nonce),
-                    },
-                  }
-                : {}),
-            })
-          : ratedAgent(config.kind, withSentinel ? sentinel : undefined);
+      if (config.kind === "remote" && !options.remote)
+        throw new RatingRefused(GATEWAY_UNAVAILABLE, true);
+      const attacks = options.selectAttacks?.(library.attacks) ?? library.attacks;
       const sandbox = await Sandbox.start({ forkUrl: rpcUrl, forkDeployment: chain.deployment });
       try {
+        const agent: ArenaAgent =
+          config.kind === "remote"
+            ? remoteAgentFor(
+                options.remote,
+                {
+                  agentKey: row.agent_id,
+                  chainId: chain.deployment.chainId,
+                  agentId: String(row.onchain_id),
+                  mode: config.mode,
+                  codeHash: config.codeHash as Hex,
+                  ...(binding && tee
+                    ? {
+                        tee: {
+                          evmAddress: tee.evmAddress,
+                          verify: (evidence: unknown, nonce: Hex) => binding.check(evidence, nonce),
+                        },
+                      }
+                    : {}),
+                },
+                sandbox,
+              )
+            : ratedAgent(config.kind, withSentinel ? sentinel : undefined);
+        // A remote agent's operator sees every attack its agent reads, so each of its ratings
+        // also runs a held-out set made for it alone, from the published seeds.
+        const perClass = config.kind === "remote" ? (options.heldOut?.perClass ?? 1) : 0;
+        const fresh =
+          perClass > 0
+            ? await freshHeldOut({
+                library: attacks.filter((a) => !library.unpublished.has(a.id)),
+                perClass,
+                sandbox,
+                ledger: new DbHeldOutLedger(db),
+                ...(options.heldOut?.llm ? { llm: options.heldOut.llm } : {}),
+              })
+            : undefined;
+        await check();
         const result = await rateAgent(sandbox, {
           agent,
           ...(withSentinel && sentinel ? { sentinel: sentinel.info } : {}),
-          attacks: library.attacks,
-          unpublished: library.unpublished,
+          attacks: [...attacks, ...(fresh?.attacks ?? [])],
+          unpublished: new Set([
+            ...library.unpublished,
+            ...(fresh?.attacks ?? []).map((a) => a.id),
+          ]),
+          ...(fresh ? { heldOut: fresh.heldOut } : {}),
           codeHash: ratedCodeHash(config),
           ...(config.repeats ? { repeats: config.repeats } : {}),
           ...(tee ? { tee } : {}),

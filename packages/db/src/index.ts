@@ -238,9 +238,13 @@ export interface RunnerStatus {
   lastSkip: { cause: string; reason: string; at: Date } | null;
 }
 
-/** SQL: whether agent `a` has a connected runner on a live token right now. */
+/**
+ * SQL: whether agent `a` has a connected runner on a live token right now, in the mode the agent
+ * is registered for (a runner started in another mode can't run its episodes).
+ */
 const RUNNER_CONNECTED = `EXISTS (SELECT 1 FROM runner_presence p JOIN runner_tokens t ON t.id=p.token_id
   WHERE p.agent_id=a.id AND p.connected AND t.revoked_at IS NULL
+    AND p.mode IS NOT DISTINCT FROM a.config->>'mode'
     AND p.last_heartbeat_at > now() - make_interval(secs => ${RUNNER_FRESH_MS / 1000}))`;
 
 /** Raised when a caller tries to queue an agent outside the configured set. */
@@ -289,6 +293,7 @@ export class Database {
       "0013_sentinel_checks.sql",
       "0014_runner_tokens.sql",
       "0015_breach_details.sql",
+      "0016_held_out_payloads.sql",
     ];
     await this.transaction(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(7001)");
@@ -530,21 +535,22 @@ export class Database {
     );
   }
   /**
-   * Record that a runner connected with a token, replacing any earlier connection for the agent.
-   * Returns the connection's id, or undefined, recording nothing, if the token has been revoked
-   * since it was validated.
+   * Record that a runner connected for an agent, on the agent's live token, replacing any earlier
+   * connection. Returns the connection's id, or undefined, recording nothing, if the agent has no
+   * live token (it was revoked since the runner's token was checked).
    */
-  async runnerConnected(tokenId: string, hello: RunnerHello): Promise<string | undefined> {
+  async runnerConnected(agentKey: string, hello: RunnerHello): Promise<string | undefined> {
     const connection = randomUUID();
     const r = await this.pool.query(
       `INSERT INTO runner_presence(agent_id,token_id,connection_id,connected,connected_at,last_heartbeat_at,
                                    disconnected_at,runner_version,mode,tee_url)
-       SELECT agent_id,id,$2,true,now(),now(),NULL,$3,$4,$5 FROM runner_tokens WHERE id=$1 AND revoked_at IS NULL
+       SELECT agent_id,id,$2,true,now(),now(),NULL,$3,$4,$5 FROM runner_tokens
+       WHERE agent_id=$1 AND revoked_at IS NULL
        ON CONFLICT(agent_id) DO UPDATE SET token_id=EXCLUDED.token_id,connection_id=EXCLUDED.connection_id,
          connected=true,connected_at=now(),last_heartbeat_at=now(),disconnected_at=NULL,
          runner_version=EXCLUDED.runner_version,mode=EXCLUDED.mode,tee_url=EXCLUDED.tee_url
        RETURNING agent_id`,
-      [tokenId, connection, hello.runnerVersion, hello.mode, hello.teeUrl ?? null],
+      [agentKey, connection, hello.runnerVersion, hello.mode, hello.teeUrl ?? null],
     );
     return r.rowCount === 1 ? connection : undefined;
   }
@@ -591,8 +597,9 @@ export class Database {
       ),
       this.pool.query(
         `SELECT p.*, (p.connected AND t.revoked_at IS NULL
+                      AND p.mode IS NOT DISTINCT FROM a.config->>'mode'
                       AND p.last_heartbeat_at > now() - make_interval(secs => $2)) AS live
-         FROM runner_presence p JOIN runner_tokens t ON t.id=p.token_id
+         FROM runner_presence p JOIN runner_tokens t ON t.id=p.token_id JOIN agents a ON a.id=p.agent_id
          WHERE p.agent_id=$1 AND t.revoked_at IS NULL`,
         [agentKey, RUNNER_FRESH_MS / 1000],
       ),
@@ -619,6 +626,22 @@ export class Database {
         : null,
       lastSkip: s ? { cause: s.cause, reason: s.reason, at: s.created_at } : null,
     };
+  }
+  /** Which of these held-out payload hashes an earlier rating already used (migration 0016). */
+  async heldOutPayloadsUsed(hashes: readonly string[]): Promise<Set<string>> {
+    if (!hashes.length) return new Set();
+    const r = await this.pool.query("SELECT hash FROM held_out_payloads WHERE hash=ANY($1)", [
+      [...hashes],
+    ]);
+    return new Set(r.rows.map((row) => row.hash as string));
+  }
+  /** Record held-out payload hashes as used, so no later rating uses them. */
+  async recordHeldOutPayloads(hashes: readonly string[]): Promise<void> {
+    if (!hashes.length) return;
+    await this.pool.query(
+      "INSERT INTO held_out_payloads(hash) SELECT unnest($1::text[]) ON CONFLICT DO NOTHING",
+      [[...hashes]],
+    );
   }
   /** Record a rating the live loop chose not to queue, and why. */
   async recordRatingSkip(agentKey: string, cause: string, reason: string, c?: Connection) {

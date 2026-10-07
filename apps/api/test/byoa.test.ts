@@ -19,7 +19,12 @@ import {
 } from "@bonded/shared";
 import { privateKeyToAccount } from "viem/accounts";
 import { createApi } from "../src/index.js";
-import { DbRunnerAuth, RUNNER_TOKEN_PREFIX, runnerTokenHash } from "../src/runners.js";
+import {
+  DbRunnerAuth,
+  RUNNER_TOKEN_PREFIX,
+  RunnerPresenceWriter,
+  runnerTokenHash,
+} from "../src/runners.js";
 import { runTeeChecks, type Attest } from "../src/tee-watch.js";
 import { renewExpiringScores } from "../src/live-loop.js";
 import { workOne } from "../src/worker.js";
@@ -30,6 +35,7 @@ let sandbox: Sandbox;
 let chain: ServiceChain;
 let app: ReturnType<typeof createApi>;
 let auth: DbRunnerAuth;
+let presence: RunnerPresenceWriter;
 let mine: AgentVault;
 let builtIn: AgentVault;
 const owner = privateKeyToAccount(ANVIL_KEYS.operator);
@@ -60,6 +66,7 @@ beforeAll(async () => {
   builtIn = await createAgentVault(sandbox);
   app = api();
   auth = new DbRunnerAuth(pg.db, sandbox.deployment.chainId);
+  presence = new RunnerPresenceWriter(pg.db);
 }, 180_000);
 afterAll(async () => {
   await sandbox?.stop();
@@ -148,11 +155,18 @@ async function rate(v: AgentVault) {
   });
   return send("POST", `/self/agents/${agentId}/rate`, { timestamp, signature });
 }
-/** Connect a runner for `token`, as the gateway would. */
+/** Connect a runner for `token`, as the gateway would: validate, then report its hello. */
 async function connect(token: string, mode: "tools" | "chain" = "tools") {
   const identity = await auth.validate(token);
   if (!identity) throw new Error("token refused");
-  return auth.connected(identity, { runnerVersion: "0.1.0", mode });
+  presence.onEvent({
+    type: "connected",
+    key: identity.key,
+    at: Date.now(),
+    hello: { type: "hello", runnerVersion: "0.1.0", protocol: 1, mode },
+  });
+  await presence.flush();
+  return identity;
 }
 const tick = () => {
   clock += 1000;
@@ -276,7 +290,7 @@ describe("runner tokens", () => {
     expect(again.status).toBe(409);
     expect((await bodyOf(again)).error).toMatch(/already used/);
     // The earlier token was replaced.
-    expect(await auth.validate(first)).toBeUndefined();
+    expect(await auth.validate(first)).toBeNull();
   });
 
   it("validate in the gateway, connect a runner in the registered mode only, and revoke", async () => {
@@ -284,17 +298,24 @@ describe("runner tokens", () => {
     const token = (await bodyOf(await createToken(mine))).token as string;
     const identity = await auth.validate(token);
     expect(identity).toMatchObject({
-      agentKey: key(mine),
+      key: key(mine),
       agentId: mine.agentId.toString(),
       mode: "tools",
     });
-    expect(await auth.validate("bonded_rt_not-a-token")).toBeUndefined();
-    expect(await auth.validate("something-else")).toBeUndefined();
-    expect(await connect(token, "chain")).toBeUndefined();
-    const connection = await connect(token);
-    expect(connection).toBeTruthy();
+    expect(await auth.validate("bonded_rt_not-a-token")).toBeNull();
+    expect(await auth.validate("something-else")).toBeNull();
+    // A runner in the other mode is recorded, but doesn't count as connected, and says why.
+    await connect(token, "chain");
+    expect(await pg.db.runnerIsConnected(key(mine))).toBe(false);
+    expect(await bodyOf(await app.request(`/self/agents/${mine.agentId}/runner`))).toMatchObject({
+      runner: { connected: false, mode: "chain" },
+      problem: expect.stringMatching(/--mode tools/),
+    });
+    await connect(token);
+    expect(await pg.db.runnerIsConnected(key(mine))).toBe(true);
     expect(await bodyOf(await app.request(`/self/agents/${mine.agentId}/runner`))).toMatchObject({
       runner: { connected: true, mode: "tools", runnerVersion: "0.1.0" },
+      problem: null,
     });
 
     tick();
@@ -302,8 +323,9 @@ describe("runner tokens", () => {
     const revoked = await revokeToken(mine);
     expect(revoked.status).toBe(200);
     expect(await bodyOf(revoked)).toEqual({ revoked: 1 });
-    expect(await auth.validate(token)).toBeUndefined();
-    expect(await auth.heartbeat(connection!)).toBe(false);
+    // The gateway checks the token at every heartbeat: it is gone, so the runner is dropped.
+    expect(await auth.validate(token)).toBeNull();
+    expect(await pg.db.runnerIsConnected(key(mine))).toBe(false);
     expect(await bodyOf(await app.request(`/self/agents/${mine.agentId}/runner`))).toMatchObject({
       token: null,
       runner: null,

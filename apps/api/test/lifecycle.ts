@@ -12,6 +12,8 @@ export async function startService(
   role: "api" | "arena-worker",
   databaseUrl: string,
   sandbox: Sandbox,
+  /** arena-worker: also serve the Arena Gateway, on the service's port. */
+  options: { gateway?: boolean } = {},
 ) {
   const directory = await mkdtemp(join(tmpdir(), "bonded-service-"));
   const deployment = join(directory, "deployment.json");
@@ -42,6 +44,7 @@ export async function startService(
         API_TOKEN: "local-startup-test-token-at-least-24-chars",
         AGENTS_FILE: "",
         PORT: String(port),
+        ...(options.gateway ? { GATEWAY_PORT: String(port) } : {}),
       },
     },
   );

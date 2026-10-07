@@ -1,7 +1,10 @@
 import {
+  RemoteAgent,
   TeeVerificationError,
   verifyTeeEvidence,
+  type ArenaGateway,
   type QuoteVerifier,
+  type Sandbox,
   type VerifiedTee,
 } from "@bonded/arena";
 import type { ArenaAgent, RemoteMode } from "@bonded/shared";
@@ -35,8 +38,37 @@ export interface RemoteAgentRequest {
   };
 }
 
-/** Builds the remote agent for one rating (the gateway's `RemoteAgent`). */
-export type RemoteAgentFactory = (request: RemoteAgentRequest) => ArenaAgent;
+/** Builds the remote agent for one rating, in the rating's sandbox (the gateway's `RemoteAgent`). */
+export type RemoteAgentFactory = (request: RemoteAgentRequest, sandbox: Sandbox) => ArenaAgent;
+
+/**
+ * The Arena Gateway's `RemoteAgent` for a rating: the agent's runner is the one its token maps to
+ * (the agent's key); a TEE-bound agent's evidence goes to `verify` at every episode, and in chain
+ * mode its vault names the TEE's attested key, so no key is sent.
+ */
+export function gatewayAgents(
+  gateway: ArenaGateway,
+  options: { episodeTimeoutMs?: number; runnerWaitMs?: number } = {},
+): RemoteAgentFactory {
+  return (request, sandbox) =>
+    new RemoteAgent({
+      gateway,
+      sandbox,
+      runner: request.agentKey,
+      mode: request.mode,
+      name: `remote/agent-${request.agentId}`,
+      ...options,
+      ...(request.tee
+        ? {
+            tee: {
+              onEvidence: (evidence: unknown, { nonce }: { nonce: Hex }) =>
+                request.tee!.verify(evidence, nonce),
+            },
+            ...(request.mode === "chain" ? { agentAddress: request.tee.evmAddress } : {}),
+          }
+        : {}),
+    });
+}
 
 /** A rating that can't run, and whether trying again could help. Its message is stored as is. */
 export class RatingRefused extends Error {
@@ -50,17 +82,18 @@ export class RatingRefused extends Error {
   }
 }
 
+/** Why a worker without the Arena Gateway can't rate a remote agent. */
+export const GATEWAY_UNAVAILABLE =
+  "gateway not available: this rating worker has no Arena Gateway, so it can't rate an agent that runs on its operator's servers";
+
 /** The remote agent for a rating, or a clear refusal when this worker has no gateway. */
 export function remoteAgentFor(
   factory: RemoteAgentFactory | undefined,
   request: RemoteAgentRequest,
+  sandbox: Sandbox,
 ): ArenaAgent {
-  if (!factory)
-    throw new RatingRefused(
-      "gateway not available: this rating worker has no Arena Gateway, so it can't rate an agent that runs on its operator's servers",
-      true,
-    );
-  return factory(request);
+  if (!factory) throw new RatingRefused(GATEWAY_UNAVAILABLE, true);
+  return factory(request, sandbox);
 }
 
 /**

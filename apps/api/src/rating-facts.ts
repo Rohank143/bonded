@@ -10,8 +10,11 @@ export interface RatingFacts {
   binding: BindingLevel;
   /** Per-surface attacked and read counts, for reports that record them; null for older ones. */
   coverage: unknown;
-  /** The held-out set generated for this rating, when one was (remote ratings). */
-  heldOut: { seed: string } | null;
+  /**
+   * The held-out set made for this rating alone (remote ratings): its generation seed, how many
+   * attacks, and whether a model drafted them or they are deterministic rewrites.
+   */
+  heldOut: { seed: string; attacks?: number; source?: string; model?: string } | null;
 }
 
 /**
@@ -22,13 +25,21 @@ export function ratingFacts(teeMeasurement: string | undefined, report: unknown)
   const r = (report && typeof report === "object" ? report : {}) as {
     tee?: { measurement?: string } | null;
     coverage?: unknown;
-    heldOut?: { seed?: unknown } | null;
+    heldOut?: { seed?: unknown; attacks?: unknown; source?: unknown; model?: unknown } | null;
   };
   const measurement = teeMeasurement ?? r.tee?.measurement;
-  const seed = r.heldOut?.seed;
+  const h = r.heldOut;
   return {
     binding: measurement ? bindingOf(measurement) : "declared",
     coverage: r.coverage ?? null,
-    heldOut: typeof seed === "string" || typeof seed === "number" ? { seed: String(seed) } : null,
+    heldOut:
+      h && typeof h.seed === "string"
+        ? {
+            seed: h.seed,
+            ...(typeof h.attacks === "number" ? { attacks: h.attacks } : {}),
+            ...(typeof h.source === "string" ? { source: h.source } : {}),
+            ...(typeof h.model === "string" ? { model: h.model } : {}),
+          }
+        : null,
   };
 }

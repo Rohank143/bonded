@@ -15,6 +15,7 @@ import {
   selfServeMessage,
   toEvmMandateParams,
   type EvmMandate as EvmMandateType,
+  type AgentMode,
   type BindingLevel,
   type SelfServeKind,
   type SelfServeRequest,
@@ -29,7 +30,7 @@ import {
   type Hex,
 } from "viem";
 import { RateLimiter, clientAddress } from "./rate-limit.js";
-import { newRunnerToken, runnerTokenHash } from "./runners.js";
+import { helloProblem, newRunnerToken, runnerTokenHash } from "./runners.js";
 import { agentConfig, teeConfig } from "./worker.js";
 
 /**
@@ -472,7 +473,15 @@ export function selfServeRoutes(
       if (!record?.enabled || (record.config as { kind?: string }).kind !== REMOTE_KIND)
         return c.json({ error: "this agent isn't registered as your own agent" }, 404);
       const status = await db.runnerStatus(rowId(agentId));
-      return c.json({ ...status, gatewayUrl: options.gatewayUrl ?? null });
+      const mode = (record.config as { mode: AgentMode }).mode;
+      return c.json({
+        ...status,
+        // Why a runner that is there doesn't count, e.g. it was started in the other mode.
+        problem: status.runner?.mode
+          ? (helloProblem({ mode }, { mode: status.runner.mode }) ?? null)
+          : null,
+        gatewayUrl: options.gatewayUrl ?? null,
+      });
     }),
   );
 }

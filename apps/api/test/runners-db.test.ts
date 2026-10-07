@@ -23,19 +23,24 @@ beforeAll(async () => {
 }, 120_000);
 afterAll(() => pg?.stop());
 
-describe("migrations 0014 and 0015", () => {
+describe("migrations 0014 to 0016", () => {
   it("apply once, in order, and again is a no-op", async () => {
     const versions = (
       await db.pool.query("SELECT version FROM schema_migrations ORDER BY version")
     ).rows.map((r) => r.version);
-    expect(versions).toEqual(Array.from({ length: 15 }, (_, i) => i + 1));
+    expect(versions).toEqual(Array.from({ length: 16 }, (_, i) => i + 1));
     await db.migrate();
     const tables = (
       await db.pool.query(
-        "SELECT table_name FROM information_schema.tables WHERE table_name IN ('runner_tokens','runner_presence','rating_skips') ORDER BY 1",
+        "SELECT table_name FROM information_schema.tables WHERE table_name IN ('runner_tokens','runner_presence','rating_skips','held_out_payloads') ORDER BY 1",
       )
     ).rows.map((r) => r.table_name);
-    expect(tables).toEqual(["rating_skips", "runner_presence", "runner_tokens"]);
+    expect(tables).toEqual([
+      "held_out_payloads",
+      "rating_skips",
+      "runner_presence",
+      "runner_tokens",
+    ]);
     const columns = (
       await db.pool.query(
         "SELECT column_name FROM information_schema.columns WHERE table_name='handled_events' AND column_name IN ('agent_id','breach_type','blocked','occurred_at') ORDER BY 1",
@@ -92,13 +97,23 @@ describe("runner tokens", () => {
   });
 });
 
+describe("held-out ledger", () => {
+  it("remembers which payload hashes were used, once each", async () => {
+    expect(await db.heldOutPayloadsUsed(["a", "b"])).toEqual(new Set());
+    await db.recordHeldOutPayloads(["a", "c"]);
+    await db.recordHeldOutPayloads(["a"]);
+    expect(await db.heldOutPayloadsUsed(["a", "b", "c"])).toEqual(new Set(["a", "c"]));
+    expect(await db.heldOutPayloadsUsed([])).toEqual(new Set());
+  });
+});
+
 describe("runner presence", () => {
   it("is connected while heartbeats are fresh, and a replaced connection can't touch the new one", async () => {
     const key = await agent(10);
     const t = await db.createRunnerToken(key, { hash: sha("p"), createdBy: "x", signedAt: 1 });
     if (!("id" in t)) throw new Error("no token");
     expect(await db.runnerIsConnected(key)).toBe(false);
-    const first = await db.runnerConnected(t.id, { ...hello, teeUrl: "https://tee.example" });
+    const first = await db.runnerConnected(key, { ...hello, teeUrl: "https://tee.example" });
     expect(first).toBeTruthy();
     expect(await db.runnerIsConnected(key)).toBe(true);
     const status = await db.runnerStatus(key);
@@ -110,7 +125,7 @@ describe("runner presence", () => {
       teeUrl: "https://tee.example",
     });
     // A second connection on the same token replaces the first.
-    const second = await db.runnerConnected(t.id, hello);
+    const second = await db.runnerConnected(key, hello);
     expect(await db.runnerHeartbeat(first!)).toBe(false);
     await db.runnerDisconnected(first!);
     expect(await db.runnerIsConnected(key)).toBe(true);
@@ -132,11 +147,11 @@ describe("runner presence", () => {
     const key = await agent(11);
     const t = await db.createRunnerToken(key, { hash: sha("r"), createdBy: "x", signedAt: 1 });
     if (!("id" in t)) throw new Error("no token");
-    const connection = await db.runnerConnected(t.id, hello);
+    const connection = await db.runnerConnected(key, hello);
     await db.revokeRunnerToken(key, 2);
     expect(await db.runnerHeartbeat(connection!)).toBe(false);
     expect(await db.runnerIsConnected(key)).toBe(false);
-    expect(await db.runnerConnected(t.id, hello)).toBeUndefined();
+    expect(await db.runnerConnected(key, hello)).toBeUndefined();
     expect((await db.runnerStatus(key)).token).toBeNull();
   });
 });
@@ -149,7 +164,7 @@ describe("live loop", () => {
       signedAt,
     });
     if (!("id" in t)) throw new Error("no token");
-    return db.runnerConnected(t.id, hello);
+    return db.runnerConnected(key, hello);
   }
   async function attest(key: string, expiresAt: number) {
     const runId = await db.enqueue(key);

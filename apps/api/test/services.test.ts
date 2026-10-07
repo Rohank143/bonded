@@ -464,6 +464,24 @@ it("starts arena-worker with only the attester signing key", async () => {
     await service.stop();
   }
 });
+it("serves the Arena Gateway from arena-worker when GATEWAY_PORT is set, and stops it on SIGTERM", async () => {
+  const { startService, within } = await import("./lifecycle.js");
+  const service = await startService("arena-worker", pg.url, sandbox, { gateway: true });
+  try {
+    // An episode route with an unknown capability: the gateway answers, and gives nothing away.
+    const response = await fetch(`${service.url}/e/not-a-capability/tools`);
+    expect(response.status).toBe(404);
+    // A runner with no token is refused at the upgrade.
+    const refused = await fetch(`${service.url}/runner/connect`, {
+      headers: { Connection: "Upgrade", Upgrade: "websocket" },
+    }).catch(() => undefined);
+    expect(refused?.status ?? 401).not.toBe(101);
+    service.child.kill("SIGTERM");
+    expect((await within(service.exited, 5000)).code).toBe(0);
+  } finally {
+    await service.stop();
+  }
+});
 it("SIGTERM drains active HTTP SSE responses and exits without client disconnect", async () => {
   const { startService, within } = await import("./lifecycle.js");
   const service = await startService("api", pg.url, sandbox);

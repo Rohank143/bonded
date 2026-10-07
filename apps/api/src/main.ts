@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { serve } from "@hono/node-server";
-import { loadDotEnv } from "@bonded/arena";
+import { ArenaGateway, loadDotEnv } from "@bonded/arena";
 import { Database } from "@bonded/db";
 import { Keeper, SolanaKeeper, connectChain, connectSolana, parseSolanaKey } from "@bonded/keeper";
 import { parseEvmDeployment } from "@bonded/shared";
@@ -13,7 +13,13 @@ import { sentinelFromEnv } from "./sentinel.js";
 import { workBountyOne } from "./bounty-worker.js";
 import { Alerter, LoopHealth, Watchdog, telegramFromEnv } from "./alerts.js";
 import { renewExpiringScores } from "./live-loop.js";
-import { UNDERWRITING_COVER_CAP_USD } from "@bonded/shared";
+import {
+  OpenAICompatibleClient,
+  UNDERWRITING_COVER_CAP_USD,
+  llmConfigFromEnv,
+} from "@bonded/shared";
+import { gatewayAgents } from "./remote-agent.js";
+import { DbRunnerAuth, RunnerPresenceWriter } from "./runners.js";
 
 loadDotEnv();
 const role = process.env.ROLE ?? "api";
@@ -109,6 +115,7 @@ if (role === "migrate") {
   // Production Sentinel (SENTINEL_URL and LAYA_API_KEY), for checks and Sentinel-on ratings.
   const sentinel = sentinelFromEnv();
   let server: ReturnType<typeof serve> | undefined;
+  let gateway: ArenaGateway | undefined;
   let api: ReturnType<typeof createApi> | undefined;
   if (role === "api" || role === "all") {
     api = createApi({
@@ -191,14 +198,58 @@ if (role === "migrate") {
   if (role === "arena-worker" || role === "all") {
     // Separate account/nonce flow from the keeper, even in all mode.
     const worker = connectChain(deployment, rpc, key("ATTESTER_KEY"));
-    // The Arena Gateway (bring your own agent) isn't in this build yet: without it a remote
-    // agent's rating fails at once with "gateway not available". When it is, it starts here with
-    // DbRunnerAuth (runners.ts) as its token validator and presence writer, and its RemoteAgent
-    // goes in `remote`.
+    // The Arena Gateway (bring your own agent, docs/BRING-YOUR-OWN-AGENT.md): runners of agents
+    // their operators run connect to it, and their agents reach their episodes through it. It
+    // starts when GATEWAY_PORT is set; without it a remote agent's rating fails at once with
+    // "gateway not available".
+    const gatewayPort = process.env.GATEWAY_PORT
+      ? z.coerce.number().int().min(1).max(65535).parse(process.env.GATEWAY_PORT)
+      : undefined;
+    if (gatewayPort) {
+      const presence = new RunnerPresenceWriter(db, (line) => console.error(line));
+      const publicUrl = gatewayUrl();
+      gateway = new ArenaGateway({
+        tokens: new DbRunnerAuth(db, deployment.chainId),
+        ...(publicUrl ? { publicUrl } : {}),
+        onRunnerPresence: presence.onEvent,
+        // Agent ids only; never a token or an episode's capability.
+        log: (line) => console.info(`gateway: ${line}`),
+      });
+      await gateway.listen({ port: gatewayPort, host: "0.0.0.0" });
+      console.info(`Arena Gateway listening on port ${gatewayPort}`);
+    }
+    // Held-out variants for remote ratings: drafted by a cheap model when a key is set (it is
+    // advisory text; every variant is still checked against the undefended reference agent),
+    // otherwise deterministic rewrites.
+    const llmKey = process.env.LLM_API_KEY ?? process.env.OPENROUTER_API_KEY;
+    const heldOut = {
+      perClass: z.coerce
+        .number()
+        .int()
+        .min(0)
+        .max(5)
+        .parse(process.env.HELD_OUT_FRESH_PER_CLASS ?? 1),
+      ...(llmKey
+        ? {
+            llm: {
+              client: new OpenAICompatibleClient(llmConfigFromEnv()),
+              model: process.env.HELD_OUT_MODEL ?? "deepseek/deepseek-v4.1-flash",
+              maxUsd: z.coerce
+                .number()
+                .min(0)
+                .parse(process.env.HELD_OUT_MAX_USD ?? 0.25),
+            },
+          }
+        : {}),
+    };
+    const workerOptions = {
+      heldOut,
+      ...(gateway ? { remote: gatewayAgents(gateway) } : {}),
+    };
     tasks.push(
       loop(
         "The rating worker",
-        () => workOne(db, worker, rpc, key("ATTESTER_KEY"), undefined, sentinel, {}),
+        () => workOne(db, worker, rpc, key("ATTESTER_KEY"), undefined, sentinel, workerOptions),
         1000,
       ),
     );
@@ -231,6 +282,7 @@ if (role === "migrate") {
     server.close((error) => (error ? reject(error) : resolve()));
   });
   await api?.close();
+  await gateway?.close();
   // Streams have released their listeners; reap sockets that became idle during that drain.
   if (server && "closeIdleConnections" in server) server.closeIdleConnections();
   await Promise.all([...tasks, httpClosed]);

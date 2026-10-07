@@ -1,3 +1,5 @@
+import { AgentMode } from "./runner.js";
+
 /**
  * Self-serve requests (docs/SPECIFICATION.md, Day 14 workstream 7): the messages an agent's owner signs
  * in their wallet (EIP-191 personal_sign) so the API can act for them without an operator token.
@@ -24,12 +26,12 @@ export const REMOTE_KIND = "remote";
 export type SelfServeAgentKind = SelfServeKind | typeof REMOTE_KIND;
 
 /**
- * How the operator's agent acts during a rating:
- * - tools: reads and writes are tool calls (MCP or plain HTTP);
- * - chain: reads are tool calls, writes are transactions it signs and sends to its vault.
+ * How the operator's agent acts during a rating: the runner protocol's `AgentMode` (tools: reads
+ * and writes are tool calls over MCP or HTTP; chain: reads are tool calls, writes are transactions
+ * it signs and sends to its vault).
  */
-export const REMOTE_MODES = ["tools", "chain"] as const;
-export type RemoteMode = (typeof REMOTE_MODES)[number];
+export const REMOTE_MODES = AgentMode.options;
+export type RemoteMode = AgentMode;
 
 /** What the operator declares about their agent when registering it. */
 export interface RemoteAgentSpec {
