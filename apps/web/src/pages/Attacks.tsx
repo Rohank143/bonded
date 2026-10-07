@@ -406,11 +406,6 @@ export function Attacks() {
                 <AttackCard key={a.id} a={a} since={since} />
               ))}
             </ul>
-            {since && (
-              <p className="pt-4 text-xs text-muted">
-                Counts cover Arena runs since {day(since)}, the window the Arena keeps.
-              </p>
-            )}
             <Pagination
               page={attacks.data.page}
               pages={attacks.data.pages}
