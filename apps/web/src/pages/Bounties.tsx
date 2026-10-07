@@ -10,6 +10,8 @@ import { short, usd } from "../lib/format";
 import { useSend } from "../components/wallet";
 import { InfoPanel } from "../components/overlay";
 import { CodeEditor } from "../components/code-editor";
+import { SpecBuilder } from "../components/spec-builder";
+import { emptyForm, formToYaml, yamlToForm, type SpecForm } from "../lib/spec-form";
 import {
   Badge,
   Button,
@@ -82,12 +84,13 @@ function Guide() {
     [
       "Write the attack",
       <>
-        Start from the example. Its id must start with the class (<code>A6-...</code>) and use one
-        of the class's surfaces (see Attack classes on this page). The <code>payloadTemplate</code>{" "}
-        is the text planted on that surface: use <code>{"{{attacker}}"}</code> for an address you
-        control, and <code>{"{{amount}}"}</code>, <code>{"{{token}}"}</code>,{" "}
-        <code>{"{{vault}}"}</code>, <code>{"{{depositor}}"}</code> or <code>{"{{lookalike}}"}</code>{" "}
-        where you need them. Don't set a <code>goal</code>: the Arena gives every run its own task.
+        Use the form, or switch to YAML if you prefer, and start from the example. Its id must start
+        with the class (<code>A6-...</code>) and use one of the class's surfaces (see Attack classes
+        on this page). The <code>payloadTemplate</code> is the text planted on that surface: use{" "}
+        <code>{"{{attacker}}"}</code> for an address you control, and <code>{"{{amount}}"}</code>,{" "}
+        <code>{"{{token}}"}</code>, <code>{"{{vault}}"}</code>, <code>{"{{depositor}}"}</code> or{" "}
+        <code>{"{{lookalike}}"}</code> where you need them. Don't set a <code>goal</code>: the Arena
+        gives every run its own task.
       </>,
     ],
     [
@@ -207,6 +210,31 @@ const STAGES = ["Write", "Commit", "Reveal", "Validate"] as const;
 function Submit() {
   const { address } = useAccount();
   const [yaml, setYaml] = useState("");
+  // Form or raw YAML. The YAML is always what's checked, hashed and committed; the form writes it.
+  const [mode, setMode] = useState<"form" | "yaml">("form");
+  const [form, setForm] = useState<SpecForm>(() => emptyForm());
+  const [modeNote, setModeNote] = useState<string | null>(null);
+  const editForm = (f: SpecForm) => {
+    setForm(f);
+    setYaml(formToYaml(f));
+  };
+  const switchTo = (next: "form" | "yaml") => {
+    setModeNote(null);
+    if (next === "yaml") return setMode("yaml");
+    const read = yamlToForm(yaml);
+    if ("error" in read)
+      return setModeNote(
+        `The form can't show this spec: ${read.error}. Keep editing the YAML, or clear it.`,
+      );
+    setForm(read.form);
+    setMode("form");
+  };
+  const reset = (text: string) => {
+    setYaml(text);
+    const read = yamlToForm(text);
+    setForm("form" in read ? read.form : emptyForm());
+    setModeNote(null);
+  };
   const [salt, setSalt] = useState<string>(() => newSalt());
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -330,25 +358,33 @@ function Submit() {
       <div className="p-6">
         <div className="overflow-hidden rounded-2xl border border-line-strong bg-black/40">
           <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-            <span className="flex items-center gap-2 font-mono text-xs text-soft">
-              <svg
-                viewBox="0 0 24 24"
-                className="size-3.5 text-muted"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                aria-hidden
-              >
-                <path d="M7 3h7l5 5v13H7zM14 3v5h5" />
-              </svg>
-              attack.yaml
+            <span
+              className="inline-flex rounded-full border border-line-strong p-0.5 text-xs"
+              role="group"
+              aria-label="Write the attack as a form or as YAML"
+            >
+              {(
+                [
+                  ["form", "Form"],
+                  ["yaml", "YAML"],
+                ] as const
+              ).map(([m, label]) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => switchTo(m)}
+                  aria-pressed={mode === m}
+                  className={`rounded-full px-3 py-1 font-semibold transition ${mode === m ? "bg-white/[0.1] text-ink" : "text-muted hover:text-ink"}`}
+                >
+                  {label}
+                </button>
+              ))}
             </span>
             <span className="flex gap-1">
               {yaml.trim() ? (
                 <button
                   type="button"
-                  onClick={() => setYaml("")}
+                  onClick={() => reset("")}
                   className="rounded-full px-2.5 py-1 text-xs font-semibold text-muted hover:bg-white/[0.06] hover:text-ink"
                 >
                   Clear
@@ -356,7 +392,7 @@ function Submit() {
               ) : (
                 <button
                   type="button"
-                  onClick={() => setYaml(BOUNTY_SPEC_EXAMPLE)}
+                  onClick={() => reset(BOUNTY_SPEC_EXAMPLE)}
                   className="rounded-full px-2.5 py-1 text-xs font-semibold text-accent hover:bg-white/[0.06]"
                 >
                   Insert the example
@@ -364,13 +400,38 @@ function Submit() {
               )}
             </span>
           </div>
-          <CodeEditor
-            value={yaml}
-            onChange={setYaml}
-            label="Attack spec in YAML"
-            placeholder="# Paste or write your attack spec here, or insert the example."
-            invalid={Boolean(check && "error" in check)}
-          />
+          {modeNote && (
+            <p
+              className="border-b border-line bg-breach-soft px-4 py-2.5 text-xs text-breach"
+              role="status"
+            >
+              {modeNote}
+            </p>
+          )}
+          {mode === "form" ? (
+            <SpecBuilder form={form} onChange={editForm} />
+          ) : (
+            <CodeEditor
+              value={yaml}
+              onChange={(text) => {
+                setYaml(text);
+                setModeNote(null);
+              }}
+              label="Attack spec in YAML"
+              placeholder="# Paste or write your attack spec here, or insert the example."
+              invalid={Boolean(check && "error" in check)}
+            />
+          )}
+          {mode === "form" && yaml.trim() && (
+            <details className="border-t border-line">
+              <summary className="cursor-pointer px-4 py-2.5 font-mono text-xs text-muted hover:text-ink">
+                The YAML this makes
+              </summary>
+              <pre className="max-h-72 overflow-auto px-4 pb-4 font-mono text-xs whitespace-pre-wrap text-soft">
+                {yaml}
+              </pre>
+            </details>
+          )}
           <div
             className={`flex items-center gap-2 border-t border-line px-4 py-2.5 font-mono text-xs ${!check ? "text-muted" : "spec" in check ? "text-safe" : "text-breach"}`}
             role="status"

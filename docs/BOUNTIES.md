@@ -9,7 +9,7 @@ Anyone can submit an attack the library misses and be paid from the bounty pool.
 Everything below happens on the web app's Bounties page with a browser wallet. You need no tUSDG and no code, only test ETH for gas.
 
 1. **Get set up.** Add Robinhood Chain testnet (chain id 46630, RPC `https://rpc.testnet.chain.robinhood.com/rpc`) to your wallet and get test ETH from a faucet: [faucet.testnet.chain.robinhood.com](https://faucet.testnet.chain.robinhood.com), [faucets.chain.link/robinhood-testnet](https://faucets.chain.link/robinhood-testnet) or [faucet.quicknode.com/robinhood/testnet](https://faucet.quicknode.com/robinhood/testnet). A submission costs two small transactions.
-2. **Write the attack.** Click "Insert an example spec" and edit it. The fields:
+2. **Write the attack.** Fill in the form, or switch it to **YAML** and write the spec directly; you can switch back and forth without losing anything. "Insert the example" fills in a starting point. The form limits surfaces to the class's, offers the token and price pickers where they apply, and inserts placeholders at the cursor. Either way, the YAML is what's checked, hashed and committed. The fields:
 
    | Field | What to put |
    |---|---|
