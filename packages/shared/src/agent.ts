@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { ToolDefinition } from "./llm.js";
+import type { AttackSurface } from "./schemas/attack.js";
 
 /**
  * The tools an agent under test can use, and the contract between the Arena and any agent.
@@ -96,6 +97,37 @@ export type AgentToolArgs<N extends AgentToolName> = z.infer<(typeof AGENT_TOOLS
 
 export function isAgentToolName(name: string): name is AgentToolName {
   return Object.hasOwn(AGENT_TOOLS, name);
+}
+
+/**
+ * The attack surface each read tool shows the agent (where the Arena's world plants attacks).
+ * `get_portfolio` reads only the chain, so no attack can reach it and it has no surface. Used to
+ * log which surfaces an agent actually read, for a rating's coverage.
+ */
+export const TOOL_SURFACE = {
+  read_inbox: "dm",
+  read_news: "news",
+  read_social: "social",
+  get_prices: "price_feed",
+  get_token_info: "token_metadata",
+  get_recent_transfers: "tx_history",
+  get_market_report: "tool_output",
+  read_market_alerts: "market",
+  read_counterparty_messages: "counterparty",
+} as const satisfies Partial<Record<AgentToolName, AttackSurface>>;
+
+/** The surface a tool reads, or undefined for writes, chain-only reads and unknown names. */
+export function toolSurface(name: string): AttackSurface | undefined {
+  return Object.hasOwn(TOOL_SURFACE, name)
+    ? TOOL_SURFACE[name as keyof typeof TOOL_SURFACE]
+    : undefined;
+}
+
+/** The read tool that shows the agent a surface. */
+export function surfaceTool(surface: AttackSurface): AgentToolName {
+  const entry = Object.entries(TOOL_SURFACE).find(([, s]) => s === surface);
+  if (!entry) throw new Error(`no tool reads the ${surface} surface`);
+  return entry[0] as AgentToolName;
 }
 
 /** JSON Schema for a tool's input, e.g. for an LLM's tool definitions. */

@@ -59,8 +59,9 @@ export class ArenaToolbox implements AgentToolbox {
   constructor(
     private readonly sandbox: ChainHandle,
     private readonly world: World,
-    private readonly vault: `0x${string}`,
-    private readonly maxSteps: number,
+    /** The episode's vault: every write goes through its `execute`. */
+    readonly vault: `0x${string}`,
+    readonly maxSteps: number,
   ) {}
 
   /** Aborted when the episode ends; agents should stop working when it fires. */
@@ -74,6 +75,41 @@ export class ArenaToolbox implements AgentToolbox {
   }
 
   call(name: string, args: unknown): Promise<ToolResult> {
+    return this.step(name, args, (entry) => this.dispatch(entry));
+  }
+
+  /**
+   * Records a transaction the agent signed and sent itself, as a step named `execute`: in the
+   * gateway's chain mode (gateway/rpc.ts) writes reach the vault that way instead of through a
+   * write tool. It counts toward the step cap, runs one at a time with other writes, `close()`
+   * waits for it, and the breaches it caused are read back, exactly as for a write tool.
+   *
+   * `send` submits the transaction and returns its hash; it isn't called once the step cap is
+   * reached or the episode is over.
+   */
+  recordTransaction(args: unknown, send: () => Promise<`0x${string}`>): Promise<ToolResult> {
+    return this.step("execute", args, async (entry) => {
+      if (entry.step > this.maxSteps) {
+        return { ok: false, error: `step limit of ${this.maxSteps} reached` };
+      }
+      try {
+        const output = await this.serialise(async () => {
+          const hash = await this.throughVault(entry, send);
+          return { hash };
+        });
+        return { ok: true, output };
+      } catch (error) {
+        return { ok: false, error: describeError(error) };
+      }
+    });
+  }
+
+  /** Gives the call its trace step when it starts, and tracks it until it settles. */
+  private step(
+    name: string,
+    args: unknown,
+    run: (entry: TraceStep) => Promise<ToolResult>,
+  ): Promise<ToolResult> {
     if (this.abort.signal.aborted)
       return Promise.resolve({ ok: false, error: "the episode is over" });
     const entry: TraceStep = {
@@ -85,7 +121,7 @@ export class ArenaToolbox implements AgentToolbox {
       breaches: [],
     };
     this.trace.push(entry);
-    const done = this.dispatch(entry).then((result) => (entry.result = result));
+    const done = run(entry).then((result) => (entry.result = result));
     this.inFlight.add(done);
     void done.finally(() => this.inFlight.delete(done));
     return done;
@@ -205,16 +241,35 @@ export class ArenaToolbox implements AgentToolbox {
     args: readonly unknown[],
   ): Promise<void> {
     const data = encodeFunctionData({ abi, functionName, args });
-    const before = await this.breachCount();
-    const { hash } = await send(this.sandbox, "agent", {
-      address: this.vault,
-      abi: mandateVaultAbi,
-      functionName: "execute",
-      args: [target, data],
+    await this.throughVault(entry, async () => {
+      const { hash } = await send(this.sandbox, "agent", {
+        address: this.vault,
+        abi: mandateVaultAbi,
+        functionName: "execute",
+        args: [target, data],
+      });
+      return hash;
     });
+  }
+
+  /**
+   * Sends one transaction to the vault and reads back the breaches it caused, failing the step
+   * when the vault blocked or skipped the action (see `execute`) or the transaction reverted.
+   */
+  private async throughVault(
+    entry: TraceStep,
+    sendTx: () => Promise<`0x${string}`>,
+  ): Promise<`0x${string}`> {
+    const before = await this.breachCount();
+    const hash = await sendTx();
     entry.txHashes.push(hash);
+    const receipt = await this.sandbox.publicClient.waitForTransactionReceipt({
+      hash,
+      timeout: 30_000,
+    });
     const after = await this.breachCount();
     for (let id = before; id < after; id++) entry.breaches.push(Number(id));
+    if (receipt.status !== "success") throw new Error(`the transaction reverted (${hash})`);
     for (let id = before; id < after; id++) {
       const breach = await this.sandbox.publicClient.readContract({
         address: this.vault,
@@ -230,6 +285,7 @@ export class ArenaToolbox implements AgentToolbox {
         );
       }
     }
+    return hash;
   }
 
   private breachCount(): Promise<bigint> {

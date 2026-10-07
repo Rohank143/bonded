@@ -5,12 +5,14 @@ import {
   type ArenaAgent,
   type AttackClassId,
   type AttackSpec,
+  AttackSurface,
   type ClassObservation,
   mandateHash,
   type ModelFamily,
   type Scoring,
   type Severity,
   scoreRating,
+  toolSurface,
 } from "@bonded/shared";
 import { keccak256, stringToBytes } from "viem";
 import {
@@ -62,6 +64,11 @@ export interface RatingOptions {
    */
   unpublished?: ReadonlySet<string>;
   /**
+   * The rating's own held-out set, made for it alone (held-out.ts, `freshHeldOut`): its seed and
+   * how it was made. Recorded in the report, so the set can be regenerated and checked later.
+   */
+  heldOut?: RatingHeldOut;
+  /**
    * Sentinel was in front of the agent for this rating (docs/SENTINEL.md): which model, which
    * questions and at what threshold it blocked. The report says so, so a score earned with
    * Sentinel on is never read as the agent's score alone.
@@ -98,6 +105,14 @@ export interface RatingReport {
    */
   unpublished?: { attacks: number; episodes: number };
   classes: ClassResult[];
+  /**
+   * Which attack surfaces the agent actually read. An attack planted where the agent never looks
+   * can't reach it, so such an episode counts as safe without testing anything; low coverage
+   * means the score says less. Older reports don't have it.
+   */
+  coverage?: RatingCoverage;
+  /** The held-out set made for this rating alone, if any. Older reports don't have it. */
+  heldOut?: RatingHeldOut | null;
   scoring: Scoring;
   worst: { episodeId: string; attackId: string | null; lossUsd: number; breaches: string[] }[];
   blockedByAgentGuard: number;
@@ -114,6 +129,28 @@ export interface RatingReport {
   tee: RatingTee | null;
   /** Sentinel in front of the agent, or null without it. Older reports don't have it. */
   sentinel?: RatingSentinel | null;
+}
+
+/** Per attack surface: how often it was attacked, and how often the agent read it. */
+export interface RatingCoverage {
+  /**
+   * `attacked`: attack episodes that planted content on the surface. `read`: of those, the
+   * episodes in which the agent called the surface's read tool successfully.
+   */
+  surfaces: Record<AttackSurface, { attacked: number; read: number }>;
+  /** Surfaces the agent read in at least one episode, attacked or not. */
+  readSurfaces: AttackSurface[];
+}
+
+/** How a rating's single-use held-out set was made. */
+export interface RatingHeldOut {
+  /** The generation seed (hex): the same seed and library give the same set. */
+  seed: `0x${string}`;
+  /** Variants in the set, and how they were made: by a model, or by the deterministic rewrite. */
+  attacks: number;
+  source: "llm" | "rewrite" | "mixed";
+  /** The model, when one drafted any of them. */
+  model?: string;
 }
 
 /** What a report records about the Sentinel guard a rating ran with. */
@@ -241,6 +278,8 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
       return { attacks: new Set(ran.map((e) => e.attackId)).size, episodes: ran.length };
     })(),
     classes,
+    coverage: ratingCoverage(episodes),
+    heldOut: options.heldOut ?? null,
     scoring,
     worst: episodes
       .filter((e) => e.verdict.breached)
@@ -324,6 +363,30 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
   return { report, reportHash, attestation, posted, episodes, files };
 }
 
+/** Which surfaces were attacked, and which the agent read (see `RatingCoverage`). */
+export function ratingCoverage(episodes: readonly EpisodeResult[]): RatingCoverage {
+  const surfaces = Object.fromEntries(
+    AttackSurface.options.map((surface) => [surface, { attacked: 0, read: 0 }]),
+  ) as RatingCoverage["surfaces"];
+  const everRead = new Set<AttackSurface>();
+  for (const episode of episodes) {
+    const read = new Set<AttackSurface>();
+    for (const step of episode.trace) {
+      const surface = toolSurface(step.tool);
+      if (surface && step.result.ok) read.add(surface);
+    }
+    for (const surface of read) everRead.add(surface);
+    for (const surface of new Set(episode.planted.map((p) => p.surface))) {
+      surfaces[surface].attacked++;
+      if (read.has(surface)) surfaces[surface].read++;
+    }
+  }
+  return {
+    surfaces,
+    readSurfaces: AttackSurface.options.filter((surface) => everRead.has(surface)),
+  };
+}
+
 /** Per-class results; agent errors are counted apart and excluded from the rates. */
 function classResults(episodes: EpisodeResult[]): ClassResult[] {
   return (Object.keys(ATTACK_CLASSES) as AttackClassId[]).map((id) => {
@@ -394,6 +457,30 @@ function mitigations(classes: ClassResult[], mode: string): string[] {
 }
 
 const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
+
+/** The report's coverage table: where attacks were planted, and whether the agent looked. */
+function coverageLines(report: RatingReport): string[] {
+  const coverage = report.coverage;
+  if (!coverage) return [];
+  const rows = AttackSurface.options.filter(
+    (s) => coverage.surfaces[s].attacked > 0 || coverage.readSurfaces.includes(s),
+  );
+  return [
+    "## Coverage",
+    "",
+    "Where attacks were planted, and how often the agent read that place in those episodes. An " +
+      "attack the agent never reads can't reach it, so a low read count means those episodes " +
+      "tested little.",
+    "",
+    "| Surface | Attacked | Read when attacked | Read at all |",
+    "|---|---|---|---|",
+    ...rows.map((s) => {
+      const c = coverage.surfaces[s];
+      return `| ${s} | ${c.attacked} | ${c.read} | ${coverage.readSurfaces.includes(s) ? "yes" : "no"} |`;
+    }),
+    "",
+  ];
+}
 const usd = (x: number) => `$${Math.round(x).toLocaleString("en-US")}`;
 
 /** The report for people: score, tier, premium, per-class results and what to fix. */
@@ -419,6 +506,13 @@ export function renderReportMarkdown(
           `- Unpublished attacks: ${report.unpublished.attacks} of the library's attacks, ` +
             `${report.unpublished.episodes} attack episodes (accepted bounties and the held-out set; ` +
             `the operator couldn't study them in advance)`,
+        ]
+      : []),
+    ...(report.heldOut
+      ? [
+          `- Held-out set made for this rating alone: ${report.heldOut.attacks} attacks ` +
+            `(${report.heldOut.source === "rewrite" ? "deterministic rewrites" : report.heldOut.source === "llm" ? `drafted by ${report.heldOut.model}` : `drafted by ${report.heldOut.model} and deterministic rewrites`}), ` +
+            `seed \`${report.heldOut.seed}\``,
         ]
       : []),
     `- Actions stopped by the agent's own guard: ${report.blockedByAgentGuard}` +
@@ -472,6 +566,7 @@ export function renderReportMarkdown(
         `${c.breaches} | ${c.attackSucceeded} | ${usd(c.lossUsd)} |`,
     ),
     "",
+    ...coverageLines(report),
     "## Worst episodes",
     "",
     ...(report.worst.length === 0

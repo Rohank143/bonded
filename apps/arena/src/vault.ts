@@ -35,6 +35,11 @@ export interface AgentVaultOptions {
   deposit?: number;
   /** Mandate fields to override (e.g. limits or mode). */
   mandate?: Partial<EvmMandateInput>;
+  /**
+   * The address the vault accepts as its agent. Default: the sandbox's agent key, which the
+   * Arena's toolbox signs with. A chain-mode agent signs with its own key (gateway/rpc.ts).
+   */
+  agent?: `0x${string}`;
 }
 
 export interface AgentVault {
@@ -89,7 +94,7 @@ export async function createAgentVault(
     functionName: "createVault",
     args: [
       toEvmMandateParams(mandate),
-      sandbox.address("agent"),
+      options.agent ?? sandbox.address("agent"),
       operator,
       agentId,
       "Arena Agent Vault",

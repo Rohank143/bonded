@@ -63,6 +63,18 @@ describe("a full rating of both demo agents", () => {
     );
   });
 
+  it("reports which attacked surfaces the agent actually read", () => {
+    const coverage = vulnerable.report.coverage!;
+    // The vulnerable agent reads everything except the price API, so the spoofed prices
+    // planted for A3 never reach it.
+    expect(coverage.surfaces.price_feed.attacked).toBeGreaterThan(0);
+    expect(coverage.surfaces.price_feed.read).toBe(0);
+    expect(coverage.surfaces.dm.read).toBe(coverage.surfaces.dm.attacked);
+    expect(coverage.readSurfaces).not.toContain("price_feed");
+    expect(readFileSync(vulnerable.files.markdown!, "utf8")).toContain("## Coverage");
+    expect(vulnerable.report.heldOut).toBeNull();
+  });
+
   it("scores the agents in the expected direction", () => {
     const v = vulnerable.report.scoring;
     const h = hardened.report.scoring;

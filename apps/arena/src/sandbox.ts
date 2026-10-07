@@ -149,12 +149,20 @@ export class Sandbox {
    */
   async impersonate(address: `0x${string}`): Promise<WalletClient<Transport, Chain, Account>> {
     await this.anvil_("anvil_impersonateAccount", [address]);
-    await this.anvil_("anvil_setBalance", [address, `0x${(10n ** 18n).toString(16)}`]);
+    await this.fund(address);
     return createWalletClient({
       account: address,
       chain: this.chain,
       transport: http(this.rpcUrl),
     });
+  }
+
+  /**
+   * Gives an address test ETH for gas (anvil's balance cheat, local to the sandbox). Used for a
+   * chain-mode agent's own key, which signs its transactions itself.
+   */
+  async fund(address: `0x${string}`, wei: bigint = 10n ** 18n): Promise<void> {
+    await this.anvil_("anvil_setBalance", [address, `0x${wei.toString(16)}`]);
   }
 
   private anvil_(method: string, params: unknown[]): Promise<unknown> {
