@@ -166,6 +166,13 @@ export function Agent() {
             </Badge>
           ))}
         {report && <Badge>{report.mandateMode} mode</Badge>}
+        {report?.sentinel && (
+          <Link to="/sentinel">
+            <Badge tone="brand" dot>
+              Rated with Sentinel on
+            </Badge>
+          </Link>
+        )}
       </div>
 
       {rated && a ? (
@@ -301,6 +308,7 @@ export function Agent() {
 
         <div className="flex min-w-0 flex-[1_1_320px] flex-col gap-4">
           {vault && <VaultSummary vault={vault} />}
+          <SentinelChecks agentId={id} ratedWith={Boolean(report?.sentinel)} />
           <Card title="Proof on chain">
             <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2.5 text-sm [&_dd]:text-right [&_dt]:text-muted">
               <dt>Owner</dt>
@@ -474,5 +482,48 @@ function ReportDownloads({ ctx }: { ctx: ReportContext }) {
       </button>
       {error && <p className="text-center text-xs text-breach">{error}</p>}
     </div>
+  );
+}
+
+/**
+ * The agent's Sentinel checks in the last 7 days (POST /sentinel/check). Shown when it has any,
+ * or when it was rated with Sentinel on: then it should be asking before each trade.
+ */
+function SentinelChecks({ agentId, ratedWith }: { agentId: string; ratedWith: boolean }) {
+  const checks = useQuery({
+    queryKey: ["sentinel-agent", agentId],
+    queryFn: () => api.sentinelAgent(agentId),
+    refetchInterval: 60_000,
+  });
+  const week = checks.data?.last7d;
+  if (!week || (week.checks === 0 && !ratedWith)) return null;
+  return (
+    <Card title="Sentinel checks">
+      {week.checks === 0 ? (
+        <p className="text-sm text-muted">
+          Rated with Sentinel on, but it hasn't asked Sentinel about a trade in the last 7 days.{" "}
+          <Link to="/sentinel" className={linkClass}>
+            How to ask
+          </Link>
+        </p>
+      ) : (
+        <>
+          <p className="text-sm text-muted">
+            In the last 7 days this agent asked Sentinel about{" "}
+            <span className="text-ink tabular-nums">{week.checks.toLocaleString()}</span>{" "}
+            {week.checks === 1 ? "trade" : "trades"}, and{" "}
+            <span className={week.blocked ? "text-breach tabular-nums" : "text-ink tabular-nums"}>
+              {week.blocked.toLocaleString()}
+            </span>{" "}
+            {week.blocked === 1 ? "was" : "were"} flagged as manipulated.
+          </p>
+          {checks.data?.lastCheckAt && (
+            <p className="mt-2 text-xs text-muted">
+              Last check {when(Math.floor(Date.parse(checks.data.lastCheckAt) / 1000))}.
+            </p>
+          )}
+        </>
+      )}
+    </Card>
   );
 }

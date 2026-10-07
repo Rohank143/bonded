@@ -71,6 +71,11 @@ export function OwnerTools({ agentId, owner }: { agentId: string; owner?: string
             <span className="font-medium">
               {SELF_SERVE_KIND_LABELS[record.kind as SelfServeKind] ?? record.kind}
             </span>
+            {record.sentinel && (
+              <>
+                , with <span className="font-medium">Sentinel</span> in front of it
+              </>
+            )}
             , against this agent's vault and mandate. A rating runs every attack in the library five
             times in a sandbox, then posts the signed score on chain. It takes a few minutes.
           </p>
@@ -119,8 +124,9 @@ export function OwnerTools({ agentId, owner }: { agentId: string; owner?: string
         <div className="flex flex-col gap-3 text-sm">
           <p>
             This agent isn't registered for ratings yet. Register it as{" "}
-            <span className="font-medium">{SELF_SERVE_KIND_LABELS[remembered.kind]}</span>, with the
-            mandate of vault <span className="font-mono">{remembered.vault}</span>.
+            <span className="font-medium">{SELF_SERVE_KIND_LABELS[remembered.kind]}</span>
+            {remembered.sentinel ? ", with Sentinel in front of it" : ""}, with the mandate of vault{" "}
+            <span className="font-mono">{remembered.vault}</span>.
           </p>
           <div>
             <Button disabled={busy} onClick={register}>

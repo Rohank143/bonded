@@ -20,6 +20,7 @@ export async function registerForRatings(sign: Signer, agentId: string, agent: O
       vault: agent.vault,
       kind: agent.kind,
       mandateHash: mandateHash(agent.mandate),
+      ...(agent.sentinel ? { sentinel: true } : {}),
       timestamp,
     }),
   });
@@ -28,6 +29,7 @@ export async function registerForRatings(sign: Signer, agentId: string, agent: O
     vault: agent.vault,
     kind: agent.kind,
     mandate: agent.mandate,
+    ...(agent.sentinel ? { sentinel: true } : {}),
     timestamp,
     signature,
   });

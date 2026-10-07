@@ -63,6 +63,8 @@ export interface OnboardedAgent {
   vault: string;
   kind: SelfServeKind;
   mandate: EvmMandate;
+  /** Rate it with Sentinel in front (docs/SENTINEL.md). */
+  sentinel?: boolean;
 }
 
 const key = (chainId: number, agentId: string) => `bonded:onboarded:${chainId}:${agentId}`;
@@ -172,6 +174,8 @@ export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
  */
 export interface OnboardingProgress {
   kind: SelfServeKind;
+  /** Rate it with Sentinel in front. */
+  sentinel?: boolean;
   form: MandateForm;
   agentKey: string;
   bond: string;

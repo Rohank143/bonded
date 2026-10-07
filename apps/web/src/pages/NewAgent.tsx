@@ -65,6 +65,7 @@ export function NewAgent() {
   const { writeContractAsync } = useWriteContract();
   const { signMessageAsync } = useSignMessage();
   const [kind, setKind] = useState<SelfServeKind>("partial");
+  const [sentinel, setSentinel] = useState(false);
   const [mode, setMode] = useState<"monitor" | "enforce">("monitor");
   const [tokens, setTokens] = useState<MandateToken[]>([...MANDATE_TOKENS]);
   const [refund, setRefund] = useState("");
@@ -193,6 +194,7 @@ export function NewAgent() {
           vault,
           kind: progress.kind,
           mandate,
+          ...(progress.sentinel ? { sentinel: true } : {}),
         });
         finish("vault");
       }
@@ -249,6 +251,7 @@ export function NewAgent() {
           vault,
           kind: progress.kind,
           mandate,
+          ...(progress.sentinel ? { sentinel: true } : {}),
         });
         finish("ratings");
       }
@@ -263,6 +266,7 @@ export function NewAgent() {
   const start = () =>
     run({
       kind,
+      ...(sentinel ? { sentinel: true } : {}),
       form,
       agentKey: key,
       bond: bond.trim() || "0",
@@ -312,6 +316,22 @@ export function NewAgent() {
                   title={SELF_SERVE_KIND_LABELS[k]}
                 />
               ))}
+            </div>
+            <div className="mt-4">
+              <Choice
+                type="checkbox"
+                checked={sentinel}
+                onChange={() => setSentinel((v) => !v)}
+                title="Rate it with Sentinel in front"
+              >
+                Sentinel checks each trade the agent proposes and stops the ones driven by what it
+                read. If it breaches less, it scores higher and cover costs less. Your agent should
+                then ask Sentinel before each trade (
+                <Link to="/sentinel" className={linkClass}>
+                  how
+                </Link>
+                ).
+              </Choice>
             </div>
           </StepCard>
 

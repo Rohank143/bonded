@@ -25,6 +25,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+/** GET /sentinel: whether Sentinel runs on this API, and checks in the last day. */
+export interface SentinelStatus {
+  available: boolean;
+  model?: string;
+  questions?: string;
+  blockThreshold?: number;
+  last24h: { checks: number; blocked: number };
+}
+
+/** GET /sentinel/agents/:id: one agent's Sentinel checks in the last 7 days. */
+export interface SentinelAgentChecks {
+  last7d: { checks: number; blocked: number };
+  lastCheckAt: string | null;
+}
+
 /** One numbered page of a list: `page` is 1-based, `pages` is at least 1. */
 export interface Paged<T> {
   items: T[];
@@ -220,6 +235,8 @@ export interface Report {
     solanaPublicKey: string;
     tcbStatus: string;
   } | null;
+  /** Sentinel was in front of the agent for this rating; older reports don't have it. */
+  sentinel?: { model: string; questions: string; blockThreshold: number } | null;
   classes: {
     class: string;
     name: string;
@@ -277,6 +294,8 @@ export type SelfAgentRecord =
       registered: true;
       source: "operator" | "user";
       kind: string;
+      /** Rated with Sentinel in front of it. */
+      sentinel?: boolean;
       owner: string | null;
       lastRatingAt: string | null;
       nextRatingAt: string | null;
@@ -351,6 +370,10 @@ export const api = {
   /** Arena episodes, newest first, as numbered pages of a snapshot, filtered in the database. */
   episodes: ({ attackClass, attackId, ...q }: EpisodesQuery = {}) =>
     request<EpisodesPage>(`/episodes${query({ ...q, class: attackClass, attack: attackId })}`),
+  /** Whether Sentinel runs on this API, its threshold, and checks in the last day. */
+  sentinel: () => request<SentinelStatus>("/sentinel"),
+  /** One agent's Sentinel checks in the last 7 days. */
+  sentinelAgent: (agentId: string) => request<SentinelAgentChecks>(`/sentinel/agents/${agentId}`),
   /** What ratings run, as counts: published, accepted bounties and the held-out set. */
   library: () => request<LibraryCounts>("/library"),
   /** The published attacks, a numbered page, each with its record in the Arena. */

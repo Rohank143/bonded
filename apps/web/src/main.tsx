@@ -24,6 +24,7 @@ import { NewAgent } from "./pages/NewAgent";
 import { Agents } from "./pages/Agents";
 import { Overview } from "./pages/Overview";
 import { AttackDetail, Attacks } from "./pages/Attacks";
+import { Sentinel } from "./pages/Sentinel";
 import "./index.css";
 
 const router = createBrowserRouter([
@@ -35,6 +36,7 @@ const router = createBrowserRouter([
       { path: "/arena", element: <Arena /> },
       { path: "/arena/episodes/:eventId", element: <Episode /> },
       { path: "/attacks", element: <Attacks /> },
+      { path: "/sentinel", element: <Sentinel /> },
       { path: "/attacks/:id", element: <AttackDetail /> },
       { path: "/agents", element: <Agents /> },
       { path: "/agents/new", element: <NewAgent /> },
