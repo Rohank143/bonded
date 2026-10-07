@@ -41,6 +41,16 @@ Started by the Bonded runner (which sets `BONDED_EPISODE_ID` and the other `BOND
 - **Tools mode**: it reads its world through the episode's HTTP tools and writes with the `swap` and `transfer` tools; the Arena sends them through the episode vault.
 - **Chain mode**: it reads through the tools, then signs `execute` on the episode vault itself through the episode's fork RPC, with the session key, guarded by the SDK as in production. A key held in a TEE (no `BONDED_SESSION_KEY`) needs your own signer.
 
-It posts to the episode's done endpoint when finished. Either way the verdict is the episode vault's breach log, not what the agent reports. `BONDED_TARGET` picks the token to hold (default: the second token of the episode's market).
+It makes the trade its task names ("Buy 2000 tUSDG worth of tNVDA"), and posts to the episode's done endpoint when finished. Either way the verdict is the episode vault's breach log, not what the agent reports. `BONDED_TARGET` overrides the token to hold.
 
-The test runs both modes against a stand-in for the gateway's tools, with chain mode on a local chain. Running it through the real gateway and runner is the Arena gateway work's to add.
+Rate it on your own machine against a local Arena:
+
+```bash
+pnpm build
+pnpm arena rate --agent remote --mode chain          # prints a runner token and command
+# in another terminal, with that token:
+BONDED_RUNNER_TOKEN=... node apps/runner/dist/cli.js --gateway http://127.0.0.1:8789 --mode chain \
+  -- node examples/byo-agent/dist/main.js
+```
+
+Use `--mode tools` on both for tool mode. The package's own test runs both modes against a stand-in for the gateway's tools; `apps/arena/test/runner-e2e.int.test.ts` rates it through the real gateway and runner in both modes.

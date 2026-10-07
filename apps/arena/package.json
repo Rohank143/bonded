@@ -49,6 +49,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@bonded/example-byo-agent": "workspace:*",
     "@bonded/runner": "workspace:*",
     "@types/ws": "8.18.1"
   }
