@@ -1,10 +1,11 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ATTACK_CLASSES } from "@bonded/shared";
 import { api } from "../lib/api";
 import type { EpisodeCard } from "../lib/events";
 import { rulingView } from "../lib/ruling";
+import { ago, at } from "../lib/format";
 import { RulingBadge, RulingDot, VerdictCard } from "../components/ruling";
 import { isPrivate, newestEpisode, useEpisodeSnapshot, type EpisodeFilters } from "../lib/episodes";
 import { useListParams } from "../lib/pages";
@@ -28,7 +29,18 @@ import { Pagination } from "../components/pagination";
 
 const CLASS_NAMES = ATTACK_CLASSES as Record<string, { name: string }>;
 
+/** The current time, refreshed every `ms`, so "3m ago" stays true while the page is open. */
+function useNow(ms: number) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), ms);
+    return () => clearInterval(t);
+  }, [ms]);
+  return now;
+}
+
 export function Arena() {
+  const now = useNow(30_000);
   const [picked, setPicked] = useState<string>();
   // Page, page size and filters live in the address, so a view can be shared.
   const list = useListParams({
@@ -376,6 +388,12 @@ export function Arena() {
                         </span>
                         <span className="mt-0.5 block truncate font-mono text-[11px] text-muted">
                           {c.attackId ?? "a plain task"}
+                          {c.at && (
+                            <time dateTime={c.at} title={at(c.at)} className="font-sans">
+                              {" · "}
+                              {ago(c.at, now)}
+                            </time>
+                          )}
                         </span>
                       </span>
                       <span className="text-right sm:w-[118px]">
@@ -584,6 +602,12 @@ function EpisodeDetail({ c, onlyRun }: { c: EpisodeCard; onlyRun?: () => void })
 
       <section className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-5 text-sm">
         <span className="text-muted">
+          {c.at && (
+            <>
+              <time dateTime={c.at}>{at(c.at)}</time>
+              {" · "}
+            </>
+          )}
           Run <span className="font-mono text-soft">{c.runId.slice(0, 8)}</span>
           {c.agentId && (
             <>

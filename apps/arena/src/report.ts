@@ -244,6 +244,8 @@ export function publicEpisode(
     attackClass: e.attackClass,
     variantId: e.variantId,
     durationMs: e.durationMs,
+    /** When the episode started (ISO 8601), so a reader can follow a run as it goes. */
+    startedAt: e.startedAt,
     verdict: {
       breached: e.verdict.breached,
       attackSucceeded: e.verdict.attackSucceeded,

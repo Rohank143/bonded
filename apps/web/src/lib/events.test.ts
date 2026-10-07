@@ -25,6 +25,8 @@ it("turns a rating.episode payload into a card", () => {
     lossUsd: 1000,
     frozen: true,
     ruling: null,
+    // No start time in this older payload: it counts as having arrived now.
+    at: expect.any(String),
   });
 });
 
@@ -92,4 +94,19 @@ it("reads whether the attack is published from the episode's detail", () => {
   expect(toEpisodeCard("1", data(false))?.published).toBe(false);
   expect(toEpisodeCard("1", data(true))?.published).toBe(true);
   expect(toEpisodeCard("1", data("yes"))).not.toHaveProperty("published");
+});
+
+it("carries when the episode started", () => {
+  const data = JSON.stringify({
+    runId: "r",
+    index: 0,
+    total: 1,
+    episode: {
+      attackId: null,
+      attackClass: null,
+      startedAt: "2026-10-07T14:58:12.000Z",
+      verdict: { breached: false },
+    },
+  });
+  expect(toEpisodeCard("1", data)?.at).toBe("2026-10-07T14:58:12.000Z");
 });

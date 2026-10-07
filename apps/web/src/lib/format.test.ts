@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bps, duration, parseUsd, short, tierOf, usd, when } from "./format";
+import { ago, bps, duration, parseUsd, short, tierOf, usd, when } from "./format";
 
 describe("usd", () => {
   it("formats 6-decimal amounts with grouping", () => {
@@ -47,5 +47,20 @@ describe("duration", () => {
     expect(duration(5_400)).toBe("90 minutes");
     expect(duration(45)).toBe("45 seconds");
     expect(duration(0)).toBe("0 minutes");
+  });
+});
+
+describe("ago", () => {
+  const now = Date.parse("2026-10-07T15:00:00Z");
+  it("says how long ago, briefly, and the date after a week", () => {
+    expect(ago("2026-10-07T14:59:55Z", now)).toBe("just now");
+    expect(ago("2026-10-07T14:59:15Z", now)).toBe("45s ago");
+    expect(ago("2026-10-07T14:57:00Z", now)).toBe("3m ago");
+    expect(ago("2026-10-07T13:00:00Z", now)).toBe("2h ago");
+    expect(ago("2026-10-03T15:00:00Z", now)).toBe("4d ago");
+    expect(ago("2026-09-01T15:00:00Z", now, "en-GB")).toBe("1 Sept 2026");
+    expect(ago("not a date", now)).toBe("");
+    // A clock slightly behind the server's never says "in the future".
+    expect(ago("2026-10-07T15:00:05Z", now)).toBe("just now");
   });
 });

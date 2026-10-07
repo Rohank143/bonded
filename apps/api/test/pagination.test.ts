@@ -226,6 +226,7 @@ it("serves one episode with its ruling and detail, and older episodes without th
       attackId: "A6-held-out-1a2b3c4d",
       attackClass: "A6",
       durationMs: 1200,
+      startedAt: "2026-10-07T14:58:12.000Z",
       verdict: { breached: false, totalLossUsd: 0, frozen: false },
       ruling: "unseen",
       detail,
@@ -248,8 +249,13 @@ it("serves one episode with its ruling and detail, and older episodes without th
     durationMs: 1200,
     detail,
   });
-  const old = await (await app.request(`/episodes/${legacy!.eventId}`)).json();
+  const old = (await (await app.request(`/episodes/${legacy!.eventId}`)).json()) as {
+    at: string;
+  };
   expect(old).toMatchObject({ ruling: null, detail: null });
+  // The episode's own start time when it has one; otherwise when it was recorded.
+  expect((withDetail as unknown as { at: string }).at).toBe("2026-10-07T14:58:12.000Z");
+  expect(Date.now() - Date.parse(old.at)).toBeLessThan(60_000);
   expect((await app.request("/episodes/999999999")).status).toBe(404);
   expect((await app.request("/episodes/abc")).status).toBe(400);
 });

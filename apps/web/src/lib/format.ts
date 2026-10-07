@@ -49,6 +49,30 @@ export function when(seconds: number | bigint, locale?: string): string {
     : new Date(s * 1000).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" });
 }
 
+/**
+ * How long ago an ISO time was, short enough for a list row: "just now", "45s ago", "3m ago",
+ * "2h ago", "4d ago"; older than a week, the date itself.
+ */
+export function ago(iso: string, now = Date.now(), locale?: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  const s = Math.max(0, Math.round((now - t) / 1000));
+  if (s < 10) return "just now";
+  if (s < 60) return `${s}s ago`;
+  if (s < 3_600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86_400) return `${Math.floor(s / 3_600)}h ago`;
+  if (s < 7 * 86_400) return `${Math.floor(s / 86_400)}d ago`;
+  return new Date(t).toLocaleDateString(locale, { dateStyle: "medium" });
+}
+
+/** An ISO time as a local date and time, like `when` ("7 Oct 2026, 15:58:12"), with seconds. */
+export function at(iso: string, locale?: string): string {
+  const t = Date.parse(iso);
+  return Number.isNaN(t)
+    ? ""
+    : new Date(t).toLocaleString(locale, { dateStyle: "medium", timeStyle: "medium" });
+}
+
 /** A length of time in the largest whole unit, e.g. 604800 → "7 days", 5400 → "90 minutes". */
 export function duration(seconds: number | bigint): string {
   const s = Number(seconds);
