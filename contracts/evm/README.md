@@ -8,15 +8,16 @@ This page explains what each contract does, how they fit together, and where the
 
 ## At a glance
 
-A deployment has **14 contracts**, plus one **Mandate Vault** per agent, created as agents sign up:
+A deployment has **15 contracts**, plus one **Mandate Vault** per agent (or one **Mandate Module** per smart account, for an agent that trades from a wallet its operator already has), created as agents sign up:
 
-- **8 protocol contracts:** Bonded itself. These are the same on testnet and mainnet.
+- **9 protocol contracts:** Bonded itself. These are the same on testnet and mainnet.
 - **6 demo-market contracts:** testnet only. Fake tokens, a price feed and a small exchange, so agents have something to trade.
 
 | Group | Contract | In one sentence |
 |---|---|---|
 | Protocol | [`BondedRegistry`](src/BondedRegistry.sol) | The directory of AI agents, their owners, and their safety scores. |
 | Protocol | [`MandateVaultFactory`](src/MandateVaultFactory.sol) | Creates a vault for each agent and vouches for which vaults are real. |
+| Protocol | [`MandateModuleFactory`](src/MandateModuleFactory.sol) | Creates a module for each smart account and vouches for which modules are real. |
 | Protocol | [`CoverPool`](src/CoverPool.sol) | The underwriters' pool that earns premiums and pays claims. |
 | Protocol | [`OperatorBond`](src/OperatorBond.sol) | Money each operator locks up per agent, which is taken first if the agent misbehaves. |
 | Protocol | [`CoverManager`](src/CoverManager.sol) | Sells insurance policies, collects premiums and enforces risk limits. |
@@ -27,13 +28,17 @@ A deployment has **14 contracts**, plus one **Mandate Vault** per agent, created
 | Demo market | [`MockOracle`](src/oracles/MockOracle.sol) | A price feed with prices we set. |
 | Demo market | [`DemoRouter`](src/testnet/DemoRouter.sol) | A tiny exchange that swaps at the oracle price. |
 | Per agent | [`MandateVault`](src/MandateVault.sol) | Holds one agent's funds and checks every action against its mandate. |
+| Per agent | [`MandateModule`](src/MandateModule.sol) | The same checks as a vault, installed on a smart account (Safe or any ERC-7579 account) that holds the funds. |
+
+Both run the same rules: the checks live in [`MandateBase`](src/MandateBase.sol), which the vault and the module share.
 
 ## Who's involved
 
 | Person | What they do |
 |---|---|
 | **Operator** | Builds or runs an AI agent, registers it, locks a bond and buys cover for its vault. |
-| **Agent** | The AI itself. It can only act through its vault's `execute` function. |
+| **Agent** | The AI itself. It can only act through its vault's (or module's) `execute` function. |
+| **Account owner** | Owns a smart account (for example a Safe) guarded by a Mandate Module. Keeps full control of it; usually the operator. |
 | **Depositor** | Puts money into an agent's vault and is protected by the cover. |
 | **Underwriter** | Deposits into the CoverPool to earn premiums, taking on claim risk. |
 | **Attester** | The Bonded Arena's signing key. It signs safety scores and insurance quotes after red-teaming an agent. |
@@ -133,6 +138,27 @@ Every action is checked, and at most one breach is recorded per action:
 - **Enforce mode:** the action is blocked, but the attempt is still recorded and the agent frozen.
 - **Guardian:** the operator's safety key. It can freeze, unfreeze and replace a compromised agent key.
 
+### MandateModuleFactory
+
+**Creates modules and vouches for them,** like the vault factory does for vaults. A smart account creates its own module (the factory treats the caller as the account), so nobody can take another account's place. One module is in use per account at a time: a new one can be created once the old one is uninstalled.
+
+Only the module an account created last can be installed, so an account never has two modules recording the same outflow. Unlike the vault factory, it checks the mandate hash on chain. `params.mandateHash` must equal `BondedTypes.mandateCommitment(params)`, the hash of the rules the module will enforce (`mandateCommitment` in `@bonded/shared` computes the same value). So a module's mandate hash proves what it enforces, and a rating, quote and policy for a module-protected agent use that commitment as the mandate hash. Modules are deployed with CREATE2 and `predictModule` gives the address in advance, so an account can create and install its module in one batch. The factory reads the oracle, CoverManager and ClaimsEngine from the vault factory and has no owner.
+
+### MandateModule (one per smart account)
+
+**The mandate for an agent that trades from a smart account its operator already uses.** It's an ERC-7579 module, so it installs on a Safe through the [Safe7579](https://github.com/rhinestonewtf/safe7579) adapter and on any ERC-7579 account. The funds stay in the account; the module holds nothing.
+
+- **Same rules as a vault.** The agent's session key can act only through `module.execute(target, data)`, which runs MandateBase's checks and makes the call from the account (`executeFromExecutor`). Same modes, breach types, precedence, freeze on breach, guardian, breach log, `getBreach`/`breachCount`/`frozen` and events. The differential tests feed the same actions to a vault and a module and require identical results.
+- **Install it twice:** as an **executor** (type 2, required) and as a **hook** (type 4, recommended). The hook runs around the owner's own transactions through the account: it records any unexplained drop first (like `reconcile`), then accepts the owner's changes, so a withdrawal by the owner isn't mistaken for a breach. Nothing else may act on the account in the middle of the agent's call.
+- **The owner keeps full control.** They can move funds, uninstall the module, or install other modules at any time. A Safe owner's own `execTransaction` doesn't pass through Safe7579, so the hook can't see it: after moving funds that way, the owner calls `sync()` (ideally in the same Safe transaction). Otherwise the next `execute` or `reconcile` records the withdrawal as a Deferred breach and freezes the agent.
+- **Things the agent can never call,** in either mode: the account itself and the module (the equivalent of a vault refusing calls to itself).
+- **Tokens outside the asset list** (a smart account usually holds others): approving or transferring one is a T1 breach on a module. The vault doesn't have this rule (it would change its published verdicts; it's listed for the next deployment). A token outside the list that the owner already approved to an allowed contract isn't protected, so give the agent a dedicated account holding only the mandate's assets.
+- **Revoking stays allowed** on any token (`approve(x, 0)`, `setApprovalForAll(x, false)`), as on a vault, so the agent can clean up approvals without being frozen.
+- **The agent's key must not also be an owner, validator or ERC-1271 signer of the account.** If it is, it can sign approvals (Permit2-style signature transfers, for example) that the account honours without any call through the module.
+- **The base asset must move exactly** (no fee on transfer, no rebasing): a premium counts only once CoverManager's balance grows by it, so such a token would make every premium look missed. USDG isn't one.
+- **Only Enforce-mode modules can hold cover.** In Monitor mode a breach goes through, and the payout would go to the account, whose owner could have asked the agent for that breach. Monitor mode also runs a breaching call with the account's authority, which on a smart account reaches further than on a vault (another installed module or an adapter that trusts the account could be reconfigured). Monitor-mode modules still work, uninsured.
+- **Claims pay the account.** Premiums are pulled from the account and count only once they arrive; payouts go into it. In Enforce mode breaches through `execute` are blocked, and a Deferred breach is recorded and freezes the agent but isn't paid, because on a smart account an unexplained drop can't be told apart from the owner moving their own funds. So a module's cover pays through grey-area disputes, and those need the council's approval (they never pay automatically on a module).
+
 ### OperatorBond
 
 **The operator's skin in the game.** Operators lock tUSDG against each agent, and this money is taken first when a claim is paid. That gives operators a direct financial reason to run safe agents.
@@ -151,7 +177,7 @@ Withdrawals are slowed so underwriters can't run ahead of a claim:
 
 ### CoverManager
 
-**Sells the insurance.** It turns an Arena quote into a policy, and it:
+**Sells the insurance.** It turns an Arena quote into a policy for a vault, or for an Enforce-mode module once the owner has set the module factory (set once, and it must serve this deployment's vault factory), and it:
 - **Checks the quote.** The signature is from an approved attester, the quote hasn't expired or been used, it matches the vault (agent, mandate and base asset), and the caller is both the vault's guardian and the agent's owner.
 - **Requires a frozen-on-breach vault.** Otherwise a compromised agent could drain the payout too.
 - **Checks the bond and the score tier:**
@@ -177,6 +203,8 @@ Withdrawals are slowed so underwriters can't run ahead of a claim:
 
 For each breach it checks that the covered vault recorded it, that it wasn't blocked, that it happened while the policy was active (after the waiting period), and that it hasn't been claimed before.
 
+For a module's policy, the payout goes into the smart account the module guards (same waterfall: bond first, then pool), and Deferred breaches aren't paid (see MandateModule).
+
 The payout, using the demo numbers:
 
 ```
@@ -197,6 +225,8 @@ payout                    4,500   (capped at the cover left on the policy)
 1. Anyone proposes a payout with evidence and a 250 tUSDG deposit.
 2. If nobody challenges it within 2 days, it's paid through ClaimsEngine and the deposit is returned.
 3. A challenger can post the same deposit. Then the council decides, and the winner takes both deposits.
+
+On a MandateModule's policy step 2 doesn't apply: the payout goes to the smart account, whose owner may be the proposer, so even an unchallenged proposal is paid only when the council approves it.
 
 The council is a multisig for now; UMA or Kleros can replace it later without changing ClaimsEngine.
 
@@ -227,15 +257,16 @@ We couldn't confirm the real stablecoin, stock token and exchange addresses on R
 | Action | Who |
 |---|---|
 | Register an agent, create a vault, deposit, file a claim, collect premiums (`accrue`), post a signed score | Anyone |
+| Create a module for a smart account; install, uninstall or `sync` it | The account itself (its owner, acting through it) |
 | Buy or cancel cover | The vault's guardian, who must also own the agent |
 | Withdraw a bond | The agent's owner |
-| Freeze, unfreeze or replace the agent key | The vault's guardian |
-| Trade from the vault | The agent (only through `execute`) |
+| Freeze, unfreeze or replace the agent key | The vault's (or module's) guardian |
+| Trade from the vault, or from a guarded account | The agent (only through `execute`) |
 | Sign scores and quotes, accept or reject bounties | Attesters in the registry |
 | Decide challenged disputes | The council |
 | Change parameters, attesters and fees | Each contract's owner. The deployer for now, moving to a multisig before mainnet (ownership changes take two steps, `Ownable2Step`, so a typo can't lose it). |
 
-Contracts that move money for each other are linked once at deployment: the factory, pool and bond to CoverManager and ClaimsEngine, CoverManager to ClaimsEngine, and ClaimsEngine to DisputeModule. None of those links can be changed afterwards, so an owner can't later point them at a contract that drains funds.
+Contracts that move money for each other are linked once at deployment: the factory, pool and bond to CoverManager and ClaimsEngine, CoverManager to ClaimsEngine and to MandateModuleFactory, and ClaimsEngine to DisputeModule. None of those links can be changed afterwards, so an owner can't later point them at a contract that drains funds.
 
 ## Key parameters
 
@@ -258,16 +289,22 @@ Contracts that move money for each other are linked once at deployment: the fact
 
 ```
 src/
-  BondedRegistry.sol, MandateVault.sol, MandateVaultFactory.sol,
+  BondedRegistry.sol, MandateBase.sol, MandateVault.sol, MandateVaultFactory.sol,
+  MandateModule.sol, MandateModuleFactory.sol,
   CoverPool.sol, OperatorBond.sol, CoverManager.sol, ClaimsEngine.sol,
   DisputeModule.sol, BountyBoard.sol
   oracles/       ChainlinkOracle (production), MockOracle (testnets)
   testnet/       TestToken, DemoRouter (never deployed to mainnet)
-  interfaces/    what the contracts read from each other
-  libraries/     BondedTypes: shared structs, signed-message formats, tier rules
-test/            Forge tests (156), one file per contract plus full-loop tests
+  interfaces/    what the contracts read from each other, and the ERC-7579 parts the module uses
+  libraries/     BondedTypes: shared structs, signed-message formats, tier rules, the mandate
+                 commitment; MandateErrors: the errors the mandate checks raise
+test/            Forge tests (318), one file per contract plus full-loop tests
+  module/        MandateModule on real ERC-7579 accounts, the vault/module differential tests
+  invariant/     invariant suites and mutations.py (plants known bugs, checks the invariants catch them)
 script/          Deploy, RecordDeployment, Smoke; deploy.sh, smoke.sh, local-demo.sh, env.sh
 deployments/     live addresses per chain
+lib/             forge-std and OpenZeppelin; for tests only: Safe 1.4.1, Safe7579 1.0.2, the ERC-7579
+                 reference account 0.0.2 and their dependencies (git submodules pinned to release tags)
 ```
 
 ## Build, test, deploy
@@ -275,8 +312,10 @@ deployments/     live addresses per chain
 From this folder, with [Foundry](https://book.getfoundry.sh/getting-started/installation) installed:
 
 ```bash
+git submodule update --init --recursive   # once, to fetch lib/
 forge build                 # compile
 forge test                  # run all tests
+python3 test/invariant/mutations.py       # plant known bugs and check the tests catch each one
 pnpm demo:local             # (from the repo root) local chain: deploy everything, then run the demo loop
 pnpm contracts:deploy robinhood   # (from the repo root) deploy to a testnet; needs DEPLOYER_PRIVATE_KEY in .env
 pnpm contracts:smoke robinhood    # (from the repo root) run the demo loop on a testnet

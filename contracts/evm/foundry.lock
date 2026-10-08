@@ -1,8 +1,50 @@
 {
+  "lib/account-abstraction": {
+    "tag": {
+      "name": "v0.7.0",
+      "rev": "7af70c8993a6f42973f520ae0752386a5032abe7"
+    }
+  },
+  "lib/checknsignatures": {
+    "tag": {
+      "name": "v1.0.0",
+      "rev": "9847c6b0d551c75ac337be1c9fe87f4449c352c9"
+    }
+  },
+  "lib/erc7579-implementation": {
+    "tag": {
+      "name": "v0.0.2",
+      "rev": "0f321b8544cea7ad3be1b5669c7998329636ef84"
+    }
+  },
   "lib/forge-std": {
     "rev": "bf647bd6046f2f7da30d0c2bf435e5c76a780c1b"
   },
   "lib/openzeppelin-contracts": {
     "rev": "cab19933c33c2ad1d4c7a84864a3601dddfd16f3"
+  },
+  "lib/safe-smart-account": {
+    "tag": {
+      "name": "v1.4.1",
+      "rev": "bf943f80fec5ac647159d26161446ac5d716a294"
+    }
+  },
+  "lib/safe7579": {
+    "tag": {
+      "name": "v1.0.2",
+      "rev": "7634566a07d6b33492a34ddf2baf8e72a2f584fe"
+    }
+  },
+  "lib/sentinellist": {
+    "tag": {
+      "name": "v1.0.0",
+      "rev": "6dff696f39fb55bfdde9581544d788932f145e47"
+    }
+  },
+  "lib/solady": {
+    "tag": {
+      "name": "v0.0.217",
+      "rev": "75a7e348a1a1edfe31d4e77251ba6376a86fb50a"
+    }
   }
 }

@@ -24,8 +24,10 @@ export function filterAgents(rows: readonly AgentRow[], f: AgentFilters, you?: A
       if (f.tier === "unrated" && a.score) return false;
       if (f.tier !== "all" && f.tier !== "unrated")
         if (!a.score || tierForScore(a.score.score).tier !== f.tier) return false;
-      if (f.vault === "with" && !a.vault) return false;
-      if (f.vault === "without" && a.vault) return false;
+      // A protected smart account counts: it's where that agent's funds and cover are.
+      const holds = Boolean(a.vault || a.protected);
+      if (f.vault === "with" && !holds) return false;
+      if (f.vault === "without" && holds) return false;
       return true;
     })
     .sort((x, y) =>

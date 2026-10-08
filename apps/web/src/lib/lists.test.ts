@@ -32,6 +32,12 @@ describe("filterAgents", () => {
     expect(ids(filterAgents(rows, { ...base, vault: "with" }))).toEqual([4, 1]);
     expect(ids(filterAgents(rows, { ...base, vault: "without" }))).toEqual([3, 2]);
   });
+
+  it("counts a protected smart account like a vault", () => {
+    const account = { ...agent(5), protected: { module: you, account: other } };
+    expect(ids(filterAgents([...rows, account], { ...base, vault: "with" }))).toEqual([5, 4, 1]);
+    expect(ids(filterAgents([...rows, account], { ...base, vault: "without" }))).toEqual([3, 2]);
+  });
 });
 
 describe("filterVaults", () => {

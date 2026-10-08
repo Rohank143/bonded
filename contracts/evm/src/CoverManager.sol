@@ -17,11 +17,13 @@ import {ICoverPool} from "./interfaces/ICoverPool.sol";
 import {IOperatorBond} from "./interfaces/IOperatorBond.sol";
 import {IMandateVaultFactory} from "./interfaces/IMandateVaultFactory.sol";
 import {IBondedRegistry} from "./interfaces/IBondedRegistry.sol";
-import {MandateVault} from "./MandateVault.sol";
+import {IMandateGuard} from "./interfaces/IMandateGuard.sol";
+import {IMandateModuleFactory} from "./interfaces/IMandateModuleFactory.sol";
 
 /// @title CoverManager
-/// @notice Binds cover for Mandate Vaults from quotes signed by the Arena attester, issues a
-///         non-transferable policy NFT to the vault, streams premiums from the vault, and
+/// @notice Binds cover for Mandate Vaults (and MandateModules on smart accounts) from quotes
+///         signed by the Arena attester, issues a non-transferable policy NFT to the vault or
+///         module, streams premiums from the protected funds, and
 ///         enforces the pool's risk caps. See docs/SPECIFICATION.md Sections 6.2, 6.4, 9.4 and ADR-003.
 /// @dev Risk caps checked at binding: total cover <= maxLeverage x pool assets; one agent's
 ///      cover <= its tier cap and maxAgentCoverBps of pool assets; one model family's cover
@@ -40,6 +42,8 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
     address public treasury;
     address public bountyPool;
     address public claimsEngine;
+    /// @inheritdoc ICoverManager
+    IMandateModuleFactory public moduleFactory;
 
     uint16 public protocolFeeBps = 1500; // 15% of premiums
     uint16 public bountyFeeBps = 500; // 5% of premiums
@@ -91,6 +95,7 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
     event TreasurySet(address treasury);
     event BountyPoolSet(address bountyPool);
     event ClaimsEngineSet(address claimsEngine);
+    event ModuleFactorySet(address moduleFactory);
     event FeesSet(uint16 protocolFeeBps, uint16 bountyFeeBps);
     event RiskParamsSet(uint32 maxLeverageBps, uint16 maxAgentCoverBps, uint16 modelFamilyCapBps);
     event TermsSet(uint64 policyTerm, uint64 waitingPeriod);
@@ -116,6 +121,8 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
     error NotClaimsEngine();
     error ClaimExceedsCover();
     error PolicyNotTransferable();
+    error ModuleMustEnforce();
+    error WrongVaultFactory();
 
     constructor(
         address owner_,
@@ -148,14 +155,15 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
     // Binding cover
     // ---------------------------------------------------------------------------------------
 
-    /// @notice Binds cover for a vault from an attester-signed quote. Caller must be the vault's guardian.
+    /// @notice Binds cover for a vault or module from an attester-signed quote. Caller must be
+    ///         its guardian. `quote.vault` is the vault or module address.
     function buyCover(BondedTypes.Quote calldata quote, bytes calldata signature)
         external
         nonReentrant
         returns (uint256 policyId)
     {
         _checkQuote(quote, signature);
-        MandateVault vault = MandateVault(quote.vault);
+        IMandateGuard vault = IMandateGuard(quote.vault);
         _checkVault(vault, quote);
         _checkRisk(quote);
 
@@ -194,7 +202,7 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
     /// @notice Ends a policy early. Premiums are settled first. Guardian only.
     function cancel(uint256 policyId) external nonReentrant {
         Policy storage policy = _existing(policyId);
-        if (msg.sender != MandateVault(policy.vault).guardian()) revert NotGuardian();
+        if (msg.sender != IMandateGuard(policy.vault).guardian()) revert NotGuardian();
         _accrue(policyId);
         if (policy.status == Status.Active) {
             _close(policyId, Status.Cancelled, SafeCast.toUint64(block.timestamp));
@@ -276,6 +284,19 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
         if (claimsEngine != address(0)) revert AlreadySet();
         claimsEngine = claimsEngine_;
         emit ClaimsEngineSet(claimsEngine_);
+    }
+
+    /// @notice Sets MandateModuleFactory once, so modules can hold cover. Set-once for the same
+    ///         reason as ClaimsEngine: the owner can't later admit another factory's contracts.
+    function setModuleFactory(address moduleFactory_) external onlyOwner {
+        if (moduleFactory_ == address(0)) revert ZeroAddress();
+        if (address(moduleFactory) != address(0)) revert AlreadySet();
+        // Set once, so check it serves this deployment's vault factory (CoverManager, ClaimsEngine).
+        if (IMandateModuleFactory(moduleFactory_).vaultFactory() != address(factory)) {
+            revert WrongVaultFactory();
+        }
+        moduleFactory = IMandateModuleFactory(moduleFactory_);
+        emit ModuleFactorySet(moduleFactory_);
     }
 
     function setFees(uint16 protocolFeeBps_, uint16 bountyFeeBps_) external onlyOwner {
@@ -373,8 +394,13 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
         quoteUsed[digest] = true;
     }
 
-    function _checkVault(MandateVault vault, BondedTypes.Quote calldata quote) internal {
-        if (!factory.isVault(address(vault))) revert NotAVault(address(vault));
+    function _checkVault(IMandateGuard vault, BondedTypes.Quote calldata quote) internal {
+        if (!factory.isVault(address(vault))) {
+            if (!_isModule(address(vault))) revert NotAVault(address(vault));
+            // A Monitor-mode module lets a breach go through, and the payout goes to the account,
+            // whose owner could have asked the agent for that breach. Only Enforce is insurable.
+            if (vault.mode() != BondedTypes.MandateMode.Enforce) revert ModuleMustEnforce();
+        }
         if (msg.sender != vault.guardian()) revert NotGuardian();
         if (vault.agentId() != quote.agentId) revert QuoteMismatch("agentId");
         if (vault.mandateHash() != quote.mandateHash) revert QuoteMismatch("mandateHash");
@@ -433,7 +459,14 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
         uint64 until = SafeCast.toUint64(Math.min(block.timestamp, policy.endsAt));
         if (until > policy.paidUntil) {
             uint256 owed = _premiumFor(policy, until - policy.paidUntil);
-            try MandateVault(policy.vault).payPremium(owed) {
+            uint256 before = baseAsset.balanceOf(address(this));
+            try IMandateGuard(policy.vault).payPremium(owed) {
+                // Only money that actually arrived counts: a smart account can report success
+                // without paying, which is then a missed premium like any other.
+                if (baseAsset.balanceOf(address(this)) < before + owed) {
+                    _handleMissedPremium(policyId, policy, owed);
+                    return;
+                }
                 policy.paidUntil = until;
                 policy.pastDueSince = 0;
                 _distribute(policyId, owed);
@@ -498,6 +531,10 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
         totalActiveCover -= amount;
         activeCoverOfAgent[policy.agentId] -= amount;
         activeCoverOfFamily[policy.modelFamily] -= amount;
+    }
+
+    function _isModule(address candidate) internal view returns (bool) {
+        return address(moduleFactory) != address(0) && moduleFactory.isModule(candidate);
     }
 
     function _existing(uint256 policyId) internal view returns (Policy storage policy) {
