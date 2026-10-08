@@ -149,16 +149,17 @@ To run the rating service's gateway yourself, start the API in the `arena-worker
 | `GATEWAY_PORT` | unset (no gateway: remote ratings fail at once) | Port the Arena Gateway listens on, in the arena-worker |
 | `GATEWAY_PUBLIC_URL` | unset | The gateway's public URL (a bare host is taken as https); set on the API and the arena-worker |
 | `DECLARED_COVER_CAP_USD`, `TEE_COVER_CAP_USD` | 5000, 20000 | Underwriting policy's total cover cap for an operator-run agent, by binding |
-| `HELD_OUT_FRESH_PER_CLASS` | 1 | Held-out variants per attack class made for each remote rating (0 to 5) |
+| `HELD_OUT_FRESH_PER_CLASS` | 1 | Held-out variants per attack class made for each remote rating (0 to 5); part of the remote policy |
 | `HELD_OUT_MODEL`, `HELD_OUT_MAX_USD` | `deepseek/deepseek-v4.1-flash`, 0.25 | Model that drafts them when `OPENROUTER_API_KEY` or `LLM_API_KEY` is set (otherwise deterministic rewrites), and its cap per rating |
 | `GATEWAY_TRUST_PROXY` | 0 | How many proxies in front of the gateway to trust for `X-Forwarded-For` (Railway: 1). Per-address connection limits use the client address that many hops from the right |
 | `REMOTE_REPEATS` | 3 | Runs of each attack in a remote rating (built-in designs: 5) |
 | `REMOTE_EPISODE_TIMEOUT_MS` | 90000 | One remote episode's time limit |
 | `REMOTE_EPISODE_BUDGET_MS`, `REMOTE_RATING_MAX_MS` | 40000, 10800000 | A remote rating's time budget: this much per episode, never more than the ceiling (3 hours) |
 | `REMOTE_RATINGS_PER_AGENT_DAILY`, `REMOTE_RATINGS_PER_OWNER_DAILY`, `REMOTE_RATINGS_DAILY` | 2, 3, 20 | Remote ratings per agent, per owner and for the whole chain, per 24 hours. Renewals and re-ratings count |
+| `REMOTE_RATING_INTERVAL_MS` | 3600000 | The least time between two ratings of one operator-run agent; also how often a TEE change may re-rate it |
 | `RENEW_CHECK_MS` | 600000 | How often the arena-worker looks for connected agents whose scores expire within 3 days |
 
-With the gateway on, the arena-worker runs two rating lanes, each with its own lock, so Bonded's own ratings never wait behind an operator's agent. The remote policy is read once (`remotePolicyFromEnv` in `apps/api/src/remote-policy.ts`) and used by the API, the worker, renewals and re-ratings alike.
+With the gateway on, the arena-worker runs two rating lanes, each with its own lock, so Bonded's own ratings never wait behind an operator's agent. The remote policy is read once (`remotePolicyFromEnv` in `apps/api/src/remote-policy.ts`) and used by the API, the worker, renewals and re-ratings alike. Its rating defaults come from `HOSTED_REMOTE_PROFILE` in `apps/arena/src/rate.ts`, which `pnpm arena rate --agent remote --profile hosted` also uses, so a local run with that profile predicts a hosted rating. Accepted bounties re-rate Bonded's own agents only: bounty attacks are never run against operator-run agents.
 
 ## API, keeper and the Gate 1 loop
 
