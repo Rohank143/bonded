@@ -217,6 +217,8 @@ async function main(): Promise<number> {
       const tee = values["tee-url"]
         ? await attestTeeAgent({
             url: values["tee-url"],
+            // A local CLI run may check a TEE simulator on this machine.
+            allowLoopback: true,
             codeHash: codeHash ?? required("--code-hash with --tee-url"),
             composeHash:
               hex32(values["tee-compose-hash"], "--tee-compose-hash") ??

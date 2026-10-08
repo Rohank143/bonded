@@ -404,10 +404,12 @@ describe("attestTeeAgent", () => {
   it("refuses plain http except on localhost, and refuses an error response", async () => {
     const base = { codeHash: CODE, composeHash: COMPOSE };
     await rejects(attestTeeAgent({ ...base, url: "http://agent.example" }), /must use https/);
+    await rejects(attestTeeAgent({ ...base, url: "http://localhost:8080" }), /must use https/);
     await rejects(
       attestTeeAgent({
         ...base,
         url: "http://localhost:8080",
+        allowLoopback: true,
         fetch: (async () => new Response("no", { status: 502 })) as unknown as typeof fetch,
       }),
       /answered 502/,

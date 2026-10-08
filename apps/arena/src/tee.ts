@@ -1,5 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { getCollateral, PHALA_PCCS_URL, Quote, verify } from "@phala/dcap-qvl";
+import { safeGet, UnsafeUrlError } from "./safe-fetch.js";
 import {
   stripHexPrefix,
   TeeEvidence,
@@ -324,12 +325,22 @@ export interface FetchTeeOptions extends Omit<TeeExpectation, "nonce"> {
   /** The agent's base URL, e.g. the Phala-assigned `https://<app-id>-8080.dstack-....phala.network`. */
   url: string;
   timeoutMs?: number;
+  /**
+   * Allow a loopback address, over plain http too: a local TEE simulator. Never set it for a URL
+   * an operator gave a server (the rating service): it would let them aim the Arena at itself.
+   */
+  allowLoopback?: boolean;
+  /** For tests: replaces the network call (the URL checks above it still apply). */
   fetch?: typeof fetch;
 }
 
+/** Most of the evidence the Arena reads (a quote and event log are tens of KB). */
+const TEE_EVIDENCE_MAX_BYTES = 512 * 1024;
+
 /**
- * Challenges a live TEE agent with a fresh nonce and verifies what it returns. Rejects anything
- * but https (plain http only for localhost, where the simulator runs).
+ * Challenges a live TEE agent with a fresh nonce and verifies what it returns. The URL is the
+ * operator's, so it is fetched as untrusted (safe-fetch.ts): https only, public addresses only
+ * (loopback only with `allowLoopback`), no redirects, a time limit and a size limit.
  */
 export async function attestTeeAgent(options: FetchTeeOptions): Promise<VerifiedTee> {
   let url: URL;
@@ -338,23 +349,38 @@ export async function attestTeeAgent(options: FetchTeeOptions): Promise<Verified
   } catch {
     throw new TeeVerificationError("the TEE agent's URL is not valid");
   }
-  const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
-  if (url.protocol !== "https:" && !(local && url.protocol === "http:"))
-    throw new TeeVerificationError("the TEE agent's URL must use https");
   const nonce = `0x${randomBytes(32).toString("hex")}`;
   url.searchParams.set("nonce", nonce);
-  let response: Response;
+  const timeoutMs = options.timeoutMs ?? 30_000;
+  let status: number;
+  let text: string;
   try {
-    response = await (options.fetch ?? fetch)(url, {
-      signal: AbortSignal.timeout(options.timeoutMs ?? 30_000),
-    });
-  } catch {
+    if (options.fetch) {
+      if (url.protocol !== "https:" && !(options.allowLoopback && url.protocol === "http:"))
+        throw new UnsafeUrlError("the URL must use https");
+      const response = await options.fetch(url, {
+        signal: AbortSignal.timeout(timeoutMs),
+        redirect: "error",
+      });
+      status = response.status;
+      text = await response.text();
+    } else {
+      ({ status, text } = await safeGet(url, {
+        timeoutMs,
+        maxBytes: TEE_EVIDENCE_MAX_BYTES,
+        ...(options.allowLoopback ? { allowLoopback: true } : {}),
+      }));
+    }
+  } catch (error) {
+    if (error instanceof UnsafeUrlError)
+      throw new TeeVerificationError(`the TEE agent's URL was refused: ${error.message}`);
     throw new TeeUnavailableError("the TEE agent did not answer");
   }
-  if (!response.ok) throw new TeeUnavailableError(`the TEE agent answered ${response.status}`);
+  if (status < 200 || status >= 300)
+    throw new TeeUnavailableError(`the TEE agent answered ${status}`);
   let body: unknown;
   try {
-    body = await response.json();
+    body = JSON.parse(text);
   } catch {
     throw new TeeVerificationError("the evidence is not JSON");
   }
