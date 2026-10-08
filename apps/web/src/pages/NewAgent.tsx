@@ -178,6 +178,18 @@ export function NewAgent() {
       : []),
   ];
   const onModule = protection === "module";
+  // What the owner will be asked to approve, counted from the steps that will run.
+  const bondUnits = parseAmount(bond) ?? 0n;
+  const depositUnits = onModule ? 0n : (parseAmount(deposit) ?? 0n);
+  const confirmations =
+    1 + // register
+    (onModule ? 0 : 1) + // create the vault
+    (bondUnits + depositUnits > 0n ? 1 : 0) + // faucet
+    (bondUnits > 0n ? 2 : 0) + // approve and stake the bond
+    (depositUnits > 0n ? 2 : 0); // approve and deposit
+  const confirmationsLine = `${confirmations} wallet confirmation${confirmations === 1 ? "" : "s"}${
+    onModule ? ", the module's install sent from your smart account," : ","
+  } then one signature${kind === REMOTE_KIND ? "; the runner token is made on the agent's page" : ""}.`;
   const stepLabels = onModule ? MODULE_STEPS : STEPS;
   const saved = user ? loadProgress(deployment.chainId, user) : undefined;
   const unfinished = saved && nextStep(saved) ? saved : undefined;
@@ -555,8 +567,11 @@ export function NewAgent() {
                     checked={mode === "monitor"}
                     onChange={() => setMode("monitor")}
                     title="Monitor"
+                    disabled={onModule}
                   >
-                    Breaches go through and are recorded, so they can be claimed.
+                    {onModule
+                      ? "Not for a smart account: a module can hold cover only in Enforce mode."
+                      : "Breaches go through and are recorded, so they can be claimed."}
                   </Choice>
                   <Choice
                     name="mode"
@@ -564,8 +579,9 @@ export function NewAgent() {
                     onChange={() => setMode("enforce")}
                     title="Enforce"
                   >
-                    Breaches are blocked (and recorded). Scores higher, but there's nothing to
-                    claim.
+                    {onModule
+                      ? "Breaches are blocked (and recorded). The only mode a smart account's module can hold cover in."
+                      : "Breaches are blocked (and recorded). Scores higher, but there's nothing to claim."}
                   </Choice>
                 </div>
               </fieldset>
@@ -684,8 +700,8 @@ export function NewAgent() {
               </fieldset>
               <fieldset>
                 <legend className="mb-2 font-medium">
-                  <Term term="agentKey">The agent's key</Term>, the only key that can act for the
-                  vault
+                  <Term term="agentKey">The agent's key</Term>, the only key that can act{" "}
+                  {onModule ? "through the module on your smart account" : "for the vault"}
                 </legend>
                 <div className="grid gap-2 sm:grid-cols-2">
                   <Choice
@@ -694,7 +710,9 @@ export function NewAgent() {
                     onChange={() => setSelfAgent(true)}
                     title="My wallet"
                   >
-                    For testing: lets you simulate a breach from the vault page.
+                    {onModule
+                      ? "For testing: you act as the agent yourself, through the module."
+                      : "For testing: lets you simulate a breach from the vault page."}
                   </Choice>
                   <Choice
                     name="key"
@@ -787,9 +805,7 @@ export function NewAgent() {
             >
               {busy ? "Working…" : "Onboard the agent"}
             </Button>
-            <p className="mt-2 text-xs text-muted">
-              About eight wallet confirmations, then one signature.
-            </p>
+            <p className="mt-2 text-xs text-muted">{confirmationsLine}</p>
             {steps.length > 0 && (
               <ol className="mt-5 flex flex-col gap-2.5 border-t border-line pt-5 text-sm">
                 {steps.map((s) => (

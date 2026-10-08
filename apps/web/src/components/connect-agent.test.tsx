@@ -128,4 +128,15 @@ describe("ConnectAgent", () => {
     expect(await screen.findByText(/bounty 5 was accepted/)).toBeTruthy();
     expect(screen.getByText(/runner wasn't connected to renew it/)).toBeTruthy();
   });
+  it("shows anyone the runner's state, read-only, without a wallet", async () => {
+    vi.spyOn(api, "runner").mockResolvedValue(
+      runnerRecord({ token: { id: "t", createdAt: "" }, runner: connected }),
+    );
+    show({ readOnly: true });
+    expect(await screen.findByText("Runner connected")).toBeTruthy();
+    expect(screen.getByText("Its runner")).toBeTruthy();
+    expect(screen.getByText(/Only the agent's owner can make a runner token/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Create a runner token" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Rate my agent" })).toBeNull();
+  });
 });

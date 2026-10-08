@@ -35,10 +35,13 @@ export function OwnerTools({
   const self = useQuery({
     queryKey: ["self-agent", agentId],
     queryFn: () => api.selfAgent(agentId),
-    enabled: isOwner,
   });
   const run = useRatingRun(runId);
-  if (!isOwner) return null;
+  // Anyone can see an operator-run agent's runner and declared code; only its owner acts on it.
+  if (!isOwner)
+    return self.data?.registered && self.data.kind === REMOTE_KIND ? (
+      <ConnectAgent agentId={agentId} record={self.data} scoreExpired={scoreExpired} readOnly />
+    ) : null;
   const remembered = recallAgent(deployment.chainId, agentId);
   const record = self.data;
 
