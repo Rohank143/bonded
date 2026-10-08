@@ -233,7 +233,9 @@ describe("live loop", () => {
     expect(await db.remoteAgentsExpiring(CHAIN, now + 3 * 86400)).toEqual([soon]);
   });
 
-  it("skips an offline remote agent on bounty acceptance, with the reason on record", async () => {
+  it("skips operator-run agents on bounty acceptance, with the reason on record", async () => {
+    // Bounties are never run against an agent its operator runs (the operator would see them),
+    // so a re-rating would only use up its caps: online or not, it is skipped.
     const chain = 777;
     const ids = { online: `${chain}:1`, offline: `${chain}:2`, builtIn: `${chain}:3` };
     for (const [n, cfg] of [
@@ -261,10 +263,14 @@ describe("live loop", () => {
         `${chain}:%`,
       ])
     ).rows.map((r) => r.agent_id);
-    expect(queued).toEqual([ids.online, ids.builtIn]);
-    const skip = (await db.runnerStatus(ids.offline)).lastSkip;
-    expect(skip).toMatchObject({ cause: "bounty" });
-    expect(skip?.reason).toMatch(/bounty 5 was accepted while the agent's runner was offline/);
+    expect(queued).toEqual([ids.builtIn]);
+    for (const id of [ids.online, ids.offline]) {
+      const skip = (await db.runnerStatus(id)).lastSkip;
+      expect(skip).toMatchObject({ cause: "bounty" });
+      expect(skip?.reason).toBe(
+        "bounty 5 was accepted, but bounty attacks aren't run against operator-run agents, so no re-rating was queued",
+      );
+    }
   });
 
   it("reads observed-rate inputs: scores' validity and breaches with their details", async () => {

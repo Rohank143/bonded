@@ -1266,8 +1266,10 @@ export class Database {
   }
   /**
    * Record the decision, or schedule a retry after an error, if the lease still holds. An
-   * acceptance queues a fresh rating of every enabled agent on the chain in the same
+   * acceptance queues a fresh rating of every enabled built-in agent on the chain in the same
    * transaction, so a bounty can't end accepted without its re-rating (docs/SPECIFICATION.md 13.1).
+   * An operator-run agent is never rated on bounties (its operator would see them), so a re-rating
+   * would test nothing new and only use up its caps: it is skipped with the reason on record.
    */
   async finishBounty(
     job: BountyJob,
@@ -1275,8 +1277,6 @@ export class Database {
       | { status: "accepted" | "rejected"; verdict: unknown; txHash: string }
       | { error: string }
       | { failed: string },
-    /** Caps on remote re-ratings (they count like any other remote rating). */
-    remote?: RemoteQuota,
   ) {
     await this.transaction(async (c) => {
       const done = "status" in outcome;
@@ -1299,27 +1299,17 @@ export class Database {
       );
       if (!r.rowCount) throw new Error("bounty lease lost");
       if (done && outcome.status === "accepted") {
-        // A bring-your-own agent is rated through its own runner. With none connected its rating
-        // can't run, so it is skipped with the reason on record instead of queued to fail.
         const agents = await c.query(
-          `SELECT a.id, a.config->>'kind'='remote' AS remote,
-             a.config->>'kind'='remote' AND NOT ${RUNNER_CONNECTED} AS offline
+          `SELECT a.id, a.config->>'kind'='remote' AS remote
            FROM agents a WHERE a.chain_id=$1 AND a.enabled`,
           [job.chainId],
         );
         for (const row of agents.rows)
-          if (row.offline)
+          if (row.remote)
             await this.recordRatingSkip(
               row.id as string,
               "bounty",
-              `bounty ${job.submissionId} was accepted while the agent's runner was offline; connect it and rate the agent`,
-              c,
-            );
-          else if (remote && row.remote && (await this.remoteQuotaIn(c, row.id as string, remote)))
-            await this.recordRatingSkip(
-              row.id as string,
-              "bounty",
-              `bounty ${job.submissionId} was accepted, but the agent's rating caps or cooldown allow no rating now`,
+              `bounty ${job.submissionId} was accepted, but bounty attacks aren't run against operator-run agents, so no re-rating was queued`,
               c,
             );
           else await this.enqueueIn(c, row.id as string);

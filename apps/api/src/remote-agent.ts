@@ -1,4 +1,5 @@
 import {
+  HOSTED_REMOTE_PROFILE,
   RemoteAgent,
   TeeVerificationError,
   verifyTeeEvidence,
@@ -46,7 +47,7 @@ export interface RemoteAgentRequest {
  * REMOTE_EPISODE_TIMEOUT_MS): an episode is one task with a handful of tool calls, and a rating
  * has a few hundred of them, so the gateway's own 4-minute default would let one rating take hours.
  */
-export const REMOTE_EPISODE_TIMEOUT_MS = 90_000;
+export const REMOTE_EPISODE_TIMEOUT_MS = HOSTED_REMOTE_PROFILE.episodeTimeoutMs;
 
 /** Builds the remote agent for one rating, in the rating's sandbox (the gateway's `RemoteAgent`). */
 export type RemoteAgentFactory = (request: RemoteAgentRequest, sandbox: Sandbox) => ArenaAgent;

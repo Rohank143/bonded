@@ -250,10 +250,10 @@ export function progressLine(
 
 /** What a rating of the owner's own agent will be, before it is asked for. */
 export function expectedLine(
-  plan: { episodes: number; budgetSeconds: number } | undefined,
+  plan: { maxEpisodes: number; budgetSeconds: number } | undefined,
 ): string | undefined {
   if (!plan) return undefined;
   const minutes = Math.round(plan.budgetSeconds / 60);
   const budget = minutes >= 120 ? `${Math.round(minutes / 60)} hours` : `${minutes} minutes`;
-  return `A rating is about ${plan.episodes} episodes. It may take up to ${budget}, and stops there.`;
+  return `A rating is up to ${plan.maxEpisodes} episodes (fewer if some held-out variants can't be made). It may take up to ${budget}, and stops there.`;
 }

@@ -374,7 +374,8 @@ export type SelfAgentRecord =
       /** The vault's or module's address, for agents registered from the web app. */
       vault?: string | null;
       /** What a rating of the owner's own agent will be: its episodes and time budget. */
-      expectedRating?: { episodes: number; budgetSeconds: number };
+      /** The most a rating will be: its held-out set can come out smaller. */
+      expectedRating?: { maxEpisodes: number; budgetSeconds: number };
       /** After a stop the agent caused: the superseded score and the cooldown. */
       standing?: Standing;
     };

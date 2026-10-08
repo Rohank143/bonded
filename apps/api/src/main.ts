@@ -180,7 +180,11 @@ if (role === "migrate") {
     tasks.push(
       loop(
         "TEE checks",
-        () => runTeeChecks(db, chain, undefined, { quota: remoteQuota(remotePolicy, Date.now()) }),
+        () =>
+          runTeeChecks(db, chain, undefined, {
+            quota: remoteQuota(remotePolicy, Date.now()),
+            rerateGapMs: remotePolicy.perAgentMs,
+          }),
         teeEvery,
       ),
     );
@@ -252,12 +256,7 @@ if (role === "migrate") {
     // otherwise deterministic rewrites.
     const llmKey = process.env.LLM_API_KEY ?? process.env.OPENROUTER_API_KEY;
     const heldOut = {
-      perClass: z.coerce
-        .number()
-        .int()
-        .min(0)
-        .max(5)
-        .parse(process.env.HELD_OUT_FRESH_PER_CLASS ?? 1),
+      perClass: remotePolicy.heldOutPerClass,
       ...(llmKey
         ? {
             llm: {
@@ -342,13 +341,7 @@ if (role === "migrate") {
     // Error names only: messages can carry the RPC URL and its key.
     const bountyError = (e: unknown) =>
       console.error("bounty validation failed:", e instanceof Error ? e.name : "unknown error");
-    tasks.push(
-      loop(
-        "The bounty worker",
-        () => workBountyOne(db, worker, rpc, bountyError, { remotePolicy }),
-        5000,
-      ),
-    );
+    tasks.push(loop("The bounty worker", () => workBountyOne(db, worker, rpc, bountyError), 5000));
   }
   console.info(`Bonded service ready: ${role}`);
   // Also the per-service test alert: each deploy or restart announces itself once.
