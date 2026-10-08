@@ -1019,6 +1019,7 @@ describe("RemoteAgent", () => {
       runner: "agent-1",
       mode: "tools",
       tee: {
+        keyId: `0x${"ab".repeat(32)}`,
         onEvidence: (e, context) => {
           evidence.push({ nonce: context.nonce, evidence: e });
           if ((e as { nonce?: string }).nonce !== context.nonce) throw new Error("stale nonce");
@@ -1030,6 +1031,8 @@ describe("RemoteAgent", () => {
     // The first request waited for the gate (the test gateway's 300 ms), the second was served.
     expect(seen).toEqual([503, 200]);
     expect(evidence[0]?.nonce).toBe(fake.received[0]?.nonce);
+    // The runner is told which Arena key to have the TEE attest.
+    expect(fake.received[0]?.teeKeyId).toBe(`0x${"ab".repeat(32)}`);
     expect((ok.agentSummary as RemoteRunSummary).remote.teeEvidence).toEqual(evidence[0]?.evidence);
 
     const refusing = new RemoteAgent({

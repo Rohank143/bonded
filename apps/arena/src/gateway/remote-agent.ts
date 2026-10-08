@@ -56,12 +56,20 @@ export interface RemoteAgentOptions {
    */
   tee?: {
     onEvidence(evidence: unknown, context: { episodeId: string; nonce: `0x${string}` }): unknown;
+    /**
+     * Chain mode: the rating's Arena key id. Each episode asks the TEE to attest the key it derives
+     * for this id (verify with `arenaKeyId`), and `agentAddress` should be that key, so nothing
+     * the agent signs in the Arena (whose fork keeps the live chain's id) is valid for its
+     * production key. Get its address before the rating with attestTeeAgent({ arenaKeyId }).
+     */
+    keyId?: `0x${string}`;
     /** How long to wait for the evidence (default 30 s). */
     timeoutMs?: number;
   };
   /**
-   * Chain mode, TEE-bound: the attested EVM address the episode's vault names as its agent. No
-   * key is sent; the TEE signs. Without it, each episode gets a fresh session key.
+   * Chain mode, TEE-bound: the attested EVM address the episode's vault names as its agent: the
+   * rating's Arena key (`tee.keyId`), never the production key. No key is sent; the TEE signs.
+   * Without it, each episode gets a fresh session key.
    */
   agentAddress?: `0x${string}`;
 }
@@ -257,6 +265,7 @@ export class RemoteAgent implements SelfSigningAgent {
           : {}),
         deadlineMs: timeoutMs,
         ...(nonce ? { nonce } : {}),
+        ...(nonce && this.options.tee?.keyId ? { teeKeyId: this.options.tee.keyId } : {}),
       };
       if (!runner.send(message)) throw new Error("the runner disconnected");
       sent = true;
