@@ -534,6 +534,72 @@ describe("chain mode", () => {
     expect(codes).toEqual(["ok", "ok", "ok", "ok", "ok", -32005, -32005]);
   });
 
+  it("charges a simulation per call it simulates, and every call for the gas it may use", async () => {
+    const strict = new ArenaGateway({
+      tokens,
+      limits: {
+        rpcCallsPerEpisode: 10,
+        rpcCallBurst: 10,
+        rpcGasPerSecond: 1,
+        rpcGasBurst: 40_000_000,
+      },
+    });
+    await strict.listen();
+    cleanup.push(() => strict.close());
+    const { vault, toolbox, account } = await chainEpisode();
+    const episode = strict.openEpisode({
+      episodeId: "charged",
+      toolbox,
+      mode: "chain",
+      chain: {
+        upstream: sandbox.rpcUrl,
+        chainId: sandbox.chain.id,
+        vault: vault.address,
+        agent: account.address,
+      },
+    });
+    const breachCount = encodeFunctionData({ abi: mandateVaultAbi, functionName: "breachCount" });
+    const simulate = (calls: number) =>
+      rpc(episode, "eth_simulateV1", [
+        {
+          blockStateCalls: [
+            {
+              calls: Array.from({ length: calls }, () => ({
+                to: vault.address,
+                data: breachCount,
+                gas: "0x100000",
+              })),
+            },
+          ],
+        },
+        "latest",
+      ]);
+    // Eight simulated calls are eight of the ten calls.
+    expect((await simulate(8)).error).toBeUndefined();
+    expect((await simulate(8)).error?.code).toBe(-32005);
+
+    const gassy = strict.openEpisode({
+      episodeId: "gassy",
+      toolbox,
+      mode: "chain",
+      chain: {
+        upstream: sandbox.rpcUrl,
+        chainId: sandbox.chain.id,
+        vault: vault.address,
+        agent: account.address,
+      },
+    });
+    // Calls with no gas named get 5M each: the 40M burst covers eight, then the gas runs out.
+    const results = [];
+    for (let i = 0; i < 9; i++)
+      results.push(
+        (await rpc(gassy, "eth_call", [{ to: vault.address, data: breachCount }, "latest"])).error
+          ?.message ?? "ok",
+      );
+    expect(results.slice(0, 8).every((r) => r === "ok")).toBe(true);
+    expect(results[8]).toMatch(/too much gas/);
+  });
+
   it("checks every request in a batch, in order, and caps the batch size", async () => {
     const { episode } = await chainEpisode();
     const batch = (await (

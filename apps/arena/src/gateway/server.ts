@@ -58,6 +58,12 @@ export interface GatewayLimits {
   rpcBatch: number;
   /** Most requests one episode may have in flight at once. */
   concurrentPerEpisode: number;
+  /**
+   * HTTP requests one episode may make per second, with a burst: past that a request is refused
+   * before its body is read, so a client spinning on refusals costs the gateway almost nothing.
+   */
+  requestsPerSecond: number;
+  requestBurst: number;
   /** Per call to the sandbox node. */
   upstreamTimeoutMs: number;
   /** Largest single sandbox node answer passed on. */
@@ -66,6 +72,11 @@ export interface GatewayLimits {
   rpcRequestResponseBytes: number;
   /** Gas cap for eth_call, eth_estimateGas, eth_createAccessList and each simulated call. */
   rpcCallGas: bigint;
+  /** The gas such a call gets when it names none. */
+  rpcDefaultCallGas: bigint;
+  /** Gas one episode's calls may use per second, with a burst (each charged the gas it may use). */
+  rpcGasPerSecond: number;
+  rpcGasBurst: number;
   /** Blocks and calls one eth_simulateV1 may simulate. */
   rpcSimulateBlocks: number;
   rpcSimulateCalls: number;
@@ -103,10 +114,15 @@ export const DEFAULT_GATEWAY_LIMITS: GatewayLimits = {
   rpcBodyBytes: 256 * 1024,
   rpcBatch: 50,
   concurrentPerEpisode: 8,
+  requestsPerSecond: 50,
+  requestBurst: 100,
   upstreamTimeoutMs: 15_000,
   upstreamResponseBytes: 1024 * 1024,
   rpcRequestResponseBytes: 2 * 1024 * 1024,
   rpcCallGas: 10_000_000n,
+  rpcDefaultCallGas: 5_000_000n,
+  rpcGasPerSecond: 100_000_000,
+  rpcGasBurst: 300_000_000,
   rpcSimulateBlocks: 4,
   rpcSimulateCalls: 16,
   rpcCallsPerEpisode: 5_000,
@@ -252,6 +268,8 @@ export class GatewayEpisode {
   private closed = false;
   private readonly ended = new AbortController();
   private budget: RpcBudget | undefined;
+  private gas: RpcBudget | undefined;
+  private requests: RpcBudget | undefined;
   private finish!: (body: DoneRequest) => void;
   private openGate!: () => void;
   private readonly gate: Promise<void>;
@@ -309,6 +327,26 @@ export class GatewayEpisode {
   /** Aborted when the episode ends. */
   get signal(): AbortSignal {
     return this.ended.signal;
+  }
+
+  /** @internal The episode's HTTP request rate. */
+  requestBudget(limits: GatewayLimits): RpcBudget {
+    this.requests ??= new RpcBudget(
+      Number.POSITIVE_INFINITY,
+      limits.requestsPerSecond,
+      limits.requestBurst,
+    );
+    return this.requests;
+  }
+
+  /** @internal The episode's gas budget for calls, estimates and simulations. */
+  gasBudget(limits: GatewayLimits): RpcBudget {
+    this.gas ??= new RpcBudget(
+      Number.POSITIVE_INFINITY,
+      limits.rpcGasPerSecond,
+      limits.rpcGasBurst,
+    );
+    return this.gas;
   }
 
   /** @internal The episode's budget of calls to the sandbox node. */
@@ -485,6 +523,10 @@ export class ArenaGateway {
     if (!episode) throw new HttpError(404, "no such episode, or it is over");
     if (episode.inFlight >= this.limits.concurrentPerEpisode)
       throw new HttpError(429, "too many requests in flight for this episode");
+    if (!episode.requestBudget(this.limits).take()) {
+      req.resume();
+      throw new HttpError(429, "too many requests for this episode; slow down");
+    }
     episode.inFlight++;
     try {
       await episode.ready(this.limits.readyTimeoutMs).catch(() => {
@@ -536,6 +578,7 @@ export class ArenaGateway {
           ...episode.spec.chain,
           toolbox: episode.spec.toolbox,
           budget: episode.rpcBudget(this.limits),
+          gas: episode.gasBudget(this.limits),
           signal: episode.signal,
         },
         {
@@ -544,6 +587,7 @@ export class ArenaGateway {
           responseBytes: this.limits.upstreamResponseBytes,
           requestResponseBytes: this.limits.rpcRequestResponseBytes,
           callGas: this.limits.rpcCallGas,
+          defaultCallGas: this.limits.rpcDefaultCallGas,
           simulateBlocks: this.limits.rpcSimulateBlocks,
           simulateCalls: this.limits.rpcSimulateCalls,
         },

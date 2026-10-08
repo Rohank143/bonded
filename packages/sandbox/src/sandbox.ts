@@ -16,6 +16,12 @@ import {
   type WalletClient,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import {
+  DEFAULT_FORK_BUDGET,
+  type ForkBudget,
+  type ForkProxy,
+  startForkProxy,
+} from "./fork-proxy.js";
 
 const run = promisify(execFile);
 
@@ -51,6 +57,11 @@ export interface SandboxOptions {
   forkUrl?: string;
   /** Explicit deployment for a fork, including ephemeral local chains. */
   forkDeployment?: EvmDeployment;
+  /**
+   * How much the fork may ask of the live RPC (fork-proxy.ts): paced and capped for the sandbox's
+   * life. Default DEFAULT_FORK_BUDGET; false sends anvil to the live RPC directly.
+   */
+  forkBudget?: ForkBudget | false;
   /** Port for anvil; a free one is picked by default. */
   port?: number;
   /** Progress messages (deploy output, etc.). */
@@ -74,7 +85,13 @@ export class Sandbox {
     readonly publicClient: PublicClient<Transport, Chain>,
     /** The live chain's RPC a fork was made from (may hold an API key: never shown to agents). */
     readonly forkUrl?: string,
+    private readonly forkProxy?: ForkProxy,
   ) {}
+
+  /** Requests the fork has sent to the live RPC so far, when its budget is enforced. */
+  get forkFetches(): number | undefined {
+    return this.forkProxy?.forwarded;
+  }
 
   static async start(options: SandboxOptions = {}): Promise<Sandbox> {
     const log = options.log ?? (() => {});
@@ -82,6 +99,7 @@ export class Sandbox {
     const rpcUrl = `http://127.0.0.1:${port}`;
 
     const args = ["--port", String(port), "--silent"];
+    let proxy: ForkProxy | undefined;
     if (!options.forkUrl) {
       // A chain id unique to this sandbox (its port is unique while it runs), so sandboxes
       // started at the same time write separate deployment files instead of racing on one.
@@ -92,7 +110,16 @@ export class Sandbox {
       // and a node that hasn't seen the tip yet can't serve state for it.
       const upstream = createPublicClient({ transport: http(options.forkUrl) });
       const tip = await upstream.getBlockNumber();
-      args.push("--fork-url", options.forkUrl, "--fork-block-number", String(tip - 5n));
+      proxy =
+        options.forkBudget === false
+          ? undefined
+          : await startForkProxy(options.forkUrl, options.forkBudget ?? DEFAULT_FORK_BUDGET);
+      args.push(
+        "--fork-url",
+        proxy?.url ?? options.forkUrl,
+        "--fork-block-number",
+        String(tip - 5n),
+      );
     }
     const anvil = spawn("anvil", args, { stdio: ["ignore", "ignore", "pipe"] });
     let stderr = "";
@@ -137,9 +164,11 @@ export class Sandbox {
         Boolean(options.forkUrl),
         publicClient,
         options.forkUrl,
+        proxy,
       );
     } catch (error) {
       anvil.kill();
+      await proxy?.close();
       throw error;
     }
   }
@@ -184,10 +213,12 @@ export class Sandbox {
   }
 
   async stop(): Promise<void> {
-    if (hasExited(this.anvil)) return;
-    const exited = new Promise<void>((resolve) => this.anvil.once("exit", () => resolve()));
-    this.anvil.kill();
-    await exited;
+    if (!hasExited(this.anvil)) {
+      const exited = new Promise<void>((resolve) => this.anvil.once("exit", () => resolve()));
+      this.anvil.kill();
+      await exited;
+    }
+    await this.forkProxy?.close();
   }
 }
 
