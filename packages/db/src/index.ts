@@ -241,7 +241,7 @@ export class Database {
       "0011_list_pagination.sql",
       "0012_attack_index.sql",
       "0013_sentinel_checks.sql",
-      "0014_sentinel_cascade.sql",
+      "0018_sentinel_cascade.sql",
     ];
     await this.transaction(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(7001)");
