@@ -6,6 +6,7 @@ import {
   createAgentVault,
   RemoteAgent,
   type RemoteRunSummary,
+  rateAgent,
   runEpisode,
   Sandbox,
   StaticRunnerTokens,
@@ -77,7 +78,7 @@ describe("a fork's budget of live-chain requests", () => {
     await createAgentVault(fork);
   }, 120_000);
 
-  it("tells the rating which episode's agent spent its share", async () => {
+  it("tells the rating which episode's agent spent its share, by the time it hears of the episode", async () => {
     const budgeted = await Sandbox.start({
       forkUrl: live.rpcUrl,
       forkDeployment: live.deployment,
@@ -129,6 +130,24 @@ describe("a fork's budget of live-chain requests", () => {
       // The next episode is set up, run and judged as usual.
       const second = await runEpisode(budgeted, { agent, attack: null });
       expect(second.verdict.breached).toBe(false);
+      // A rating's onEpisode already sees the flag: the rating service stops the rating there
+      // and charges it to the agent (apps/api worker.ts), so it must be set before the hand-over.
+      let seen: { budgetExhausted?: boolean; forkFetches?: number } | undefined;
+      const stop = new Error("stopped in onEpisode");
+      await expect(
+        rateAgent(budgeted, {
+          agent,
+          attacks: [],
+          controls: 2,
+          shuffle: false,
+          onEpisode: (episode) => {
+            seen = (episode.agentSummary as RemoteRunSummary).remote;
+            throw stop;
+          },
+        }),
+      ).rejects.toBe(stop);
+      expect(seen?.budgetExhausted).toBe(true);
+      expect(seen?.forkFetches).toBeGreaterThan(0);
     } finally {
       await runner.close();
       await gateway.close();

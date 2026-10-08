@@ -163,7 +163,7 @@ export class Sandbox {
         log("Deploying the protocol to a fresh local chain");
         deployment = await deployFresh(rpcUrl, chainId, log);
         // The addresses now live in memory; the file only existed to hand them over.
-        rmSync(`${CONTRACTS_DIR}deployments/${chainId}.json`, { force: true });
+        rmSync(`${CONTRACTS_DIR}${SANDBOX_DEPLOYMENTS}/${chainId}.json`, { force: true });
       }
       return new Sandbox(
         anvil,
@@ -231,8 +231,15 @@ export class Sandbox {
   }
 }
 
-function loadDeployment(chainId: number): EvmDeployment {
-  const path = `${CONTRACTS_DIR}deployments/${chainId}.json`;
+/**
+ * Where a fresh sandbox's deploy writes its addresses (relative to contracts/evm): a git-ignored
+ * folder, so a run that dies before cleaning up can't leave a file beside the committed
+ * deployments (where it could be committed, and where the committed-files test would read it).
+ */
+const SANDBOX_DEPLOYMENTS = "deployments/sandbox";
+
+function loadDeployment(chainId: number, dir = "deployments"): EvmDeployment {
+  const path = `${CONTRACTS_DIR}${dir}/${chainId}.json`;
   let text: string;
   try {
     text = readFileSync(path, "utf8");
@@ -260,6 +267,7 @@ async function deployFresh(
         ATTESTER: privateKeyToAccount(ANVIL_KEYS.deployer).address,
         COUNCIL: privateKeyToAccount(ANVIL_KEYS.deployer).address,
         WAITING_PERIOD: "0",
+        DEPLOYMENTS_DIR: SANDBOX_DEPLOYMENTS,
       },
       maxBuffer: 16 * 1024 * 1024,
     });
@@ -275,7 +283,7 @@ async function deployFresh(
       cause: error,
     });
   }
-  return loadDeployment(chainId);
+  return loadDeployment(chainId, SANDBOX_DEPLOYMENTS);
 }
 
 /** True once the process has ended, whether it exited or was killed by a signal. */

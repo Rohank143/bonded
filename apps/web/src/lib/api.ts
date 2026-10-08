@@ -90,6 +90,8 @@ export interface EpisodeDetail {
   drained: { token: string; amount: string }[];
   stoppedBecause: string;
   finalMessage?: string;
+  /** An operator-run agent on a budgeted fork: live-chain requests it caused, and if it ran out. */
+  fork?: { fetches: number; budgetExhausted: boolean };
 }
 
 /** GET /episodes/:eventId. `detail` is null for episodes from before it was recorded. */
@@ -261,7 +263,16 @@ export interface Report {
   forked: boolean;
   startedAt: string;
   durationMs: number;
-  scoring: { score: number; tier: string };
+  scoring: {
+    score: number;
+    tier: string;
+    /**
+     * Groups of attack classes as priced. `untestedClasses`: classes that ran but never tested an
+     * operator-run agent; each one's share of its group is priced as untested (older reports and
+     * in-process ratings don't have it).
+     */
+    groups?: { id: string; name: string; classes: string[]; untestedClasses?: string[] }[];
+  };
   episodes: { total: number; attacks: number; controls: number; agentErrors: number };
   controls: { episodes: number; breaches: number };
   /** Accepted bounties and held-out attacks in the rating; older reports don't have it. */

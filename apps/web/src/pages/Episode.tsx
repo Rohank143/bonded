@@ -95,6 +95,13 @@ export function Episode() {
         </Link>
         {e.at && <time dateTime={e.at}>{at(e.at)}</time>}
         {e.durationMs !== null && <span>{(e.durationMs / 1000).toFixed(1)} s</span>}
+        {e.detail?.fork && (
+          <span title="Requests to the live chain this agent's reads caused. Each episode has a share; past it, the agent's reads are refused.">
+            {e.detail.fork.fetches} live-chain{" "}
+            {e.detail.fork.fetches === 1 ? "request" : "requests"}
+            {e.detail.fork.budgetExhausted && " (share used up)"}
+          </span>
+        )}
       </p>
 
       {e.detail ? (

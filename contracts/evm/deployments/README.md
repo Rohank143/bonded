@@ -1,6 +1,6 @@
 # Deployments
 
-`<chainId>.json` files for each chain Bonded is deployed on, written only after the deployment is confirmed on-chain (see Deploying). Local anvil runs (`31337.json`) are git-ignored; testnet and mainnet files are committed and validated by `packages/shared/test/deployments.test.ts`.
+`<chainId>.json` files for each chain Bonded is deployed on, written only after the deployment is confirmed on-chain (see Deploying). Local anvil runs (`31337.json`) are git-ignored, and the Arena's throwaway sandboxes write to `sandbox/` (also git-ignored) by setting `DEPLOYMENTS_DIR`; testnet and mainnet files are committed and validated by `packages/shared/test/deployments.test.ts`.
 
 ## Live testnets
 
