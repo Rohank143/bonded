@@ -251,6 +251,8 @@ export function Agent() {
       )}
 
       <OwnerTools
+        // A new agent's page starts with fresh owner controls (its own token, rating, errors).
+        key={`${deployment.chainId}:${id}`}
         agentId={id}
         owner={owner?.result}
         scoreExpired={Boolean(rated && fresh && fresh.result === false)}

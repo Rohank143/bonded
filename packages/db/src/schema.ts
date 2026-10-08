@@ -34,6 +34,10 @@ export const ratings = pgTable("ratings", {
   attestation: jsonb(),
   error: text(),
   createdAt: created(),
+  /** What it was queued under (0018): the registration's kind, the owner charged, the registration. */
+  kind: text().notNull().default(""),
+  chargedOwner: text("charged_owner"),
+  config: jsonb(),
 });
 export const attestations = pgTable("attestations", {
   id: uuid()

@@ -241,7 +241,10 @@ async function runLocked(
   try {
     const row = (
       await db.pool.query(
-        "SELECT r.*,a.config,a.owner,a.agent_id AS onchain_id FROM ratings r JOIN agents a ON a.id=r.agent_id WHERE r.id=$1",
+        // The registration the rating was queued under, and the owner it was charged to (0018):
+        // registering the agent again later doesn't change what this rating rates.
+        `SELECT r.*,coalesce(r.config,a.config) AS config,r.charged_owner AS owner,a.agent_id AS onchain_id
+         FROM ratings r JOIN agents a ON a.id=r.agent_id WHERE r.id=$1`,
         [job.id],
       )
     ).rows[0];
@@ -579,8 +582,8 @@ async function runLocked(
         else await db.recordTeeRating({ agentId: agentKey }, c);
       });
     }
-    // A complete rating posted: an operator-run agent's standing resets.
-    await db.finish(job, undefined, { remote: config.kind === "remote" });
+    // A complete rating posted: any standing from earlier stops resets.
+    await db.finish(job);
   } catch (error) {
     onError?.(error);
     const failure = ratingFailure(error, budgetSpentIn);

@@ -189,4 +189,57 @@ describe("ConnectAgent", () => {
     expect(await screen.findByText(/Re-register it to rate under your own config/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Rate my agent" })).toHaveProperty("disabled", true);
   });
+
+  describe("moving to another agent's page", () => {
+    const tokenFor = (n: number) => ({
+      token: `bonded_rt_secret_${n}`,
+      tokenId: "t",
+      createdAt: "2026-10-07T00:00:00Z",
+      gatewayUrl: "https://gw.example",
+    });
+    // The same component instance reused for another agent (no key): its own state is scoped.
+    function mount(agentId: string) {
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const view = (id: string) => (
+        <MemoryRouter>
+          <QueryClientProvider client={client}>
+            <ConnectAgent agentId={id} record={record} scoreExpired={false} />
+          </QueryClientProvider>
+        </MemoryRouter>
+      );
+      const { rerender } = render(view(agentId));
+      return (id: string) => rerender(view(id));
+    }
+
+    it("doesn't show agent 12's token on agent 13", async () => {
+      vi.spyOn(api, "runner").mockResolvedValue(runnerRecord());
+      vi.spyOn(api, "createRunnerToken").mockResolvedValue(tokenFor(12));
+      const show13 = mount("12");
+      fireEvent.click(await screen.findByRole("button", { name: "Create a runner token" }));
+      expect(await screen.findByText(/BONDED_RUNNER_TOKEN=bonded_rt_secret_12 npx/)).toBeTruthy();
+      show13("13");
+      await waitFor(() => expect(screen.queryByText(/bonded_rt_secret_12/)).toBeNull());
+      expect(screen.getByText(/Create a token to get the command/)).toBeTruthy();
+    });
+
+    it("ignores agent 12's token when it arrives after the page moved to agent 13", async () => {
+      vi.spyOn(api, "runner").mockResolvedValue(runnerRecord());
+      let resolve!: (value: ReturnType<typeof tokenFor>) => void;
+      const create = vi
+        .spyOn(api, "createRunnerToken")
+        .mockReturnValue(new Promise((r) => (resolve = r)));
+      const show13 = mount("12");
+      fireEvent.click(await screen.findByRole("button", { name: "Create a runner token" }));
+      await waitFor(() => expect(create).toHaveBeenCalledWith("12", expect.anything()));
+      show13("13");
+      resolve(tokenFor(12));
+      // Give the late result time to land, then check it didn't.
+      await new Promise((r) => setTimeout(r, 50));
+      expect(screen.queryByText(/bonded_rt_secret_12/)).toBeNull();
+      expect(screen.getByRole("button", { name: "Create a runner token" })).toHaveProperty(
+        "disabled",
+        false,
+      );
+    });
+  });
 });

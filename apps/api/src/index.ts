@@ -231,24 +231,24 @@ export function createApi(options: {
     // New cover for an agent with TEE custody needs the vault's key to be the TEE's key and no
     // outstanding failure (ADR-013, ADR-014). Decided against the same block the quote is built at.
     const teeRow = await db.teeCheck(`${chain.deployment.chainId}:${input.agentId}`);
-    // An agent its operator runs is capped by its binding (underwriting policy, not score).
-    const record = await db.agentRecord(`${chain.deployment.chainId}:${input.agentId}`);
-    const operatorRun =
-      record?.enabled === true && (record.config as { kind?: string }).kind === REMOTE_KIND;
     const agentKey = `${chain.deployment.chainId}:${input.agentId}`;
     // After a stop the agent caused, its score no longer stands: no new cover until a complete
-    // rating posts. Rerolling a bad rating by crashing gains nothing.
-    if (operatorRun) {
-      const { superseded } = await db.agentStanding(agentKey);
-      if (superseded)
-        return c.json(
-          {
-            error: `this agent's score is superseded: its latest rating was stopped by the agent (${superseded.reason}); cover waits for a complete rating`,
-            ...(await ratingHistory(agentKey)),
-          },
-          409,
-        );
-    }
+    // rating posts. Rerolling a bad rating by crashing gains nothing. Checked whatever the agent
+    // is registered as now, so registering it again can't lift it.
+    const { superseded } = await db.agentStanding(agentKey);
+    if (superseded)
+      return c.json(
+        {
+          error: `this agent's score is superseded: its latest rating was stopped by the agent (${superseded.reason}); cover waits for a complete rating`,
+          ...(await ratingHistory(agentKey)),
+        },
+        409,
+      );
+    const record = await db.agentRecord(agentKey);
+    // Whether the score's agent is one its operator runs (cover capped by binding: underwriting
+    // policy, not score) comes from the rating that posted the score, never from a later
+    // registration. A score of an earlier registration prices no cover.
+    let operatorRun = false;
     const signed = await issueQuote(
       chain,
       { ...input, vault: input.vault as Hex },
@@ -260,7 +260,22 @@ export function createApi(options: {
           vaultAgent,
           row: teeRow,
         }),
-      { capByBinding: operatorRun, caps: options.coverCaps ?? UNDERWRITING_COVER_CAP_USD },
+      async ({ reportHash }) => {
+        const rating = await db.ratingBehindScore(agentKey, reportHash);
+        if (rating && !rating.current)
+          return {
+            refused:
+              "this agent was registered again after its current score was posted; cover waits for a complete rating of its current registration",
+          };
+        // A score this service didn't post: the registration is all there is to go on.
+        operatorRun = rating
+          ? rating.kind === REMOTE_KIND
+          : record?.enabled === true && (record.config as { kind?: string }).kind === REMOTE_KIND;
+        return {
+          capByBinding: operatorRun,
+          caps: options.coverCaps ?? UNDERWRITING_COVER_CAP_USD,
+        };
+      },
     );
     await db.pool.query("INSERT INTO quotes(id,chain_id,agent_id,signed) VALUES($1,$2,$3,$4)", [
       randomUUID(),
