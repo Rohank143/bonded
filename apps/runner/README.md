@@ -17,13 +17,13 @@ npx @bonded/runner --gateway https://arena.example.com -- node my-agent.js
 
 Options:
 
-| Flag                  | Meaning                                                                                                                      |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `--gateway <url>`     | The Arena Gateway (or `BONDED_GATEWAY_URL`).                                                                                 |
-| `--token <token>`     | Your runner token (or `BONDED_RUNNER_TOKEN`).                                                                                |
-| `--mode tools\|chain` | `tools` (default): reads and trades are tool calls. `chain`: reads are tool calls, trades are transactions your agent signs. |
-| `--tee-url <url>` | Your agent's TEE. The runner fetches `GET <url>/attestation?nonce=` for each episode and forwards the answer unchanged. In chain mode it adds `&purpose=arena&key=<id>`: the TEE attests a key it derives for that rating, and your agent signs episode transactions with it (`BONDED_TEE_KEY_ID` names it), never its production key. |
-| `--quiet`             | Don't copy the agent's output to the terminal.                                                                               |
+| Flag                  | Meaning                                                                                                                                                                                                                                                                                                                                |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--gateway <url>`     | The Arena Gateway (or `BONDED_GATEWAY_URL`).                                                                                                                                                                                                                                                                                           |
+| `--token <token>`     | Your runner token (or `BONDED_RUNNER_TOKEN`).                                                                                                                                                                                                                                                                                          |
+| `--mode tools\|chain` | `tools` (default): reads and trades are tool calls. `chain`: reads are tool calls, trades are transactions your agent signs.                                                                                                                                                                                                           |
+| `--tee-url <url>`     | Your agent's TEE. The runner fetches `GET <url>/attestation?nonce=` for each episode and forwards the answer unchanged. In chain mode it adds `&purpose=arena&key=<id>`: the TEE attests a key it derives for that rating, and your agent signs episode transactions with it (`BONDED_TEE_KEY_ID` names it), never its production key. |
+| `--quiet`             | Don't copy the agent's output to the terminal.                                                                                                                                                                                                                                                                                         |
 
 The runner reconnects with backoff if the connection drops, and stops for good (exit code 2) if
 the token is wrong or revoked, or another runner connects with the same token. It runs one episode
@@ -36,22 +36,22 @@ in the Bonded repository.
 
 Each episode starts your command once, with:
 
-| Variable             | Value                                                                                                                                          |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BONDED_EPISODE_ID`  | The episode's id.                                                                                                                              |
-| `BONDED_MODE`        | `tools` or `chain`.                                                                                                                            |
-| `BONDED_TASK`        | JSON: `{ goal, mandate, policy?, maxSteps }`. The goal is the job; the mandate is what you may do.                                             |
-| `BONDED_MCP_URL`     | MCP over streamable HTTP.                                                                                                                      |
-| `BONDED_TOOLS_URL`   | Plain HTTP: `GET` lists the tools, `POST {url}/{name}` with the arguments as JSON calls one.                                                   |
-| `BONDED_OPENAPI_URL` | OpenAPI 3.1 description of the plain HTTP endpoints.                                                                                           |
-| `BONDED_DONE_URL`    | `POST` `{ finalMessage? }` when finished (optional: exiting also ends the episode).                                                            |
-| `BONDED_RPC_URL`     | Chain mode: Ethereum JSON-RPC for the episode's chain.                                                                                         |
-| `BONDED_SESSION_KEY` | Chain mode (without a TEE): a fresh private key the episode's vault accepts as its agent.                                                      |
-| `BONDED_TEE_KEY_ID` | Chain mode with a TEE: the rating's Arena key id. Derive the signing key for it inside the TEE (Bonded's TEE agent: `AgentIdentity.arenaAccount`). |
-| `BONDED_VAULT`       | The episode's Mandate Vault.                                                                                                                   |
-| `BONDED_CHAIN_ID`    | The chain id.                                                                                                                                  |
-| `BONDED_CONTRACTS`   | JSON: `{ exchange, tokens: [{ symbol, address, decimals }] }`.                                                                                 |
-| `BONDED_DEADLINE_MS` | Milliseconds the agent has. The runner stops it (SIGTERM, then SIGKILL 5 s later) when the gateway cancels the episode or the deadline passes. |
+| Variable             | Value                                                                                                                                              |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BONDED_EPISODE_ID`  | The episode's id.                                                                                                                                  |
+| `BONDED_MODE`        | `tools` or `chain`.                                                                                                                                |
+| `BONDED_TASK`        | JSON: `{ goal, mandate, policy?, maxSteps }`. The goal is the job; the mandate is what you may do.                                                 |
+| `BONDED_MCP_URL`     | MCP over streamable HTTP.                                                                                                                          |
+| `BONDED_TOOLS_URL`   | Plain HTTP: `GET` lists the tools, `POST {url}/{name}` with the arguments as JSON calls one.                                                       |
+| `BONDED_OPENAPI_URL` | OpenAPI 3.1 description of the plain HTTP endpoints.                                                                                               |
+| `BONDED_DONE_URL`    | `POST` `{ finalMessage? }` when finished (optional: exiting also ends the episode).                                                                |
+| `BONDED_RPC_URL`     | Chain mode: Ethereum JSON-RPC for the episode's chain.                                                                                             |
+| `BONDED_SESSION_KEY` | Chain mode (without a TEE): a fresh private key the episode's vault accepts as its agent.                                                          |
+| `BONDED_TEE_KEY_ID`  | Chain mode with a TEE: the rating's Arena key id. Derive the signing key for it inside the TEE (Bonded's TEE agent: `AgentIdentity.arenaAccount`). |
+| `BONDED_VAULT`       | The episode's Mandate Vault.                                                                                                                       |
+| `BONDED_CHAIN_ID`    | The chain id.                                                                                                                                      |
+| `BONDED_CONTRACTS`   | JSON: `{ exchange, tokens: [{ symbol, address, decimals }] }`.                                                                                     |
+| `BONDED_DEADLINE_MS` | Milliseconds the agent has. The runner stops it (SIGTERM, then SIGKILL 5 s later) when the gateway cancels the episode or the deadline passes.     |
 
 The URLs carry a capability for this episode only, and stop working when it ends. Your runner
 token is not passed to the agent.
