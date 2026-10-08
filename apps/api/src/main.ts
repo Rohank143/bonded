@@ -9,7 +9,7 @@ import { z } from "zod";
 import { createApi } from "./index.js";
 import { runTeeChecks, teeCheckInterval } from "./tee-watch.js";
 import { agentConfig, workOne } from "./worker.js";
-import { DEFAULT_REMOTE_POLICY, remoteQuota, type RemoteRatingPolicy } from "./remote-policy.js";
+import { remotePolicyFromEnv, remoteQuota } from "./remote-policy.js";
 import { remoteRatingProblem } from "./eligibility.js";
 import { sentinelFromEnv } from "./sentinel.js";
 import { workBountyOne } from "./bounty-worker.js";
@@ -72,24 +72,8 @@ const gatewayUrl = () => {
     .url({ protocol: /^https?$/ })
     .parse(/^https?:\/\//.test(value) ? value : `https://${value}`);
 };
-/** Sizes, caps and budgets for operator-run agents' ratings, from the environment. */
-const remotePolicy: RemoteRatingPolicy = (() => {
-  const int = (name: string, fallback: number, min = 1) =>
-    z.coerce
-      .number()
-      .int()
-      .min(min)
-      .parse(process.env[name] ?? fallback);
-  const d = DEFAULT_REMOTE_POLICY;
-  return {
-    repeats: int("REMOTE_REPEATS", d.repeats),
-    perOwnerDaily: int("REMOTE_RATINGS_PER_OWNER_DAILY", d.perOwnerDaily),
-    perAgentDaily: int("REMOTE_RATINGS_PER_AGENT_DAILY", d.perAgentDaily),
-    laneDaily: int("REMOTE_RATINGS_DAILY", d.laneDaily),
-    episodeBudgetMs: int("REMOTE_EPISODE_BUDGET_MS", d.episodeBudgetMs, 1000),
-    budgetCeilingMs: int("REMOTE_RATING_MAX_MS", d.budgetCeilingMs, 60_000),
-  };
-})();
+/** Sizes, caps and budgets for operator-run agents' ratings: the one configured policy. */
+const remotePolicy = remotePolicyFromEnv();
 const db = new Database(required("DATABASE_URL"));
 await db.migrate();
 if (role === "migrate") {
@@ -153,6 +137,8 @@ if (role === "migrate") {
       // The Arena Gateway's public URL (the arena-worker's domain), for the runner command.
       ...(gatewayUrl() ? { gatewayUrl: gatewayUrl()! } : {}),
       // Underwriting policy for agents their operators run: total cover caps by binding.
+      // The same configured policy for operator-run agents as the worker and keeper use.
+      selfServe: { remote: remotePolicy },
       coverCaps: {
         declared: usdCap("DECLARED_COVER_CAP_USD", UNDERWRITING_COVER_CAP_USD.declared),
         tee: usdCap("TEE_COVER_CAP_USD", UNDERWRITING_COVER_CAP_USD.tee),
@@ -348,7 +334,13 @@ if (role === "migrate") {
     // Error names only: messages can carry the RPC URL and its key.
     const bountyError = (e: unknown) =>
       console.error("bounty validation failed:", e instanceof Error ? e.name : "unknown error");
-    tasks.push(loop("The bounty worker", () => workBountyOne(db, worker, rpc, bountyError), 5000));
+    tasks.push(
+      loop(
+        "The bounty worker",
+        () => workBountyOne(db, worker, rpc, bountyError, { remotePolicy }),
+        5000,
+      ),
+    );
   }
   console.info(`Bonded service ready: ${role}`);
   // Also the per-service test alert: each deploy or restart announces itself once.

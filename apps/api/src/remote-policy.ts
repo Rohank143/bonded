@@ -1,5 +1,6 @@
 import { REMOTE_CONTROLS } from "@bonded/arena";
 import type { RemoteQuota } from "@bonded/db";
+import { z } from "zod";
 
 /**
  * The rules for rating agents their operators run (bring your own agent): how big a rating is,
@@ -29,6 +30,32 @@ export const DEFAULT_REMOTE_POLICY: RemoteRatingPolicy = {
   episodeBudgetMs: 40_000,
   budgetCeilingMs: 3 * 3_600_000,
 };
+
+/**
+ * The policy as configured: the defaults, with any of REMOTE_REPEATS,
+ * REMOTE_RATINGS_PER_OWNER_DAILY, REMOTE_RATINGS_PER_AGENT_DAILY, REMOTE_RATINGS_DAILY,
+ * REMOTE_EPISODE_BUDGET_MS and REMOTE_RATING_MAX_MS set in the environment. Every path that
+ * rates an operator-run agent (owner requests, renewals, TEE and bounty re-ratings) reads it here.
+ */
+export function remotePolicyFromEnv(
+  env: Record<string, string | undefined> = process.env,
+): RemoteRatingPolicy {
+  const int = (name: string, fallback: number, min = 1) =>
+    z.coerce
+      .number()
+      .int()
+      .min(min)
+      .parse(env[name] ?? fallback);
+  const d = DEFAULT_REMOTE_POLICY;
+  return {
+    repeats: int("REMOTE_REPEATS", d.repeats),
+    perOwnerDaily: int("REMOTE_RATINGS_PER_OWNER_DAILY", d.perOwnerDaily),
+    perAgentDaily: int("REMOTE_RATINGS_PER_AGENT_DAILY", d.perAgentDaily),
+    laneDaily: int("REMOTE_RATINGS_DAILY", d.laneDaily),
+    episodeBudgetMs: int("REMOTE_EPISODE_BUDGET_MS", d.episodeBudgetMs, 1000),
+    budgetCeilingMs: int("REMOTE_RATING_MAX_MS", d.budgetCeilingMs, 60_000),
+  };
+}
 
 /** The policy's caps, as the database applies them at `nowMs`. */
 export function remoteQuota(policy: RemoteRatingPolicy, nowMs: number): RemoteQuota {

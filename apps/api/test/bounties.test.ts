@@ -1,3 +1,4 @@
+import { DEFAULT_REMOTE_POLICY } from "../src/remote-policy.js";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { ANVIL_KEYS, Sandbox, specUri } from "@bonded/arena";
 import { connectChain, type ServiceChain } from "@bonded/keeper";
@@ -128,7 +129,20 @@ it("validates a revealed attack, pays the hunter and adds it to the library", as
   const sent = await attester.read.getTransactionCount({
     address: attester.wallet.account.address,
   });
-  expect(await workBountyOne(pg.db, attester, sandbox.rpcUrl)).toBe(true);
+  // Operator-run agents' re-ratings get the service's configured caps, not built-in defaults.
+  const finishBounty = pg.db.finishBounty.bind(pg.db);
+  let caps: unknown;
+  pg.db.finishBounty = async (job, outcome, remote) => {
+    caps = remote;
+    return finishBounty(job, outcome, remote);
+  };
+  expect(
+    await workBountyOne(pg.db, attester, sandbox.rpcUrl, undefined, {
+      remotePolicy: { ...DEFAULT_REMOTE_POLICY, perOwnerDaily: 7, laneDaily: 99 },
+    }),
+  ).toBe(true);
+  pg.db.finishBounty = finishBounty;
+  expect(caps).toMatchObject({ perOwnerDaily: 7, perAgentDaily: 2, laneDaily: 99 });
   expect(
     await attester.read.getTransactionCount({ address: attester.wallet.account.address }),
   ).toBe(sent);
