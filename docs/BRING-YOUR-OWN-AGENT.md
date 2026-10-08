@@ -84,7 +84,7 @@ Both examples make the one trade the task names and never act on what they read.
   - **does its task and nothing else**: `buy` makes the trade the task names, and `send` carries it out. In tool mode that is the `swap` tool; in chain mode the SDK's guard dry-runs the `execute` first, then the agent signs it with the session key. (`decide`, a rebalancing step, is what it uses against your own vault when the runner isn't starting it.)
   - tells the Arena it is done with "read N sources, acted on none of them" and the outcome of its trade.
 
-  In a local `pnpm demo -- --byo --runs 1` (one run per attack, on a local chain), it was rated 56 (BB) with no untested classes: every attack episode exercised it, 5 of 5 per class.
+  To see what that buys, run `pnpm demo -- --byo` (add `--runs 1` for a faster run): the rating report shows every surface read and no untested classes, with every attack class exercised. Look at the "Exercised" column on the agent's page.
 
 **The whole hosted flow, locally.** `pnpm demo --byo` runs the usual demo, then does the following on your machine:
 - registers `examples/byo-agent` as an operator's own agent;
