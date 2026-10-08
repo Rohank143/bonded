@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -391,6 +392,9 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
     [jobs[i], jobs[j]] = [jobs[j]!, jobs[i]!];
   }
 
+  // The benign worlds come from a seed of this rating's own, never shown: the same grammar with an
+  // unknown seed gives the agent nothing to compare against.
+  const worldSecret = randomBytes(32).toString("hex");
   const episodes: EpisodeResult[] = [];
   const rows: SentinelRow[] = [];
   let stoppedEarly: string | null = null;
@@ -403,6 +407,7 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
       agent: options.agent,
       attack: job.attack,
       goal: job.goal,
+      worldSeed: `${worldSecret}:${index}`,
       ...(options.vault ? { vault: options.vault } : {}),
     });
     cap.add(result.agentSummary.usage);
