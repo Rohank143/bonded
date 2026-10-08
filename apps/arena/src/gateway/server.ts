@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { isIP } from "node:net";
 import type { Duplex } from "node:stream";
 import {
   AGENT_TOOLS,
@@ -105,6 +106,11 @@ export interface GatewayLimits {
   upgradesPerToken: number;
   /** Upgrades with no or a malformed token, per minute, across all addresses (never checked). */
   malformedUpgradesPerMinute: number;
+  /**
+   * Failed token checks per minute across all addresses: past it, tokens that haven't passed a
+   * check recently are refused before one (tokens that have keep their own budget).
+   */
+  failedChecksPerMinute: number;
   /** Token checks for upgrades in flight at once, across all addresses. */
   pendingUpgrades: number;
 }
@@ -136,6 +142,7 @@ export const DEFAULT_GATEWAY_LIMITS: GatewayLimits = {
   upgradesPerMinute: 30,
   upgradesPerToken: 20,
   malformedUpgradesPerMinute: 600,
+  failedChecksPerMinute: 300,
   pendingUpgrades: 64,
 };
 
@@ -400,6 +407,8 @@ export class ArenaGateway {
   private readonly malformed: UpgradeWindow = { start: 0, counts: new Map() };
   private readonly failures: UpgradeWindow = { start: 0, counts: new Map() };
   private readonly perToken: UpgradeWindow = { start: 0, counts: new Map() };
+  /** Token hashes that passed a check, with when (oldest first, bounded). */
+  private readonly validTokens = new Map<string, number>();
   private readonly log: (message: string) => void;
 
   constructor(private readonly options: GatewayOptions) {
@@ -616,13 +625,20 @@ export class ArenaGateway {
         this.windowed(this.malformed, "all", this.limits.malformedUpgradesPerMinute) ? 401 : 429,
         "Unauthorized",
       );
-    // Well-formed tokens: an address that has failed too many checks is refused before another,
-    // each token has its own budget (so a valid runner can reconnect whatever others send), and
-    // checks in flight are capped overall.
+    // Well-formed tokens. A token that has passed a check recently keeps only its own budget, so
+    // a legitimate runner can reconnect whatever others send. Any other token is refused before a
+    // check when its address (IPv6 by /64, so rotating addresses in one block doesn't help) or the
+    // whole gateway has seen too many failed checks. Checks in flight are capped overall.
     const address = this.clientAddress(req);
-    if (this.counted(this.failures, address) >= this.limits.upgradesPerMinute)
-      return refuse(socket, 429, "Too Many Requests");
-    if (!this.windowed(this.perToken, hashToken(token), this.limits.upgradesPerToken))
+    const tokenHash = hashToken(token);
+    const known = this.recentlyValid(tokenHash);
+    if (!known) {
+      if (this.counted(this.failures, address) >= this.limits.upgradesPerMinute)
+        return refuse(socket, 429, "Too Many Requests");
+      if (this.counted(this.failures, "*") >= this.limits.failedChecksPerMinute)
+        return refuse(socket, 429, "Too Many Requests");
+    }
+    if (!this.windowed(this.perToken, tokenHash, this.limits.upgradesPerToken))
       return refuse(socket, 429, "Too Many Requests");
     if (this.upgradesInFlight >= this.limits.pendingUpgrades)
       return refuse(socket, 503, "Service Unavailable");
@@ -636,8 +652,18 @@ export class ArenaGateway {
     } finally {
       this.upgradesInFlight--;
     }
-    if (!identity) this.windowed(this.failures, address, Number.POSITIVE_INFINITY);
-    if (!identity) return refuse(socket, 401, "Unauthorized");
+    if (!identity) {
+      this.windowed(this.failures, address, Number.POSITIVE_INFINITY);
+      this.windowed(this.failures, "*", Number.POSITIVE_INFINITY);
+      this.validTokens.delete(tokenHash);
+      return refuse(socket, 401, "Unauthorized");
+    }
+    this.validTokens.delete(tokenHash);
+    this.validTokens.set(tokenHash, Date.now());
+    if (this.validTokens.size > 10_000) {
+      const oldest = this.validTokens.keys().next().value;
+      if (oldest !== undefined) this.validTokens.delete(oldest);
+    }
     const found = identity;
     this.wss.handleUpgrade(req, socket, head, (ws) => this.attach(ws, found, token));
   }
@@ -663,8 +689,21 @@ export class ArenaGateway {
     return window.counts.get(key) ?? 0;
   }
 
-  /** The client's address: the socket's peer, or the trusted proxies' X-Forwarded-For entry. */
+  /** Whether this token passed a check in the last day (and hasn't failed one since). */
+  private recentlyValid(tokenHash: string): boolean {
+    const at = this.validTokens.get(tokenHash);
+    return at !== undefined && Date.now() - at < 24 * 3_600_000;
+  }
+
+  /**
+   * The client's address, for rate limits: the socket's peer, or the trusted proxies'
+   * X-Forwarded-For entry; an IPv6 address counts as its /64, the block one client controls.
+   */
   private clientAddress(req: IncomingMessage): string {
+    return addressGroup(this.clientIp(req));
+  }
+
+  private clientIp(req: IncomingMessage): string {
     const hops = this.options.trustProxy ?? 0;
     const peer = req.socket.remoteAddress ?? "unknown";
     if (hops <= 0) return peer;
@@ -774,6 +813,25 @@ export class ArenaGateway {
     });
     ws.on("error", () => ws.terminate());
   }
+}
+
+/** An address for rate limits: IPv4 as is, IPv6 by its /64 (IPv4-mapped IPv6 as IPv4). */
+export function addressGroup(ip: string): string {
+  const bare = ip.replace(/^\[|\]$/g, "").replace(/%.*$/, "");
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(bare);
+  if (mapped) return mapped[1]!;
+  if (isIP(bare) !== 6) return bare;
+  // Expand :: to full groups, then keep the first four.
+  const [head, tail = ""] = bare.split("::");
+  const left = head ? head.split(":") : [];
+  const right = bare.includes("::") ? (tail ? tail.split(":") : []) : [];
+  const groups = bare.includes("::")
+    ? [...left, ...Array(8 - left.length - right.length).fill("0"), ...right]
+    : left;
+  return `${groups
+    .slice(0, 4)
+    .map((g) => g.toLowerCase().replace(/^0+(?=.)/, ""))
+    .join(":")}::/64`;
 }
 
 function reply(res: ServerResponse, status: number, body: unknown): void {
