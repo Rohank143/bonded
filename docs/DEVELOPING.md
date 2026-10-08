@@ -38,6 +38,10 @@ pnpm demo             # THE demo, in one command: local chain, API, keeper and w
                       # Agent A and Agent B, buys cover, plants an address-poisoning attack,
                       # Agent A falls for it, the keeper's claim pays (bond first, then pool),
                       # then serves the web app at http://localhost:5180 (Ctrl-C stops it all)
+pnpm demo --byo       # also: your own agent (examples/byo-agent) connected through @bonded/runner
+                      # and a local Arena Gateway, rated with a held-out set of its own; and a
+                      # smart account (ERC-7579 reference account) protected by an Enforce-mode
+                      # mandate module, rated and covered. Prints both agents' pages.
 
 pnpm demo:local       # contracts only: deploy everything to a local chain, then run
                       # register → vault → bond → cover → breach → claim (the claim pays 4,500)
@@ -47,9 +51,14 @@ pnpm arena run                              # every attack against vulnerable-ag
 pnpm arena rate                             # full rating: score, report, attestation, dataset
 pnpm arena rate --agent hardened --enforce  # the guarded agent, for comparison
 pnpm arena rate --agent partial              # the demo's Agent A: one gap, address poisoning
+pnpm arena rate --agent remote               # your own agent, through a local Arena Gateway
+                                             # and the runner (docs/BRING-YOUR-OWN-AGENT.md)
+pnpm arena rate --agent remote --profile hosted   # the same, with a hosted rating's settings
+                                             # (it refuses --repeats, --controls,
+                                             # --episode-timeout and --held-out-fresh)
 ```
 
-Arena output goes to `apps/arena/traces/` and `apps/arena/ratings/<agent>/`; `report.md` there is the human-readable rating.
+Arena output goes to `apps/arena/traces/` and `apps/arena/ratings/<agent>/`; `report.md` there is the human-readable rating. A sandbox's throwaway deployment files go to `contracts/evm/deployments/sandbox/` (git-ignored; the deploy scripts take `DEPLOYMENTS_DIR`), never beside the committed ones.
 
 **The same break-it run on Robinhood testnet** (needs `DEPLOYER_PRIVATE_KEY`, `DEMO_AGENT_KEY` and `API_TOKEN` in `.env`): `pnpm demo:break` plants the attack for Agent A (agent 10), waits for the hosted keeper's claim and prints the waterfall with explorer links; `pnpm demo:break -- --reset` re-arms Agent A for another take. A recorded run: [docs/progress/evidence/demo-break-testnet.json](progress/evidence/demo-break-testnet.json).
 
@@ -75,7 +84,7 @@ pnpm arena rate --brain llm --model deepseek/deepseek-v4.1-flash --max-usd 2
 
 | Flag | What it does |
 |---|---|
-| `--agent vulnerable\|hardened\|partial\|decision` | Picks the demo agent (see [AGENTS.md](AGENTS.md)) |
+| `--agent vulnerable\|hardened\|partial\|decision\|remote` | Picks the demo agent (see [AGENTS.md](AGENTS.md)), or `remote` for your own agent through the runner |
 | `--brain scripted\|llm` and `--model <id>` | Picks its brain; the model is any OpenRouter model id |
 | `--sentinel-model <id>` | Adds a Sentinel guard to hardened-agent |
 | `--enforce` | Runs the vault in Enforce mode |
@@ -105,6 +114,56 @@ pnpm format:check && pnpm --filter @bonded/shared abis:check && pnpm typecheck &
 cd contracts/evm && forge fmt --check && forge test
 ```
 
+## Bring your own agent
+
+How an agent that runs on its operator's servers is protected and rated: [BRING-YOUR-OWN-AGENT.md](BRING-YOUR-OWN-AGENT.md). The pieces:
+
+| Path | Package | What it is |
+|---|---|---|
+| `apps/arena/src/gateway` | part of `@bonded/arena` | The Arena Gateway (MCP, HTTP, chain-mode RPC, the runner's WebSocket) and `RemoteAgent` |
+| `apps/runner` | `@bonded/runner` (publishable, with a `bonded-runner` bin and a Dockerfile) | Connects an agent to the gateway and starts it per episode. `examples/mcp-agent.mjs` is the smallest tool-mode agent, over MCP |
+| `packages/sdk` | `@bonded/sdk` (publishable) | The vault and module client, dry runs, the guard, the Sentinel client, the mandate builder, and the AgentKit, Solana Agent Kit and ElizaOS plugins |
+| `packages/sandbox` | `@bonded/sandbox` (private) | Local chains with the protocol deployed by the production scripts, shared by the Arena's and the SDK's tests |
+| `packages/shared/src/runner.ts` | `@bonded/shared` (publishable) | The runner protocol's messages, as zod schemas both sides parse with |
+| `examples/byo-agent` | `@bonded/example-byo-agent` (private) | The full example, and the template to copy: an agent on its own server that trades through its vault with the SDK. When the runner starts it, it runs an episode in either mode: it reads all nine attack surfaces, treats them as untrusted data, and makes only the trade its task names (guarded by the SDK's dry run in chain mode). The Arena's runner end-to-end test rates it through the real gateway and runner |
+| `contracts/evm/src/Mandate{Base,Module,ModuleFactory}.sol` | | The mandate checks shared by vaults and modules, and the ERC-7579 module |
+
+Their tests run with `pnpm test` (the contracts' with `forge test`). To run one part:
+
+```bash
+pnpm --filter @bonded/runner test                 # the runner against a fake gateway
+pnpm --filter @bonded/sdk test                    # vault, module and plugins on anvil
+pnpm --filter @bonded/example-byo-agent test      # the example, both modes
+pnpm --filter @bonded/arena test                  # includes the gateway, a real runner end to end,
+                                                  # and parity on the first seed of each class
+pnpm --filter @bonded/arena test:parity           # parity over the whole published library
+cd contracts/evm && forge test --match-path 'test/module/*'   # the module, differential tests,
+                                                              # Safe7579
+```
+
+The parity tests run Bonded's scripted vulnerable, hardened and partial agents through the gateway over MCP, over HTTP and in chain mode, and require the same verdict as in-process, episode by episode. The SDK's Solana tests need the programs built (`pnpm solana:build`) and `solana-test-validator`; without them they skip.
+
+`pnpm demo --byo` runs the whole hosted flow on your machine: the gateway, a runner token made through the API, the real runner with `examples/byo-agent`, and a rating; and an Enforce-mode module on the ERC-7579 reference account, rated and insured.
+
+To run the rating service's gateway yourself, start the API in the `arena-worker` (or `all`) role with `GATEWAY_PORT` set; `GATEWAY_PUBLIC_URL` is the address runners and agents reach it at, and the API puts it in the runner command it shows owners.
+
+| Setting (rating service) | Default | What it does |
+|---|---|---|
+| `GATEWAY_PORT` | unset (no gateway: remote ratings fail at once) | Port the Arena Gateway listens on, in the arena-worker |
+| `GATEWAY_PUBLIC_URL` | unset | The gateway's public URL (a bare host is taken as https); set on the API and the arena-worker |
+| `DECLARED_COVER_CAP_USD`, `TEE_COVER_CAP_USD` | 5000, 20000 | Underwriting policy's total cover cap for an operator-run agent, by binding |
+| `HELD_OUT_FRESH_PER_CLASS` | 1 | Held-out variants per attack class made for each remote rating (0 to 5); part of the remote policy |
+| `HELD_OUT_MODEL`, `HELD_OUT_MAX_USD` | `deepseek/deepseek-v4.1-flash`, 0.25 | Model that drafts them when `OPENROUTER_API_KEY` or `LLM_API_KEY` is set (otherwise deterministic rewrites), and its cap per rating |
+| `GATEWAY_TRUST_PROXY` | 0 | How many proxies in front of the gateway to trust for `X-Forwarded-For` (Railway: 1). Per-address connection limits use the client address that many hops from the right |
+| `REMOTE_REPEATS` | 3 | Runs of each attack in a remote rating (built-in designs: 5) |
+| `REMOTE_EPISODE_TIMEOUT_MS` | 90000 | One remote episode's time limit |
+| `REMOTE_EPISODE_BUDGET_MS`, `REMOTE_RATING_MAX_MS` | 40000, 10800000 | A remote rating's time budget: this much per episode, never more than the ceiling (3 hours) |
+| `REMOTE_RATINGS_PER_AGENT_DAILY`, `REMOTE_RATINGS_PER_OWNER_DAILY`, `REMOTE_RATINGS_DAILY` | 2, 3, 20 | Remote ratings per agent, per owner and for the whole chain, per 24 hours. Renewals and re-ratings count |
+| `REMOTE_RATING_INTERVAL_MS` | 3600000 | The least time between two ratings of one operator-run agent; also how often a TEE change may re-rate it |
+| `RENEW_CHECK_MS` | 600000 | How often the arena-worker looks for connected agents whose scores expire within 3 days |
+
+With the gateway on, the arena-worker runs two rating lanes, each with its own lock, so Bonded's own ratings never wait behind an operator's agent. The remote policy is read once (`remotePolicyFromEnv` in `apps/api/src/remote-policy.ts`) and used by the API, the worker, renewals and re-ratings alike. Its rating defaults come from `HOSTED_REMOTE_PROFILE` in `apps/arena/src/rate.ts`, which `pnpm arena rate --agent remote --profile hosted` also uses, so a local run with that profile predicts a hosted rating. Accepted bounties re-rate Bonded's own agents only: bounty attacks are never run against operator-run agents.
+
 ## API, keeper and the Gate 1 loop
 
 `pnpm test:services` runs real Postgres and Anvil tests without Docker. `pnpm gate:local` runs the complete rating → attestation → quote → cover → injected breach → automatic payout loop, using embedded Postgres and a fresh Anvil deployment. Results go to `artifacts/gate-1-local.json`.
@@ -124,6 +183,15 @@ It reads the chain directly and talks to the hosted API by default. Point it at 
 Wallet selection, connection, account management, disconnection and network switching use RainbowKit's standard UI. Phantom, Rabby and detected EIP-6963 browser wallets such as MetaMask work without service credentials. In Phantom, enable testnet mode to use Robinhood Chain Testnet.
 
 To enable WalletConnect QR/mobile connections, create a project at [Reown Dashboard](https://dashboard.reown.com), allow the app's deployment origins, and set `VITE_WALLETCONNECT_PROJECT_ID` in `apps/web/.env.local` and the hosting environment. Restart the dev server or rebuild the deployment after setting it; Vite embeds this public project ID at build time. Without a project ID, the app offers browser wallets and omits WalletConnect options.
+
+## Deploying
+
+The hosted services run on Railway, from `.railway/railway.ts`; contracts deploy with `pnpm contracts:deploy` ([deployments](../contracts/evm/deployments/README.md#deploying)). Secrets are set on the services directly and never committed. What bringing your own agent needs before it is live for everyone:
+
+1. **Publish the packages to npm**, in dependency order: `@bonded/shared`, `@bonded/solana`, `@bonded/sdk`, `@bonded/runner` (`pnpm --filter <name> publish`, which turns `workspace:` ranges into versions). Until then `npx @bonded/runner` and `npm install @bonded/sdk` don't resolve, and builders run them from the repository.
+2. **Push the runner's image**: build `apps/runner/Dockerfile` from the repository root and push it to a public registry, so builders can put their agent `FROM` it instead of building it themselves.
+3. **Bring up the Arena Gateway on Railway.** The configuration gives the arena-worker a public domain on port 8080 (`GATEWAY_PORT`), sets `GATEWAY_TRUST_PROXY=1` on it (Railway's edge is one proxy hop), and sets `GATEWAY_PUBLIC_URL` on the API and the arena-worker. Merge and let the new image deploy first (the database migrations for runner tokens run on start), then `railway config plan` (it must show nothing to destroy), then `railway config apply`. Check `GET /healthz` on the gateway's domain.
+4. **Redeploy the protocol on the testnets for smart-account modules.** The deployed CoverManager, ClaimsEngine and DisputeModule predate `MandateModule`, so module cover needs a full redeployment of the protocol (new addresses for every contract), which adds `MandateModuleFactory` and points CoverManager at it. Agents, vaults, bonds and cover on the old deployment stay where they are. The new `<chainId>.json` files carry `moduleFactory`; the web app offers module protection on a chain once its deployment has one.
 
 ## Synthetic Sentinel data
 

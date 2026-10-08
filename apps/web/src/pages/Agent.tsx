@@ -5,8 +5,10 @@ import { useReadContract, useReadContracts } from "wagmi";
 import {
   bondedRegistryAbi,
   coverManagerAbi,
+  mandateModuleAbi,
   mandateVaultAbi,
   operatorBondAbi,
+  testTokenAbi,
   tierForScore,
 } from "@bonded/shared";
 import type { Address } from "viem";
@@ -16,9 +18,12 @@ import { ApiError, api } from "../lib/api";
 import { liveCheckView, teeView } from "../lib/tee";
 import { isRpcUnavailable } from "../lib/errors";
 import { apiLookups, isRegistered } from "../lib/agent";
-import { useAgents } from "../lib/chain";
+import { moduleCoverNote, useAgents } from "../lib/chain";
 import { tierMeaning } from "../lib/glossary";
 import { OwnerTools } from "../components/owner-tools";
+import { ModuleCover } from "../components/module-cover";
+import { BindingLine } from "../components/connect-agent";
+import { coverageRows, livenessLine, untestedClasses, untestedLine } from "../lib/byoa";
 import { Token } from "../components/token";
 import { bps, short, usd, when } from "../lib/format";
 import {
@@ -90,7 +95,9 @@ export function Agent() {
     retry: false,
   });
   const agents = useAgents();
-  const vault = agents.data?.find((r) => r.agentId === agentId)?.vault;
+  const row = agents.data?.find((r) => r.agentId === agentId);
+  const vault = row?.vault;
+  const guarded = row?.protected;
 
   const back = { to: "/agents", label: "All agents" };
   if (!valid)
@@ -128,6 +135,12 @@ export function Agent() {
   const tee = teeView(a?.teeMeasurement, report);
   const tier = rated && a ? tierForScore(a.score).tier : undefined;
   const weak = report?.classes.filter((c) => c.breaches > 0) ?? [];
+  // Ratings that count only exercised trials (operator-run agents) report them per class.
+  const exercisedShown = Boolean(report?.classes.some((c) => c.exercised !== undefined));
+  const untested = new Set(untestedClasses(report));
+  const classGrid = exercisedShown
+    ? "grid grid-cols-[44px_minmax(0,1fr)_minmax(0,2fr)_74px_74px] items-center gap-3.5"
+    : "grid grid-cols-[44px_minmax(0,1fr)_minmax(0,2fr)_74px] items-center gap-3.5";
   const tone = rated && a ? tierTone(a.score) : "neutral";
   const glow =
     tone === "brand"
@@ -167,6 +180,11 @@ export function Agent() {
             </Badge>
           ))}
         {report && <Badge>{report.mandateMode} mode</Badge>}
+        {score.data?.superseded && (
+          <Badge tone="breach" dot>
+            Score superseded: no new cover until a complete rating
+          </Badge>
+        )}
         {report?.sentinel && (
           <Link to="/sentinel">
             <Badge tone="brand" dot>
@@ -232,7 +250,13 @@ export function Agent() {
         </EmptyState>
       )}
 
-      <OwnerTools agentId={id} owner={owner?.result} />
+      <OwnerTools
+        // A new agent's page starts with fresh owner controls (its own token, rating, errors).
+        key={`${deployment.chainId}:${id}`}
+        agentId={id}
+        owner={owner?.result}
+        scoreExpired={Boolean(rated && fresh && fresh.result === false)}
+      />
 
       <div className="flex flex-wrap items-start gap-4">
         <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-4">
@@ -266,13 +290,19 @@ export function Agent() {
                 </div>
               )}
               <div className="flex flex-col">
+                {exercisedShown && (
+                  <div className={`${classGrid} pb-2 text-[11px] text-muted`}>
+                    <span />
+                    <span />
+                    <span />
+                    <span className="text-right">Result</span>
+                    <span className="text-right">Exercised</span>
+                  </div>
+                )}
                 {report.classes.map((c) => {
                   const held = c.episodes ? (c.episodes - c.breaches) / c.episodes : 1;
                   return (
-                    <div
-                      key={c.class}
-                      className="grid grid-cols-[44px_minmax(0,1fr)_minmax(0,2fr)_74px] items-center gap-3.5 border-t border-white/[0.06] py-3"
-                    >
+                    <div key={c.class} className={`${classGrid} border-t border-white/[0.06] py-3`}>
                       <span className="font-mono text-xs text-muted">{c.class}</span>
                       <span className="truncate text-sm">{c.name}</span>
                       <span className="flex h-2 overflow-hidden rounded-full bg-white/[0.06]">
@@ -290,15 +320,49 @@ export function Agent() {
                       >
                         {c.breaches ? `${c.breaches} of ${c.episodes}` : `held ${c.episodes}`}
                       </span>
+                      {exercisedShown && (
+                        <span
+                          className={`text-right font-mono text-xs ${untested.has(c.class) ? "text-warn" : "text-muted"}`}
+                          title={
+                            untested.has(c.class)
+                              ? "Never tested the agent: priced as untested within its group"
+                              : undefined
+                          }
+                        >
+                          {untested.has(c.class)
+                            ? "untested"
+                            : `${c.exercised ?? c.episodes} of ${c.episodes}`}
+                        </span>
+                      )}
                     </div>
                   );
                 })}
               </div>
+              {exercisedShown && (
+                <p className="mt-3 text-xs text-muted">
+                  Exercised: the attack episodes that tested the agent, because it was breached or
+                  did its task anyway. For an agent its operator runs, only those count: an episode
+                  in which it did nothing at all proves nothing.
+                  {untestedLine(report) && ` ${untestedLine(report)}`}
+                </p>
+              )}
               <p className="mt-4 text-xs text-muted">
                 {report.unpublished?.episodes
                   ? `${report.unpublished.episodes} of the attack episodes ran ${report.unpublished.attacks} unpublished attacks (held out, or accepted bounties) that the operator couldn't study in advance.`
                   : "Published attacks only: an in-library result, not a held-out evaluation."}
+                {score.data?.heldOut &&
+                  ` ${score.data.heldOut.attacks ?? "Its"} held-out attacks were made for this rating alone${score.data.heldOut.source === "rewrite" ? " (rewrites of published seeds)" : score.data.heldOut.model ? ` (drafted by ${score.data.heldOut.model})` : ""}, seed ${score.data.heldOut.seed}.`}
               </p>
+              {score.data?.binding && (
+                <div className="mt-4 flex flex-col gap-1.5 border-t border-white/[0.06] pt-4">
+                  <span className="eyebrow">Binding</span>
+                  <BindingLine binding={score.data.binding} />
+                </div>
+              )}
+              <Coverage coverage={score.data?.coverage ?? report.coverage ?? null} />
+              {livenessLine(report.liveness) && (
+                <p className="mt-3 text-xs text-muted">{livenessLine(report.liveness)}</p>
+              )}
             </Card>
           ) : rated ? (
             <Card title="Attack report">
@@ -313,6 +377,8 @@ export function Agent() {
 
         <div className="flex min-w-0 flex-[1_1_320px] flex-col gap-4">
           {vault && <VaultSummary vault={vault} />}
+          {guarded && <AccountSummary module={guarded.module} account={guarded.account} />}
+          {guarded && <ModuleCover agentId={agentId} module={guarded.module} />}
           <SentinelChecks agentId={id} ratedWith={Boolean(report?.sentinel)} />
           <Card title="Proof on chain">
             <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2.5 text-sm [&_dd]:text-right [&_dt]:text-muted">
@@ -375,6 +441,38 @@ export function Agent() {
         </div>
       </div>
     </Page>
+  );
+}
+
+/**
+ * Which attack surfaces the agent actually read. An attack on a surface the agent never reads can't
+ * reach it, so a clean result there says little: the reader should see that.
+ */
+function Coverage({ coverage }: { coverage: Parameters<typeof coverageRows>[0] }) {
+  const rows = coverageRows(coverage);
+  if (!rows.length) return null;
+  const unread = rows.filter((r) => r.read === 0);
+  return (
+    <div className="mt-4 flex flex-col gap-2 border-t border-white/[0.06] pt-4">
+      <span className="eyebrow">Coverage</span>
+      <p className="text-xs text-muted">
+        {unread.length
+          ? `The agent never read ${unread.map((r) => r.label).join(", ")}, so attacks there couldn't reach it.`
+          : "The agent read every surface that was attacked."}
+      </p>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-4 gap-y-1 text-xs">
+        <span className="text-muted">Surface</span>
+        <span className="text-right text-muted">Attacked</span>
+        <span className="text-right text-muted">Read</span>
+        {rows.map((r) => (
+          <span key={r.surface} className="contents">
+            <span>{r.label}</span>
+            <span className="text-right font-mono">{r.attacked}</span>
+            <span className={`text-right font-mono ${r.read ? "" : "text-warn"}`}>{r.read}</span>
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -450,6 +548,83 @@ function VaultSummary({ vault }: { vault: Address }) {
       ) : (
         <p className="mt-4 text-xs text-muted">No active cover.</p>
       )}
+    </Card>
+  );
+}
+
+/**
+ * The agent's newest smart account protected by a MandateModule: the funds stay in the account,
+ * the module checks the agent's actions, holds the breach log and the policy, and payouts go back
+ * into the account.
+ */
+function AccountSummary({ module, account }: { module: Address; account: Address }) {
+  const m = { address: module, abi: mandateModuleAbi } as const;
+  const reads = useReadContracts({
+    contracts: [
+      { address: deployment.usdg, abi: testTokenAbi, functionName: "balanceOf", args: [account] },
+      { ...m, functionName: "frozen" },
+      { ...m, functionName: "breachCount" },
+      { ...m, functionName: "installs" },
+      { ...m, functionName: "mode" },
+      {
+        address: deployment.coverManager,
+        abi: coverManagerAbi,
+        functionName: "activePolicyOf",
+        args: [module],
+      },
+    ],
+  });
+  const [held, frozen, breaches, installs, mode, active] = reads.data ?? [];
+  const cover = mode?.result !== undefined ? moduleCoverNote(mode.result) : undefined;
+  const policy = useReadContract({
+    address: deployment.coverManager,
+    abi: coverManagerAbi,
+    functionName: "getPolicy",
+    args: [active?.result ?? 0n],
+    query: { enabled: Boolean(active?.result) },
+  }).data;
+  return (
+    <Card title="Its smart account">
+      <p className="-mt-3 text-xs text-muted">
+        <AddressLink address={account} />
+      </p>
+      <p className="mt-4 text-3xl font-bold tracking-tight">
+        {held?.result !== undefined ? `$${usd(held.result)}` : "…"}
+      </p>
+      <p className="text-xs text-muted">
+        <Token symbol="tUSDG" /> in the account, guarded by a mandate module
+      </p>
+      <dl className="mt-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm [&_dd]:text-right [&_dt]:text-muted">
+        <dt>Module</dt>
+        <dd>
+          <AddressLink address={module} />
+        </dd>
+        <dt>Agent</dt>
+        <dd>
+          {installs?.result === 0n
+            ? "module removed"
+            : frozen?.result
+              ? "frozen"
+              : frozen?.result === false
+                ? "active"
+                : "…"}
+        </dd>
+        <dt>Mode</dt>
+        <dd>{cover?.label ?? "…"}</dd>
+        <dt>Breaches recorded</dt>
+        <dd className="tabular-nums">{breaches?.result?.toString() ?? "…"}</dd>
+        <dt>Cover left</dt>
+        <dd className="tabular-nums">
+          {policy
+            ? `$${usd(policy.remainingCover, 0)} of $${usd(policy.coverAmount, 0)}`
+            : cover && !cover.insurable
+              ? "not insurable"
+              : "no active cover"}
+        </dd>
+      </dl>
+      <p className="mt-3 text-xs text-muted">
+        Premiums are paid from the account and claims are paid back into it.
+      </p>
     </Card>
   );
 }

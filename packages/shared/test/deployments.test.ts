@@ -42,6 +42,14 @@ describe("EVM deployment files", () => {
     expect(evmDeploymentSchema.safeParse({ ...LOCAL, extra: LOCAL.usdg }).success).toBe(false);
   });
 
+  it("accepts the module factory, which older deployments don't have", () => {
+    const moduleFactory = "0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB"; // `pnpm demo:local` again
+    expect(parseEvmDeployment(JSON.stringify({ ...LOCAL, moduleFactory })).moduleFactory).toBe(
+      moduleFactory,
+    );
+    expect(parseEvmDeployment(JSON.stringify(LOCAL)).moduleFactory).toBeUndefined();
+  });
+
   it("rejects invalid addresses", () => {
     expect(evmDeploymentSchema.safeParse({ ...LOCAL, pool: "0x1234" }).success).toBe(false);
   });

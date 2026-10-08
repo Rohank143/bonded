@@ -25,6 +25,8 @@ export const evmDeploymentSchema = z.strictObject({
   claimsEngine: evmAddress,
   disputeModule: evmAddress,
   bountyBoard: evmAddress,
+  /** MandateModuleFactory (ERC-7579 smart accounts). Absent in deployments made before it existed. */
+  moduleFactory: evmAddress.optional(),
 });
 
 export type EvmDeployment = z.infer<typeof evmDeploymentSchema>;

@@ -2,6 +2,7 @@ packages:
   - "packages/*"
   - "apps/*"
   - "services/*"
+  - "examples/*"
 
 onlyBuiltDependencies:
   - "@embedded-postgres/darwin-arm64"

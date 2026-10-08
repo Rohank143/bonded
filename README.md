@@ -30,21 +30,21 @@ It starts a local chain, the API, keeper and rating worker; rates Agent A and Ag
 
 ## How it works
 
-1. **Mandate Vault.** An agent trades from a vault that knows its rules: which tokens, which contracts, where funds may go, how much per trade and per day. Every action goes through the vault, which blocks or records any breach on chain.
-2. **The Arena.** AI attacker scenarios (10 classes: prompt injection, fake news and posts, poisoned prices, lookalike tokens and addresses, social engineering, hostile counterparty agents…) are planted in the agent's world inside a sandbox: a copy of the chain with the same contracts. The verdict of each episode is the vault's breach log.
+1. **Mandate Vault.** An agent trades from a vault that knows its rules: which tokens, which contracts, where funds may go, how much per trade and per day. Every action goes through the vault, which blocks or records any breach on chain. An agent that already trades from a smart account can keep it: a Mandate Module on the account (ERC-7579, Safe through Safe7579) runs the same checks.
+2. **The Arena.** AI attacker scenarios (10 classes: prompt injection, fake news and posts, poisoned prices, lookalike tokens and addresses, social engineering, hostile counterparty agents…) are planted in the agent's world inside a sandbox: a copy of the chain with the same contracts. The verdict of each episode is the vault's breach log. Your own agent can be rated where it runs: a small runner next to it connects out to the Arena, which attacks it over MCP, HTTP or its own signed transactions.
 3. **Bonded Score.** Breach rates become an expected loss, a premium and a score from 0 to 100. The attester signs it and posts it to the registry (ERC-8004 compatible); the same signed score can be posted to Arbitrum, Ethereum and Solana.
 4. **Bond and cover.** The agent's operator stakes a bond that pays first. Underwriters fund a pool that pays the rest. Depositors buy cover priced from the score.
 5. **Automatic claims.** When the vault records a breach, the keeper files the claim within seconds. The contract slashes the bond, then the pool pays, and the money goes back into the vault.
 
 Plus **Sentinel**, an optional real-time guard: Laya, an open-source decision model, fine-tuned on Arena data to flag manipulated actions before they reach the vault. It is advisory; payouts never depend on it.
 
-How the parts fit together: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). What each agent is: [docs/AGENTS.md](docs/AGENTS.md). The full product specification: [docs/SPECIFICATION.md](docs/SPECIFICATION.md).
+How the parts fit together: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). What each agent is: [docs/AGENTS.md](docs/AGENTS.md). How Bonded relates to the trading bots, wallet copilots and other agents people already use: [docs/YOUR-AGENTS.md](docs/YOUR-AGENTS.md). The full product specification: [docs/SPECIFICATION.md](docs/SPECIFICATION.md).
 
 ## What you can do today
 
 - **Anyone, in the web app** (with a browser wallet on Robinhood testnet): onboard an agent (register it, create its vault, stake a bond); rate it with one of Bonded's built-in agent designs against your vault; buy cover; simulate a breach and watch the claim pay; deposit; underwrite the cover pool; submit a bounty attack; browse agents, scores, reports, the leaderboard and claims.
 - **Anyone, locally:** run the whole loop with `pnpm demo`, or rate the built-in agents with `pnpm arena rate`.
-- **Not yet:** rating your own agent's code and bringing your own TEE. Details: [What works today and what's coming](docs/AGENTS.md#what-works-today-and-whats-coming).
+- **Your own agent, built and tested, not live yet:** rate an agent in any framework or language where it runs, through `@bonded/runner` and the Arena Gateway, with a declared or TEE-bound score; protect it with `@bonded/sdk` (plugins for Coinbase AgentKit, Solana Agent Kit and ElizaOS) or a module on its smart account. Locally this works today (`pnpm arena rate --agent remote`, or the whole hosted flow with `pnpm demo --byo`); the hosted gateway, the npm packages and the module's testnet deployment are still to come. Guide: [docs/BRING-YOUR-OWN-AGENT.md](docs/BRING-YOUR-OWN-AGENT.md). Status by piece: [What works today and what's coming](docs/AGENTS.md#what-works-today-and-whats-coming).
 
 ## Results (measured, with their assumptions)
 
@@ -102,13 +102,17 @@ Agent B's score of 96 is the same signed attestation on all four chains ([eviden
 
 | Path | What's there |
 |---|---|
-| `contracts/evm` | Solidity contracts (Foundry): vault, cover, pool, bond, claims, registry, disputes, bounties. [Its README](contracts/evm/README.md) explains each one |
+| `contracts/evm` | Solidity contracts (Foundry): vault, smart-account module, cover, pool, bond, claims, registry, disputes, bounties. [Its README](contracts/evm/README.md) explains each one |
 | `contracts/solana` | Anchor programs: registry, vault, cover |
-| `apps/arena` | The Arena: attack library runner, sandbox, judge, ratings |
+| `apps/arena` | The Arena: attack library runner, sandbox, judge, ratings, and the Arena Gateway that serves episodes to agents running elsewhere |
+| `apps/runner` | `@bonded/runner`: connects an agent on its operator's servers to the Arena Gateway |
 | `apps/demo-agents` | The agents Bonded rates ([docs/AGENTS.md](docs/AGENTS.md)) |
 | `apps/api` | API, keeper, rating and bounty workers, demo scripts |
 | `apps/web` | The web app |
-| `packages/shared` | Schemas, scoring maths, ABIs, chain and deployment data |
+| `packages/shared` | Schemas, scoring maths, ABIs, chain and deployment data, the runner protocol |
+| `packages/sdk` | `@bonded/sdk`: trade through a vault or module from any TypeScript agent, with plugins for AgentKit, Solana Agent Kit and ElizaOS |
+| `packages/sandbox` | Local chains with the protocol deployed, for the Arena and tests |
+| `examples/byo-agent` | The template for your own agent: it trades through its vault with the SDK, reads everything it can as untrusted data, and is rated through the runner |
 | `services/sentinel`, `services/tee-agent` | The Sentinel guard service; the TEE agent for Phala Cloud |
 | `attacks/` | The attack library: YAML scenarios by class |
 | `docs/` | The documentation: specification, architecture, audit and more |
@@ -119,6 +123,8 @@ The same pages are published as a searchable site at `/docs` on the web app (bui
 
 | | |
 |---|---|
+| [YOUR-AGENTS.md](docs/YOUR-AGENTS.md) | How Bonded connects to the agents people already use, and why it matters |
+| [BRING-YOUR-OWN-AGENT.md](docs/BRING-YOUR-OWN-AGENT.md) | Protect, rate and insure your own agent where it runs |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the parts fit together |
 | [AGENTS.md](docs/AGENTS.md) | What an agent is; every agent we rate |
 | [DEVELOPING.md](docs/DEVELOPING.md) | Build, test, run, deploy |

@@ -85,6 +85,13 @@ export default defineRailway(() => {
     SENTINEL_MODEL_REVISION: sentinel.env.SENTINEL_MODEL_REVISION,
   };
 
+  // The Arena Gateway (bring your own agent, docs/BRING-YOUR-OWN-AGENT.md) runs in the
+  // arena-worker: runners connect to it over a WebSocket and agents reach their episodes over
+  // MCP and HTTP, so it needs a public domain. The API shows the URL in the runner command.
+  const GATEWAY_DOMAIN = "bonded-arena-gateway.up.railway.app";
+  const GATEWAY_PORT = "8080";
+  const gateway = { GATEWAY_PUBLIC_URL: `https://${GATEWAY_DOMAIN}` };
+
   const api = service("api", {
     ...role({ healthcheckPath: "/health", healthcheckTimeout: 120 }),
     env: {
@@ -95,6 +102,7 @@ export default defineRailway(() => {
       WEB_ORIGINS:
         "https://bonded-nu.vercel.app,https://bonded-*-ddboy19912s-projects.vercel.app,http://localhost:5173",
       ...sentinelClient,
+      ...gateway,
       API_TOKEN: preserve(),
       ATTESTER_KEY: preserve(),
       // Telegram alerts (docs/PLAN.md, Day 13 workstream 6): set by the founder, kept here.
@@ -102,7 +110,8 @@ export default defineRailway(() => {
       TELEGRAM_CHAT_ID: preserve(),
     },
   });
-  // The keeper and worker have no HTTP listener, so no health check.
+  // The keeper has no HTTP listener, so no health check; the worker's only listener is the
+  // gateway, which has its own checks.
   const keeper = service("keeper", {
     ...role({}),
     env: {
@@ -115,7 +124,17 @@ export default defineRailway(() => {
   });
   const arenaWorker = service("arena-worker", {
     ...role({}),
-    env: { ...shared, ...sentinelClient, ROLE: "arena-worker", ATTESTER_KEY: preserve() },
+    networking: { serviceDomains: { [GATEWAY_DOMAIN]: { port: Number(GATEWAY_PORT) } } },
+    env: {
+      ...shared,
+      ...sentinelClient,
+      ...gateway,
+      GATEWAY_PORT,
+      // Railway's edge proxy is the one hop in front of the gateway.
+      GATEWAY_TRUST_PROXY: "1",
+      ROLE: "arena-worker",
+      ATTESTER_KEY: preserve(),
+    },
   });
 
   return project("zippy-spirit", {

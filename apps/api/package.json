@@ -29,6 +29,9 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@bonded/runner": "workspace:*",
+    "@bonded/sandbox": "workspace:*",
+    "@bonded/sdk": "workspace:*",
     "embedded-postgres": "18.4.0-beta.17",
     "yaml": "^2.9.1"
   }

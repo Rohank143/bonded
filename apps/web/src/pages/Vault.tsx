@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router";
 import { useAccount, useReadContract, useReadContracts } from "wagmi";
+import { useQuery } from "@tanstack/react-query";
 import { encodeFunctionData, isAddress, type Abi, type Address } from "viem";
 import {
   SELF_SERVE_MAX_COVER_USD,
@@ -15,6 +16,7 @@ import { useAgents, useClaims, usePolicies, waterfall } from "../lib/chain";
 import { isRpcUnavailable } from "../lib/errors";
 import { BREACH_TYPES, POLICY_STATUS, bps, parseUsd, short, usd, when } from "../lib/format";
 import { positiveAmountError } from "../lib/validate";
+import { BINDING_LABELS, policyCoverCap } from "../lib/byoa";
 import { tokenSymbol } from "../lib/tokens";
 import {
   AddressLink,
@@ -556,7 +558,7 @@ function DepositWithdraw(props: {
   );
 }
 
-function BuyCover(props: {
+export function BuyCover(props: {
   vault: Address;
   agentId?: bigint;
   isGuardian: boolean;
@@ -568,10 +570,27 @@ function BuyCover(props: {
   const [quoting, setQuoting] = useState(false);
   const tx = useSend();
   const cover = parseUsd(amount);
+  // An agent its owner runs has a cover cap by binding: underwriting policy, not the score.
+  const id = props.agentId?.toString() ?? "";
+  const self = useQuery({
+    queryKey: ["self-agent", id],
+    queryFn: () => api.selfAgent(id),
+    enabled: Boolean(id),
+  });
+  const score = useQuery({
+    queryKey: ["score", id],
+    queryFn: () => api.score(id),
+    enabled: self.data?.registered === true && self.data.kind === "remote",
+    retry: false,
+  });
+  const policy = policyCoverCap(self.data, score.data?.binding);
+  const policyBinds = policy !== undefined && policy.usd < SELF_SERVE_MAX_COVER_USD;
   // Checked as it's typed: testnet cover has a cap, and the quote would be refused over it.
   const coverError = positiveAmountError(amount, {
-    value: BigInt(SELF_SERVE_MAX_COVER_USD) * 1_000_000n,
-    message: `Testnet cover is capped at ${SELF_SERVE_MAX_COVER_USD.toLocaleString("en-US")} tUSDG.`,
+    value: BigInt(policyBinds ? policy.usd : SELF_SERVE_MAX_COVER_USD) * 1_000_000n,
+    message: policyBinds
+      ? `Underwriting policy: this agent's cover is capped at ${policy.usd.toLocaleString("en-US")} tUSDG while its binding is ${BINDING_LABELS[policy.binding].label.toLowerCase()}.`
+      : `Testnet cover is capped at ${SELF_SERVE_MAX_COVER_USD.toLocaleString("en-US")} tUSDG.`,
   });
   async function getQuote() {
     if (!cover || props.agentId === undefined) return;
@@ -616,6 +635,17 @@ function BuyCover(props: {
             the vault. Only the guardian, who must also own the agent, can buy. Testnet cover is
             capped at {SELF_SERVE_MAX_COVER_USD.toLocaleString("en-US")} <Token symbol="tUSDG" />.
           </p>
+          {policy && (
+            <p className="text-sm text-muted">
+              Underwriting policy, not the score: this agent runs on its owner's servers, so its
+              cover is capped at {policy.usd.toLocaleString("en-US")} <Token symbol="tUSDG" /> in
+              total while its binding is {BINDING_LABELS[policy.binding].label.toLowerCase()}
+              {policy.binding === "declared" && self.data?.registered && self.data.coverCaps
+                ? ` (${self.data.coverCaps.tee.toLocaleString("en-US")} when every episode proves a TEE)`
+                : ""}
+              .
+            </p>
+          )}
           <Input
             label="Cover amount"
             value={amount}

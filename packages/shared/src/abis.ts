@@ -2308,7 +2308,7 @@ export const mandateVaultAbi = [
       {
         name: "",
         type: "tuple",
-        internalType: "struct MandateVault.Breach",
+        internalType: "struct MandateBase.Breach",
         components: [
           {
             name: "breachType",
@@ -3535,6 +3535,1505 @@ export const mandateVaultAbi = [
         internalType: "address",
       },
     ],
+  },
+  {
+    type: "error",
+    name: "UnknownBreach",
+    inputs: [
+      {
+        name: "breachId",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+  },
+  {
+    type: "error",
+    name: "ZeroAddress",
+    inputs: [],
+  },
+] as const;
+
+export const mandateModuleFactoryAbi = [
+  {
+    type: "constructor",
+    inputs: [
+      {
+        name: "vaultFactory_",
+        type: "address",
+        internalType: "contract MandateVaultFactory",
+      },
+    ],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "claimsEngine",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "coverManager",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "createModule",
+    inputs: [
+      {
+        name: "params",
+        type: "tuple",
+        internalType: "struct BondedTypes.MandateParams",
+        components: [
+          {
+            name: "mandateHash",
+            type: "bytes32",
+            internalType: "bytes32",
+          },
+          {
+            name: "mode",
+            type: "uint8",
+            internalType: "enum BondedTypes.MandateMode",
+          },
+          {
+            name: "baseAsset",
+            type: "address",
+            internalType: "address",
+          },
+          {
+            name: "assets",
+            type: "address[]",
+            internalType: "address[]",
+          },
+          {
+            name: "targets",
+            type: "address[]",
+            internalType: "address[]",
+          },
+          {
+            name: "selectors",
+            type: "bytes4[][]",
+            internalType: "bytes4[][]",
+          },
+          {
+            name: "destinations",
+            type: "address[]",
+            internalType: "address[]",
+          },
+          {
+            name: "maxTxNotionalUsd6",
+            type: "uint256",
+            internalType: "uint256",
+          },
+          {
+            name: "maxDailyNotionalUsd6",
+            type: "uint256",
+            internalType: "uint256",
+          },
+          {
+            name: "maxDrawdownBps",
+            type: "uint16",
+            internalType: "uint16",
+          },
+          {
+            name: "maxSlippageBps",
+            type: "uint16",
+            internalType: "uint16",
+          },
+          {
+            name: "freezeOnBreach",
+            type: "bool",
+            internalType: "bool",
+          },
+        ],
+      },
+      {
+        name: "agent",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "guardian",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "agentId",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    outputs: [
+      {
+        name: "module",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "isModule",
+    inputs: [
+      {
+        name: "module",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    outputs: [
+      {
+        name: "",
+        type: "bool",
+        internalType: "bool",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "moduleAt",
+    inputs: [
+      {
+        name: "index",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    outputs: [
+      {
+        name: "",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "moduleCount",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "moduleOf",
+    inputs: [
+      {
+        name: "account",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    outputs: [
+      {
+        name: "module",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "modulesCreated",
+    inputs: [
+      {
+        name: "account",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    outputs: [
+      {
+        name: "",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "oracle",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "address",
+        internalType: "contract IPriceOracle",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "predictModule",
+    inputs: [
+      {
+        name: "account",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "params",
+        type: "tuple",
+        internalType: "struct BondedTypes.MandateParams",
+        components: [
+          {
+            name: "mandateHash",
+            type: "bytes32",
+            internalType: "bytes32",
+          },
+          {
+            name: "mode",
+            type: "uint8",
+            internalType: "enum BondedTypes.MandateMode",
+          },
+          {
+            name: "baseAsset",
+            type: "address",
+            internalType: "address",
+          },
+          {
+            name: "assets",
+            type: "address[]",
+            internalType: "address[]",
+          },
+          {
+            name: "targets",
+            type: "address[]",
+            internalType: "address[]",
+          },
+          {
+            name: "selectors",
+            type: "bytes4[][]",
+            internalType: "bytes4[][]",
+          },
+          {
+            name: "destinations",
+            type: "address[]",
+            internalType: "address[]",
+          },
+          {
+            name: "maxTxNotionalUsd6",
+            type: "uint256",
+            internalType: "uint256",
+          },
+          {
+            name: "maxDailyNotionalUsd6",
+            type: "uint256",
+            internalType: "uint256",
+          },
+          {
+            name: "maxDrawdownBps",
+            type: "uint16",
+            internalType: "uint16",
+          },
+          {
+            name: "maxSlippageBps",
+            type: "uint16",
+            internalType: "uint16",
+          },
+          {
+            name: "freezeOnBreach",
+            type: "bool",
+            internalType: "bool",
+          },
+        ],
+      },
+      {
+        name: "agent",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "guardian",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "agentId",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    outputs: [
+      {
+        name: "",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "vaultFactory",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "event",
+    name: "ModuleCreated",
+    inputs: [
+      {
+        name: "module",
+        type: "address",
+        indexed: true,
+        internalType: "address",
+      },
+      {
+        name: "account",
+        type: "address",
+        indexed: true,
+        internalType: "address",
+      },
+      {
+        name: "agentId",
+        type: "uint256",
+        indexed: true,
+        internalType: "uint256",
+      },
+      {
+        name: "guardian",
+        type: "address",
+        indexed: false,
+        internalType: "address",
+      },
+      {
+        name: "agent",
+        type: "address",
+        indexed: false,
+        internalType: "address",
+      },
+      {
+        name: "mandateHash",
+        type: "bytes32",
+        indexed: false,
+        internalType: "bytes32",
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "error",
+    name: "MandateHashMismatch",
+    inputs: [
+      {
+        name: "expected",
+        type: "bytes32",
+        internalType: "bytes32",
+      },
+      {
+        name: "given",
+        type: "bytes32",
+        internalType: "bytes32",
+      },
+    ],
+  },
+  {
+    type: "error",
+    name: "ModuleStillInstalled",
+    inputs: [
+      {
+        name: "module",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+  },
+  {
+    type: "error",
+    name: "ZeroAddress",
+    inputs: [],
+  },
+] as const;
+
+export const mandateModuleAbi = [
+  {
+    type: "constructor",
+    inputs: [
+      {
+        name: "p",
+        type: "tuple",
+        internalType: "struct BondedTypes.MandateParams",
+        components: [
+          {
+            name: "mandateHash",
+            type: "bytes32",
+            internalType: "bytes32",
+          },
+          {
+            name: "mode",
+            type: "uint8",
+            internalType: "enum BondedTypes.MandateMode",
+          },
+          {
+            name: "baseAsset",
+            type: "address",
+            internalType: "address",
+          },
+          {
+            name: "assets",
+            type: "address[]",
+            internalType: "address[]",
+          },
+          {
+            name: "targets",
+            type: "address[]",
+            internalType: "address[]",
+          },
+          {
+            name: "selectors",
+            type: "bytes4[][]",
+            internalType: "bytes4[][]",
+          },
+          {
+            name: "destinations",
+            type: "address[]",
+            internalType: "address[]",
+          },
+          {
+            name: "maxTxNotionalUsd6",
+            type: "uint256",
+            internalType: "uint256",
+          },
+          {
+            name: "maxDailyNotionalUsd6",
+            type: "uint256",
+            internalType: "uint256",
+          },
+          {
+            name: "maxDrawdownBps",
+            type: "uint16",
+            internalType: "uint16",
+          },
+          {
+            name: "maxSlippageBps",
+            type: "uint16",
+            internalType: "uint16",
+          },
+          {
+            name: "freezeOnBreach",
+            type: "bool",
+            internalType: "bool",
+          },
+        ],
+      },
+      {
+        name: "account_",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "agent_",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "guardian_",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "agentId_",
+        type: "uint256",
+        internalType: "uint256",
+      },
+      {
+        name: "oracle_",
+        type: "address",
+        internalType: "contract IPriceOracle",
+      },
+    ],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "MAX_ASSETS",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "MAX_TARGETS",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "WINDOW",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "account",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "agent",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "agentId",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "asset",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "breachCount",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "currentWindowNotionalUsd6",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "execute",
+    inputs: [
+      {
+        name: "target",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "data",
+        type: "bytes",
+        internalType: "bytes",
+      },
+    ],
+    outputs: [
+      {
+        name: "",
+        type: "bytes",
+        internalType: "bytes",
+      },
+    ],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "factory",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "address",
+        internalType: "contract IMandateModuleFactory",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "freeze",
+    inputs: [],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "freezeOnBreach",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "bool",
+        internalType: "bool",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "frozen",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "bool",
+        internalType: "bool",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "getAssets",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "address[]",
+        internalType: "address[]",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "getBreach",
+    inputs: [
+      {
+        name: "breachId",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    outputs: [
+      {
+        name: "",
+        type: "tuple",
+        internalType: "struct MandateBase.Breach",
+        components: [
+          {
+            name: "breachType",
+            type: "uint8",
+            internalType: "enum BondedTypes.BreachType",
+          },
+          {
+            name: "blocked",
+            type: "bool",
+            internalType: "bool",
+          },
+          {
+            name: "claimed",
+            type: "bool",
+            internalType: "bool",
+          },
+          {
+            name: "target",
+            type: "address",
+            internalType: "address",
+          },
+          {
+            name: "selector",
+            type: "bytes4",
+            internalType: "bytes4",
+          },
+          {
+            name: "timestamp",
+            type: "uint64",
+            internalType: "uint64",
+          },
+          {
+            name: "lossUsd6",
+            type: "uint256",
+            internalType: "uint256",
+          },
+        ],
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "guardian",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "installs",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "isAsset",
+    inputs: [
+      {
+        name: "token",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    outputs: [
+      {
+        name: "",
+        type: "bool",
+        internalType: "bool",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "isCallAllowed",
+    inputs: [
+      {
+        name: "target",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "selector",
+        type: "bytes4",
+        internalType: "bytes4",
+      },
+    ],
+    outputs: [
+      {
+        name: "",
+        type: "bool",
+        internalType: "bool",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "isDestination",
+    inputs: [
+      {
+        name: "recipient",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    outputs: [
+      {
+        name: "",
+        type: "bool",
+        internalType: "bool",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "isInitialized",
+    inputs: [
+      {
+        name: "smartAccount",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    outputs: [
+      {
+        name: "",
+        type: "bool",
+        internalType: "bool",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "isModuleType",
+    inputs: [
+      {
+        name: "moduleTypeId",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    outputs: [
+      {
+        name: "",
+        type: "bool",
+        internalType: "bool",
+      },
+    ],
+    stateMutability: "pure",
+  },
+  {
+    type: "function",
+    name: "isTarget",
+    inputs: [
+      {
+        name: "target",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    outputs: [
+      {
+        name: "",
+        type: "bool",
+        internalType: "bool",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "mandateHash",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "bytes32",
+        internalType: "bytes32",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "markBreachClaimed",
+    inputs: [
+      {
+        name: "breachId",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "maxDailyNotionalUsd6",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "maxDrawdownBps",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "uint16",
+        internalType: "uint16",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "maxSlippageBps",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "uint16",
+        internalType: "uint16",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "maxTxNotionalUsd6",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "measuredCall",
+    inputs: [
+      {
+        name: "target",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "data",
+        type: "bytes",
+        internalType: "bytes",
+      },
+      {
+        name: "enforceAfter",
+        type: "bool",
+        internalType: "bool",
+      },
+      {
+        name: "leakCheck",
+        type: "bool",
+        internalType: "bool",
+      },
+    ],
+    outputs: [
+      {
+        name: "result",
+        type: "bytes",
+        internalType: "bytes",
+      },
+      {
+        name: "outflowUsd6",
+        type: "uint256",
+        internalType: "uint256",
+      },
+      {
+        name: "inflowUsd6",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "mode",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "uint8",
+        internalType: "enum BondedTypes.MandateMode",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "onInstall",
+    inputs: [
+      {
+        name: "",
+        type: "bytes",
+        internalType: "bytes",
+      },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "onUninstall",
+    inputs: [
+      {
+        name: "",
+        type: "bytes",
+        internalType: "bytes",
+      },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "oracle",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "address",
+        internalType: "contract IPriceOracle",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "payPremium",
+    inputs: [
+      {
+        name: "amount",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "postCheck",
+    inputs: [
+      {
+        name: "hookData",
+        type: "bytes",
+        internalType: "bytes",
+      },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "preCheck",
+    inputs: [
+      {
+        name: "msgSender",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "",
+        type: "uint256",
+        internalType: "uint256",
+      },
+      {
+        name: "",
+        type: "bytes",
+        internalType: "bytes",
+      },
+    ],
+    outputs: [
+      {
+        name: "hookData",
+        type: "bytes",
+        internalType: "bytes",
+      },
+    ],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "reconcile",
+    inputs: [],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "recordedBalance",
+    inputs: [
+      {
+        name: "token",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    outputs: [
+      {
+        name: "",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "rotateAgent",
+    inputs: [
+      {
+        name: "newAgent",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "sync",
+    inputs: [],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "unfreeze",
+    inputs: [],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "windowNotionalUsd6",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "windowStart",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "event",
+    name: "AgentRotated",
+    inputs: [
+      {
+        name: "previousAgent",
+        type: "address",
+        indexed: true,
+        internalType: "address",
+      },
+      {
+        name: "newAgent",
+        type: "address",
+        indexed: true,
+        internalType: "address",
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "BreachClaimed",
+    inputs: [
+      {
+        name: "breachId",
+        type: "uint256",
+        indexed: true,
+        internalType: "uint256",
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "BreachRecorded",
+    inputs: [
+      {
+        name: "breachId",
+        type: "uint256",
+        indexed: true,
+        internalType: "uint256",
+      },
+      {
+        name: "breachType",
+        type: "uint8",
+        indexed: true,
+        internalType: "enum BondedTypes.BreachType",
+      },
+      {
+        name: "target",
+        type: "address",
+        indexed: true,
+        internalType: "address",
+      },
+      {
+        name: "selector",
+        type: "bytes4",
+        indexed: false,
+        internalType: "bytes4",
+      },
+      {
+        name: "lossUsd6",
+        type: "uint256",
+        indexed: false,
+        internalType: "uint256",
+      },
+      {
+        name: "blocked",
+        type: "bool",
+        indexed: false,
+        internalType: "bool",
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "Executed",
+    inputs: [
+      {
+        name: "target",
+        type: "address",
+        indexed: true,
+        internalType: "address",
+      },
+      {
+        name: "selector",
+        type: "bytes4",
+        indexed: true,
+        internalType: "bytes4",
+      },
+      {
+        name: "outflowUsd6",
+        type: "uint256",
+        indexed: false,
+        internalType: "uint256",
+      },
+      {
+        name: "inflowUsd6",
+        type: "uint256",
+        indexed: false,
+        internalType: "uint256",
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "Frozen",
+    inputs: [
+      {
+        name: "by",
+        type: "address",
+        indexed: true,
+        internalType: "address",
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "Unfrozen",
+    inputs: [
+      {
+        name: "by",
+        type: "address",
+        indexed: true,
+        internalType: "address",
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "error",
+    name: "AgentFrozen",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "BreachAlreadyClaimed",
+    inputs: [
+      {
+        name: "breachId",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+  },
+  {
+    type: "error",
+    name: "BreachDetected",
+    inputs: [
+      {
+        name: "breachType",
+        type: "uint8",
+        internalType: "enum BondedTypes.BreachType",
+      },
+      {
+        name: "lossUsd6",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+  },
+  {
+    type: "error",
+    name: "CallFailed",
+    inputs: [
+      {
+        name: "revertData",
+        type: "bytes",
+        internalType: "bytes",
+      },
+    ],
+  },
+  {
+    type: "error",
+    name: "CannotCallAccount",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "CannotCallModule",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "InvalidParams",
+    inputs: [
+      {
+        name: "reason",
+        type: "string",
+        internalType: "string",
+      },
+    ],
+  },
+  {
+    type: "error",
+    name: "NotAccount",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "NotAgent",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "NotClaimsEngine",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "NotCoverManager",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "NotCurrentModule",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "NotGuardian",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "NotInstalled",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "OnlySelf",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "PremiumTransferFailed",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "ReentrancyGuardReentrantCall",
+    inputs: [],
   },
   {
     type: "error",
@@ -6062,6 +7561,19 @@ export const coverManagerAbi = [
   },
   {
     type: "function",
+    name: "moduleFactory",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "address",
+        internalType: "contract IMandateModuleFactory",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
     name: "name",
     inputs: [],
     outputs: [
@@ -6474,6 +7986,19 @@ export const coverManagerAbi = [
   },
   {
     type: "function",
+    name: "setModuleFactory",
+    inputs: [
+      {
+        name: "moduleFactory_",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
     name: "setRiskParams",
     inputs: [
       {
@@ -6848,6 +8373,19 @@ export const coverManagerAbi = [
         type: "uint64",
         indexed: false,
         internalType: "uint64",
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "ModuleFactorySet",
+    inputs: [
+      {
+        name: "moduleFactory",
+        type: "address",
+        indexed: false,
+        internalType: "address",
       },
     ],
     anonymous: false,
@@ -7255,6 +8793,11 @@ export const coverManagerAbi = [
   },
   {
     type: "error",
+    name: "ModuleMustEnforce",
+    inputs: [],
+  },
+  {
+    type: "error",
     name: "NotAVault",
     inputs: [
       {
@@ -7406,6 +8949,11 @@ export const coverManagerAbi = [
   {
     type: "error",
     name: "VaultMustFreezeOnBreach",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "WrongVaultFactory",
     inputs: [],
   },
   {
@@ -7829,6 +9377,17 @@ export const claimsEngineAbi = [
   {
     type: "error",
     name: "BreachBlocked",
+    inputs: [
+      {
+        name: "breachId",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+  },
+  {
+    type: "error",
+    name: "BreachNotCovered",
     inputs: [
       {
         name: "breachId",
@@ -8475,6 +10034,11 @@ export const disputeModuleAbi = [
   {
     type: "error",
     name: "ChallengePeriodOver",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "CouncilDecisionRequired",
     inputs: [],
   },
   {

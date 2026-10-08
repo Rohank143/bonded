@@ -3,11 +3,14 @@ import { describe, expect, it } from "vitest";
 import {
   type Attestation,
   type BuildQuoteInput,
+  bindingOf,
   buildQuote,
   priceCover,
   QUOTE_TTL_SECONDS,
   QuoteError,
   signQuote,
+  UNDERWRITING_COVER_CAP_USD,
+  underwritingCapRefusal,
   verifyQuote,
 } from "../src/index.js";
 
@@ -214,5 +217,52 @@ describe("signQuote and verifyQuote", () => {
     expect(await verifyQuote(cheaper, [attester])).toBe(false);
     expect(await verifyQuote({ ...signed, chainId: 421614 }, [attester])).toBe(false);
     expect(await verifyQuote({ ...signed, coverManager: vault }, [attester])).toBe(false);
+  });
+});
+
+describe("underwriting cap by binding", () => {
+  const input = (over: Partial<BuildQuoteInput> = {}): BuildQuoteInput => ({
+    attestation: hardened,
+    vault,
+    coverAmount: usd(5_000),
+    bond: usd(2_000),
+    now: NOW,
+    ...over,
+  });
+
+  it("reads the binding from the attestation's TEE measurement", () => {
+    expect(bindingOf(hash(0))).toBe("declared");
+    expect(bindingOf(hash(5))).toBe("tee");
+  });
+
+  it("caps a declared agent at 5,000 tUSDG in total and a TEE-bound one at 20,000", () => {
+    expect(UNDERWRITING_COVER_CAP_USD).toEqual({ declared: 5_000, tee: 20_000 });
+    expect(() => buildQuote(input({ binding: "declared" }))).not.toThrow();
+    expect(() => buildQuote(input({ binding: "declared", coverAmount: usd(5_001) }))).toThrow(
+      /underwriting policy: .*declared binding is capped at 5,000 tUSDG/,
+    );
+    // The cap is on the agent's total cover, so existing cover counts.
+    expect(() =>
+      buildQuote(
+        input({ binding: "declared", coverAmount: usd(1_000), existingCover: usd(4_500) }),
+      ),
+    ).toThrow(QuoteError);
+    expect(() =>
+      buildQuote(input({ binding: "tee", coverAmount: usd(20_000), bond: usd(6_000) })),
+    ).not.toThrow();
+    expect(() => buildQuote(input({ binding: "tee", coverAmount: usd(20_001) }))).toThrow(
+      /TEE-bound agent is capped at 20,000/,
+    );
+  });
+
+  it("is configurable, and doesn't apply when no binding is given", () => {
+    expect(
+      underwritingCapRefusal({
+        binding: "declared",
+        coverAmount: usd(9_000),
+        caps: { declared: 10_000, tee: 50_000 },
+      }),
+    ).toBeUndefined();
+    expect(() => buildQuote(input({ coverAmount: usd(15_000), bond: usd(5_000) }))).not.toThrow();
   });
 });

@@ -6,6 +6,7 @@ import {VmSafe} from "forge-std/Vm.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BondedRegistry} from "../src/BondedRegistry.sol";
 import {MandateVaultFactory} from "../src/MandateVaultFactory.sol";
+import {MandateModuleFactory} from "../src/MandateModuleFactory.sol";
 import {CoverPool} from "../src/CoverPool.sol";
 import {OperatorBond} from "../src/OperatorBond.sol";
 import {CoverManager} from "../src/CoverManager.sol";
@@ -45,6 +46,7 @@ contract Deploy is Script {
         address claimsEngine;
         address disputeModule;
         address bountyBoard;
+        address moduleFactory;
     }
 
     uint256 internal constant USDG_PRICE = 1e6;
@@ -129,6 +131,10 @@ contract Deploy is Script {
         manager.setTerms(30 days, waitingPeriod);
         claims.setDisputeModule(address(disputes));
 
+        // Deployed last so every address above stays where it was before the module existed.
+        MandateModuleFactory moduleFactory = new MandateModuleFactory(factory);
+        manager.setModuleFactory(address(moduleFactory));
+
         d.registry = address(registry);
         d.factory = address(factory);
         d.pool = address(pool);
@@ -137,6 +143,7 @@ contract Deploy is Script {
         d.claimsEngine = address(claims);
         d.disputeModule = address(disputes);
         d.bountyBoard = address(board);
+        d.moduleFactory = address(moduleFactory);
     }
 
     function _writePending(Deployment memory d) internal {
@@ -156,10 +163,17 @@ contract Deploy is Script {
         vm.serializeAddress(k, "coverManager", d.coverManager);
         vm.serializeAddress(k, "claimsEngine", d.claimsEngine);
         vm.serializeAddress(k, "disputeModule", d.disputeModule);
-        string memory json = vm.serializeAddress(k, "bountyBoard", d.bountyBoard);
-        string memory path = string.concat(
-            vm.projectRoot(), "/deployments/", vm.toString(block.chainid), ".pending.json"
+        vm.serializeAddress(k, "bountyBoard", d.bountyBoard);
+        string memory json = vm.serializeAddress(k, "moduleFactory", d.moduleFactory);
+        // DEPLOYMENTS_DIR lets a throwaway local chain (the Arena sandbox) write somewhere
+        // git-ignored, away from the committed files. It must stay under ./deployments
+        // (foundry.toml's fs_permissions).
+        string memory dir = string.concat(
+            vm.projectRoot(), "/", vm.envOr("DEPLOYMENTS_DIR", string("deployments")), "/"
         );
+        // forge-lint: disable-next-line(unsafe-cheatcode)
+        vm.createDir(dir, true);
+        string memory path = string.concat(dir, vm.toString(block.chainid), ".pending.json");
         vm.writeJson(json, path);
         console2.log("Wrote", path);
     }
@@ -187,5 +201,6 @@ contract Deploy is Script {
         console2.log("ClaimsEngine   ", d.claimsEngine);
         console2.log("DisputeModule  ", d.disputeModule);
         console2.log("BountyBoard    ", d.bountyBoard);
+        console2.log("ModuleFactory  ", d.moduleFactory);
     }
 }

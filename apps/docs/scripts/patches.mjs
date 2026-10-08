@@ -14,8 +14,8 @@ export const PATCHES = [
     ],
     ["| | |\n|---|---|\n| **Web app**", "| What | Where |\n|---|---|\n| **Web app**"],
     [
-      "| | |\n|---|---|\n| [ARCHITECTURE.md]",
-      "| Page | What it covers |\n|---|---|\n| [ARCHITECTURE.md]",
+      "| | |\n|---|---|\n| [YOUR-AGENTS.md]",
+      "| Page | What it covers |\n|---|---|\n| [YOUR-AGENTS.md]",
     ],
   ]),
 

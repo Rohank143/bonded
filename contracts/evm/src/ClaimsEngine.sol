@@ -11,7 +11,8 @@ import {ICoverManager} from "./interfaces/ICoverManager.sol";
 import {ICoverPool} from "./interfaces/ICoverPool.sol";
 import {IOperatorBond} from "./interfaces/IOperatorBond.sol";
 import {IMandateVaultFactory} from "./interfaces/IMandateVaultFactory.sol";
-import {MandateVault} from "./MandateVault.sol";
+import {IMandateGuard, IMandateModule} from "./interfaces/IMandateGuard.sol";
+import {MandateBase} from "./MandateBase.sol";
 
 /// @title ClaimsEngine
 /// @notice Pays parametric claims automatically. Anyone can file (the keeper does it within
@@ -26,6 +27,11 @@ import {MandateVault} from "./MandateVault.sol";
 ///      5. waterfall: slash the operator bond first, then the pool pays the rest;
 ///      6. both pay into the vault, restoring the share price for every depositor.
 ///      A claim the pool can't pay in full reverts, leaving its breaches claimable for later.
+///
+///      Policies on MandateModules work the same way, with two differences: payouts go to the
+///      smart account the module guards, and Deferred breaches (unexplained drops) aren't paid,
+///      because the account's owner can move funds outside the module and such a drop can't be
+///      told apart from an owner withdrawal.
 contract ClaimsEngine is Ownable2Step, ReentrancyGuard {
     ICoverManager public immutable coverManager;
     ICoverPool public immutable pool;
@@ -62,6 +68,7 @@ contract ClaimsEngine is Ownable2Step, ReentrancyGuard {
     error NothingToPay();
     error PoolShortfall(uint256 needed, uint256 paid);
     error NotDisputeModule();
+    error BreachNotCovered(uint256 breachId);
     error AlreadySet();
 
     constructor(
@@ -82,7 +89,7 @@ contract ClaimsEngine is Ownable2Step, ReentrancyGuard {
     }
 
     /// @notice Files and pays a claim for `breachIds` recorded by the policy's vault.
-    /// @return paid Total paid into the vault (bond + pool).
+    /// @return paid Total paid into the vault, or the module's account (bond + pool).
     function fileClaim(uint256 policyId, uint256[] calldata breachIds)
         external
         nonReentrant
@@ -100,10 +107,13 @@ contract ClaimsEngine is Ownable2Step, ReentrancyGuard {
             revert ClaimWindowClosed();
         }
 
-        uint256 lossUsd6 =
-            _collectLoss(MandateVault(policy.vault), breachIds, coveredFrom, coveredUntil);
+        IMandateGuard guard = IMandateGuard(policy.vault);
+        bool isVault = factory.isVault(policy.vault);
+        uint256 lossUsd6 = _collectLoss(guard, breachIds, coveredFrom, coveredUntil, isVault);
         if (lossUsd6 == 0) revert NothingToPay();
-        paid = _pay(policyId, policy, _usd6ToBase(MandateVault(policy.vault), lossUsd6), breachIds);
+        paid = _pay(
+            policyId, policy, _usd6ToBase(guard, lossUsd6), breachIds, _payee(policy.vault, isVault)
+        );
     }
 
     /// @notice Pays a grey-area (T4) claim that DisputeModule approved. Same deductible, premium
@@ -126,7 +136,13 @@ contract ClaimsEngine is Ownable2Step, ReentrancyGuard {
         ) {
             revert ClaimWindowClosed();
         }
-        paid = _pay(policyId, policy, lossBase, new uint256[](0));
+        paid = _pay(
+            policyId,
+            policy,
+            lossBase,
+            new uint256[](0),
+            _payee(policy.vault, factory.isVault(policy.vault))
+        );
     }
 
     // ----- Admin -------------------------------------------------------------------------
@@ -161,11 +177,13 @@ contract ClaimsEngine is Ownable2Step, ReentrancyGuard {
     }
 
     /// @dev Computes the payout, nets unpaid premium, and runs the waterfall: bond, then pool.
+    ///      Both pay `payee`: the vault, or the account a module guards.
     function _pay(
         uint256 policyId,
         ICoverManager.Policy memory policy,
         uint256 lossBase,
-        uint256[] memory breachIds
+        uint256[] memory breachIds,
+        address payee
     ) internal returns (uint256 paid) {
         Payout memory p;
         p.lossBase = lossBase;
@@ -177,10 +195,10 @@ contract ClaimsEngine is Ownable2Step, ReentrancyGuard {
 
         p.netted = Math.min(coverManager.premiumDebt(policyId), p.gross);
         uint256 toVault = p.gross - p.netted;
-        if (toVault > 0) p.fromBond = bond.slash(policy.agentId, toVault, policy.vault);
+        if (toVault > 0) p.fromBond = bond.slash(policy.agentId, toVault, payee);
         if (toVault > p.fromBond) {
             uint256 needed = toVault - p.fromBond;
-            p.fromPool = pool.payClaim(policy.vault, needed);
+            p.fromPool = pool.payClaim(payee, needed);
             // Never finalize a partly paid claim: revert so the breaches stay claimable until the
             // pool can pay in full.
             if (p.fromPool < needed) revert PoolShortfall(needed, p.fromPool);
@@ -193,18 +211,22 @@ contract ClaimsEngine is Ownable2Step, ReentrancyGuard {
         );
     }
 
-    /// @dev Validates each breach, marks it claimed on the vault and sums the losses.
+    /// @dev Validates each breach, marks it claimed on the vault (or module) and sums the losses.
     function _collectLoss(
-        MandateVault vault,
+        IMandateGuard vault,
         uint256[] calldata breachIds,
         uint64 coveredFrom,
-        uint64 coveredUntil
+        uint64 coveredUntil,
+        bool isVault
     ) internal returns (uint256 lossUsd6) {
         for (uint256 i; i < breachIds.length; ++i) {
             uint256 breachId = breachIds[i];
-            MandateVault.Breach memory breach = vault.getBreach(breachId);
+            MandateBase.Breach memory breach = vault.getBreach(breachId);
             if (breach.claimed) revert BreachAlreadyClaimed(breachId);
             if (breach.blocked) revert BreachBlocked(breachId);
+            if (!isVault && breach.breachType == BondedTypes.BreachType.Deferred) {
+                revert BreachNotCovered(breachId);
+            }
             if (breach.timestamp < coveredFrom || breach.timestamp > coveredUntil) {
                 revert BreachOutsideCoverage(breachId, breach.timestamp);
             }
@@ -214,7 +236,13 @@ contract ClaimsEngine is Ownable2Step, ReentrancyGuard {
     }
 
     /// @dev Converts a USD amount (6 decimals) into base-asset units using the vault's oracle.
-    function _usd6ToBase(MandateVault vault, uint256 usd6) internal view returns (uint256) {
+    /// @dev Policies only exist for factory vaults and factory modules (CoverManager checks), so
+    ///      anything that isn't a vault is a module.
+    function _payee(address guard, bool isVault) internal view returns (address) {
+        return isVault ? guard : IMandateModule(guard).account();
+    }
+
+    function _usd6ToBase(IMandateGuard vault, uint256 usd6) internal view returns (uint256) {
         address base = vault.asset();
         uint256 oneBase = 10 ** IERC20Metadata(base).decimals();
         return Math.mulDiv(usd6, oneBase, vault.oracle().valueInUsd6(base, oneBase));

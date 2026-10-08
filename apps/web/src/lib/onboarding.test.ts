@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { mandateHash, toEvmMandateParams } from "@bonded/shared";
+import { EvmMandate, demoRouterAbi, mandateHash, toEvmMandateParams } from "@bonded/shared";
+import { getAbiItem, toFunctionSelector } from "viem";
 import {
   ONBOARDING_STEPS,
   buildMandate,
@@ -41,6 +42,32 @@ describe("buildMandate", () => {
     // The hash that goes on chain is the hash the API recomputes from the same JSON.
     expect(toEvmMandateParams(m).mandateHash).toBe(mandateHash(m));
   });
+  it("builds the same mandate as the hand-written JSON it replaced, so hashes don't change", () => {
+    const handWritten = EvmMandate.parse({
+      version: 1,
+      chain: { family: "evm", chainId: deployment.chainId },
+      agentId: "11",
+      mode: "monitor",
+      baseAsset: deployment.usdg,
+      assets: [deployment.usdg, deployment.tsla],
+      targets: [
+        {
+          address: deployment.router,
+          selectors: [toFunctionSelector(getAbiItem({ abi: demoRouterAbi, name: "swap" }))],
+        },
+      ],
+      destinations: form.destinations,
+      limits: {
+        maxTxNotionalUsd: 5000,
+        maxDailyNotionalUsd: 25000,
+        maxDrawdownBps: 1500,
+        maxSlippageBps: 300,
+      },
+      freezeOnBreach: true,
+      description: "Self-serve agent",
+    });
+    expect(buildMandate(deployment, 11n, form)).toEqual(handWritten);
+  });
   it("gives a different hash for a different description, since the API checks it exactly", () => {
     const a = buildMandate(deployment, 11n, form);
     const b = buildMandate(deployment, 11n, { ...form, description: "other" });
@@ -58,6 +85,17 @@ describe("remember and recall", () => {
       mandate,
     });
     expect(recallAgent(deployment.chainId, "13")).toBeUndefined();
+  });
+  it("keeps what the owner declared about their own agent", () => {
+    const mandate = buildMandate(deployment, 14n, form);
+    const remote = { codeHash: `0x${"c".repeat(64)}`, mode: "chain" as const };
+    rememberAgent(deployment.chainId, "14", { vault: "0xabc", kind: "remote", mandate, remote });
+    expect(recallAgent(deployment.chainId, "14")).toEqual({
+      vault: "0xabc",
+      kind: "remote",
+      mandate,
+      remote,
+    });
   });
 });
 

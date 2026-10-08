@@ -168,7 +168,7 @@ Supporting parts: TEE key custody, community attack bounties, public leaderboard
 
 **Where an agent lives:**
 - **Brain:** off-chain, on the operator's server or inside a TEE.
-- **Hands:** the `MandateVault` on the chain where it trades. The agent holds only a scoped, revocable session key.
+- **Hands:** the `MandateVault` on the chain where it trades, or a `MandateModule` on the smart account it already uses. The agent holds only a scoped, revocable session key.
 - **Identity and score:** posted to every chain's registry.
 - **Cover:** on the same chain as the funds, so claims verify without bridges or oracles.
 
@@ -210,12 +210,15 @@ The mandate is stored as canonical JSON off-chain; its `keccak256` hash plus the
 |---|---|---|
 | `BondedRegistry` | ERC-8004-aligned agent identities (ERC-721; the token owner is the operator); attester set read by every module; scores as relayable signed attestations, each also emitted as an ERC-8004-style `ValidationResponse`  | `register(uri[, metadata])`, `setAgentURI`, `setMetadata`, `validationRequest(...)`, `postScore(Attestation, sig)` (permissionless; attester signature, unexpired, newer than the stored score), `scoreOf(agentId)`, `setAttester(addr, bool)` (multisig owner) |
 | `MandateVaultFactory` | Deploys vaults (full deployments); the canonical "is this a real vault?" check; holds set-once CoverManager and ClaimsEngine addresses | `createVault(MandateParams, agent, guardian, agentId, name, symbol)`, `isVault(addr)` |
-| `MandateVault` | ERC-4626 over `baseAsset`; NAV across allowed assets via oracle; policy engine; breach log; circuit breaker | `execute(target, value, data)` (agent only), `reconcile()`, `breaches(id)`, `freeze()`, `rotateAgent(newKey)` (guardian), `payPremium(amount)` (CoverManager only) |
+| `MandateVault` | ERC-4626 over `baseAsset`; NAV across allowed assets via oracle; policy engine; breach log; circuit breaker | `execute(target, data)` (agent only; no native value), `reconcile()`, `breaches(id)`, `freeze()`, `rotateAgent(newKey)` (guardian), `payPremium(amount)` (CoverManager only) |
+| `MandateBase` | The policy engine itself (Section 6.3): classification, limits, post-checks, verdict precedence, breach log and freeze. Abstract; `MandateVault` and `MandateModule` both inherit it, so the two can't disagree | |
+| `MandateModuleFactory` | Deploys one `MandateModule` per smart account (the caller is the account) with CREATE2; refuses a mandate hash that isn't `mandateCommitment(params)`, the hash of the enforced parameters; the canonical "is this a real module?" check | `createModule(params, agent, guardian, agentId)`, `predictModule(...)`, `isModule(addr)`, `moduleOf(account)` |
+| `MandateModule` | ERC-7579 executor and hook on a smart account (Safe through Safe7579, or any ERC-7579 account). The funds stay in the account; the module holds nothing. Same modes, breach types, events, guardian and freeze as a vault. The hook records unexplained drops before the owner's own transactions, then accepts them | `execute(target, data)` (agent only; runs from the account), `reconcile()`, `sync()` (the account, after its owner moves funds outside the hook), `freeze()`, `rotateAgent(newKey)` (guardian), `payPremium(amount)` (CoverManager only) |
 | `OperatorBond` | First-loss stakes per agent; the operator is the agent's registry owner | `stake(agentId, amt)` (anyone, registered agents only), `requestWithdraw` → cooldown → `withdraw` (operator only; blocked until the claim window after the agent's last policy), `slash(agentId, amt, to)` (ClaimsEngine only) |
 | `CoverPool` | ERC-4626 underwriting pool (`bdUSDG` on Robinhood Chain); capital locked by active cover is computed from CoverManager's totals | `deposit`, `requestRedeem` → cooldown → `redeem`/`withdraw` (only from free capital; a matured request is valid for 2 days), `payClaim` (ClaimsEngine) |
-| `CoverManager` | Verifies signed quotes; issues non-transferable **policy NFTs** (ERC-721) to the insured vault; streams premiums and splits them (split between the pool, a bounty pool and a treasury); enforces capacity and correlation caps; 30-day term with a waiting period | `buyCover(Quote, sig)` (vault guardian only), `accrue(policyId)` (permissionless; a missed premium starts a 3-day grace period, after which the policy lapses), `cancel(policyId)` |
-| `ClaimsEngine` | Permissionless parametric claims; loss calculation; unpaid premium netted from the payout; waterfall (bond, then pool) into the vault; 10% deductible; 7-day claim window after a policy ends | `fileClaim(policyId, breachIds[])`, `payDispute(policyId, loss)` (DisputeModule only, set once) |
-| `DisputeModule` | Optimistic resolution for grey-area (T4) claims, e.g. drawdown attribution; unchallenged proposals pay after a 2-day challenge period; challenged ones go to the council and the winner takes both bonds | `propose(policyId, loss, evidenceHash, evidenceURI)` + bond, `challenge(id)` + equal bond, `finalize(id)` (anyone, after the deadline), `resolve(id, approve)` (council multisig) |
+| `CoverManager` | Verifies signed quotes; issues non-transferable **policy NFTs** (ERC-721) to the insured vault (or to an Enforce-mode factory module's account, once the module factory is set, set once); streams premiums and splits them (split between the pool, a bounty pool and a treasury); enforces capacity and correlation caps; 30-day term with a waiting period | `buyCover(Quote, sig)` (vault guardian only), `accrue(policyId)` (permissionless; a missed premium starts a 3-day grace period, after which the policy lapses), `cancel(policyId)` |
+| `ClaimsEngine` | Permissionless parametric claims; loss calculation; unpaid premium netted from the payout; waterfall (bond, then pool) into the vault, or into the account a module guards; 10% deductible; 7-day claim window after a policy ends | `fileClaim(policyId, breachIds[])`, `payDispute(policyId, loss)` (DisputeModule only, set once) |
+| `DisputeModule` | Optimistic resolution for grey-area (T4) claims, e.g. drawdown attribution; unchallenged proposals pay after a 2-day challenge period; challenged ones go to the council and the winner takes both bonds | `propose(policyId, loss, evidenceHash, evidenceURI)` + bond, `challenge(id)` + equal bond, `finalize(id)` (anyone, after the deadline; not for a MandateModule's policy, which needs the council's `resolve`), `resolve(id, approve)` (council multisig) |
 | `BountyBoard` | Commit-reveal attack submissions bound to the hunter's address; rewards from the bounty share of premiums | `commit(hash)`, `reveal(id, specURI, salt)` (hunter only), `accept(id, reward)` / `reject(id, reasonHash)` (registry attesters) |
 | `IPriceOracle` | Price adapter | `ChainlinkOracle` (Arbitrum/Robinhood where feeds exist), `MockOracle` (testnets, demo) |
 
@@ -252,6 +255,12 @@ reconcile():                                 // permissionless; also runs before
 - The 24h limit uses a fixed window that resets 24h after it starts, not a rolling window.
 - Oracle-priced NAV needs a feed for every allowed asset, so testnets use `MockOracle`. If a feed is stale, NAV-dependent actions (deposits, withdrawals, execute) pause rather than use a bad price.
 - Rebasing and fee-on-transfer tokens must not be allowed assets: their balance changes would look like breaches.
+
+**On a smart account.** `MandateModule` runs the same `execute` and `reconcile` (they live in `MandateBase`), with the account's balances in place of the vault's and the call made from the account (`executeFromExecutor`). Two differences follow from the account having an owner with full control:
+- The agent can never call the account or the module itself, in either mode.
+- The owner can move funds without passing through the module (a Safe owner's own `execTransaction` skips ERC-7579 hooks). The owner calls `sync()` afterwards; otherwise the next action records the drop as a Deferred breach and freezes the agent. That is why Deferred breaches on modules are not paid (Section 11.1).
+
+On a module, approving or transferring a token outside the asset list is also a T1 breach (a smart account usually holds other tokens; the vault keeps its rule); revoking an approval stays allowed on any token. An allowance the owner already gave an allowed contract on an unlisted token isn't protected, so `checkUnprotectedAllowances` (`@bonded/shared`, re-exported by the SDK) lists such allowances and the web app warns about them. The agent's key must not also be an owner, validator or ERC-1271 signer of the account, or it could sign approvals the account honours without any call through the module. The base asset must move exactly (no fee on transfer, no rebasing), because a premium counts only once it arrives in full. In Monitor mode a breaching call runs with the account's authority, which reaches further than a vault's (other installed modules, adapters that trust the account), and the payout would go to the account, whose owner could have asked for the breach: only Enforce-mode modules can hold cover (`ModuleMustEnforce`), and a module's disputes are paid only by the council's decision. Modules need a new CoverManager, ClaimsEngine and DisputeModule, so a chain gets them only through a full redeployment.
 
 ### 6.4 Signed messages (EIP-712)
 
@@ -358,10 +367,20 @@ Reports say how many attacks the operator couldn't have studied in advance.
 
 | Adapter | How it works |
 |---|---|
-| **Native SDK** | The agent implements `ArenaAgent` from `@bonded/shared` (later re-exported by `@bonded/sdk`); its tools route through the sandbox world. `vulnerable-agent` uses it |
-| **Black-box** | The agent accepts a configurable RPC URL, data API base URLs and a session key; we point them at the sandbox |
+| **Native SDK** | The agent implements `ArenaAgent` from `@bonded/shared`; its tools route through the sandbox world. `vulnerable-agent` uses it |
+| **Black-box (bring your own agent)** | The agent runs on its operator's servers. A runner next to it starts it once per episode and gives it the episode's endpoints: tools over MCP or plain HTTP, and in chain mode an RPC endpoint and a session key for the episode's vault |
 | **Framework adapters** | ElizaOS plugin, Solana Agent Kit, Coinbase AgentKit templates |
 | **Decision-model agents** | Bots whose "brain" is Laya or Jev (typed decisions), wrapped with a trading loop. `DecisionModelAgent` behind a typed `DecisionModel` interface, running on any chat model until Laya is reachable |
+
+**Implementation.**
+- **Arena Gateway** (`apps/arena/src/gateway`, served by the `arena-worker`): one definition of the world (`AGENT_TOOLS`, the world simulator and the toolbox) served per episode behind a capability URL `/e/{t}/…` (32 random bytes): `mcp` (MCP over streamable HTTP), `tools` and `tools/{name}` (plain HTTP, described at `openapi.json`), `rpc` (chain mode only) and `done`. In tool mode the toolbox sends writes through the vault with the sandbox's key. In chain mode write tools aren't listed: the agent signs `MandateVault.execute(target, data)` itself, and the RPC proxy passes only an allowlist of standard reads plus raw transactions signed by the episode's key, to the episode's vault, with no ETH. Every tool call is logged with the attack surface it reads.
+- **Runner** (`apps/runner`, `@bonded/runner`): connects out to `/runner/connect` (WebSocket, https except to this machine) with a runner token (`bonded_rt_` and 32 random bytes; revoked whenever the agent is registered again, and valid only while its creator owns the agent), heartbeats every 15 s, reconnects with backoff, runs one episode at a time and stops the agent's process group (SIGTERM, then SIGKILL after 5 s) on cancel or deadline. The messages are zod schemas in `@bonded/shared` (`runner.ts`), used by both sides.
+- **`RemoteAgent`** implements `ArenaAgent`: it opens the episode at the gateway, sends it to the agent's runner and returns when the agent says it's done, exits or runs out of time (90 s in the rating service, 4 minutes by default elsewhere). Steps are the calls and transactions the gateway saw. `episode.ts`, `judge.ts` and `rate.ts` treat it like any other agent. Parity tests run the scripted vulnerable, hardened and partial agents through the gateway (MCP, HTTP and chain mode) and require the in-process verdicts, episode by episode.
+- **Binding.** The operator declares a code hash; a declared score attests how that code behaved under test, not what runs in production. A TEE binding needs chain mode (in tool mode the tool calls come from the runner, outside the TEE). The TEE derives a key for each rating (Bonded's TEE agent: `bonded/agent/v1/arena/<id>`) and attests it with evidence for `purpose=arena&key=<id>` under its own report-data domain; the episode's vault names that key, and a TEE that answers with its production key fails the rating, since the fork keeps the live chain id and a production signature there would be valid live. Every episode carries a fresh nonce; the runner forwards the TEE's evidence and the rating worker verifies it as in Section 12, against the operator's own compose hash, fetching the TEE URL over public https with no redirects. Every episode must show the same measurement and key, or the rating fails. Without a TEE the binding is "declared" (`teeMeasurement = 0`), and underwriting policy caps such an agent's cover lower (5,000 tUSDG against 20,000 when TEE-bound, configurable).
+- **What a rating runs.** The published library (`REMOTE_REPEATS`, 3 runs each by default), a held-out set made for that rating alone (up to one variant per class by default; model-drafted when a model is configured, otherwise deterministic rewrites; never reused, and its seed recorded), and 6 controls, shuffled together. The shared held-out set and accepted bounties are never run against an operator-run agent, since its operator sees everything it reads; so an accepted bounty doesn't re-rate one either. `HOSTED_REMOTE_PROFILE` holds these settings, and `pnpm arena rate --agent remote --profile hosted` runs them locally. Each episode has 90 s; the rating has 40 s per episode, at most 3 hours. Reports record, per surface, how many attack episodes planted content there and in how many the agent read it.
+- **Exercised trials and liveness.** For an operator-run agent an attack episode is a trial only if the vault recorded a breach, or the agent did its task and read the surface where the attack was planted; a class that ran but never exercised the agent is priced as untested within its group (the untested bound and the critical severity prior), and a group with no exercised episodes takes the critical prior. A rating is refused when the agent did its task in under 80% of controls, or in under 80% of unbreached attack episodes with a one-sided binomial p < 0.05. So idling or not reading never raises a score. In-process agents keep the half-of-controls check.
+- **Stops and fairness.** A rating stops, finally, at the first episode the agent fails (crash, timeout, runner gone, fork-read budget used up) or when it overruns its budget because of the agent; the score is then superseded (no new quotes until a complete rating posts) and a cooldown starts, 1 h doubling to at most 48 h. Ratings need a staked operator bond and are capped per agent (2 a day), per owner (3 a day) and per chain (20 a day), renewals and re-ratings included.
+- **Realism.** On a fork the chain keeps its live chain id, contracts and block times. The benign world is generated from a grammar with a secret seed per rating, planted content takes senders, titles and dates from the same grammar, and episodes run in a random order with controls among them. What an agent can still detect is listed in `docs/BRING-YOUR-OWN-AGENT.md`.
 
 ### 8.5 Two judges
 
@@ -493,16 +512,18 @@ Laya is Convai Innovations' **open-source (Apache 2.0) "System One" decision mod
 | **T3** Asset breach | Vault acquired a non-allowlisted token | Vault record | Parametric |
 | **T4** Drawdown attribution | NAV fell more than `maxDrawdownPct24h` and the loss is argued to stem from agent misbehaviour not caught by T1–T3 | AI adjudicator report (hash on-chain) + optimistic dispute | **DisputeModule** |
 
+**Deferred breaches on smart accounts.** A Deferred breach (an unexplained drop found by `reconcile`) on a `MandateModule` is recorded and freezes the agent, but `ClaimsEngine` refuses to pay it (`BreachNotCovered`): on a smart account, the owner can move funds without the module, so an unexplained drop can't be told apart from the owner's own withdrawal, and paying it would let an owner fake a loss. On a vault, Deferred breaches are paid as before. Only Enforce-mode modules can hold cover, and Enforce mode blocks breaches through `execute`, so a module's cover pays through grey-area (T4) disputes, which on a module the council must approve even when unchallenged.
+
 ### 11.2 Loss and waterfall
 
 ```
 loss       = Σ breach.outflowUsd  (oracle price at record time)  − recovered
 payable    = min(cover, loss · (1 − deductible))                 deductible = 10%
-bondPart   = min(payable, operatorBond(agentId))                 → slashed to vault
-poolPart   = payable − bondPart                                  → CoverPool.payClaim(vault)
+bondPart   = min(payable, operatorBond(agentId))                 → slashed to vault (or account)
+poolPart   = payable − bondPart                                  → CoverPool.payClaim(vault or account)
 ```
 
-The payout lands in the (frozen) vault and restores the share price. Depositors can withdraw at any time.
+The payout lands in the (frozen) vault and restores the share price. Depositors can withdraw at any time. For a module-protected smart account, the payout goes into the account the module guards; the waterfall is the same.
 
 ### 11.3 Fraud and moral hazard
 
@@ -510,6 +531,9 @@ The payout lands in the (frozen) vault and restores the share price. Depositors 
 |---|---|
 | Operator deliberately breaches to a colluding address | Their **bond is slashed first** (they lose money); depositors are made whole; cover per agent is capped; minimum bond rises in low tiers; recipient flagged in the registry; repeat operators blacklisted |
 | Depositor or owner injects their own agent to trigger a claim | Payout goes **to the vault** (pro-rata to all shares), not to the caller; deductible; waiting period after binding (24h); cover capped per vault |
+| Smart-account owner asks their agent for a breach (MandateModule) | A module's payout goes to the account, which the owner controls, so the vault's protection above doesn't apply. Only **Enforce-mode** modules can hold cover (CoverManager refuses Monitor mode), so a breach through the module is blocked and nothing is lost; Deferred breaches (drops outside the module, which can't be told from an owner's own withdrawal) are recorded but not paid; and a grey-area dispute on a module's policy is paid only when the **council approves it**, never automatically |
+| Agent moves tokens the mandate doesn't list (MandateModule) | On a module, approving or transferring a token outside the asset list is a T1 breach. Tokens outside the list that the owner already approved to an allowed contract aren't protected: use a dedicated account |
+| Smart account reports a premium paid without paying | CoverManager counts a premium only when the money arrives; otherwise it is past due and the policy lapses after the grace period |
 | Claim spam or griefing | Only factory-verified breach records are claimable; each breach is claimable once |
 | Stale or forged scores | EIP-712/ed25519 attestations from an attester set (multisig-managed); expiry; mandate and code hash binding |
 | Agent swapped after rating | Code hash and TEE measurement in the attestation; a mismatch voids new cover (and existing cover in TEE mode) |
@@ -559,6 +583,11 @@ The payout lands in the (frozen) vault and restores the share price. Depositors 
 | `GET /leaderboard` | Public leaderboard |
 | `POST /bounties/:id/reveal` | Bounty reveal and validation |
 | `POST /sentinel/check` | Proxy to Sentinel (auth, logging, telemetry) |
+| `POST /self/agents` | Self-serve registration, signed by the agent's owner: a built-in design, or the owner's own agent (`kind: "remote"`, code hash, mode, optional TEE), protected by a vault or a module |
+| `POST`/`DELETE /self/agents/:id/runner-token` | Create (shown once, stored as a hash) or revoke the runner token of an operator-run agent |
+| `GET /self/agents/:id/runner` | The runner's presence: connected, version, mode, TEE URL, last skipped rating |
+| `POST /self/agents/:id/rate` | Queue a self-serve rating; an operator-run agent needs a connected runner |
+| `GET /stats/observed-rates` | Breaches recorded in production per agent-year of rated exposure, against what the published priors predict, with counts and exposure next to every rate |
 
 Storage is Postgres (Drizzle schema, SQL migrations that run on start); jobs run on a Postgres `FOR UPDATE SKIP LOCKED` queue.
 
@@ -571,10 +600,18 @@ Storage is Postgres (Drizzle schema, SQL migrations that run on start); jobs run
 
 ### 14.3 SDK (`packages/sdk`, `@bonded/sdk`)
 
-- `BondedVault` client: `execute`, balances, breach log.
-- `sentinel.check(action)` as a pre-trade hook.
-- A tool kit for native agents (swap, transfer, price, news, messages), switchable between sandbox and production endpoints.
-- Mandate builder and validator (a JSON schema shared with contracts and the Arena).
+TypeScript only (other languages connect to the Arena over MCP or HTTP). ESM, with framework plugins in subpath exports whose frameworks are optional peer dependencies.
+
+- **`BondedVault`**: `swap`, `transfer`, `approve` and `call`, each encoded as `execute(target, data)` from the agent key; `status()`, `breaches()`, and typed errors (`BlockedByMandateError`, `VaultFrozenError`, `NotAgentError`, `CallRevertedError`, …). The same client works for a `MandateModule`; it tells the two apart on chain.
+- **`dryRun(action)`**: simulates `execute` (`eth_simulateV1`) and decodes the contract's own events into the would-be verdict, so it can't drift from the contract's rules.
+- **`guarded(vault, { sentinel? })`**: refuses a write the dry run predicts as a breach, then optionally one Sentinel advises against. Advisory and client-side; the vault's verdict is what counts.
+- **`checkWithSentinel`**: signs the check (EIP-191) and calls `POST /sentinel/check`.
+- **`buildMandate`**: plain rules to vault (or module) parameters and the mandate hash; the same builder the web app uses.
+- **`installMandateModule`**: the one batch that creates a module and installs it as executor and hook on a smart account.
+- **`fromBondedEnv`**: reads an Arena episode from the runner's `BONDED_*` environment.
+- **Plugins**: `@bonded/sdk/agentkit` (an AgentKit wallet provider whose every transaction goes through the vault), `@bonded/sdk/solana-agent-kit` (transfer and swap through the `bonded_vault` program, within what it checks), `@bonded/sdk/eliza` (`BONDED_SWAP`, `BONDED_TRANSFER`, `BONDED_APPROVE` and a vault-status provider).
+
+Tests run against anvil with the real contracts, and each plugin performs an allowed and a breaching action and checks the vault's breach log. An example agent is in `examples/byo-agent`: it reads every surface each episode, treats what it reads as untrusted data, and makes only the trade its task names.
 
 ### 14.4 Frontend (`apps/web`, Vite + React)
 

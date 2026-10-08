@@ -2,18 +2,27 @@ import { useState, type ReactNode } from "react";
 import { Token, TokenLogo } from "../components/token";
 import { Link } from "react-router";
 import { useAccount, useSignMessage, useWriteContract } from "wagmi";
-import { waitForTransactionReceipt } from "wagmi/actions";
-import { parseEventLogs, type Abi, type Address, type Hex } from "viem";
+import { getPublicClient, readContract, waitForTransactionReceipt } from "wagmi/actions";
+import { isAddress, parseEventLogs, type Abi, type Address, type Hex } from "viem";
 import {
+  REMOTE_KIND,
   SELF_SERVE_KINDS,
   SELF_SERVE_KIND_LABELS,
   bondedRegistryAbi,
+  mandateCommitment,
+  mandateModuleAbi,
+  mandateModuleFactoryAbi,
   mandateVaultAbi,
   mandateVaultFactoryAbi,
   operatorBondAbi,
   testTokenAbi,
+  prepareModuleInstall,
   toEvmMandateParams,
-  type SelfServeKind,
+  type ModuleAccountType,
+  type Protection,
+  type RemoteAgentSpec,
+  type RemoteMode,
+  type SelfServeAgentKind,
 } from "@bonded/shared";
 import { deployment, robinhoodTestnet } from "../config";
 import { wagmiConfig } from "../wagmi";
@@ -40,7 +49,15 @@ import {
   limitError,
 } from "../lib/validate";
 import { registerForRatings } from "../lib/self-serve";
-import { DOCS_WHATS_COMING } from "../lib/routes";
+import { AllowanceWarning } from "../components/module-cover";
+import {
+  ACCOUNT_TYPE_LABELS,
+  MODULE_COVER_NOTE,
+  installSteps,
+  type ModuleCall,
+} from "../lib/module";
+import { DOCS_BYOA } from "../lib/routes";
+import { codeHashError, composeHashError, normaliseCodeHash, teeUrlError } from "../lib/byoa";
 import {
   Button,
   Card,
@@ -63,6 +80,15 @@ const STEPS = [
   "Deposit into the vault",
   "Register it for ratings (a signature, no gas)",
 ];
+/** The same steps when a module on the owner's smart account protects the funds. */
+const MODULE_STEPS = [
+  "Register the agent",
+  "Find its module on your smart account",
+  "Get test tUSDG",
+  "Stake the operator bond",
+  "Deposit (none: the funds stay in your account)",
+  "Register it for ratings (a signature, no gas)",
+];
 
 /**
  * Onboard an agent from the browser (docs/AGENTS.md, "What works today"): register it, create its
@@ -72,8 +98,18 @@ export function NewAgent() {
   const { address: user, isConnected } = useAccount();
   const { writeContractAsync } = useWriteContract();
   const { signMessageAsync } = useSignMessage();
-  const [kind, setKind] = useState<SelfServeKind>("partial");
+  const [kind, setKind] = useState<SelfServeAgentKind>("partial");
   const [sentinel, setSentinel] = useState(false);
+  // The owner's own agent: how it acts, the code it runs, and its TEE if it has one.
+  const [remoteMode, setRemoteMode] = useState<RemoteMode>("tools");
+  const [codeHash, setCodeHash] = useState("");
+  const [teeUrl, setTeeUrl] = useState("");
+  const [composeHash, setComposeHash] = useState("");
+  // Where the funds are protected: a new Bonded vault, or a module on a smart account in use.
+  const [protection, setProtection] = useState<Protection>("vault");
+  const [account, setAccount] = useState("");
+  const [accountType, setAccountType] = useState<ModuleAccountType>("safe7579");
+  const [install, setInstall] = useState<{ module: Address; calls: ModuleCall[] }>();
   const [mode, setMode] = useState<"monitor" | "enforce">("monitor");
   const [tokens, setTokens] = useState<MandateToken[]>([...MANDATE_TOKENS]);
   const [refund, setRefund] = useState("");
@@ -103,22 +139,74 @@ export function NewAgent() {
   };
   // Everything is checked before the first transaction, so a bad field can't leave a half-made
   // agent behind or silently skip a funding step.
-  const problems = validateOnboarding(deployment, {
-    connected: isConnected,
-    form,
-    agentKey: key,
-    bond,
-    deposit,
-  });
+  const own = kind === REMOTE_KIND;
+  const remoteErrors = own
+    ? [
+        codeHashError(codeHash),
+        ...(remoteMode === "chain"
+          ? [teeUrlError(teeUrl), composeHashError(composeHash, teeUrl)]
+          : []),
+      ]
+    : [];
+  const remote: RemoteAgentSpec | undefined = own
+    ? {
+        codeHash: normaliseCodeHash(codeHash),
+        mode: remoteMode,
+        ...(teeUrl.trim() && remoteMode === "chain"
+          ? {
+              tee: {
+                url: teeUrl.trim(),
+                composeHash: composeHash.trim().startsWith("0x")
+                  ? composeHash.trim()
+                  : `0x${composeHash.trim()}`,
+              },
+            }
+          : {}),
+      }
+    : undefined;
+  const problems = [
+    ...validateOnboarding(deployment, {
+      connected: isConnected,
+      form,
+      agentKey: key,
+      bond,
+      deposit,
+    }),
+    ...remoteErrors.filter((e): e is string => Boolean(e)),
+    ...(protection === "module" && !deployment.moduleFactory
+      ? ["Smart-account protection isn't deployed on this chain yet."]
+      : []),
+    ...(protection === "module" && mode !== "enforce"
+      ? ["A module on a smart account must use Enforce mode: in Monitor mode it can't hold cover."]
+      : []),
+    ...(protection === "module" && !isAddress(account.trim())
+      ? ["Enter your smart account's address."]
+      : []),
+  ];
+  const onModule = protection === "module";
+  // What the owner will be asked to approve, counted from the steps that will run.
+  const bondUnits = parseAmount(bond) ?? 0n;
+  const depositUnits = onModule ? 0n : (parseAmount(deposit) ?? 0n);
+  const confirmations =
+    1 + // register
+    (onModule ? 0 : 1) + // create the vault
+    (bondUnits + depositUnits > 0n ? 1 : 0) + // faucet
+    (bondUnits > 0n ? 2 : 0) + // approve and stake the bond
+    (depositUnits > 0n ? 2 : 0); // approve and deposit
+  const confirmationsLine = `${confirmations} wallet confirmation${confirmations === 1 ? "" : "s"}${
+    onModule ? ", the module's install sent from your smart account," : ","
+  } then one signature${kind === REMOTE_KIND ? "; the runner token is made on the agent's page" : ""}.`;
+  const stepLabels = onModule ? MODULE_STEPS : STEPS;
   const saved = user ? loadProgress(deployment.chainId, user) : undefined;
   const unfinished = saved && nextStep(saved) ? saved : undefined;
 
-  const showSteps = (done: OnboardingStep[], hashes: Partial<Record<OnboardingStep, Hex>> = {}) =>
+  const labelsFor = (p: { protection?: Protection }) =>
+    p.protection === "module" ? MODULE_STEPS : STEPS;
+  const showSteps = (done: OnboardingStep[], labels: string[]) =>
     setSteps(
       ONBOARDING_STEPS.map((step, i) => ({
-        label: STEPS[i]!,
+        label: labels[i]!,
         state: done.includes(step) ? "done" : "waiting",
-        ...(hashes[step] ? { hash: hashes[step] } : {}),
       })),
     );
   const mark = (step: OnboardingStep, state: Step["state"], hash?: Hex) =>
@@ -132,7 +220,7 @@ export function NewAgent() {
     const hash = await writeContractAsync({ ...call, chainId: robinhoodTestnet.id } as never);
     const receipt = await waitForTransactionReceipt(wagmiConfig, { hash });
     if (receipt.status !== "success")
-      throw new Error(`${STEPS[ONBOARDING_STEPS.indexOf(step)]} failed`);
+      throw new Error(`${stepLabels[ONBOARDING_STEPS.indexOf(step)]} failed`);
     mark(step, "active", hash);
     return receipt;
   }
@@ -145,7 +233,8 @@ export function NewAgent() {
     if (!user) return;
     setBusy(true);
     setError(null);
-    showSteps(progress.done);
+    showSteps(progress.done, labelsFor(progress));
+    setInstall(undefined);
     const save = (p: OnboardingProgress) => saveProgress(deployment.chainId, user, p);
     const finish = (step: OnboardingStep) => {
       progress = { ...progress, done: [...progress.done, step] };
@@ -153,7 +242,8 @@ export function NewAgent() {
       mark(step, "done");
     };
     const bondValue = parseAmount(progress.bond)!;
-    const depositValue = parseAmount(progress.deposit)!;
+    // A module guards funds already in the smart account: nothing to deposit.
+    const depositValue = progress.protection === "module" ? 0n : parseAmount(progress.deposit)!;
     try {
       if (!progress.done.includes("register")) {
         const registered = await send("register", {
@@ -176,6 +266,69 @@ export function NewAgent() {
       }
       const agentId = BigInt(progress.agentId!);
       const mandate = progress.mandate!;
+      if (!progress.done.includes("vault") && progress.protection === "module") {
+        // The smart account creates and installs its module itself; this step finds it, and
+        // checks it is this agent's and enforces this mandate (its commitment).
+        mark("vault", "active");
+        const factory = deployment.moduleFactory!;
+        const owner = progress.account as Address;
+        const found = await readContract(wagmiConfig, {
+          address: factory,
+          abi: mandateModuleFactoryAbi,
+          functionName: "moduleOf",
+          args: [owner],
+          chainId: robinhoodTestnet.id,
+        });
+        const commitment = mandateCommitment(toEvmMandateParams(mandate));
+        const fits =
+          found !== "0x0000000000000000000000000000000000000000" &&
+          (
+            await Promise.all([
+              readContract(wagmiConfig, {
+                address: found,
+                abi: mandateModuleAbi,
+                functionName: "mandateHash",
+                chainId: robinhoodTestnet.id,
+              }),
+              readContract(wagmiConfig, {
+                address: found,
+                abi: mandateModuleAbi,
+                functionName: "agentId",
+                chainId: robinhoodTestnet.id,
+              }),
+            ])
+          ).every((v, i) =>
+            i === 0 ? String(v).toLowerCase() === commitment.toLowerCase() : v === agentId,
+          );
+        if (!fits) {
+          const client = getPublicClient(wagmiConfig, { chainId: robinhoodTestnet.id });
+          if (!client) throw new Error("can't reach the chain to plan the module's install");
+          const type = progress.accountType ?? "safe7579";
+          const plan = await prepareModuleInstall(client, {
+            moduleFactory: factory,
+            account: owner,
+            params: toEvmMandateParams(mandate),
+            agent: progress.agentKey as Address,
+            guardian: user,
+            agentId,
+            accountType: type,
+          });
+          setInstall({ module: plan.module, calls: installSteps(plan, type) });
+          throw new Error(
+            "Your smart account has no module for this agent yet. Send the calls below from it, then resume onboarding.",
+          );
+        }
+        progress = { ...progress, vault: found };
+        rememberAgent(deployment.chainId, agentId.toString(), {
+          vault: found,
+          kind: progress.kind,
+          mandate,
+          protection: "module",
+          ...(progress.sentinel ? { sentinel: true } : {}),
+          ...(progress.remote ? { remote: progress.remote } : {}),
+        });
+        finish("vault");
+      }
       if (!progress.done.includes("vault")) {
         const made = await send("vault", {
           address: deployment.factory,
@@ -203,6 +356,7 @@ export function NewAgent() {
           kind: progress.kind,
           mandate,
           ...(progress.sentinel ? { sentinel: true } : {}),
+          ...(progress.remote ? { remote: progress.remote } : {}),
         });
         finish("vault");
       }
@@ -260,6 +414,8 @@ export function NewAgent() {
           kind: progress.kind,
           mandate,
           ...(progress.sentinel ? { sentinel: true } : {}),
+          ...(progress.remote ? { remote: progress.remote } : {}),
+          ...(progress.protection === "module" ? { protection: "module" as const } : {}),
         });
         finish("ratings");
       }
@@ -274,7 +430,9 @@ export function NewAgent() {
   const start = () =>
     run({
       kind,
-      ...(sentinel ? { sentinel: true } : {}),
+      ...(sentinel && !own ? { sentinel: true } : {}),
+      ...(remote ? { remote } : {}),
+      ...(onModule ? { protection: "module" as const, account: account.trim(), accountType } : {}),
       form,
       agentKey: key,
       bond: bond.trim() || "0",
@@ -302,10 +460,10 @@ export function NewAgent() {
         <div className="flex min-w-0 flex-col gap-6">
           <StepCard n={1} title="What gets rated">
             <p className="mb-4 text-sm text-muted">
-              The Arena rates one of Bonded's built-in agent designs, run against your vault and
-              mandate. Rating your own agent's code is coming (
-              <a className={linkClass} href={DOCS_WHATS_COMING}>
-                what's coming
+              One of Bonded's built-in agent designs, run against your vault and mandate, or your
+              own agent, running on your servers and connected to the Arena by a small runner (
+              <a className={linkClass} href={DOCS_BYOA}>
+                how
               </a>
               ).
             </p>
@@ -319,37 +477,118 @@ export function NewAgent() {
                   title={SELF_SERVE_KIND_LABELS[k]}
                 />
               ))}
-            </div>
-            <div className="mt-4">
               <Choice
-                type="checkbox"
-                checked={sentinel}
-                onChange={() => setSentinel((v) => !v)}
-                title="Rate it with Sentinel in front"
+                name="kind"
+                checked={own}
+                onChange={() => setKind(REMOTE_KIND)}
+                title="My own agent: any framework or language, where it already runs"
               >
-                Sentinel checks each trade the agent proposes and stops the ones driven by what it
-                read. If it breaches less, it scores higher and cover costs less. Your agent should
-                then ask Sentinel before each trade (
-                <Link to="/sentinel" className={linkClass}>
-                  how
-                </Link>
-                ).
+                After onboarding, its page gives you a runner token and the command that connects
+                your agent to the Arena.
               </Choice>
             </div>
+            {own ? (
+              <div className="mt-5 flex flex-col gap-5 text-sm">
+                <fieldset className="flex flex-col gap-2">
+                  <legend className="mb-2 font-medium">How your agent acts</legend>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Choice
+                      name="remote-mode"
+                      checked={remoteMode === "tools"}
+                      onChange={() => setRemoteMode("tools")}
+                      title="Tools (MCP or HTTP)"
+                    >
+                      It reads and trades through tool calls. The easiest to connect.
+                    </Choice>
+                    <Choice
+                      name="remote-mode"
+                      checked={remoteMode === "chain"}
+                      onChange={() => setRemoteMode("chain")}
+                      title="Chain"
+                    >
+                      It reads through tools and signs its own transactions to its vault, as in
+                      production.
+                    </Choice>
+                  </div>
+                </fieldset>
+                <Input
+                  label="Code hash"
+                  hint="Your own fingerprint of the code that runs: an image digest (sha256:…) or a commit, as 0x and 64 hex digits. The score is about this code."
+                  value={codeHash}
+                  onChange={setCodeHash}
+                  placeholder="0x…"
+                  error={codeHash ? codeHashError(codeHash) : null}
+                />
+                {remoteMode === "chain" ? (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Input
+                      label="TEE URL (optional)"
+                      hint="If it runs in a Phala dstack TEE: every episode must then prove the code."
+                      value={teeUrl}
+                      onChange={setTeeUrl}
+                      placeholder="https://…"
+                      error={teeUrlError(teeUrl)}
+                    />
+                    <Input
+                      label="Compose hash"
+                      hint="Published for that deployment. Needed with a TEE URL."
+                      value={composeHash}
+                      onChange={setComposeHash}
+                      placeholder="0x…"
+                      error={composeHash || teeUrl ? composeHashError(composeHash, teeUrl) : null}
+                    />
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted">
+                    A TEE can bind only a chain-mode agent: in tool mode the tool calls come from
+                    the runner, outside the TEE, so it would prove nothing about how the agent acts.
+                  </p>
+                )}
+                <p className="text-xs text-muted">
+                  Without a TEE the score's binding is declared, and cover is capped lower
+                  (underwriting policy, not the score). With one (chain mode only), every episode
+                  must prove it, the vault's agent key must be the TEE's own key for cover, and the
+                  compose hash is what's bound: the compose file decides what runs in the TEE, so
+                  publish it for review.
+                </p>
+              </div>
+            ) : (
+              <div className="mt-4">
+                <Choice
+                  type="checkbox"
+                  checked={sentinel}
+                  onChange={() => setSentinel((v) => !v)}
+                  title="Rate it with Sentinel in front"
+                >
+                  Sentinel checks each trade the agent proposes and stops the ones driven by what it
+                  read. If it breaches less, it scores higher and cover costs less. Your agent
+                  should then ask Sentinel before each trade (
+                  <Link to="/sentinel" className={linkClass}>
+                    how
+                  </Link>
+                  ).
+                </Choice>
+              </div>
+            )}
           </StepCard>
 
           <StepCard n={2} title={<Term term="mandate">Mandate</Term>}>
             <div className="flex flex-col gap-5 text-sm">
               <fieldset className="flex flex-col gap-2">
-                <legend className="mb-2 font-medium">Vault mode</legend>
+                <legend className="mb-2 font-medium">
+                  {onModule ? "Module mode" : "Vault mode"}
+                </legend>
                 <div className="grid gap-2 sm:grid-cols-2">
                   <Choice
                     name="mode"
                     checked={mode === "monitor"}
                     onChange={() => setMode("monitor")}
                     title="Monitor"
+                    disabled={onModule}
                   >
-                    Breaches go through and are recorded, so they can be claimed.
+                    {onModule
+                      ? "Not for a smart account: a module can hold cover only in Enforce mode."
+                      : "Breaches go through and are recorded, so they can be claimed."}
                   </Choice>
                   <Choice
                     name="mode"
@@ -357,8 +596,9 @@ export function NewAgent() {
                     onChange={() => setMode("enforce")}
                     title="Enforce"
                   >
-                    Breaches are blocked (and recorded). Scores higher, but there's nothing to
-                    claim.
+                    {onModule
+                      ? "Breaches are blocked (and recorded). The only mode a smart account's module can hold cover in."
+                      : "Breaches are blocked (and recorded). Scores higher, but there's nothing to claim."}
                   </Choice>
                 </div>
               </fieldset>
@@ -422,13 +662,85 @@ export function NewAgent() {
             </div>
           </StepCard>
 
-          <StepCard n={3} title="Agent key, bond and deposit">
+          <StepCard n={3} title="Where the funds are, agent key and bond">
             <div className="flex flex-col gap-5 text-sm">
               <fieldset>
+                <legend className="mb-2 font-medium">What protects the funds</legend>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Choice
+                    name="protection"
+                    checked={!onModule}
+                    onChange={() => setProtection("vault")}
+                    title="Create a Bonded vault"
+                  >
+                    A new Mandate Vault holds the funds; depositors put money in it.
+                  </Choice>
+                  <Choice
+                    name="protection"
+                    checked={onModule}
+                    onChange={() => {
+                      setProtection("module");
+                      // Only an Enforce-mode module can hold cover.
+                      setMode("enforce");
+                    }}
+                    title="Protect the smart account I already use (ERC-7579 / Safe)"
+                  >
+                    {deployment.moduleFactory
+                      ? "A module on your account enforces the mandate; the funds stay where they are."
+                      : "Not deployed on this chain yet."}
+                  </Choice>
+                </div>
+                {onModule && (
+                  <div className="mt-3 flex flex-col gap-2">
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {(["safe7579", "erc7579"] as const).map((t) => (
+                        <Choice
+                          key={t}
+                          name="account-type"
+                          checked={accountType === t}
+                          onChange={() => setAccountType(t)}
+                          title={ACCOUNT_TYPE_LABELS[t]}
+                        />
+                      ))}
+                    </div>
+                    <Input
+                      label="Smart account address"
+                      hint="Your Safe (with Safe7579) or other ERC-7579 account. It creates and installs the module itself; the page gives you the calls."
+                      value={account}
+                      onChange={setAccount}
+                      placeholder="0x…"
+                      error={account ? addressError(account) : null}
+                    />
+                    <p className="text-xs text-muted">{MODULE_COVER_NOTE}</p>
+                    <AllowanceWarning
+                      account={isAddress(account.trim()) ? (account.trim() as Address) : undefined}
+                      targets={[deployment.router]}
+                      assets={[
+                        deployment.usdg,
+                        ...tokens.map(
+                          (t) =>
+                            ({
+                              tTSLA: deployment.tsla,
+                              tAMZN: deployment.amzn,
+                              tNVDA: deployment.nvda,
+                            })[t],
+                        ),
+                      ]}
+                    />
+                  </div>
+                )}
+              </fieldset>
+              <fieldset>
                 <legend className="mb-2 font-medium">
-                  <Term term="agentKey">The agent's key</Term>, the only key that can act for the
-                  vault
+                  <Term term="agentKey">The agent's key</Term>, the only key that can act{" "}
+                  {onModule ? "through the module on your smart account" : "for the vault"}
                 </legend>
+                {onModule && (
+                  <p className="mb-2 text-xs text-muted">
+                    It must not be an owner, a validator or an ERC-1271 signer of the smart account:
+                    that would let the agent act as the account itself, around the module.
+                  </p>
+                )}
                 <div className="grid gap-2 sm:grid-cols-2">
                   <Choice
                     name="key"
@@ -436,7 +748,9 @@ export function NewAgent() {
                     onChange={() => setSelfAgent(true)}
                     title="My wallet"
                   >
-                    For testing: lets you simulate a breach from the vault page.
+                    {onModule
+                      ? "For testing: you act as the agent yourself, through the module. Not if your wallet owns the account."
+                      : "For testing: lets you simulate a breach from the vault page."}
                   </Choice>
                   <Choice
                     name="key"
@@ -467,14 +781,16 @@ export function NewAgent() {
                   suffix={<Token symbol="tUSDG" />}
                   error={amountOrZeroError(bond)}
                 />
-                <Input
-                  label="Deposit"
-                  value={deposit}
-                  onChange={setDeposit}
-                  inputMode="decimal"
-                  suffix={<Token symbol="tUSDG" />}
-                  error={amountOrZeroError(deposit)}
-                />
+                {!onModule && (
+                  <Input
+                    label="Deposit"
+                    value={deposit}
+                    onChange={setDeposit}
+                    inputMode="decimal"
+                    suffix={<Token symbol="tUSDG" />}
+                    error={amountOrZeroError(deposit)}
+                  />
+                )}
               </div>
               <p className="text-xs text-muted">
                 Cover needs a bond of 10% to 30% of the cover, depending on the score's tier: 4,000
@@ -492,7 +808,10 @@ export function NewAgent() {
                 <p>
                   You have an unfinished onboarding
                   {unfinished.agentId ? ` of agent ${unfinished.agentId}` : ""}: next step,{" "}
-                  {STEPS[ONBOARDING_STEPS.indexOf(nextStep(unfinished)!)]?.toLowerCase()}.
+                  {labelsFor(unfinished)[
+                    ONBOARDING_STEPS.indexOf(nextStep(unfinished)!)
+                  ]?.toLowerCase()}
+                  .
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" onClick={() => run(unfinished)}>
@@ -524,9 +843,7 @@ export function NewAgent() {
             >
               {busy ? "Working…" : "Onboard the agent"}
             </Button>
-            <p className="mt-2 text-xs text-muted">
-              About eight wallet confirmations, then one signature.
-            </p>
+            <p className="mt-2 text-xs text-muted">{confirmationsLine}</p>
             {steps.length > 0 && (
               <ol className="mt-5 flex flex-col gap-2.5 border-t border-line pt-5 text-sm">
                 {steps.map((s) => (
@@ -552,17 +869,43 @@ export function NewAgent() {
               </ol>
             )}
             <ErrorText error={error} />
+            {install && (
+              <div className="mt-4 flex flex-col gap-3 rounded-lg border border-line-strong p-4 text-sm">
+                <p className="font-medium">Send these from your smart account, in order</p>
+                <p className="text-xs text-muted">
+                  The module will be at <span className="font-mono">{install.module}</span>.{" "}
+                  {install.calls.length > 1
+                    ? "In the Safe, add the three calls to one batch in the transaction builder."
+                    : "Send it from your account's own app."}
+                </p>
+                <ol className="flex flex-col gap-3">
+                  {install.calls.map((call) => (
+                    <li key={call.label} className="flex flex-col gap-1">
+                      <span className="text-xs font-semibold text-soft">{call.label}</span>
+                      <span className="font-mono text-xs break-all text-muted">To {call.to}</span>
+                      <pre className="max-h-28 overflow-auto rounded-lg bg-black/40 p-2.5 font-mono text-[11px] break-all whitespace-pre-wrap text-soft">
+                        {call.data}
+                      </pre>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
             {created && (
               <div className="mt-4 rounded-lg border border-safe/30 bg-safe-soft p-4 text-sm">
                 <p className="font-medium">Agent {created.agentId.toString()} is set up.</p>
                 <p className="mt-1">
                   <Link className={linkClass} to={`/agents/${created.agentId}`}>
-                    Rate it
+                    {own ? "Connect and rate it" : "Rate it"}
                   </Link>{" "}
                   ·{" "}
-                  <Link className={linkClass} to={`/vaults/${created.vault}`}>
-                    Its vault (deposits, cover{selfAgent ? ", simulate a breach" : ""})
-                  </Link>
+                  {onModule ? (
+                    <span>Buy cover for its module from the agent's page</span>
+                  ) : (
+                    <Link className={linkClass} to={`/vaults/${created.vault}`}>
+                      Its vault (deposits, cover{selfAgent ? ", simulate a breach" : ""})
+                    </Link>
+                  )}
                 </p>
               </div>
             )}

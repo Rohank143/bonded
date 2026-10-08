@@ -1,4 +1,13 @@
-import { EvmMandate, demoRouterAbi, type EvmDeployment, type SelfServeKind } from "@bonded/shared";
+import {
+  EvmMandate,
+  buildEvmMandate,
+  demoRouterAbi,
+  type EvmDeployment,
+  type ModuleAccountType,
+  type Protection,
+  type RemoteAgentSpec,
+  type SelfServeAgentKind,
+} from "@bonded/shared";
 import { getAbiItem, isAddress, toFunctionSelector } from "viem";
 import { parseUsd } from "./format";
 
@@ -32,26 +41,24 @@ export function buildMandate(
     tAMZN: deployment.amzn,
     tNVDA: deployment.nvda,
   };
-  return EvmMandate.parse({
-    version: 1,
-    chain: { family: "evm", chainId: deployment.chainId },
-    agentId: agentId.toString(),
+  // The one mandate builder, shared with @bonded/sdk.
+  return buildEvmMandate({
+    chainId: deployment.chainId,
+    agentId,
     mode: form.mode,
     baseAsset: deployment.usdg,
-    assets: [deployment.usdg, ...form.tokens.map((t) => address[t])],
+    assets: form.tokens.map((t) => address[t]),
     targets: [
       {
         address: deployment.router,
-        selectors: [toFunctionSelector(getAbiItem({ abi: demoRouterAbi, name: "swap" }))],
+        functions: [toFunctionSelector(getAbiItem({ abi: demoRouterAbi, name: "swap" }))],
       },
     ],
     destinations: form.destinations,
-    limits: {
-      maxTxNotionalUsd: form.maxTxUsd,
-      maxDailyNotionalUsd: form.maxDailyUsd,
-      maxDrawdownBps: Math.round(form.maxDrawdownPct * 100),
-      maxSlippageBps: Math.round(form.maxSlippagePct * 100),
-    },
+    maxTradeUsd: form.maxTxUsd,
+    maxDailyUsd: form.maxDailyUsd,
+    maxDrawdownPct: form.maxDrawdownPct,
+    maxSlippagePct: form.maxSlippagePct,
     // Cover requires it (CoverManager refuses a vault that doesn't freeze on breach).
     freezeOnBreach: true,
     description: form.description,
@@ -61,10 +68,15 @@ export function buildMandate(
 /** What the onboarding page remembers about an agent it created, in this browser. */
 export interface OnboardedAgent {
   vault: string;
-  kind: SelfServeKind;
+  /** A built-in design, or "remote": the owner's own agent. */
+  kind: SelfServeAgentKind;
   mandate: EvmMandate;
-  /** Rate it with Sentinel in front (docs/SENTINEL.md). */
+  /** Rate it with Sentinel in front (docs/SENTINEL.md). Built-in designs only. */
   sentinel?: boolean;
+  /** The owner's own agent: its declared code hash, mode and TEE. */
+  remote?: RemoteAgentSpec;
+  /** "module" when `vault` is a MandateModule on the owner's smart account. */
+  protection?: Protection;
 }
 
 const key = (chainId: number, agentId: string) => `bonded:onboarded:${chainId}:${agentId}`;
@@ -175,9 +187,16 @@ export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
  * resume from the first unfinished step instead of registering another agent.
  */
 export interface OnboardingProgress {
-  kind: SelfServeKind;
+  kind: SelfServeAgentKind;
   /** Rate it with Sentinel in front. */
   sentinel?: boolean;
+  /** The owner's own agent: what they declared about it. */
+  remote?: RemoteAgentSpec;
+  /** Protect a smart account the owner already uses, with a module, instead of a new vault. */
+  protection?: Protection;
+  /** That smart account, and what kind it is (how the module is installed on it). */
+  account?: string;
+  accountType?: ModuleAccountType;
   form: MandateForm;
   agentKey: string;
   bond: string;

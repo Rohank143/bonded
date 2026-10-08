@@ -1,6 +1,6 @@
 # Deployments
 
-`<chainId>.json` files for each chain Bonded is deployed on, written only after the deployment is confirmed on-chain (see Deploying). Local anvil runs (`31337.json`) are git-ignored; testnet and mainnet files are committed and validated by `packages/shared/test/deployments.test.ts`.
+`<chainId>.json` files for each chain Bonded is deployed on, written only after the deployment is confirmed on-chain (see Deploying). Local anvil runs (`31337.json`) are git-ignored, and the Arena's throwaway sandboxes write to `sandbox/` (also git-ignored) by setting `DEPLOYMENTS_DIR`; testnet and mainnet files are committed and validated by `packages/shared/test/deployments.test.ts`.
 
 ## Live testnets
 
@@ -50,6 +50,8 @@ Ethereum Sepolia (11155111) was deployed Sep 30, 2026 by the same key, from bloc
 | BountyBoard | `0x038C5b833424727a073080822578b8201AC19bDD` |
 
 Always read addresses from `<chainId>.json`, never assume they match across chains.
+
+These deployments predate MandateModule, so their files have no `moduleFactory`, and modules can't be used on them: modules need the new CoverManager, ClaimsEngine and DisputeModule, so a chain gets modules only through a full redeployment. In a fresh deployment the script deploys MandateModuleFactory last and points CoverManager at it, so the other contracts land at the same addresses as before on a chain where the deployer's nonce starts from the same point (a fresh local chain, for example); on a chain that already has a deployment, every address is new.
 
 ## Deploying
 

@@ -7,11 +7,21 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ANVIL_KEYS, type Sandbox } from "@bonded/arena";
 
+/**
+ * Upper bounds for a spawned service, not expected durations: each wait ends as soon as the
+ * service is ready (or has exited). Under a full parallel test run a cold Node start that loads
+ * the Arena can take well over 10 s, so the ceilings are generous.
+ */
+export const READY_CEILING_MS = 60_000;
+export const EXIT_CEILING_MS = 20_000;
+
 /** Run the actual entry point with local-only dependencies and capture readiness and exit. */
 export async function startService(
   role: "api" | "arena-worker",
   databaseUrl: string,
   sandbox: Sandbox,
+  /** arena-worker: also serve the Arena Gateway, on the service's port. */
+  options: { gateway?: boolean } = {},
 ) {
   const directory = await mkdtemp(join(tmpdir(), "bonded-service-"));
   const deployment = join(directory, "deployment.json");
@@ -42,6 +52,7 @@ export async function startService(
         API_TOKEN: "local-startup-test-token-at-least-24-chars",
         AGENTS_FILE: "",
         PORT: String(port),
+        ...(options.gateway ? { GATEWAY_PORT: String(port) } : {}),
       },
     },
   );
@@ -67,7 +78,7 @@ export async function startService(
         });
         void exited.then(() => reject(new Error(`service exited before readiness: ${stderr}`)));
       }),
-      10000,
+      READY_CEILING_MS,
     );
   } catch (error) {
     await stop();

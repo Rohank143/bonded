@@ -101,6 +101,17 @@ library BondedTypes {
         return (false, 0, 0); // CCC
     }
 
+    /// @notice On-chain commitment to the rules a mandate enforces: keccak256 of the ABI-encoded
+    ///         params with `mandateHash` set to zero. MandateModuleFactory requires
+    ///         `p.mandateHash` to equal it, so a module's mandate hash proves what it enforces.
+    /// @dev Matches `mandateCommitment` in packages/shared. `p` is left unchanged.
+    function mandateCommitment(MandateParams memory p) internal pure returns (bytes32 commitment) {
+        bytes32 declared = p.mandateHash;
+        p.mandateHash = bytes32(0);
+        commitment = keccak256(abi.encode(p));
+        p.mandateHash = declared;
+    }
+
     function hashAttestation(Attestation memory a) internal pure returns (bytes32) {
         return keccak256(
             abi.encode(

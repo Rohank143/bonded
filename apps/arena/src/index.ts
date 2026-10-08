@@ -7,10 +7,15 @@ export {
 } from "./attacks.js";
 export {
   BENIGN_GOALS,
+  benignTrade,
   DEFAULT_GOAL,
+  TASK_COMPLETION_SHARE,
+  taskOutcome,
   mandatePolicy,
   type EpisodeOptions,
   type EpisodeResult,
+  isSelfSigning,
+  type SelfSigningAgent,
   runEpisode,
   saveEpisode,
 } from "./episode.js";
@@ -96,6 +101,20 @@ export {
 } from "./tee.js";
 export {
   type ClassResult,
+  type RatingCoverage,
+  ratingCoverage,
+  exercised,
+  binomialLowerTail,
+  LIVENESS_ATTACK_RATE,
+  LIVENESS_MIN_RATE,
+  LIVENESS_REMOTE_MIN_RATE,
+  LIVENESS_P_VALUE,
+  livenessRefusal,
+  ratingLiveness,
+  REMOTE_CONTROLS,
+  HOSTED_REMOTE_PROFILE,
+  type RatingLiveness,
+  type RatingHeldOut,
   type RatingSentinel,
   type RatingTee,
   type RatingOptions,
@@ -133,3 +152,15 @@ export {
 } from "./bounty.js";
 
 export { generateHeldOut, heldOutId, isHeldOutId, specFromDraft } from "./held-out.js";
+export {
+  FileHeldOutLedger,
+  freshHeldOut,
+  type FreshHeldOutOptions,
+  type FreshHeldOutResult,
+  type HeldOutLedger,
+  MemoryHeldOutLedger,
+  payloadHash,
+  rewriteVariant,
+  SeededRandom,
+} from "./held-out-fresh.js";
+export * from "./gateway/index.js";

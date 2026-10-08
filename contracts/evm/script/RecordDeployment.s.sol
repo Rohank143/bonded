@@ -11,6 +11,8 @@ interface IWired {
     function coverManager() external view returns (address);
     function claimsEngine() external view returns (address);
     function disputeModule() external view returns (address);
+    function moduleFactory() external view returns (address);
+    function vaultFactory() external view returns (address);
 }
 
 /// @notice Promotes deployments/<chainId>.pending.json to deployments/<chainId>.json once the
@@ -19,7 +21,7 @@ interface IWired {
 ///      partial broadcast would otherwise leave addresses that hold nothing. This checks every
 ///      address has code and the modules point at each other, then writes the final file.
 contract RecordDeployment is Script {
-    string[14] internal contractKeys = [
+    string[15] internal contractKeys = [
         "usdg",
         "tsla",
         "amzn",
@@ -33,11 +35,15 @@ contract RecordDeployment is Script {
         "coverManager",
         "claimsEngine",
         "disputeModule",
-        "bountyBoard"
+        "bountyBoard",
+        "moduleFactory"
     ];
 
     function run() external {
-        string memory dir = string.concat(vm.projectRoot(), "/deployments/");
+        // Same directory Deploy.s.sol wrote to (see DEPLOYMENTS_DIR there).
+        string memory dir = string.concat(
+            vm.projectRoot(), "/", vm.envOr("DEPLOYMENTS_DIR", string("deployments")), "/"
+        );
         string memory id = vm.toString(block.chainid);
         string memory pending = string.concat(dir, id, ".pending.json");
         // reading and promoting our own deployment file is the point of this script
@@ -77,6 +83,14 @@ contract RecordDeployment is Script {
         );
         require(IWired(manager).claimsEngine() == claims, "cover manager not wired");
         require(IWired(claims).disputeModule() == disputes, "claims engine not wired");
+        address moduleFactory = vm.parseJsonAddress(json, ".moduleFactory");
+        require(
+            IWired(manager).moduleFactory() == moduleFactory, "cover manager has no module factory"
+        );
+        require(
+            IWired(moduleFactory).vaultFactory() == vm.parseJsonAddress(json, ".factory"),
+            "module factory not wired"
+        );
         require(
             IOwned(vm.parseJsonAddress(json, ".registry")).owner() != address(0),
             "registry has no owner"

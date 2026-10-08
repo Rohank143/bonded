@@ -1,0 +1,15 @@
+# @bonded/shared
+
+Schemas, contract ABIs, chain configs and signing types shared by Bonded's contracts, Arena, API,
+SDK and runner.
+
+- **Agent contract**: the tools an agent under test can call (`AGENT_TOOLS`, their JSON schemas),
+  `ArenaAgent`, `AgentTask` and `ToolResult`.
+- **Runner protocol**: the messages between the Arena Gateway and `@bonded/runner` (zod schemas),
+  and the environment a runner gives an agent (`episodeEnv`).
+- **Mandates and attestations**: `EvmMandate`, `mandateHash`, the attestation's EIP-712 types.
+- **ABIs** for the Bonded contracts, generated from the Foundry build.
+- **Chains and deployments**: the networks Bonded runs on and its contract addresses there.
+
+ESM only, Node 22 or later. See the [Bonded repository](https://github.com/ddboy19912/bonded) for
+the protocol and its documentation.

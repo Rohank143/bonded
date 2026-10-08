@@ -7,6 +7,11 @@
 export const PAGES = [
   { src: "README.md", slug: "overview/introduction", label: "Introduction", title: "Introduction" },
   {
+    src: "docs/YOUR-AGENTS.md",
+    slug: "overview/your-agents",
+    label: "Bonded and your agents",
+  },
+  {
     src: "docs/SPECIFICATION.md",
     slug: "overview/specification",
     label: "Product specification",
@@ -22,6 +27,11 @@ export const PAGES = [
     label: "How bounties work",
   },
 
+  {
+    src: "docs/BRING-YOUR-OWN-AGENT.md",
+    slug: "guides/bring-your-own-agent",
+    label: "Bring your own agent",
+  },
   { src: "docs/DEVELOPING.md", slug: "guides/developing", label: "Developing Bonded" },
   { src: "docs/BOUNTIES.md", slug: "guides/bounties", label: "Submit a bounty attack" },
   {
@@ -66,7 +76,13 @@ export const FOLDERS = [];
 /** Where evidence files live on the site. Linked from the notes that cite them. */
 export const EVIDENCE_DIRS = [
   { from: "docs/progress/evidence", to: "evidence" },
-  { from: "contracts/evm/deployments", to: "evidence/deployments", only: /\.json$/ },
+  // Committed deployments only (<chainId>.json): never a pending file or the git-ignored sandbox/
+  // folder a local Arena run writes to.
+  {
+    from: "contracts/evm/deployments",
+    to: "evidence/deployments",
+    only: /^contracts\/evm\/deployments\/\d+\.json$/,
+  },
   { from: "contracts/solana/deployments", to: "evidence/solana", only: /\.json$/ },
 ];
 
@@ -77,6 +93,8 @@ export const SHORT_NAMES = {
   "docs/SPECIFICATION.md": "the product specification",
   "docs/ARCHITECTURE.md": "the architecture page",
   "docs/AGENTS.md": "the agents page",
+  "docs/YOUR-AGENTS.md": "Bonded and your agents",
+  "docs/BRING-YOUR-OWN-AGENT.md": "the bring-your-own-agent guide",
   "docs/BOUNTIES-EXPLAINED.md": "the bounty overview",
   "docs/BOUNTIES.md": "the bounty guide",
   "docs/DEVELOPING.md": "the developer guide",

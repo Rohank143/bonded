@@ -29,6 +29,7 @@ import {
   sentinelCascadePolicySchema,
   sentinelCascadePolicyHash,
   verifySentinelCascadeEvidence,
+  mandateModuleFactoryAbi,
   mandateVaultAbi,
   mandateVaultFactoryAbi,
   sentinelCheckDigest,
@@ -273,18 +274,28 @@ export function sentinelRoutes(
 
   // Which agent a vault belongs to never changes (factory membership and agentId are set at
   // creation), so that is cached. The signing key is not: the guardian can rotate it at any
-  // time (MandateVault.rotateAgent), so it is read on every check.
+  // time (rotateAgent), so it is read on every check. A MandateModule (the mandate on a smart
+  // account) counts like a vault: it comes from the deployment's MandateModuleFactory and has
+  // the same agentId and agent.
   const owners = new Map<string, string | null>();
   async function vaultOwner(vault: Hex): Promise<string | null> {
     const key = vault.toLowerCase();
     if (owners.has(key)) return owners.get(key)!;
-    const isVault = await chain.read.readContract({
-      address: d.factory,
-      abi: mandateVaultFactoryAbi,
-      functionName: "isVault",
-      args: [vault],
-    });
-    const owner = isVault
+    const member =
+      (await chain.read.readContract({
+        address: d.factory,
+        abi: mandateVaultFactoryAbi,
+        functionName: "isVault",
+        args: [vault],
+      })) ||
+      (d.moduleFactory !== undefined &&
+        (await chain.read.readContract({
+          address: d.moduleFactory,
+          abi: mandateModuleFactoryAbi,
+          functionName: "isModule",
+          args: [vault],
+        })));
+    const owner = member
       ? (
           await chain.read.readContract({
             address: vault,
