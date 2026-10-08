@@ -23,7 +23,13 @@ RUN fetch() { \
     }; \
     fetch contracts/evm/lib/forge-std https://github.com/foundry-rs/forge-std "$FORGE_STD_COMMIT" && \
     fetch contracts/evm/lib/openzeppelin-contracts https://github.com/OpenZeppelin/openzeppelin-contracts "$OPENZEPPELIN_COMMIT"
-RUN pnpm install --frozen-lockfile && pnpm exec turbo run build --filter="!@bonded/web" && pnpm contracts:build
+# The services only need the protocol's own contracts: they always rate on a fork of the live
+# chain with its committed deployment, and src/ and script/ import nothing beyond the two
+# libraries fetched above. Everything under test/ (not only *.t.sol) is skipped: the module tests
+# import test-only libraries (Safe7579, the Safe contracts, the ERC-7579 reference account) that
+# this image doesn't fetch.
+RUN pnpm install --frozen-lockfile && pnpm exec turbo run build --filter="!@bonded/web" && \
+    cd contracts/evm && forge build --skip 'test/**'
 ENV ROLE=api PORT=3000
 EXPOSE 3000
 CMD ["node", "apps/api/dist/main.js"]
