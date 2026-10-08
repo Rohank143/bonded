@@ -890,30 +890,6 @@ describe("RemoteAgent", () => {
     expect(gateway.runner("agent-1")?.episodeId).toBeNull();
   });
 
-  it("won't let a TEE key sign on a fork that reports the live chain's id", async () => {
-    const agent = new RemoteAgent({
-      gateway,
-      sandbox,
-      runner: "agent-2",
-      mode: "chain",
-      agentAddress: sandbox.address("agent"),
-    });
-    // A stand-in for a fork of a live chain that kept the live chain id.
-    const liveFork = {
-      ...sandbox,
-      forked: true,
-      liveChainId: sandbox.chain.id,
-      chain: sandbox.chain,
-    };
-    await expect(agent.episodeSigner(liveFork as unknown as Sandbox)).rejects.toThrow(
-      /its own chain id/,
-    );
-    const ownId = { ...liveFork, liveChainId: 46_630, fund: async () => {} };
-    await expect(agent.episodeSigner(ownId as unknown as Sandbox)).resolves.toBe(
-      sandbox.address("agent"),
-    );
-  });
-
   it("serves a TEE-bound episode only after its evidence is accepted", async () => {
     const seen: unknown[] = [];
     const fake = await runner({

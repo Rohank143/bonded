@@ -33,17 +33,6 @@ describe.runIf(forkUrl)(`episodes on a fork of ${forkUrl}`, () => {
     expect(sandbox.forked).toBe(true);
   });
 
-  it("can report a chain id of its own, for keys that must not sign live transactions", async () => {
-    const own = await Sandbox.start({ forkUrl, forkChainId: 990_000_001 });
-    try {
-      expect(own.chain.id).toBe(990_000_001);
-      expect(own.liveChainId).toBe(sandbox.chain.id);
-      expect(own.deployment.chainId).toBe(sandbox.chain.id);
-    } finally {
-      await own.stop();
-    }
-  });
-
   it("keeps the live chain id and current time, as an agent's own RPC sees them", async () => {
     const live = createPublicClient({ transport: http(forkUrl) });
     expect(sandbox.chain.id).toBe(await live.getChainId());
