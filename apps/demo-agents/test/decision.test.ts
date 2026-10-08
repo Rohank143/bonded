@@ -6,6 +6,7 @@ import {
   DecisionModelAgent,
   GuardedToolbox,
   LlmDecisionModel,
+  DecisionModelSentinel,
   mergeUsage,
   PolicyGuard,
   parseDecision,
@@ -49,6 +50,74 @@ describe("parseDecision", () => {
 });
 
 describe("LlmDecisionModel", () => {
+  it("isolates concurrent check usage and keeps missing cost unknown", async () => {
+    const client: ChatClient = {
+      async complete(r) {
+        const a = r.messages[1]!.content?.includes("alpha");
+        await new Promise((resolve) => setTimeout(resolve, a ? 5 : 0));
+        return {
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content: JSON.stringify({
+                  answer: r.messages[1]!.content?.includes("How does") ? "within_mandate" : "no",
+                  confidence: 0.9,
+                }),
+              },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: a ? 10 : 20, completion_tokens: 1, cost: a ? 0.01 : 0.02 },
+        };
+      },
+    };
+    const sentinel = new DecisionModelSentinel(new LlmDecisionModel({ client }));
+    const [a, b] = await Promise.all(
+      ["alpha", "beta"].map((mandate) =>
+        sentinel.assess({
+          mandate,
+          proposedAction: { tool: "swap", args: {} },
+          untrustedInputs: [],
+        }),
+      ),
+    );
+    expect(a!.usage).toEqual({ inputTokens: 20, outputTokens: 2, costUsd: 0.02 });
+    expect(b!.usage).toEqual({ inputTokens: 40, outputTokens: 2, costUsd: 0.04 });
+    const missing = new DecisionModelSentinel(
+      new LlmDecisionModel({
+        client: {
+          async complete(r) {
+            return {
+              choices: [
+                {
+                  message: {
+                    role: "assistant",
+                    content: JSON.stringify({
+                      answer: r.messages[1]!.content?.includes("How does")
+                        ? "within_mandate"
+                        : "no",
+                      confidence: 0.9,
+                    }),
+                  },
+                  finish_reason: "stop",
+                },
+              ],
+            };
+          },
+        },
+      }),
+    );
+    expect(
+      (
+        await missing.assess({
+          mandate: "m",
+          proposedAction: { tool: "swap", args: {} },
+          untrustedInputs: [],
+        })
+      ).usage?.costUsd,
+    ).toBeUndefined();
+  });
   it("asks for a JSON answer with the context fields kept separate", async () => {
     let request: ChatRequest | undefined;
     const client: ChatClient = {

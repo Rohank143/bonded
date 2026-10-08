@@ -8,6 +8,7 @@ import { parseSentinelQuestionSet } from "@bonded/shared";
 import { loadDotEnv } from "./env.js";
 import { buildStressSuite, OUT_OF_SCOPE, type StressCase } from "./stress.js";
 import { evaluateStress } from "./stress-eval.js";
+import { cascadeFromPolicy, cascadePolicyInfo } from "./sentinel-policy.js";
 
 const USAGE = `Usage: pnpm sentinel:stress [--laya <url>] [options]
 
@@ -17,6 +18,7 @@ injection answer, per family, category and split.
 
   --laya <url>        a Laya server (services/sentinel); LAYA_API_KEY if it needs one
   --questions <set>   v1 (three questions) or v3 (manipulated and injection only) (default: v1)
+  --sentinel-policy <path> use a frozen cascade instead of Laya alone
   --split <which>     pool, locked or all (default: all)
   --variants <n>      cases per family (default: 12)
   --write-suite <p>   also write the cases as JSONL (sentinel-dataset format plus family fields)
@@ -27,6 +29,7 @@ async function main(): Promise<number> {
     options: {
       laya: { type: "string" },
       questions: { type: "string" },
+      "sentinel-policy": { type: "string" },
       split: { type: "string", default: "all" },
       variants: { type: "string", default: "12" },
       "write-suite": { type: "string" },
@@ -56,12 +59,19 @@ async function main(): Promise<number> {
   if (!values.laya) return 0;
 
   loadDotEnv();
-  const model = new LayaSentinel({
-    url: values.laya.replace(/\/+$/, ""),
-    questions: parseSentinelQuestionSet(values.questions),
-    apiKey: process.env.LAYA_API_KEY,
-    timeoutMs: 120_000,
-  });
+  if (values["sentinel-policy"] && values.questions)
+    throw new Error("policy cannot be combined with a question override");
+  const sentinel = values["sentinel-policy"]
+    ? cascadePolicyInfo(values["sentinel-policy"])
+    : undefined;
+  const model = values["sentinel-policy"]
+    ? cascadeFromPolicy(values.laya.replace(/\/+$/, ""), values["sentinel-policy"])
+    : new LayaSentinel({
+        url: values.laya.replace(/\/+$/, ""),
+        questions: parseSentinelQuestionSet(values.questions),
+        apiKey: process.env.LAYA_API_KEY,
+        timeoutMs: 120_000,
+      });
   const report = await evaluateStress(model, suite as StressCase[], {
     onCase: (i, n) => {
       if (i % 50 === 0 || i === n) console.log(`  ${i}/${n}`);
@@ -70,7 +80,7 @@ async function main(): Promise<number> {
   mkdirSync(dirname(values.out), { recursive: true });
   writeFileSync(
     values.out,
-    `${JSON.stringify({ ...report, suite: { sha256: createHash("sha256").update(suiteJsonl).digest("hex"), variants, seed: 20260930 }, outOfScope: OUT_OF_SCOPE }, null, 2)}\n`,
+    `${JSON.stringify({ ...report, ...(sentinel ? { sentinel } : {}), suite: { sha256: createHash("sha256").update(suiteJsonl).digest("hex"), variants, seed: 20260930 }, outOfScope: OUT_OF_SCOPE }, null, 2)}\n`,
   );
 
   const pct = (a: number, b: number) => (b ? `${((100 * a) / b).toFixed(0)}%` : "n/a");

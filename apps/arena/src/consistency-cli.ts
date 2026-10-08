@@ -7,6 +7,7 @@ import { type ConsistencyCase, distinctCases, evaluateConsistency } from "./cons
 import { loadDotEnv } from "./env.js";
 import { buildStressSuite } from "./stress.js";
 import { readSeedRows } from "./synthetic.js";
+import { cascadeFromPolicy, cascadePolicyInfo } from "./sentinel-policy.js";
 
 const USAGE = `Usage: pnpm sentinel:consistency --laya <url> [--arena <jsonl> ...] [options]
 
@@ -15,6 +16,7 @@ can't change the right answer, and reports how often the block decision changes.
 
   --laya <url>        a Laya server; LAYA_API_KEY if it needs one
   --questions <set>   v1 or v3 (default: v1)
+  --sentinel-policy <path> use a frozen cascade instead of Laya alone
   --arena <path>      sentinel-dataset.jsonl rows to test (repeatable; distinct cases only)
   --stress <split>    also the stress suite's cases from this split: locked, pool or all
                       (default: locked; "none" to skip)
@@ -25,6 +27,7 @@ async function main(): Promise<number> {
     options: {
       laya: { type: "string" },
       questions: { type: "string" },
+      "sentinel-policy": { type: "string" },
       arena: { type: "string", multiple: true },
       stress: { type: "string", default: "locked" },
       out: { type: "string", default: "datasets/consistency.json" },
@@ -36,12 +39,19 @@ async function main(): Promise<number> {
     return values.help ? 0 : 2;
   }
   loadDotEnv();
-  const model = new LayaSentinel({
-    url: values.laya.replace(/\/+$/, ""),
-    questions: parseSentinelQuestionSet(values.questions),
-    apiKey: process.env.LAYA_API_KEY,
-    timeoutMs: 120_000,
-  });
+  if (values["sentinel-policy"] && values.questions)
+    throw new Error("policy cannot be combined with a question override");
+  const sentinel = values["sentinel-policy"]
+    ? cascadePolicyInfo(values["sentinel-policy"])
+    : undefined;
+  const model = values["sentinel-policy"]
+    ? cascadeFromPolicy(values.laya.replace(/\/+$/, ""), values["sentinel-policy"])
+    : new LayaSentinel({
+        url: values.laya.replace(/\/+$/, ""),
+        questions: parseSentinelQuestionSet(values.questions),
+        apiKey: process.env.LAYA_API_KEY,
+        timeoutMs: 120_000,
+      });
   const stress: ConsistencyCase[] =
     values.stress === "none"
       ? []
@@ -58,12 +68,15 @@ async function main(): Promise<number> {
   );
   const cases = [...stress, ...arena];
   const report = await evaluateConsistency(model, cases, {
-    name: values.laya,
+    name: sentinel ? model.name : values.laya,
     onCase: (i, n) => {
       if (i % 50 === 0) process.stderr.write(`  ${i}/${n}\n`);
     },
   });
-  writeFileSync(values.out, `${JSON.stringify(report, null, 2)}\n`);
+  writeFileSync(
+    values.out,
+    `${JSON.stringify({ ...report, ...(sentinel ? { sentinel } : {}) }, null, 2)}\n`,
+  );
   console.log(
     `consistency: ${report.cases} cases (${stress.length} stress, ${arena.length} Arena), ${report.runs} edited runs, decision changed in ${report.flips} (${(report.flipRate * 100).toFixed(1)}%), errors ${report.errors}`,
   );
