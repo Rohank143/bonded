@@ -10,10 +10,10 @@ import {
   type Sandbox,
   type VerifiedTee,
 } from "@bonded/arena";
-import { teeReportData, type ArenaAgent } from "@bonded/shared";
+import { teeArenaReportData, teeReportData, type ArenaAgent } from "@bonded/shared";
 import type { Hex } from "viem";
 import { RatingRefused, TeeBinding, gatewayAgents, remoteAgentFor } from "../src/remote-agent.js";
-import { agentConfig, ratingForkChainId } from "../src/worker.js";
+import { agentConfig } from "../src/worker.js";
 import { DbRunnerAuth, RUNNER_TOKEN_PREFIX, RunnerPresenceWriter } from "../src/runners.js";
 import type { Database } from "@bonded/db";
 
@@ -50,7 +50,7 @@ function runtimeEvent(event: string, payloadHex: string) {
 }
 
 /** One episode's evidence for `nonce`, from a VM with platform `mrTd` and key `evm`. */
-function evidence(nonce: Hex, opts: { mrTd?: string; evm?: Hex } = {}) {
+function evidence(nonce: Hex, opts: { mrTd?: string; evm?: Hex; keyId?: Hex } = {}) {
   const log = [
     { imr: 0, event_type: 1, digest: "02".repeat(48), event: "", event_payload: "" },
     { imr: 1, event_type: 1, digest: "03".repeat(48), event: "", event_payload: "" },
@@ -70,7 +70,10 @@ function evidence(nonce: Hex, opts: { mrTd?: string; evm?: Hex } = {}) {
     rtMr1: rtmr(1),
     rtMr2: rtmr(2),
     rtMr3: rtmr(3),
-    reportData: `${teeReportData({ codeHash: CODE, evmAddress: evm, solanaPublicKey: SOL, nonce }).slice(2)}${"0".repeat(64)}`,
+    reportData: `${(opts.keyId
+      ? teeArenaReportData({ codeHash: CODE, evmAddress: evm, keyId: opts.keyId, nonce })
+      : teeReportData({ codeHash: CODE, evmAddress: evm, solanaPublicKey: SOL, nonce })
+    ).slice(2)}${"0".repeat(64)}`,
   };
   // The stand-in quote carries its facts, so one verifier serves every episode.
   const quote = `0x${Buffer.from(JSON.stringify(facts)).toString("hex")}`;
@@ -80,7 +83,7 @@ function evidence(nonce: Hex, opts: { mrTd?: string; evm?: Hex } = {}) {
     composeHash: COMPOSE,
     codeHash: CODE,
     evmAddress: evm,
-    solanaPublicKey: SOL,
+    ...(opts.keyId ? { purpose: "arena" as const, keyId: opts.keyId } : { solanaPublicKey: SOL }),
     nonce,
   };
 }
@@ -135,6 +138,25 @@ describe("TeeBinding", () => {
   });
 });
 
+describe("TeeBinding for a rating's Arena key", () => {
+  const KEY_ID = hash(77);
+  it("accepts only that key's evidence: not the production keys', not another rating's", async () => {
+    const reference = await verifyTeeEvidence(evidence(hash(1), { keyId: KEY_ID }), {
+      ...expected,
+      nonce: hash(1),
+      arenaKeyId: KEY_ID,
+    });
+    expect(reference.purpose).toBe("arena");
+    const b = new TeeBinding(reference, { ...expected, arenaKeyId: KEY_ID });
+    await b.check(evidence(hash(2), { keyId: KEY_ID }), hash(2));
+    await expect(b.check(evidence(hash(3)), hash(3))).rejects.toThrow(/Arena key/);
+    await expect(b.check(evidence(hash(4), { keyId: hash(78) }), hash(4))).rejects.toThrow(
+      /Arena key/,
+    );
+    expect(b.verdict(3)).toMatch(/TEE binding failed/);
+  });
+});
+
 describe("remoteAgentFor", () => {
   const request = {
     agentKey: "46630:12",
@@ -166,7 +188,7 @@ describe("remoteAgentFor", () => {
           seen = r;
           return agent;
         },
-        { ...request, tee: { evmAddress: KEY, verify } },
+        { ...request, tee: { keyId: hash(42), evmAddress: KEY, verify } },
         {} as Sandbox,
       ),
     ).toBe(agent);
@@ -198,12 +220,14 @@ describe("gatewayAgents", () => {
       seen.push([evidence, nonce]);
       return {} as VerifiedTee;
     };
-    const tee = { evmAddress: KEY, verify };
+    const tee = { keyId: hash(42), evmAddress: KEY, verify };
     const chain = gatewayAgents({} as ArenaGateway)(
       { ...request, mode: "chain", tee },
       {} as Sandbox,
     );
     expect(optionsOf(chain).agentAddress).toBe(KEY);
+    // The episodes attest the rating's Arena key, by its id.
+    expect((optionsOf(chain).tee as { keyId: string }).keyId).toBe(hash(42));
     const onEvidence = (
       optionsOf(chain).tee as {
         onEvidence: (evidence: unknown, context: { episodeId: string; nonce: Hex }) => unknown;
@@ -363,13 +387,5 @@ describe("DbRunnerAuth", () => {
   it("refuses tokens for another chain or of the wrong form", async () => {
     expect(await new DbRunnerAuth(db, 1).validate(token)).toBeNull();
     expect(await new DbRunnerAuth(db, 46630).validate("not-a-token")).toBeNull();
-  });
-});
-
-describe("ratingForkChainId", () => {
-  it("never reports the live chain's id, so a TEE key's fork transactions can't be replayed live", () => {
-    for (const live of [1, 46630, 421614, 11155111, 31337])
-      expect(ratingForkChainId(live)).not.toBe(live);
-    expect(ratingForkChainId(46630)).toBe(ratingForkChainId(46630));
   });
 });

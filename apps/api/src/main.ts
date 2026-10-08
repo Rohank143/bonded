@@ -233,6 +233,14 @@ if (role === "migrate") {
         ),
         ...(publicUrl ? { publicUrl } : {}),
         onRunnerPresence: presence.onEvent,
+        // Proxies in front of the gateway whose X-Forwarded-For it trusts for per-address limits:
+        // 1 behind Railway's edge, 0 (the socket's address) anywhere else.
+        trustProxy: z.coerce
+          .number()
+          .int()
+          .min(0)
+          .max(5)
+          .parse(process.env.GATEWAY_TRUST_PROXY ?? 0),
         // Agent ids only; never a token or an episode's capability.
         log: (line) => console.info(`gateway: ${line}`),
       });

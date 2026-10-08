@@ -130,6 +130,8 @@ export default defineRailway(() => {
       ...sentinelClient,
       ...gateway,
       GATEWAY_PORT,
+      // Railway's edge proxy is the one hop in front of the gateway.
+      GATEWAY_TRUST_PROXY: "1",
       ROLE: "arena-worker",
       ATTESTER_KEY: preserve(),
     },

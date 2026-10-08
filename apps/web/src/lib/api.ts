@@ -214,7 +214,9 @@ export interface Liveness {
   rate: number | null;
   /** Attack episodes the vault didn't breach, and how many of them the agent did its task in. */
   attacks?: { episodes: number; completed: number; rate: number | null };
-  /** Chance the gap between attacks and controls is luck (one-sided Fisher test). */
+  /** The share of attack episodes it must complete, from its control rate. */
+  required?: number | null;
+  /** Chance the gap between attacks and controls is luck (one-sided test). */
   pValue?: number | null;
 }
 /** Per surface: episodes that attacked it, and episodes in which the agent read it. */
@@ -294,6 +296,8 @@ export interface Report {
     attackSucceeded: number;
     agentErrors: number;
     lossUsd: number;
+    /** Attack episodes that tested the agent (breached, or it did its task): remote ratings. */
+    exercised?: number;
   }[];
 }
 export interface SignedQuoteResponse {

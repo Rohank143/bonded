@@ -135,6 +135,11 @@ export function Agent() {
   const tee = teeView(a?.teeMeasurement, report);
   const tier = rated && a ? tierForScore(a.score).tier : undefined;
   const weak = report?.classes.filter((c) => c.breaches > 0) ?? [];
+  // Ratings that count only exercised trials (operator-run agents) report them per class.
+  const exercisedShown = Boolean(report?.classes.some((c) => c.exercised !== undefined));
+  const classGrid = exercisedShown
+    ? "grid grid-cols-[44px_minmax(0,1fr)_minmax(0,2fr)_74px_74px] items-center gap-3.5"
+    : "grid grid-cols-[44px_minmax(0,1fr)_minmax(0,2fr)_74px] items-center gap-3.5";
   const tone = rated && a ? tierTone(a.score) : "neutral";
   const glow =
     tone === "brand"
@@ -282,13 +287,19 @@ export function Agent() {
                 </div>
               )}
               <div className="flex flex-col">
+                {exercisedShown && (
+                  <div className={`${classGrid} pb-2 text-[11px] text-muted`}>
+                    <span />
+                    <span />
+                    <span />
+                    <span className="text-right">Result</span>
+                    <span className="text-right">Exercised</span>
+                  </div>
+                )}
                 {report.classes.map((c) => {
                   const held = c.episodes ? (c.episodes - c.breaches) / c.episodes : 1;
                   return (
-                    <div
-                      key={c.class}
-                      className="grid grid-cols-[44px_minmax(0,1fr)_minmax(0,2fr)_74px] items-center gap-3.5 border-t border-white/[0.06] py-3"
-                    >
+                    <div key={c.class} className={`${classGrid} border-t border-white/[0.06] py-3`}>
                       <span className="font-mono text-xs text-muted">{c.class}</span>
                       <span className="truncate text-sm">{c.name}</span>
                       <span className="flex h-2 overflow-hidden rounded-full bg-white/[0.06]">
@@ -306,10 +317,22 @@ export function Agent() {
                       >
                         {c.breaches ? `${c.breaches} of ${c.episodes}` : `held ${c.episodes}`}
                       </span>
+                      {exercisedShown && (
+                        <span className="text-right font-mono text-xs text-muted">
+                          {c.exercised ?? c.episodes} of {c.episodes}
+                        </span>
+                      )}
                     </div>
                   );
                 })}
               </div>
+              {exercisedShown && (
+                <p className="mt-3 text-xs text-muted">
+                  Exercised: the attack episodes that tested the agent, because it was breached or
+                  did its task anyway. For an agent its operator runs, only those count: an episode
+                  in which it did nothing at all proves nothing.
+                </p>
+              )}
               <p className="mt-4 text-xs text-muted">
                 {report.unpublished?.episodes
                   ? `${report.unpublished.episodes} of the attack episodes ran ${report.unpublished.attacks} unpublished attacks (held out, or accepted bounties) that the operator couldn't study in advance.`

@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { Database, json, type RatingLane } from "@bonded/db";
 import {
   Sandbox,
@@ -167,14 +168,6 @@ export interface WorkerOptions {
   ownerOf?: (agentId: string) => Promise<string>;
 }
 
-/**
- * The chain id a TEE-bound chain-mode rating's fork reports: never the live one (RemoteAgent
- * refuses a TEE key on a fork with the live id), and fixed per chain so reports stay comparable.
- */
-export function ratingForkChainId(liveChainId: number): number {
-  return 900_000_000 + (liveChainId % 100_000_000);
-}
-
 /** Advisory lock keys: one per lane and chain. */
 const LANE_LOCK: Record<RatingLane | "all", number> = { all: 7004, builtin: 7004, remote: 7008 };
 
@@ -298,12 +291,34 @@ async function runLocked(
           ? { published: true, title: spec.title }
           : { published: false };
       };
-      // A remote agent's TEE must prove itself again at every episode, as the same deployment.
-      const binding =
+      // A remote agent's TEE (chain mode only) signs in the Arena with a key of its own for this
+      // rating, never its production key: the fork keeps the live chain's id. Its address comes
+      // from the TEE's attestation for a fresh key id, and every episode must prove that same
+      // key, from the same deployment (same measurement).
+      const arena =
         config.kind === "remote" && tee && config.tee
-          ? new TeeBinding(tee, {
+          ? await (async () => {
+              const keyId = `0x${randomBytes(32).toString("hex")}` as Hex;
+              const verified = await attestTeeAgent({
+                url: config.tee!.url,
+                codeHash: config.codeHash as Hex,
+                composeHash: config.tee!.composeHash,
+                arenaKeyId: keyId,
+              });
+              if (verified.measurement.toLowerCase() !== tee.measurement.toLowerCase())
+                throw new RatingRefused(
+                  "TEE binding failed: the Arena key's evidence came from another deployment",
+                  false,
+                );
+              return { keyId, verified };
+            })()
+          : undefined;
+      const binding =
+        arena && config.tee
+          ? new TeeBinding(arena.verified, {
               codeHash: config.codeHash as Hex,
               composeHash: config.tee.composeHash,
+              arenaKeyId: arena.keyId,
             })
           : undefined;
       if (config.kind === "remote" && !options.remote)
@@ -316,14 +331,7 @@ async function runLocked(
         config.kind === "remote"
           ? selected.filter((a) => !library.unpublished.has(a.id))
           : selected;
-      // A TEE-bound agent signs with its real key in chain mode. Its rating fork reports a chain id
-      // of its own, so nothing it signs there could be replayed on the live chain.
-      const teeChain = config.kind === "remote" && config.mode === "chain" && Boolean(tee);
-      const sandbox = await Sandbox.start({
-        forkUrl: rpcUrl,
-        forkDeployment: chain.deployment,
-        ...(teeChain ? { forkChainId: ratingForkChainId(chain.deployment.chainId) } : {}),
-      });
+      const sandbox = await Sandbox.start({ forkUrl: rpcUrl, forkDeployment: chain.deployment });
       try {
         const agent: ArenaAgent =
           config.kind === "remote"
@@ -335,10 +343,11 @@ async function runLocked(
                   agentId: String(row.onchain_id),
                   mode: config.mode,
                   codeHash: config.codeHash as Hex,
-                  ...(binding && tee
+                  ...(binding && arena
                     ? {
                         tee: {
-                          evmAddress: tee.evmAddress,
+                          keyId: arena.keyId,
+                          evmAddress: arena.verified.evmAddress,
                           verify: (evidence: unknown, nonce: Hex) => binding.check(evidence, nonce),
                         },
                       }

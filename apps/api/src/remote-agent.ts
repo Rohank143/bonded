@@ -28,11 +28,14 @@ export interface RemoteAgentRequest {
   /** The operator's declared code hash: what the rating is about. */
   codeHash: Hex;
   /**
-   * A TEE-bound agent. The gateway asks the runner for evidence with a fresh nonce at the start of
-   * every episode and passes it to `verify`, which throws when it doesn't hold. In chain mode the
-   * episode's vault names `evmAddress`, the TEE's own key, as its agent.
+   * A TEE-bound agent (chain mode). The rating has an Arena key of its own: the TEE derives it
+   * from `keyId`, and `evmAddress` is its address, which the episode vaults name as their agent,
+   * so nothing the agent signs in the Arena (whose fork keeps the live chain's id) is valid for
+   * its production key. The gateway asks the runner for that key's evidence with a fresh nonce
+   * at the start of every episode and passes it to `verify`, which throws when it doesn't hold.
    */
   tee?: {
+    keyId: Hex;
     evmAddress: Hex;
     verify: (evidence: unknown, nonce: Hex) => Promise<VerifiedTee>;
   };
@@ -69,6 +72,7 @@ export function gatewayAgents(
       ...(request.tee
         ? {
             tee: {
+              keyId: request.tee.keyId,
               onEvidence: (evidence: unknown, { nonce }: { nonce: Hex }) =>
                 request.tee!.verify(evidence, nonce),
             },
@@ -127,6 +131,8 @@ export class TeeBinding {
       composeHash: string;
       verifyQuote?: QuoteVerifier;
       approvedOsImages?: readonly string[];
+      /** The rating's Arena key id: every episode must attest that key, and nothing else. */
+      arenaKeyId?: string;
     },
   ) {}
 
