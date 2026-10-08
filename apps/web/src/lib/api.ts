@@ -235,6 +235,8 @@ export interface TeeCheckRecord {
   verifiedAt: string | null;
 }
 export interface RunRecord extends RatingFacts {
+  /** Episodes published so far, of how many, and a rough estimate of the seconds left. */
+  progress?: { done: number; total: number | null; etaSeconds: number | null };
   id: string;
   status: "queued" | "running" | "done" | "failed";
   error: string | null;
@@ -364,8 +366,19 @@ export interface RunnerRecord {
   lastSkip: { cause: string; reason: string; at: string } | null;
   /** Why a runner that is there doesn't count (e.g. started in the other mode), or null. */
   problem?: string | null;
+  /** Every rating of the agent, newest first, failed ones included. */
+  attempts?: RatingAttempt[];
   /** The Arena Gateway's public URL, for the runner command; null when it isn't configured. */
   gatewayUrl: string | null;
+}
+
+/** One rating of an agent, as its history shows it. */
+export interface RatingAttempt {
+  runId: string;
+  status: "queued" | "running" | "done" | "failed";
+  error: string | null;
+  createdAt: string;
+  score: number | null;
 }
 
 /** A signed self-serve request with nothing else in it. */

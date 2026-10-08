@@ -94,14 +94,7 @@ describe("ConnectAgent", () => {
       error: null,
       created_at: "",
       report: null,
-    });
-    vi.spyOn(api, "episodes").mockResolvedValue({
-      items: [],
-      page: 1,
-      pages: 1,
-      total: 7,
-      through: "1",
-      counts: { total: 7, held: 7, breach: 0, control: 0 },
+      progress: { done: 7, total: 20, etaSeconds: 300 },
     });
     show();
     expect(await screen.findByText("Runner connected")).toBeTruthy();
@@ -109,7 +102,7 @@ describe("ConnectAgent", () => {
     await waitFor(() => expect(button).toHaveProperty("disabled", false));
     fireEvent.click(button);
     await waitFor(() => expect(rate).toHaveBeenCalled());
-    expect(await screen.findByText(/7 episodes so far/)).toBeTruthy();
+    expect(await screen.findByText(/7 of 20 episodes, about 5 min left/)).toBeTruthy();
   });
 
   it("says why an expired score lapsed when the runner is away", async () => {
@@ -117,6 +110,15 @@ describe("ConnectAgent", () => {
       runnerRecord({
         token: { id: "t", createdAt: "" },
         runner: { ...connected, connected: false },
+        attempts: [
+          {
+            runId: "r9",
+            status: "failed",
+            error: "stopped: the agent failed in episode 1 of 4",
+            createdAt: "2026-10-07T00:00:00Z",
+            score: null,
+          },
+        ],
         lastSkip: {
           cause: "bounty",
           reason: "bounty 5 was accepted while the agent's runner was offline",
@@ -127,6 +129,7 @@ describe("ConnectAgent", () => {
     show({ scoreExpired: true });
     expect(await screen.findByText(/bounty 5 was accepted/)).toBeTruthy();
     expect(screen.getByText(/runner wasn't connected to renew it/)).toBeTruthy();
+    expect(screen.getByText("stopped: the agent failed in episode 1 of 4")).toBeTruthy();
   });
   it("shows anyone the runner's state, read-only, without a wallet", async () => {
     vi.spyOn(api, "runner").mockResolvedValue(

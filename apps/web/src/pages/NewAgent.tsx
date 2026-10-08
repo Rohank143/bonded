@@ -140,13 +140,18 @@ export function NewAgent() {
   // agent behind or silently skip a funding step.
   const own = kind === REMOTE_KIND;
   const remoteErrors = own
-    ? [codeHashError(codeHash), teeUrlError(teeUrl), composeHashError(composeHash, teeUrl)]
+    ? [
+        codeHashError(codeHash),
+        ...(remoteMode === "chain"
+          ? [teeUrlError(teeUrl), composeHashError(composeHash, teeUrl)]
+          : []),
+      ]
     : [];
   const remote: RemoteAgentSpec | undefined = own
     ? {
         codeHash: normaliseCodeHash(codeHash),
         mode: remoteMode,
-        ...(teeUrl.trim()
+        ...(teeUrl.trim() && remoteMode === "chain"
           ? {
               tee: {
                 url: teeUrl.trim(),
@@ -513,28 +518,37 @@ export function NewAgent() {
                   placeholder="0x…"
                   error={codeHash ? codeHashError(codeHash) : null}
                 />
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Input
-                    label="TEE URL (optional)"
-                    hint="If it runs in a Phala dstack TEE: every episode must then prove the code."
-                    value={teeUrl}
-                    onChange={setTeeUrl}
-                    placeholder="https://…"
-                    error={teeUrlError(teeUrl)}
-                  />
-                  <Input
-                    label="Compose hash"
-                    hint="Published for that deployment. Needed with a TEE URL."
-                    value={composeHash}
-                    onChange={setComposeHash}
-                    placeholder="0x…"
-                    error={composeHash || teeUrl ? composeHashError(composeHash, teeUrl) : null}
-                  />
-                </div>
+                {remoteMode === "chain" ? (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Input
+                      label="TEE URL (optional)"
+                      hint="If it runs in a Phala dstack TEE: every episode must then prove the code."
+                      value={teeUrl}
+                      onChange={setTeeUrl}
+                      placeholder="https://…"
+                      error={teeUrlError(teeUrl)}
+                    />
+                    <Input
+                      label="Compose hash"
+                      hint="Published for that deployment. Needed with a TEE URL."
+                      value={composeHash}
+                      onChange={setComposeHash}
+                      placeholder="0x…"
+                      error={composeHash || teeUrl ? composeHashError(composeHash, teeUrl) : null}
+                    />
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted">
+                    A TEE can bind only a chain-mode agent: in tool mode the tool calls come from
+                    the runner, outside the TEE, so it would prove nothing about how the agent acts.
+                  </p>
+                )}
                 <p className="text-xs text-muted">
                   Without a TEE the score's binding is declared, and cover is capped lower
-                  (underwriting policy, not the score). With one, the vault's agent key must be the
-                  TEE's own key for cover.
+                  (underwriting policy, not the score). With one (chain mode only), every episode
+                  must prove it, the vault's agent key must be the TEE's own key for cover, and the
+                  compose hash is what's bound: the compose file decides what runs in the TEE, so
+                  publish it for review.
                 </p>
               </div>
             ) : (

@@ -198,3 +198,18 @@ export function ratingFailure(run: Pick<RunRecord, "error" | "liveness" | "repor
       : "Not scored: no control run finished, so it's unknown whether your agent does its task.";
   return run.error ?? "The rating failed.";
 }
+
+/** A run's progress in a line: "120 of 252 episodes, about 4 min left". */
+export function progressLine(
+  progress: { done: number; total: number | null; etaSeconds: number | null } | undefined,
+): string | undefined {
+  if (!progress?.done) return undefined;
+  const of = progress.total ? ` of ${progress.total}` : "";
+  const eta =
+    progress.etaSeconds === null
+      ? ""
+      : progress.etaSeconds < 90
+        ? ", about a minute left"
+        : `, about ${Math.round(progress.etaSeconds / 60)} min left`;
+  return `${progress.done}${of} episodes${eta}`;
+}

@@ -3,10 +3,11 @@ import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useSignMessage } from "wagmi";
 import type { BindingLevel, RemoteMode } from "@bonded/shared";
-import { api, type SelfAgentRecord } from "../lib/api";
+import { api, type RatingAttempt, type SelfAgentRecord } from "../lib/api";
 import {
   BINDING_LABELS,
   lapseReason,
+  progressLine,
   ratingFailure,
   runnerCommand,
   runnerDockerCommand,
@@ -52,12 +53,6 @@ export function ConnectAgent({
   });
   const run = useRatingRun(runId);
   const running = Boolean(runId) && !["done", "failed"].includes(run.data?.status ?? "");
-  const progress = useQuery({
-    queryKey: ["run-episodes", runId],
-    queryFn: () => api.episodes({ runId: runId!, limit: 1 }),
-    enabled: running,
-    refetchInterval: 5_000,
-  });
 
   const mode: RemoteMode = record.mode ?? "tools";
   const view = runnerView(runner.data);
@@ -236,9 +231,11 @@ export function ConnectAgent({
             <section className="flex flex-col gap-3">
               <h3 className="font-semibold">3. Rate it</h3>
               <p className="text-muted">
-                Every attack in the library runs five times against your agent, plus a held-out set
-                made for this rating alone, then the signed score is posted on chain. While the
-                runner stays connected, the score is renewed in its last 3 days.
+                Every published attack runs five times against your agent, plus a held-out set made
+                for this rating alone, then the signed score is posted on chain. The rating stops at
+                the first episode your agent fails (a crash, an error exit, a timeout) and has a
+                time limit; a stopped rating stays in the history below and doesn't change the
+                score. While the runner stays connected, the score is renewed in its last 3 days.
               </p>
               {lapse && (
                 <p className="rounded-xl border border-warn/30 bg-warn-soft px-3.5 py-2.5">
@@ -287,8 +284,8 @@ export function ConnectAgent({
                     ratingFailure(run.data)
                   ) : (
                     <>
-                      {progress.data?.total
-                        ? `${progress.data.total} episodes so far. `
+                      {progressLine(run.data?.progress)
+                        ? `${progressLine(run.data?.progress)}. `
                         : "Waiting for the first episode. "}
                       Watch them live in the{" "}
                       <Link to={`/arena?run=${runId}`} className={linkClass}>
@@ -298,6 +295,9 @@ export function ConnectAgent({
                     </>
                   )}
                 </p>
+              )}
+              {runner.data?.attempts && runner.data.attempts.length > 0 && (
+                <Attempts attempts={runner.data.attempts} />
               )}
             </section>
           </>
@@ -354,5 +354,27 @@ export function BindingLine({ binding }: { binding: BindingLevel }) {
       <Badge tone={binding === "tee" ? "safe" : "warn"}>{b.label}</Badge>
       <span className="text-xs text-muted">{b.hint}</span>
     </span>
+  );
+}
+
+/** The agent's ratings, newest first: the stopped and failed ones too, so none is hidden. */
+function Attempts({ attempts }: { attempts: RatingAttempt[] }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-xs font-semibold text-soft">Ratings</span>
+      <ul className="flex flex-col gap-1 text-xs">
+        {attempts.map((a) => (
+          <li key={a.runId} className="flex flex-wrap items-baseline gap-2">
+            <span className="text-muted">{when(Math.floor(Date.parse(a.createdAt) / 1000))}</span>
+            <Badge
+              tone={a.status === "done" ? "safe" : a.status === "failed" ? "breach" : "neutral"}
+            >
+              {a.status === "done" && a.score !== null ? `score ${a.score}` : a.status}
+            </Badge>
+            {a.error && <span className="text-muted">{a.error}</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
