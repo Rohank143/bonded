@@ -7,8 +7,10 @@ import { BlockList, isIP } from "node:net";
  * Fetching from a URL someone else chose (an agent's TEE endpoint) without letting them aim the
  * Arena at its own network (SSRF): https only, every address the name resolves to must be public
  * (checked at connect time, so a name can't switch to a private address after the check), no
- * redirects, a time limit and a size limit. Loopback is allowed only when the caller says so
- * explicitly, for a local simulator.
+ * redirects, a time limit and a size limit. The time limit is a deadline on the whole fetch (name
+ * lookup, connect, TLS, headers and the full body), not an idle timeout, so an endpoint that sends
+ * a byte every few seconds can't hold the caller past it. Loopback is allowed only when the caller
+ * says so explicitly, for a local simulator.
  */
 
 const NOT_PUBLIC = new BlockList();
@@ -60,6 +62,7 @@ export function publicAddress(address: string, allowLoopback = false): boolean {
 export class UnsafeUrlError extends Error {}
 
 export interface SafeFetchOptions {
+  /** Deadline for the whole fetch, from the name lookup to the last byte of the body. */
   timeoutMs: number;
   maxBytes: number;
   /** Allow loopback addresses and plain http to them (a local simulator only). */
@@ -102,33 +105,52 @@ export function safeGet(
   };
 
   return new Promise((resolve, reject) => {
+    let settled = false;
+    let response: IncomingMessage | undefined;
+    const finish = (error: Error | undefined, result?: { status: number; text: string }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      if (error) {
+        response?.destroy();
+        request.destroy();
+        reject(error);
+      } else resolve(result!);
+    };
     const request = (url.protocol === "https:" ? httpsRequest : httpRequest)(
       url,
       { method: "GET", headers: { accept: "application/json" }, lookup: lookup as never },
-      (response: IncomingMessage) => {
-        const status = response.statusCode ?? 0;
+      (res: IncomingMessage) => {
+        response = res;
+        const status = res.statusCode ?? 0;
         if (status >= 300 && status < 400) {
-          response.destroy();
-          reject(new UnsafeUrlError("redirects are not followed"));
+          finish(new UnsafeUrlError("redirects are not followed"));
           return;
         }
         const chunks: Buffer[] = [];
         let size = 0;
-        response.on("data", (chunk: Buffer) => {
+        res.on("data", (chunk: Buffer) => {
           size += chunk.length;
           if (size > options.maxBytes) {
-            response.destroy();
-            reject(new UnsafeUrlError(`the answer is over ${options.maxBytes} bytes`));
+            finish(new UnsafeUrlError(`the answer is over ${options.maxBytes} bytes`));
             return;
           }
           chunks.push(chunk);
         });
-        response.on("end", () => resolve({ status, text: Buffer.concat(chunks).toString("utf8") }));
-        response.on("error", reject);
+        res.on("end", () =>
+          finish(undefined, { status, text: Buffer.concat(chunks).toString("utf8") }),
+        );
+        res.on("error", (error) => finish(error));
+        res.on("close", () => finish(new Error("the connection closed before the answer ended")));
       },
     );
-    request.setTimeout(options.timeoutMs, () => request.destroy(new Error("timed out")));
-    request.on("error", reject);
+    // One timer for the whole fetch. It starts in the same tick as the request, before the name
+    // lookup, and traffic never resets it.
+    const deadline = setTimeout(
+      () => finish(new Error(`timed out after ${options.timeoutMs} ms`)),
+      options.timeoutMs,
+    );
+    request.on("error", (error) => finish(error));
     request.end();
   });
 }

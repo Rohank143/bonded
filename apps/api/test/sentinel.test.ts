@@ -2,7 +2,8 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { ANVIL_KEYS, Sandbox, createAgentVault, type AgentVault } from "@bonded/arena";
 import { connectChain, type ServiceChain } from "@bonded/keeper";
 import type { SentinelModel } from "@bonded/demo-agents";
-import { checkWithSentinel } from "@bonded/sdk";
+import { asEntryPoint, deployReferenceAccount } from "@bonded/sandbox";
+import { checkWithSentinel, installMandateModule } from "@bonded/sdk";
 import { sentinelCheckDigest, sentinelCheckMessage, type SentinelCheckBody } from "@bonded/shared";
 import { privateKeyToAccount } from "viem/accounts";
 import { createApi } from "../src/index.js";
@@ -13,7 +14,7 @@ import {
   type SentinelService,
 } from "../src/sentinel.js";
 import { agentConfig, ratedCodeHash, workOne } from "../src/worker.js";
-import { mandateVaultAbi } from "@bonded/shared";
+import { bondedRegistryAbi, mandateVaultAbi } from "@bonded/shared";
 import { postgres } from "./postgres.js";
 
 let pg: Awaited<ReturnType<typeof postgres>>;
@@ -339,3 +340,63 @@ it("answers the SDK's checkWithSentinel, as an agent outside Bonded would call i
     message: expect.stringMatching(/agent key/),
   });
 }, 60_000);
+
+it("checks a MandateModule like a vault: the agent's own module, signed by its current key", async () => {
+  clock += 120_000;
+  const d = sandbox.deployment;
+  // An ERC-7579 account protected by a module for a newly registered agent.
+  const registry = {
+    address: d.registry,
+    abi: bondedRegistryAbi,
+    functionName: "register",
+  } as const;
+  const { result: agentId } = await sandbox.publicClient.simulateContract({
+    ...registry,
+    args: ["ipfs://bonded/test/module-agent.json"],
+    account: operator,
+  });
+  const registered = await sandbox
+    .wallet("operator")
+    .writeContract({ ...registry, args: ["ipfs://bonded/test/module-agent.json"] });
+  await sandbox.publicClient.waitForTransactionReceipt({ hash: registered });
+  const account = await deployReferenceAccount(sandbox);
+  const plan = await installMandateModule(sandbox.publicClient, {
+    moduleFactory: d.moduleFactory!,
+    account,
+    accountType: "erc7579",
+    rules: {
+      chainId: d.chainId,
+      agentId,
+      mode: "enforce",
+      baseAsset: d.usdg,
+      assets: [d.nvda],
+      targets: [{ address: d.router }],
+      maxTradeUsd: 5_000,
+      maxDailyUsd: 25_000,
+      maxDrawdownPct: 15,
+      maxSlippagePct: 3,
+      description: "Module-protected agent for the Sentinel route.",
+    },
+    agent: agentKey.address,
+    guardian: operator.address,
+  });
+  await asEntryPoint(sandbox, account, plan.execute.data);
+
+  const fetch = ((url: string, init: RequestInit) =>
+    app.request(String(url), init)) as unknown as typeof globalThis.fetch;
+  const ask = (agent: bigint, account = agentKey) =>
+    checkWithSentinel({
+      apiUrl: "http://api.test",
+      chainId: d.chainId,
+      agentId: agent,
+      vault: plan.module,
+      ...benign,
+      account,
+      fetch,
+      timestamp: now(),
+    });
+  expect(await ask(agentId)).toMatchObject({ blocked: false });
+  // Still the agent's own module, with its current key only.
+  await expect(ask(vault.agentId)).rejects.toMatchObject({ status: 400 });
+  await expect(ask(agentId, operator)).rejects.toMatchObject({ status: 403 });
+}, 120_000);

@@ -4,9 +4,10 @@ import { createWalletClient, encodeFunctionData, erc20Abi, http, parseUnits } fr
 import { privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { BondedWalletProvider } from "../src/agentkit.js";
-import { BondedVault, CallRevertedError, VaultFrozenError } from "../src/index.js";
+import { BondedVault, CallRevertedError, guarded, VaultFrozenError } from "../src/index.js";
 import { type AccountKind, protectedAccount, type ProtectedAccount } from "./accounts.js";
 import { ATTACKER, Sandbox, balanceOf, breachCount } from "./chain.js";
+import { fakeSentinelApi } from "./sentinel-api.js";
 
 let sandbox: Sandbox;
 const realFetch = globalThis.fetch;
@@ -92,6 +93,27 @@ describe.each<AccountKind>(["msa", "safe"])("a MandateModule on a %s account", (
     await expect(vault.dryRun({ type: "transfer", ...transfer })).rejects.toBeInstanceOf(
       VaultFrozenError,
     );
+  });
+});
+
+describe("a guarded MandateModule with Sentinel", () => {
+  it("asks Sentinel about the module, signed by the agent key, then trades", async () => {
+    const p = await protectedAccount(sandbox, "msa");
+    const sentinel = fakeSentinelApi({
+      chainId: sandbox.chain.id,
+      agent: sandbox.address("agent"),
+      agentId: p.agentId,
+      vault: p.module,
+    });
+    const safe = guarded(client(p), {
+      sentinel: { apiUrl: "http://api.test", mandate: p.mandate, fetch: sentinel.fetch },
+    });
+    const d = sandbox.deployment;
+    const result = await safe.swap({ tokenIn: d.usdg, tokenOut: d.tsla, amountIn: usd(200) });
+    expect(result.sentinel).toMatchObject({ blocked: false, model: "fake-sentinel" });
+    expect(sentinel.asked).toHaveLength(1);
+    expect(result.breaches).toEqual([]);
+    expect(await balanceOf(sandbox, d.tsla, p.account)).toBeGreaterThan(0n);
   });
 });
 
