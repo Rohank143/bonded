@@ -51,6 +51,14 @@ describe("teeMeasurement", () => {
 });
 
 describe("teeReportData", () => {
+  it("binds an EVM-only agent (no Solana key) to something no keyed agent can produce", () => {
+    const evmOnly = { ...binding, solanaPublicKey: undefined };
+    expect(teeReportData(evmOnly)).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(teeReportData(evmOnly)).not.toBe(teeReportData(binding));
+    expect(TeeEvidence.shape.solanaPublicKey.safeParse(undefined).success).toBe(true);
+    expect(TeeEvidence.shape.solanaPublicKey.safeParse("").success).toBe(false);
+  });
+
   it("binds the code, both keys and the nonce", () => {
     const base = teeReportData(binding);
     expect(teeReportData({ ...binding })).toBe(base);

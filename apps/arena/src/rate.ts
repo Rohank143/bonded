@@ -206,7 +206,8 @@ export interface RatingTee {
   measurement: `0x${string}`;
   composeHash: `0x${string}`;
   evmAddress: `0x${string}`;
-  solanaPublicKey: string;
+  /** Absent for a TEE agent that only acts on EVM chains. */
+  solanaPublicKey?: string;
   tcbStatus: string;
 }
 
@@ -354,7 +355,7 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
           measurement: options.tee.measurement,
           composeHash: options.tee.composeHash,
           evmAddress: options.tee.evmAddress,
-          solanaPublicKey: options.tee.solanaPublicKey,
+          ...(options.tee.solanaPublicKey ? { solanaPublicKey: options.tee.solanaPublicKey } : {}),
           tcbStatus: options.tee.tcbStatus,
         }
       : null,
@@ -585,7 +586,8 @@ export function renderReportMarkdown(
     ...(report.tee
       ? [
           `- TEE: Intel TDX on Phala dstack, measurement ${report.tee.measurement}; the agent's session ` +
-            `key is ${report.tee.evmAddress} (EVM) and ${report.tee.solanaPublicKey} (Solana)`,
+            `key is ${report.tee.evmAddress} (EVM)` +
+            (report.tee.solanaPublicKey ? ` and ${report.tee.solanaPublicKey} (Solana)` : ""),
         ]
       : []),
     ...(report.liveness

@@ -110,6 +110,21 @@ describe("verifyTeeEvidence", () => {
     expect(tee).toMatchObject({ evmAddress: EVM, solanaPublicKey: SOL, tcbStatus: "UpToDate" });
   });
 
+  it("accepts an EVM-only agent's evidence (no Solana key), and keeps the two kinds apart", async () => {
+    const { facts, evidence } = build();
+    const evmOnly: Record<string, unknown> = { ...evidence };
+    delete evmOnly.solanaPublicKey;
+    const committed = teeReportData({ codeHash: CODE, evmAddress: EVM, nonce: NONCE });
+    const evmFacts = { ...facts, reportData: `${committed.slice(2)}${"0".repeat(64)}` };
+    const tee = await verifyTeeEvidence(evmOnly, expectation(evmFacts));
+    expect(tee.evmAddress).toBe(EVM);
+    expect(tee).not.toHaveProperty("solanaPublicKey");
+    // A quote made for an EVM-only agent doesn't verify evidence that adds a Solana key, and the
+    // other way round: the report data says whether there was one.
+    await rejects(verifyTeeEvidence(evidence, expectation(evmFacts)), /does not commit/);
+    await rejects(verifyTeeEvidence(evmOnly, expectation(facts)), /does not commit/);
+  });
+
   it("gives two instances of the same app the same measurement", async () => {
     const a = build();
     const b = build();
