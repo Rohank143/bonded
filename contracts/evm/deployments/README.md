@@ -51,7 +51,7 @@ Ethereum Sepolia (11155111) was deployed Sep 30, 2026 by the same key, from bloc
 
 Always read addresses from `<chainId>.json`, never assume they match across chains.
 
-These deployments predate MandateModule, so their files have no `moduleFactory`. A new deployment adds MandateModuleFactory last (every other address stays where it was) and points CoverManager at it.
+These deployments predate MandateModule, so their files have no `moduleFactory`, and modules can't be used on them: modules need the new CoverManager, ClaimsEngine and DisputeModule, so a chain gets modules only through a full redeployment. In a fresh deployment the script deploys MandateModuleFactory last and points CoverManager at it, so the other contracts land at the same addresses as before on a chain where the deployer's nonce starts from the same point (a fresh local chain, for example); on a chain that already has a deployment, every address is new.
 
 ## Deploying
 
