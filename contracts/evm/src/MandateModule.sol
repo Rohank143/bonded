@@ -161,8 +161,10 @@ contract MandateModule is MandateBase, IERC7579Hook {
     /// @dev A token call (approve, increaseAllowance, setApprovalForAll, transfer, transferFrom) on
     ///      a token outside the mandate's asset list is T1 UnauthorizedTarget. A smart account may
     ///      hold other tokens the module doesn't measure; without this an allowed spender or
-    ///      recipient could be used to move them. (The vault keeps MandateBase's rule unchanged,
-    ///      so its behaviour and published scores stay as they are.)
+    ///      recipient could be used to move them. Revoking (`approve(x, 0)`,
+    ///      `setApprovalForAll(x, false)`) stays allowed on any token, as on a vault, so the agent
+    ///      can clean up approvals. (The vault keeps MandateBase's rule unchanged, so its
+    ///      behaviour and published scores stay as they are.)
     function _classify(address target, bytes calldata data)
         internal
         view
@@ -173,7 +175,9 @@ contract MandateModule is MandateBase, IERC7579Hook {
         bytes4 s = v.selector;
         bool tokenCall = s == APPROVE || s == INCREASE_ALLOWANCE || s == SET_APPROVAL_FOR_ALL
             || s == TRANSFER || s == TRANSFER_FROM;
-        if (tokenCall && !isAsset[target]) {
+        bool revoking = (s == APPROVE || s == SET_APPROVAL_FOR_ALL) && data.length >= 68
+            && _uintArg(data, 1) == 0;
+        if (tokenCall && !revoking && !isAsset[target]) {
             v.allowed = false;
             v.leakCheck = true;
             v.breachType = BondedTypes.BreachType.UnauthorizedTarget;

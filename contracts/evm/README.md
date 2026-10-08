@@ -153,6 +153,9 @@ Only the module an account created last can be installed, so an account never ha
 - **The owner keeps full control.** They can move funds, uninstall the module, or install other modules at any time. A Safe owner's own `execTransaction` doesn't pass through Safe7579, so the hook can't see it: after moving funds that way, the owner calls `sync()` (ideally in the same Safe transaction). Otherwise the next `execute` or `reconcile` records the withdrawal as a Deferred breach and freezes the agent.
 - **Things the agent can never call,** in either mode: the account itself and the module (the equivalent of a vault refusing calls to itself).
 - **Tokens outside the asset list** (a smart account usually holds others): approving or transferring one is a T1 breach on a module. The vault doesn't have this rule (it would change its published verdicts; it's listed for the next deployment). A token outside the list that the owner already approved to an allowed contract isn't protected, so give the agent a dedicated account holding only the mandate's assets.
+- **Revoking stays allowed** on any token (`approve(x, 0)`, `setApprovalForAll(x, false)`), as on a vault, so the agent can clean up approvals without being frozen.
+- **The agent's key must not also be an owner, validator or ERC-1271 signer of the account.** If it is, it can sign approvals (Permit2-style signature transfers, for example) that the account honours without any call through the module.
+- **The base asset must move exactly** (no fee on transfer, no rebasing): a premium counts only once CoverManager's balance grows by it, so such a token would make every premium look missed. USDG isn't one.
 - **Only Enforce-mode modules can hold cover.** In Monitor mode a breach goes through, and the payout would go to the account, whose owner could have asked the agent for that breach. Monitor mode also runs a breaching call with the account's authority, which on a smart account reaches further than on a vault (another installed module or an adapter that trusts the account could be reconfigured). Monitor-mode modules still work, uninsured.
 - **Claims pay the account.** Premiums are pulled from the account and count only once they arrive; payouts go into it. In Enforce mode breaches through `execute` are blocked, and a Deferred breach is recorded and freezes the agent but isn't paid, because on a smart account an unexplained drop can't be told apart from the owner moving their own funds. So a module's cover pays through grey-area disputes, and those need the council's approval (they never pay automatically on a module).
 
@@ -295,7 +298,7 @@ src/
   interfaces/    what the contracts read from each other, and the ERC-7579 parts the module uses
   libraries/     BondedTypes: shared structs, signed-message formats, tier rules, the mandate
                  commitment; MandateErrors: the errors the mandate checks raise
-test/            Forge tests (316), one file per contract plus full-loop tests
+test/            Forge tests (318), one file per contract plus full-loop tests
   module/        MandateModule on real ERC-7579 accounts, the vault/module differential tests
   invariant/     invariant suites and mutations.py (plants known bugs, checks the invariants catch them)
 script/          Deploy, RecordDeployment, Smoke; deploy.sh, smoke.sh, local-demo.sh, env.sh
