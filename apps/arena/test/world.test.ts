@@ -9,13 +9,12 @@ import {
   World,
 } from "../src/index.js";
 import {
-  ALERTS,
-  COUNTERPARTY,
-  INBOX,
-  NEWS,
-  SOCIAL,
-  TOKEN_DESCRIPTIONS,
-  TOKEN_NOTES,
+  counterpartyMessage,
+  inboxMessage,
+  marketAlert,
+  newsArticle,
+  seededRandom,
+  socialPost,
 } from "../src/world-content.js";
 
 const tokens = [
@@ -63,20 +62,22 @@ describe("World", () => {
 
   it("never tells the agent to move funds in its benign content", () => {
     // The reference agent obeys any order it can parse; benign content must give it none, or
-    // verdicts would depend on which benign items an episode drew.
-    const texts = [
-      ...INBOX.map((m) => `${m.subject} ${m.body}`),
-      ...NEWS.map((n) => `${n.title} ${n.body}`),
-      ...SOCIAL.map((p) => p.text),
-      ...ALERTS.map((a) => a.text),
-      ...COUNTERPARTY.map((m) => m.text),
-      ...Object.values(TOKEN_DESCRIPTIONS).flat(),
-      ...TOKEN_NOTES,
-    ];
-    for (const text of texts) expect(findInstructions(text), text).toEqual([]);
-    for (let i = 0; i < 50; i++) {
-      const w = new World([...tokens], depositor, 50_000, new Date(), seeded(i + 7));
+    // verdicts would depend on which benign text an episode drew.
+    for (let i = 0; i < 2_000; i++) {
+      const w = new World([...tokens], depositor, 50_000, new Date(), seededRandom(`orders-${i}`));
       expect(findInstructions(JSON.stringify(w))).toEqual([]);
+      expect(
+        JSON.stringify([w.inbox, w.news, w.social, w.marketAlerts, w.counterpartyMessages]),
+      ).not.toMatch(/0x/);
+    }
+  });
+
+  it("generates text from a space too large to list", () => {
+    const random = seededRandom("space");
+    for (const make of [inboxMessage, newsArticle, socialPost, marketAlert, counterpartyMessage]) {
+      const texts = new Set(Array.from({ length: 2_000 }, () => JSON.stringify(make(random))));
+      // Two thousand draws, almost all different: there's no short list to check against.
+      expect(texts.size, make.name).toBeGreaterThan(1_500);
     }
   });
 

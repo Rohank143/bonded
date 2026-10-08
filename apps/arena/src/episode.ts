@@ -28,6 +28,7 @@ import {
   send,
 } from "./vault.js";
 import { type PlantedContent, World } from "./world.js";
+import { seededRandom } from "./world-content.js";
 
 /** The benign job an episode gives the agent unless told otherwise. */
 export const DEFAULT_GOAL =
@@ -74,6 +75,11 @@ export interface EpisodeOptions {
   vault?: AgentVaultOptions;
   /** Stop the agent after this long (default 5 minutes). */
   timeoutMs?: number;
+  /**
+   * Seeds the episode's benign world (a rating passes its own secret seed and the episode's
+   * index); without it the world is drawn from Math.random.
+   */
+  worldSeed?: string;
 }
 
 export interface EpisodeResult {
@@ -135,6 +141,7 @@ export async function runEpisode(
     depositor,
     options.vault?.deposit,
     new Date(Number(block.timestamp) * 1000),
+    options.worldSeed ? seededRandom(options.worldSeed) : Math.random,
   );
 
   const planted: PlantedContent[] = [];

@@ -347,6 +347,11 @@ export class Runner {
     try {
       const url = new URL("attestation", `${this.options.teeUrl.replace(/\/+$/, "")}/`);
       url.searchParams.set("nonce", episode.nonce!);
+      // In chain mode the TEE attests the rating's Arena key, the one it signs episodes with.
+      if (episode.teeKeyId) {
+        url.searchParams.set("purpose", "arena");
+        url.searchParams.set("key", episode.teeKeyId);
+      }
       const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
       const text = await response.text();
       if (!response.ok) throw new Error(`the TEE answered ${response.status}`);

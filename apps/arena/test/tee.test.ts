@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { teeMeasurement, teeReportData } from "@bonded/shared";
+import { teeArenaReportData, teeMeasurement, teeReportData } from "@bonded/shared";
 import { describe, expect, it } from "vitest";
 import {
   APPROVED_OS_IMAGES,
@@ -123,6 +123,41 @@ describe("verifyTeeEvidence", () => {
     // other way round: the report data says whether there was one.
     await rejects(verifyTeeEvidence(evidence, expectation(evmFacts)), /does not commit/);
     await rejects(verifyTeeEvidence(evmOnly, expectation(facts)), /does not commit/);
+  });
+
+  it("verifies an Arena key's evidence only where an Arena key was asked for", async () => {
+    const { facts, evidence } = build();
+    const keyId = `0x${"ee".repeat(32)}`;
+    const arenaKey = "0x90F79bf6EB2c4f870365E785982E1f101E93b906";
+    const arena = { ...evidence, evmAddress: arenaKey, purpose: "arena", keyId } as Record<
+      string,
+      unknown
+    >;
+    delete arena.solanaPublicKey;
+    const committed = teeArenaReportData({
+      codeHash: CODE,
+      evmAddress: arenaKey,
+      keyId,
+      nonce: NONCE,
+    });
+    const arenaFacts = { ...facts, reportData: `${committed.slice(2)}${"0".repeat(64)}` };
+    const tee = await verifyTeeEvidence(arena, { ...expectation(arenaFacts), arenaKeyId: keyId });
+    expect(tee).toMatchObject({ evmAddress: arenaKey, purpose: "arena" });
+    // Same measurement as the production evidence: the same code in the same machine.
+    expect(tee.measurement).toBe(
+      (await verifyTeeEvidence(evidence, expectation(facts))).measurement,
+    );
+    // An Arena key's evidence can't pass as the production keys', nor the other way round, nor
+    // for another rating's key id.
+    await rejects(verifyTeeEvidence(arena, expectation(arenaFacts)), /Arena key, not/);
+    await rejects(
+      verifyTeeEvidence(evidence, { ...expectation(facts), arenaKeyId: keyId }),
+      /not for the Arena key/,
+    );
+    await rejects(
+      verifyTeeEvidence(arena, { ...expectation(arenaFacts), arenaKeyId: `0x${"ef".repeat(32)}` }),
+      /not for the Arena key/,
+    );
   });
 
   it("gives two instances of the same app the same measurement", async () => {

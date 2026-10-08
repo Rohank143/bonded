@@ -81,8 +81,16 @@ export interface RpcBinding {
    */
   clientVersion?: string;
   toolbox: ArenaToolbox;
-  /** The episode's budget of calls to the sandbox node (see `RpcBudget`). */
+  /**
+   * The episode's budget of calls to the sandbox node (see `RpcBudget`); a simulation is charged
+   * one per call it simulates.
+   */
   budget?: RpcBudget;
+  /**
+   * The episode's gas budget: every call, estimate and simulated call is charged the gas it may
+   * use, so EVM execution per second is bounded, not just the number of requests.
+   */
+  gas?: RpcBudget;
   /** Aborted when the episode ends: nothing more is forwarded, and calls in flight stop. */
   signal?: AbortSignal;
 }
@@ -104,17 +112,17 @@ export class RpcBudget {
     this.allowance = burst;
   }
 
-  /** Takes one call from the budget; false when the total or the rate is spent. */
-  take(): boolean {
+  /** Takes `amount` from the budget; false (taking nothing) when the total or the rate is spent. */
+  take(amount = 1): boolean {
     const now = Date.now();
     this.allowance = Math.min(
       this.burst,
       this.allowance + ((now - this.refilled) / 1000) * this.perSecond,
     );
     this.refilled = now;
-    if (this.used >= this.total || this.allowance < 1) return false;
-    this.used++;
-    this.allowance--;
+    if (this.used + amount > this.total || this.allowance < amount) return false;
+    this.used += amount;
+    this.allowance -= amount;
     return true;
   }
 }
@@ -130,6 +138,8 @@ export interface RpcLimits {
   requestResponseBytes: number;
   /** Gas any eth_call, eth_estimateGas, eth_createAccessList or simulated call may use. */
   callGas: bigint;
+  /** The gas such a call gets when it names none. */
+  defaultCallGas: bigint;
   /** Blocks and calls one eth_simulateV1 may simulate. */
   simulateBlocks: number;
   simulateCalls: number;
@@ -194,10 +204,12 @@ async function handleOne(
     return { jsonrpc: "2.0", id, result: binding.clientVersion };
   if (spent.bytes <= 0)
     return failure(id, -32005, "this request's response budget is spent; send fewer calls");
-  if (binding.budget && !binding.budget.take())
-    return failure(id, -32005, "too many RPC calls for this episode; slow down");
   const params = boundParams(method, request.params, limits);
   if ("error" in params) return failure(id, -32602, params.error);
+  if (binding.budget && !binding.budget.take(params.calls))
+    return failure(id, -32005, "too many RPC calls for this episode; slow down");
+  if (params.gas > 0n && binding.gas && !binding.gas.take(Number(params.gas)))
+    return failure(id, -32005, "too much gas used by calls in this episode; slow down");
   if (method === "eth_sendRawTransaction")
     return sendRaw({ ...request, params: params.params }, binding, limits, spent);
   try {
@@ -218,23 +230,27 @@ function boundParams(
   method: string,
   params: unknown[],
   limits: RpcLimits,
-): { params: unknown[] } | { error: string } {
+): { params: unknown[]; calls: number; gas: bigint } | { error: string } {
+  let gasTotal = 0n;
   const capGas = (call: unknown) => {
     if (!call || typeof call !== "object" || Array.isArray(call)) return call;
     const c = call as Record<string, unknown>;
-    let gas = limits.callGas;
+    let gas = limits.defaultCallGas;
     try {
-      if (typeof c.gas === "string" || typeof c.gas === "number") {
-        const asked = BigInt(c.gas);
-        if (asked < gas) gas = asked;
-      }
+      if (typeof c.gas === "string" || typeof c.gas === "number") gas = BigInt(c.gas);
     } catch {
-      // Unparseable gas: the cap stands.
+      // Unparseable gas: the default stands.
     }
+    if (gas > limits.callGas) gas = limits.callGas;
+    if (gas < 0n) gas = 0n;
+    gasTotal += gas;
     return { ...c, gas: `0x${gas.toString(16)}` };
   };
-  if (CALL_METHODS.has(method)) return { params: [capGas(params[0]), ...params.slice(1)] };
-  if (method !== "eth_simulateV1") return { params };
+  if (CALL_METHODS.has(method)) {
+    const bounded = [capGas(params[0]), ...params.slice(1)];
+    return { params: bounded, calls: 1, gas: gasTotal };
+  }
+  if (method !== "eth_simulateV1") return { params, calls: 1, gas: 0n };
   const payload = params[0] as { blockStateCalls?: unknown } | undefined;
   const blocks = payload?.blockStateCalls;
   if (!Array.isArray(blocks)) return { error: "eth_simulateV1 needs blockStateCalls" };
@@ -261,7 +277,11 @@ function boundParams(
   });
   if (calls > limits.simulateCalls)
     return { error: `simulate at most ${limits.simulateCalls} calls` };
-  return { params: [{ ...(payload as object), blockStateCalls: bounded }, ...params.slice(1)] };
+  return {
+    params: [{ ...(payload as object), blockStateCalls: bounded }, ...params.slice(1)],
+    calls: Math.max(1, calls),
+    gas: gasTotal,
+  };
 }
 
 function parseRequest(raw: unknown): RpcRequest | RpcResponse {

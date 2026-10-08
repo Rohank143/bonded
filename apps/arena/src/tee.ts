@@ -3,6 +3,7 @@ import { getCollateral, PHALA_PCCS_URL, Quote, verify } from "@phala/dcap-qvl";
 import { safeGet, UnsafeUrlError } from "./safe-fetch.js";
 import {
   stripHexPrefix,
+  teeArenaReportData,
   TeeEvidence,
   teeMeasurement,
   teeReportData,
@@ -92,6 +93,8 @@ export class TeeUnavailableError extends Error {
 export interface VerifiedTee {
   /** Goes into the attestation as `teeMeasurement`. */
   measurement: `0x${string}`;
+  /** "arena" when this is an Arena key's evidence (then `evmAddress` is that key). */
+  purpose?: "arena";
   composeHash: `0x${string}`;
   /** The dstack OS image the VM booted, as measured by the hardware. */
   osImageHash: string;
@@ -131,6 +134,11 @@ export interface TeeExpectation {
   acceptedStatuses?: readonly string[];
   /** OS image hashes to accept (default: `APPROVED_OS_IMAGES`). */
   approvedOsImages?: readonly string[];
+  /**
+   * Expect an Arena key's evidence for this key id (a chain-mode rating), instead of the
+   * production keys' evidence. Each kind is refused where the other is expected.
+   */
+  arenaKeyId?: string;
 }
 
 interface EventLogEntry {
@@ -240,6 +248,15 @@ export async function verifyTeeEvidence(
   };
 
   if (!sameHex(evidence.nonce, expected.nonce)) fail("the evidence answers a different challenge");
+  if (expected.arenaKeyId) {
+    if (
+      evidence.purpose !== "arena" ||
+      !evidence.keyId ||
+      !sameHex(evidence.keyId, expected.arenaKeyId)
+    )
+      fail("the evidence is not for the Arena key this rating asked for");
+  } else if (evidence.purpose !== undefined || evidence.keyId !== undefined)
+    fail("the evidence is for an Arena key, not the agent's production keys");
   if (!sameHex(evidence.codeHash, expected.codeHash))
     fail("the agent reports different code than the one that was rated");
   if (!sameHex(evidence.composeHash, expected.composeHash))
@@ -256,12 +273,19 @@ export async function verifyTeeEvidence(
   if (!(expected.acceptedStatuses ?? DEFAULT_TCB_STATUSES).includes(facts.status))
     fail(`the machine's TCB status is ${facts.status}`);
 
-  const committed = teeReportData({
-    codeHash: evidence.codeHash as `0x${string}`,
-    evmAddress: evidence.evmAddress as `0x${string}`,
-    solanaPublicKey: evidence.solanaPublicKey,
-    nonce: evidence.nonce,
-  });
+  const committed = expected.arenaKeyId
+    ? teeArenaReportData({
+        codeHash: evidence.codeHash as `0x${string}`,
+        evmAddress: evidence.evmAddress as `0x${string}`,
+        keyId: expected.arenaKeyId,
+        nonce: evidence.nonce,
+      })
+    : teeReportData({
+        codeHash: evidence.codeHash as `0x${string}`,
+        evmAddress: evidence.evmAddress as `0x${string}`,
+        solanaPublicKey: evidence.solanaPublicKey,
+        nonce: evidence.nonce,
+      });
   // dstack zero-pads the report data to 64 bytes.
   const expectedData = `${stripHexPrefix(committed)}${"0".repeat(64)}`;
   if (!sameHex(facts.reportData, expectedData))
@@ -310,6 +334,7 @@ export async function verifyTeeEvidence(
       codeHash: evidence.codeHash as `0x${string}`,
       evmAddress: evidence.evmAddress as `0x${string}`,
       ...(evidence.solanaPublicKey ? { solanaPublicKey: evidence.solanaPublicKey } : {}),
+      ...(expected.arenaKeyId ? { purpose: "arena" as const } : {}),
       tcbStatus: facts.status,
       mrTd: facts.mrTd,
       rtMr0: facts.rtMr0,
@@ -352,6 +377,10 @@ export async function attestTeeAgent(options: FetchTeeOptions): Promise<Verified
   }
   const nonce = `0x${randomBytes(32).toString("hex")}`;
   url.searchParams.set("nonce", nonce);
+  if (options.arenaKeyId) {
+    url.searchParams.set("purpose", "arena");
+    url.searchParams.set("key", options.arenaKeyId);
+  }
   const timeoutMs = options.timeoutMs ?? 30_000;
   let status: number;
   let text: string;

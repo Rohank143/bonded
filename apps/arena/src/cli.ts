@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
@@ -24,6 +23,7 @@ import {
   type ArenaAgent,
   EVM_CHAINS,
   type EvmMandateInput,
+  isWellFormedRunnerToken,
   llmConfigFromEnv,
   OpenAICompatibleClient,
   parseSentinelQuestionSet,
@@ -32,7 +32,7 @@ import { loadAttackLibrary } from "./attacks.js";
 import { runControls } from "./controls.js";
 import { loadDotEnv, usesLanguageModel } from "./env.js";
 import { type EpisodeResult, runEpisode, saveEpisode } from "./episode.js";
-import { ArenaGateway, RemoteAgent, StaticRunnerTokens } from "./gateway/index.js";
+import { ArenaGateway, newRunnerToken, RemoteAgent, StaticRunnerTokens } from "./gateway/index.js";
 import { FileHeldOutLedger, freshHeldOut } from "./held-out-fresh.js";
 import { rateAgent } from "./rate.js";
 import { sentinelInfo } from "./sentinel-info.js";
@@ -360,8 +360,11 @@ async function startRemote(
   mode: AgentMode,
 ): Promise<{ gateway: ArenaGateway; agent: RemoteAgent }> {
   const given = values["runner-token"];
-  const token = given ?? randomBytes(24).toString("base64url");
-  if (token.length < 16) throw new Error("--runner-token must be at least 16 characters");
+  const token = given ?? newRunnerToken();
+  if (!isWellFormedRunnerToken(token))
+    throw new Error(
+      "--runner-token must be bonded_rt_ followed by at least 16 base64url characters",
+    );
   const gateway = new ArenaGateway({
     tokens: new StaticRunnerTokens({ [token]: "local" }),
     ...(values["public-url"] ? { publicUrl: values["public-url"] } : {}),

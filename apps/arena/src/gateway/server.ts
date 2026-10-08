@@ -8,6 +8,7 @@ import {
   type EpisodeEndpoints,
   type HelloMessage,
   isAgentToolName,
+  isWellFormedRunnerToken,
   parseRunnerMessage,
   RUNNER_CLOSE,
   RUNNER_CONNECT_PATH,
@@ -57,6 +58,12 @@ export interface GatewayLimits {
   rpcBatch: number;
   /** Most requests one episode may have in flight at once. */
   concurrentPerEpisode: number;
+  /**
+   * HTTP requests one episode may make per second, with a burst: past that a request is refused
+   * before its body is read, so a client spinning on refusals costs the gateway almost nothing.
+   */
+  requestsPerSecond: number;
+  requestBurst: number;
   /** Per call to the sandbox node. */
   upstreamTimeoutMs: number;
   /** Largest single sandbox node answer passed on. */
@@ -65,6 +72,11 @@ export interface GatewayLimits {
   rpcRequestResponseBytes: number;
   /** Gas cap for eth_call, eth_estimateGas, eth_createAccessList and each simulated call. */
   rpcCallGas: bigint;
+  /** The gas such a call gets when it names none. */
+  rpcDefaultCallGas: bigint;
+  /** Gas one episode's calls may use per second, with a burst (each charged the gas it may use). */
+  rpcGasPerSecond: number;
+  rpcGasBurst: number;
   /** Blocks and calls one eth_simulateV1 may simulate. */
   rpcSimulateBlocks: number;
   rpcSimulateCalls: number;
@@ -84,8 +96,15 @@ export interface GatewayLimits {
   /** Messages a runner may send per second, on average, with this many in a burst. */
   runnerMessagesPerSecond: number;
   runnerMessageBurst: number;
-  /** WebSocket upgrades (token checks) one address may attempt per minute. */
+  /**
+   * Failed token checks one client address may cause per minute; past that, its upgrades are
+   * refused before any check. Only well-formed tokens are checked, so only they count.
+   */
   upgradesPerMinute: number;
+  /** Upgrades one token (by hash) may make per minute: a valid runner reconnecting has its own. */
+  upgradesPerToken: number;
+  /** Upgrades with no or a malformed token, per minute, across all addresses (never checked). */
+  malformedUpgradesPerMinute: number;
   /** Token checks for upgrades in flight at once, across all addresses. */
   pendingUpgrades: number;
 }
@@ -95,10 +114,15 @@ export const DEFAULT_GATEWAY_LIMITS: GatewayLimits = {
   rpcBodyBytes: 256 * 1024,
   rpcBatch: 50,
   concurrentPerEpisode: 8,
+  requestsPerSecond: 50,
+  requestBurst: 100,
   upstreamTimeoutMs: 15_000,
   upstreamResponseBytes: 1024 * 1024,
   rpcRequestResponseBytes: 2 * 1024 * 1024,
   rpcCallGas: 10_000_000n,
+  rpcDefaultCallGas: 5_000_000n,
+  rpcGasPerSecond: 100_000_000,
+  rpcGasBurst: 300_000_000,
   rpcSimulateBlocks: 4,
   rpcSimulateCalls: 16,
   rpcCallsPerEpisode: 5_000,
@@ -110,6 +134,8 @@ export const DEFAULT_GATEWAY_LIMITS: GatewayLimits = {
   runnerMessagesPerSecond: 20,
   runnerMessageBurst: 100,
   upgradesPerMinute: 30,
+  upgradesPerToken: 20,
+  malformedUpgradesPerMinute: 600,
   pendingUpgrades: 64,
 };
 
@@ -133,6 +159,12 @@ export interface GatewayOptions {
    */
   publicUrl?: string;
   onRunnerPresence?: (event: RunnerPresenceEvent) => void;
+  /**
+   * Proxies in front of the gateway whose X-Forwarded-For entries are trusted (Railway: 1). The
+   * client address used for rate limits is then the entry that many places from the right; with 0
+   * (the default) it is the socket's peer, which behind a proxy is the proxy itself.
+   */
+  trustProxy?: number;
   /**
    * What chain-mode RPC answers to web3_clientVersion when the sandbox isn't a fork (a fork
    * answers with its live chain's own version). Default: the sandbox node's own answer.
@@ -236,6 +268,8 @@ export class GatewayEpisode {
   private closed = false;
   private readonly ended = new AbortController();
   private budget: RpcBudget | undefined;
+  private gas: RpcBudget | undefined;
+  private requests: RpcBudget | undefined;
   private finish!: (body: DoneRequest) => void;
   private openGate!: () => void;
   private readonly gate: Promise<void>;
@@ -295,6 +329,26 @@ export class GatewayEpisode {
     return this.ended.signal;
   }
 
+  /** @internal The episode's HTTP request rate. */
+  requestBudget(limits: GatewayLimits): RpcBudget {
+    this.requests ??= new RpcBudget(
+      Number.POSITIVE_INFINITY,
+      limits.requestsPerSecond,
+      limits.requestBurst,
+    );
+    return this.requests;
+  }
+
+  /** @internal The episode's gas budget for calls, estimates and simulations. */
+  gasBudget(limits: GatewayLimits): RpcBudget {
+    this.gas ??= new RpcBudget(
+      Number.POSITIVE_INFINITY,
+      limits.rpcGasPerSecond,
+      limits.rpcGasBurst,
+    );
+    return this.gas;
+  }
+
   /** @internal The episode's budget of calls to the sandbox node. */
   rpcBudget(limits: GatewayLimits): RpcBudget {
     this.budget ??= new RpcBudget(
@@ -315,6 +369,11 @@ export class GatewayEpisode {
     this.reads.push({ tool: name, ...(surface ? { surface } : {}), ok: result.ok, at: Date.now() });
     return result;
   }
+}
+
+interface UpgradeWindow {
+  start: number;
+  counts: Map<string, number>;
 }
 
 class HttpError extends Error {
@@ -338,8 +397,9 @@ export class ArenaGateway {
   private server: Server | undefined;
   private base: string | undefined;
   private upgradesInFlight = 0;
-  private upgradeWindowStart = 0;
-  private readonly upgradeAttempts = new Map<string, number>();
+  private readonly malformed: UpgradeWindow = { start: 0, counts: new Map() };
+  private readonly failures: UpgradeWindow = { start: 0, counts: new Map() };
+  private readonly perToken: UpgradeWindow = { start: 0, counts: new Map() };
   private readonly log: (message: string) => void;
 
   constructor(private readonly options: GatewayOptions) {
@@ -463,6 +523,10 @@ export class ArenaGateway {
     if (!episode) throw new HttpError(404, "no such episode, or it is over");
     if (episode.inFlight >= this.limits.concurrentPerEpisode)
       throw new HttpError(429, "too many requests in flight for this episode");
+    if (!episode.requestBudget(this.limits).take()) {
+      req.resume();
+      throw new HttpError(429, "too many requests for this episode; slow down");
+    }
     episode.inFlight++;
     try {
       await episode.ready(this.limits.readyTimeoutMs).catch(() => {
@@ -514,6 +578,7 @@ export class ArenaGateway {
           ...episode.spec.chain,
           toolbox: episode.spec.toolbox,
           budget: episode.rpcBudget(this.limits),
+          gas: episode.gasBudget(this.limits),
           signal: episode.signal,
         },
         {
@@ -522,6 +587,7 @@ export class ArenaGateway {
           responseBytes: this.limits.upstreamResponseBytes,
           requestResponseBytes: this.limits.rpcRequestResponseBytes,
           callGas: this.limits.rpcCallGas,
+          defaultCallGas: this.limits.rpcDefaultCallGas,
           simulateBlocks: this.limits.rpcSimulateBlocks,
           simulateCalls: this.limits.rpcSimulateCalls,
         },
@@ -541,14 +607,25 @@ export class ArenaGateway {
   async handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
     const path = new URL(req.url ?? "/", "http://gateway").pathname;
     if (path !== RUNNER_CONNECT_PATH) return refuse(socket, 404, "Not Found");
-    // Before any token check: a bounded number of attempts per address and in flight overall,
-    // so guessing tokens or flooding upgrades can't turn into unbounded database lookups.
-    if (!this.upgradeAllowed(req.socket.remoteAddress ?? "unknown"))
+    const token = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization ?? "")?.[1];
+    // Anything that isn't shaped like a runner token is refused without a check, against one
+    // global budget, so anonymous traffic can't use up any address's or token's allowance.
+    if (!token || !isWellFormedRunnerToken(token))
+      return refuse(
+        socket,
+        this.windowed(this.malformed, "all", this.limits.malformedUpgradesPerMinute) ? 401 : 429,
+        "Unauthorized",
+      );
+    // Well-formed tokens: an address that has failed too many checks is refused before another,
+    // each token has its own budget (so a valid runner can reconnect whatever others send), and
+    // checks in flight are capped overall.
+    const address = this.clientAddress(req);
+    if (this.counted(this.failures, address) >= this.limits.upgradesPerMinute)
+      return refuse(socket, 429, "Too Many Requests");
+    if (!this.windowed(this.perToken, hashToken(token), this.limits.upgradesPerToken))
       return refuse(socket, 429, "Too Many Requests");
     if (this.upgradesInFlight >= this.limits.pendingUpgrades)
       return refuse(socket, 503, "Service Unavailable");
-    const token = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization ?? "")?.[1];
-    if (!token) return refuse(socket, 401, "Unauthorized");
     let identity: RunnerIdentity | null;
     this.upgradesInFlight++;
     try {
@@ -559,21 +636,44 @@ export class ArenaGateway {
     } finally {
       this.upgradesInFlight--;
     }
+    if (!identity) this.windowed(this.failures, address, Number.POSITIVE_INFINITY);
     if (!identity) return refuse(socket, 401, "Unauthorized");
     const found = identity;
     this.wss.handleUpgrade(req, socket, head, (ws) => this.attach(ws, found, token));
   }
 
-  /** A fixed one-minute window of upgrade attempts per remote address. */
-  private upgradeAllowed(address: string): boolean {
+  /**
+   * Counts one event for `key` in a fixed one-minute window; false once the window holds `limit`
+   * (the event is then not counted).
+   */
+  private windowed(window: UpgradeWindow, key: string, limit: number): boolean {
+    const count = this.counted(window, key);
+    if (count >= limit) return false;
+    window.counts.set(key, count + 1);
+    return true;
+  }
+
+  /** How many events `key` has in the current window (starting a new window when it's over). */
+  private counted(window: UpgradeWindow, key: string): number {
     const now = Date.now();
-    if (now - this.upgradeWindowStart > 60_000) {
-      this.upgradeWindowStart = now;
-      this.upgradeAttempts.clear();
+    if (now - window.start > 60_000) {
+      window.start = now;
+      window.counts.clear();
     }
-    const count = (this.upgradeAttempts.get(address) ?? 0) + 1;
-    this.upgradeAttempts.set(address, count);
-    return count <= this.limits.upgradesPerMinute;
+    return window.counts.get(key) ?? 0;
+  }
+
+  /** The client's address: the socket's peer, or the trusted proxies' X-Forwarded-For entry. */
+  private clientAddress(req: IncomingMessage): string {
+    const hops = this.options.trustProxy ?? 0;
+    const peer = req.socket.remoteAddress ?? "unknown";
+    if (hops <= 0) return peer;
+    const header = req.headers["x-forwarded-for"];
+    const list = (Array.isArray(header) ? header.join(",") : (header ?? ""))
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    return list[list.length - hops] ?? peer;
   }
 
   private attach(ws: WebSocket, identity: RunnerIdentity, token: string): void {

@@ -242,6 +242,28 @@ describe("the runner", () => {
     expect(order.indexOf("tee_evidence")).toBeLessThan(order.indexOf("episode_started"));
   });
 
+  it("asks the TEE for the rating's Arena key when the episode names one", async () => {
+    const seen: string[] = [];
+    const tee = createServer((req, res) => {
+      seen.push(req.url ?? "");
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end("{}");
+    });
+    await new Promise<void>((resolve) => tee.listen(0, "127.0.0.1", resolve));
+    stops.push(() => new Promise((resolve) => tee.close(resolve)));
+    const teeUrl = `http://127.0.0.1:${(tee.address() as { port: number }).port}`;
+    const { gateway } = await setup({
+      command: node("console.log(process.env.BONDED_TEE_KEY_ID)"),
+      teeUrl,
+    });
+    const nonce = `0x${"ab".repeat(32)}` as const;
+    const teeKeyId = `0x${"cd".repeat(32)}` as const;
+    gateway.send(episode({ nonce, teeKeyId }));
+    await eventually(() => gateway.of("episode_done").length === 1);
+    expect(seen).toEqual([`/attestation?nonce=${nonce}&purpose=arena&key=${teeKeyId}`]);
+    expect(gateway.of("episode_done")[0]?.stdoutTail?.trim()).toBe(teeKeyId);
+  });
+
   it("says so when asked for TEE evidence without a TEE", async () => {
     const { gateway } = await setup({ command: node("") });
     gateway.send(episode({ nonce: `0x${"ab".repeat(32)}` }));

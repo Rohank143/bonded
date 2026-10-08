@@ -23,6 +23,17 @@ export const RUNNER_TAIL_BYTES = 4_096;
 export const RUNNER_KILL_GRACE_MS = 5_000;
 /** Largest WebSocket message either side accepts. */
 export const RUNNER_MAX_MESSAGE_BYTES = 1024 * 1024;
+/** Every runner token starts with this, so one is recognisable in a config file or a log. */
+export const RUNNER_TOKEN_PREFIX = "bonded_rt_";
+
+/**
+ * Whether text is shaped like a runner token (the prefix, then base64url). The gateway only spends
+ * a token check, and per-address budget, on well-formed tokens.
+ */
+export function isWellFormedRunnerToken(token: string): boolean {
+  return /^bonded_rt_[A-Za-z0-9_-]{16,128}$/.test(token);
+}
+
 /** Path of the runner's WebSocket on the gateway. */
 export const RUNNER_CONNECT_PATH = "/runner/connect";
 
@@ -126,6 +137,12 @@ export const EpisodeMessage = z.object({
   deadlineMs: z.number().int().positive(),
   /** TEE-bound agents: a fresh challenge the runner gets the TEE to sign (`tee_evidence`). */
   nonce: hex.optional(),
+  /**
+   * TEE-bound agents in chain mode: the rating's Arena key id. The TEE derives a key for it, the
+   * evidence attests that key, and the agent signs episode transactions with it (never its
+   * production key).
+   */
+  teeKeyId: hex.optional(),
 });
 export type EpisodeMessage = z.infer<typeof EpisodeMessage>;
 
@@ -231,6 +248,7 @@ export function episodeEnv(episode: EpisodeMessage): Record<string, string> {
     BONDED_DONE_URL: episode.endpoints.done,
     ...(episode.endpoints.rpc ? { BONDED_RPC_URL: episode.endpoints.rpc } : {}),
     ...(episode.sessionKey ? { BONDED_SESSION_KEY: episode.sessionKey } : {}),
+    ...(episode.teeKeyId ? { BONDED_TEE_KEY_ID: episode.teeKeyId } : {}),
     BONDED_VAULT: episode.vault,
     BONDED_CHAIN_ID: String(episode.chainId),
     BONDED_CONTRACTS: JSON.stringify(episode.contracts),
@@ -269,6 +287,11 @@ export const EpisodeEnv = z
     BONDED_SESSION_KEY: z
       .string()
       .regex(/^0x[0-9a-fA-F]{64}$/, "must be a 0x-prefixed 32-byte private key")
+      .transform((value) => value as `0x${string}`)
+      .optional(),
+    BONDED_TEE_KEY_ID: z
+      .string()
+      .regex(/^0x[0-9a-fA-F]{64}$/, "must be 32 bytes of hex")
       .transform((value) => value as `0x${string}`)
       .optional(),
     BONDED_VAULT: evmAddress,
@@ -328,6 +351,7 @@ export function parseEpisodeEnv(
       vault: e.BONDED_VAULT,
       contracts: e.BONDED_CONTRACTS,
       ...(e.BONDED_SESSION_KEY ? { sessionKey: e.BONDED_SESSION_KEY } : {}),
+      ...(e.BONDED_TEE_KEY_ID ? { teeKeyId: e.BONDED_TEE_KEY_ID } : {}),
       deadlineMs: e.BONDED_DEADLINE_MS,
     },
   };

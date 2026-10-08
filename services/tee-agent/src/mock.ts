@@ -13,6 +13,10 @@ export class MockBackend implements TeeBackend {
     return this.seed("bonded-mock-evm");
   }
 
+  async arenaKey(keyId: string): Promise<Uint8Array> {
+    return this.seed(`bonded-mock-arena:${keyId.replace(/^0x/, "").toLowerCase()}`);
+  }
+
   async solanaSeed(): Promise<Uint8Array> {
     return this.seed("bonded-mock-solana");
   }

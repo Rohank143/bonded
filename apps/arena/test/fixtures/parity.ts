@@ -74,7 +74,7 @@ const readsOf = (result: EpisodeResult) =>
 
 export function defineParitySuite(transport: Transport): void {
   const mode = transport === "chain" ? "chain" : "tools";
-  const token = `parity-runner-token-${transport}`;
+  const token = `bonded_rt_parity-runner-token-${transport}`;
   let sandbox: Sandbox;
   let gateway: ArenaGateway;
   let runner: FakeRunner;

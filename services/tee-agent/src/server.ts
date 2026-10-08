@@ -5,7 +5,8 @@ const NONCE = /^(0x)?[0-9a-fA-F]{64}$/;
 
 /**
  * The agent's public face. Two read-only routes; there is no route that signs, runs or reveals a
- * key. Anyone may call `/attestation`: it holds nothing secret, and every field is checked by
+ * key. Anyone may call `/attestation` (for the production keys, or with `purpose=arena&key=<id>` for
+ * the Arena key a rating asked for): it holds nothing secret, and every field is checked by
  * whoever asks.
  */
 export function createTeeServer(identity: AgentIdentity, backendName: string): Server {
@@ -37,7 +38,13 @@ export function createTeeServer(identity: AgentIdentity, backendName: string): S
         return send(400, {
           error: "nonce must be 32 bytes of hex (the caller's random challenge)",
         });
-      identity.attest(nonce).then(
+      const purpose = url.searchParams.get("purpose");
+      const key = url.searchParams.get("key") ?? "";
+      if (purpose !== null && purpose !== "arena")
+        return send(400, { error: 'purpose is "arena" or absent' });
+      if (purpose === "arena" && !NONCE.test(key))
+        return send(400, { error: "key must be 32 bytes of hex (the rating's Arena key id)" });
+      (purpose === "arena" ? identity.attestArena(nonce, key) : identity.attest(nonce)).then(
         (evidence) => send(200, evidence),
         () => send(503, { error: "attestation unavailable" }),
       );

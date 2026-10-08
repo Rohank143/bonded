@@ -36,6 +36,7 @@ const episode: EpisodeMessage = {
   },
   sessionKey: `0x${"11".repeat(32)}`,
   deadlineMs: 60_000,
+  teeKeyId: `0x${"22".repeat(32)}`,
 };
 
 describe("runner protocol", () => {

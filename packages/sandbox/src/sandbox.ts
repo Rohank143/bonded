@@ -16,6 +16,12 @@ import {
   type WalletClient,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import {
+  DEFAULT_FORK_BUDGET,
+  type ForkBudget,
+  type ForkProxy,
+  startForkProxy,
+} from "./fork-proxy.js";
 
 const run = promisify(execFile);
 
@@ -52,11 +58,10 @@ export interface SandboxOptions {
   /** Explicit deployment for a fork, including ephemeral local chains. */
   forkDeployment?: EvmDeployment;
   /**
-   * A fork reports the live chain's id by default, so a transaction signed for it is also valid
-   * on the live chain. Give another id here when a real key will sign on the fork (a TEE agent's
-   * key in chain mode), so nothing signed there can be replayed live.
+   * How much the fork may ask of the live RPC (fork-proxy.ts): paced and capped for the sandbox's
+   * life. Default DEFAULT_FORK_BUDGET; false sends anvil to the live RPC directly.
    */
-  forkChainId?: number;
+  forkBudget?: ForkBudget | false;
   /** Port for anvil; a free one is picked by default. */
   port?: number;
   /** Progress messages (deploy output, etc.). */
@@ -80,9 +85,13 @@ export class Sandbox {
     readonly publicClient: PublicClient<Transport, Chain>,
     /** The live chain's RPC a fork was made from (may hold an API key: never shown to agents). */
     readonly forkUrl?: string,
-    /** The live chain's id, for a fork (the sandbox's own `chain.id` may differ). */
-    readonly liveChainId?: number,
+    private readonly forkProxy?: ForkProxy,
   ) {}
+
+  /** Requests the fork has sent to the live RPC so far, when its budget is enforced. */
+  get forkFetches(): number | undefined {
+    return this.forkProxy?.forwarded;
+  }
 
   static async start(options: SandboxOptions = {}): Promise<Sandbox> {
     const log = options.log ?? (() => {});
@@ -90,7 +99,7 @@ export class Sandbox {
     const rpcUrl = `http://127.0.0.1:${port}`;
 
     const args = ["--port", String(port), "--silent"];
-    let liveChainId: number | undefined;
+    let proxy: ForkProxy | undefined;
     if (!options.forkUrl) {
       // A chain id unique to this sandbox (its port is unique while it runs), so sandboxes
       // started at the same time write separate deployment files instead of racing on one.
@@ -101,13 +110,16 @@ export class Sandbox {
       // and a node that hasn't seen the tip yet can't serve state for it.
       const upstream = createPublicClient({ transport: http(options.forkUrl) });
       const tip = await upstream.getBlockNumber();
-      liveChainId = await upstream.getChainId();
-      args.push("--fork-url", options.forkUrl, "--fork-block-number", String(tip - 5n));
-      if (options.forkChainId !== undefined) {
-        if (options.forkChainId === liveChainId)
-          throw new Error("forkChainId must differ from the live chain's id");
-        args.push("--chain-id", String(options.forkChainId));
-      }
+      proxy =
+        options.forkBudget === false
+          ? undefined
+          : await startForkProxy(options.forkUrl, options.forkBudget ?? DEFAULT_FORK_BUDGET);
+      args.push(
+        "--fork-url",
+        proxy?.url ?? options.forkUrl,
+        "--fork-block-number",
+        String(tip - 5n),
+      );
     }
     const anvil = spawn("anvil", args, { stdio: ["ignore", "ignore", "pipe"] });
     let stderr = "";
@@ -135,13 +147,9 @@ export class Sandbox {
 
       let deployment: EvmDeployment;
       if (options.forkUrl) {
-        // The deployment is the live chain's, whatever id the fork reports.
-        const live = liveChainId ?? chainId;
-        deployment = options.forkDeployment ?? loadDeployment(live);
-        if (deployment.chainId !== live) throw new Error("fork deployment chain mismatch");
-        log(
-          `Forked chain ${live}${live === chainId ? "" : ` as chain ${chainId}`}; attached to its committed deployment`,
-        );
+        deployment = options.forkDeployment ?? loadDeployment(chainId);
+        if (deployment.chainId !== chainId) throw new Error("fork deployment chain mismatch");
+        log(`Forked chain ${chainId}; attached to its committed deployment`);
       } else {
         log("Deploying the protocol to a fresh local chain");
         deployment = await deployFresh(rpcUrl, chainId, log);
@@ -156,10 +164,11 @@ export class Sandbox {
         Boolean(options.forkUrl),
         publicClient,
         options.forkUrl,
-        liveChainId,
+        proxy,
       );
     } catch (error) {
       anvil.kill();
+      await proxy?.close();
       throw error;
     }
   }
@@ -204,10 +213,12 @@ export class Sandbox {
   }
 
   async stop(): Promise<void> {
-    if (hasExited(this.anvil)) return;
-    const exited = new Promise<void>((resolve) => this.anvil.once("exit", () => resolve()));
-    this.anvil.kill();
-    await exited;
+    if (!hasExited(this.anvil)) {
+      const exited = new Promise<void>((resolve) => this.anvil.once("exit", () => resolve()));
+      this.anvil.kill();
+      await exited;
+    }
+    await this.forkProxy?.close();
   }
 }
 

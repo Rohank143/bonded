@@ -22,7 +22,7 @@ Options:
 | `--gateway <url>`     | The Arena Gateway (or `BONDED_GATEWAY_URL`).                                                                                 |
 | `--token <token>`     | Your runner token (or `BONDED_RUNNER_TOKEN`).                                                                                |
 | `--mode tools\|chain` | `tools` (default): reads and trades are tool calls. `chain`: reads are tool calls, trades are transactions your agent signs. |
-| `--tee-url <url>`     | Your agent's TEE. The runner fetches `GET <url>/attestation?nonce=` for each episode and forwards the answer unchanged.      |
+| `--tee-url <url>` | Your agent's TEE. The runner fetches `GET <url>/attestation?nonce=` for each episode and forwards the answer unchanged. In chain mode it adds `&purpose=arena&key=<id>`: the TEE attests a key it derives for that rating, and your agent signs episode transactions with it (`BONDED_TEE_KEY_ID` names it), never its production key. |
 | `--quiet`             | Don't copy the agent's output to the terminal.                                                                               |
 
 The runner reconnects with backoff if the connection drops, and stops for good (exit code 2) if
@@ -47,6 +47,7 @@ Each episode starts your command once, with:
 | `BONDED_DONE_URL`    | `POST` `{ finalMessage? }` when finished (optional: exiting also ends the episode).                                                            |
 | `BONDED_RPC_URL`     | Chain mode: Ethereum JSON-RPC for the episode's chain.                                                                                         |
 | `BONDED_SESSION_KEY` | Chain mode (without a TEE): a fresh private key the episode's vault accepts as its agent.                                                      |
+| `BONDED_TEE_KEY_ID` | Chain mode with a TEE: the rating's Arena key id. Derive the signing key for it inside the TEE (Bonded's TEE agent: `AgentIdentity.arenaAccount`). |
 | `BONDED_VAULT`       | The episode's Mandate Vault.                                                                                                                   |
 | `BONDED_CHAIN_ID`    | The chain id.                                                                                                                                  |
 | `BONDED_CONTRACTS`   | JSON: `{ exchange, tokens: [{ symbol, address, decimals }] }`.                                                                                 |
@@ -84,6 +85,13 @@ Build the image from the repository root with `docker build -f apps/runner/Docke
 bonded-runner .`, then put your agent on top of it (see the comment at the top of the
 Dockerfile). Pass the token at run time with `-e BONDED_RUNNER_TOKEN=...`.
 
+## What a score means
+
+A rating attests how the code that was rated behaved under test. Without a TEE (a "declared"
+binding) nothing ties that to the code you run in production afterwards: the score describes the
+agent the runner launched during the rating. With TEE binding (`--tee-url`), the score is tied to
+the measured code, and the Arena keeps checking that the same measurement is running.
+
 ## What the agent can and can't tell
 
 The Arena aims to make an attacked episode look like any other, and the sandbox look like the
@@ -98,9 +106,7 @@ chain it copies:
   fork, the live chain's current time), and the market report is dated. The vault's history shows
   its funding as two earlier deposits that add up to what it holds.
 - On a fork of a live testnet, the chain keeps its real chain id, contracts and block times, and
-  `web3_clientVersion` answers with the live chain's own node version. The exception is a
-  TEE-bound agent in chain mode: its real key signs in the episode, so the fork reports a chain
-  id of its own, and nothing signed there is valid on the live chain.
+  `web3_clientVersion` answers with the live chain's own node version.
 - The vault and its registry entry have neutral names, and the MCP server and OpenAPI document
   describe themselves as trading tools.
 

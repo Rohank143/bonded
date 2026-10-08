@@ -1,20 +1,19 @@
 import type { AttackSurface } from "@bonded/shared";
 import type { ArenaToken } from "./vault.js";
 import {
-  ALERTS,
   between,
-  COUNTERPARTY,
-  INBOX,
+  counterpartyMessage,
+  inboxMessage,
+  marketAlert,
   marketReport,
-  NEWS,
+  newsArticle,
   pick,
-  PLANTED_NEWS_TITLES,
-  PLANTED_SUBJECTS,
+  plantedNewsTitle,
+  plantedSubject,
   type Random,
-  sample,
-  SOCIAL,
+  socialPost,
   TOKEN_DESCRIPTIONS,
-  TOKEN_NOTES,
+  tokenNote,
 } from "./world-content.js";
 
 /**
@@ -150,20 +149,13 @@ export class World {
     // Times: a few items are minutes old, so planted content isn't simply the newest thing.
     const dated = () =>
       this.ago(pick(random, [2, 5, 9, 15, 25, 40, 70, 120, 190, 300]) * (0.7 + 0.6 * random()));
-    this.inbox = sample(random, INBOX, between(random, 1, 3)).map((m) => ({ ...m, time: dated() }));
-    this.news = sample(random, NEWS, between(random, 2, 4)).map((n) => ({ ...n, time: dated() }));
-    this.social = sample(random, SOCIAL, between(random, 2, 4)).map((p) => ({
-      ...p,
-      time: dated(),
-    }));
-    this.marketAlerts = sample(random, ALERTS, between(random, 1, 3)).map((a) => ({
-      ...a,
-      time: dated(),
-    }));
-    this.counterpartyMessages = sample(random, COUNTERPARTY, between(random, 0, 2)).map((m) => ({
-      ...m,
-      time: dated(),
-    }));
+    const some = <T>(min: number, max: number, make: (random: Random) => T) =>
+      Array.from({ length: between(random, min, max) }, () => ({ ...make(random), time: dated() }));
+    this.inbox = some(1, 3, inboxMessage);
+    this.news = some(2, 4, newsArticle);
+    this.social = some(2, 4, socialPost);
+    this.marketAlerts = some(1, 3, marketAlert);
+    this.counterpartyMessages = some(0, 2, counterpartyMessage);
     this.marketReport = marketReport(random, this.now.toISOString().slice(0, 10));
     this.tokenList = tokens.map((token) => {
       const details = TOKEN_DETAILS[token.symbol];
@@ -172,7 +164,7 @@ export class World {
         ...token,
         name: details?.name ?? token.symbol,
         description: phrasings
-          ? `${pick(random, phrasings)}${pick(random, TOKEN_NOTES)}`
+          ? `${pick(random, phrasings)}${tokenNote(random)}`
           : (details?.description ?? ""),
       };
     });
@@ -237,7 +229,7 @@ export class World {
       case "dm":
         this.inbox.push({
           from: content.sender ?? "unknown@example.com",
-          subject: pick(this.random, PLANTED_SUBJECTS),
+          subject: plantedSubject(this.random),
           body: content.text,
           time: this.recent(),
         });
@@ -246,7 +238,7 @@ export class World {
       case "news":
         this.news.push({
           source: content.sender ?? "Breaking News",
-          title: pick(this.random, PLANTED_NEWS_TITLES),
+          title: plantedNewsTitle(this.random),
           body: content.text,
           time: this.recent(),
         });
