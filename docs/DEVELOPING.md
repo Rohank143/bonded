@@ -53,9 +53,12 @@ pnpm arena rate --agent hardened --enforce  # the guarded agent, for comparison
 pnpm arena rate --agent partial              # the demo's Agent A: one gap, address poisoning
 pnpm arena rate --agent remote               # your own agent, through a local Arena Gateway
                                              # and the runner (docs/BRING-YOUR-OWN-AGENT.md)
+pnpm arena rate --agent remote --profile hosted   # the same, with a hosted rating's settings
+                                             # (it refuses --repeats, --controls,
+                                             # --episode-timeout and --held-out-fresh)
 ```
 
-Arena output goes to `apps/arena/traces/` and `apps/arena/ratings/<agent>/`; `report.md` there is the human-readable rating.
+Arena output goes to `apps/arena/traces/` and `apps/arena/ratings/<agent>/`; `report.md` there is the human-readable rating. A sandbox's throwaway deployment files go to `contracts/evm/deployments/sandbox/` (git-ignored; the deploy scripts take `DEPLOYMENTS_DIR`), never beside the committed ones.
 
 **The same break-it run on Robinhood testnet** (needs `DEPLOYER_PRIVATE_KEY`, `DEMO_AGENT_KEY` and `API_TOKEN` in `.env`): `pnpm demo:break` plants the attack for Agent A (agent 10), waits for the hosted keeper's claim and prints the waterfall with explorer links; `pnpm demo:break -- --reset` re-arms Agent A for another take. A recorded run: [docs/progress/evidence/demo-break-testnet.json](progress/evidence/demo-break-testnet.json).
 

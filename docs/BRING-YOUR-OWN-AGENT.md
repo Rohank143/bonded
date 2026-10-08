@@ -76,9 +76,9 @@ Each episode is one run of your command. The Arena prints each verdict, then the
 
 Now put your own agent in place of `node apps/runner/examples/mcp-agent.mjs`. For chain mode, add `--mode chain` to both commands and run the SDK example instead: `-- node examples/byo-agent/dist/main.js`. It signs its own trades behind the SDK's guard, and it works in tool mode too. To predict your hosted result, add `--profile hosted` to the rating: it runs exactly what the hosted service runs (3 runs of each attack, 90 s episodes, 6 controls, one held-out variant per class), and `--fork robinhood` rates on a copy of the live chain as the service does. With the local default of one run per attack the uncertainty is wide, so even an agent with no breaches scores low ([AGENTS.md](AGENTS.md#the-agents)).
 
-Both examples are deliberately simple. They read, make the one trade the task names, and don't act on what they read. (The SDK example's brain is naive on purpose about orders in its inbox; its guard catches them in chain mode.)
+Both examples are deliberately simple: they make the one trade the task names and treat everything they read as data.
 - `apps/runner/examples/mcp-agent.mjs` is plain JavaScript with only an MCP client: a template for any language.
-- [`examples/byo-agent`](../examples/byo-agent/README.md) is a TypeScript agent on `@bonded/sdk`. When the runner isn't starting it, it also trades for real against your own vault.
+- [`examples/byo-agent`](../examples/byo-agent/README.md) is a TypeScript agent on `@bonded/sdk`, and the one to copy. It reads every surface its tools offer, as a careful agent should: an attack planted somewhere your agent never reads leaves that class priced as untested, which lowers the score (see [What the report shows](#what-the-report-shows)). When the runner isn't starting it, it trades for real against your own vault.
 
 **The whole hosted flow, locally.** `pnpm demo --byo` runs the usual demo, then does the following on your machine:
 - registers `examples/byo-agent` as an operator's own agent;
