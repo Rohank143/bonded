@@ -5,8 +5,10 @@ import {
   encodeFunctionData,
   getAddress,
   type Hex,
+  hexToBytes,
   isAddressEqual,
   type PublicClient,
+  stringToBytes,
   type TransactionReceipt,
   type TransactionRequest,
 } from "viem";
@@ -14,6 +16,7 @@ import { readExecuteOutcome } from "./breaches.js";
 import { BlockedByMandateError, BondedError, VaultFrozenError } from "./errors.js";
 import { type GuardOptions, GuardedVault } from "./guarded.js";
 import { vaultRevertError } from "./revert.js";
+import type { MessageSigner } from "./sentinel.js";
 import { BondedVault } from "./vault.js";
 
 export interface BondedWalletProviderOptions {
@@ -68,7 +71,14 @@ export class BondedWalletProvider extends EvmWalletProvider {
         // Dry runs simulate from the agent key; sending goes through `wallet`.
         account: { address: getAddress(options.wallet.getAddress()), type: "json-rpc" },
       });
-      this.#guard = new GuardedVault(reader, options.guard === true ? {} : options.guard);
+      const guard = options.guard === true ? {} : options.guard;
+      // Sentinel checks must be signed by the agent key: that is the AgentKit wallet, not the
+      // address-only account the reader simulates from (which can't sign).
+      const sentinel = guard.sentinel && {
+        ...guard.sentinel,
+        account: guard.sentinel.account ?? agentKitSigner(options.wallet),
+      };
+      this.#guard = new GuardedVault(reader, sentinel ? { ...guard, sentinel } : guard);
     }
   }
 
@@ -182,6 +192,23 @@ export class BondedWalletProvider extends EvmWalletProvider {
   async signTransaction(): Promise<Hex> {
     throw bypass("transactions");
   }
+}
+
+/**
+ * Signs EIP-191 messages with an AgentKit wallet. Text is passed as its UTF-8 bytes, so a
+ * message that happens to look like hex is still signed as text.
+ */
+export function agentKitSigner(wallet: EvmWalletProvider): MessageSigner {
+  return {
+    signMessage: ({ message }) =>
+      wallet.signMessage(
+        typeof message === "string"
+          ? stringToBytes(message)
+          : typeof message.raw === "string"
+            ? hexToBytes(message.raw)
+            : message.raw,
+      ),
+  };
 }
 
 function bypass(what: string): BondedError {
