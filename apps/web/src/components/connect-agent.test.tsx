@@ -142,4 +142,51 @@ describe("ConnectAgent", () => {
     expect(screen.queryByRole("button", { name: "Create a runner token" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Rate my agent" })).toBeNull();
   });
+  it("holds rating back after a stop the agent caused, and labels the runner's words", async () => {
+    vi.spyOn(api, "runner").mockResolvedValue(
+      runnerRecord({
+        token: { id: "t", createdAt: "" },
+        runner: connected,
+        attempts: [
+          {
+            runId: "r1",
+            status: "failed",
+            error: "stopped: the agent failed in episode 3 of 160",
+            agentCaused: true,
+            agentReport: "Error: model quota exceeded",
+            createdAt: "2026-10-07T00:00:00Z",
+            score: null,
+          },
+        ],
+      }),
+    );
+    show({
+      record: {
+        ...record,
+        expectedRating: { episodes: 160, budgetSeconds: 6400 },
+        standing: {
+          failuresInRow: 2,
+          superseded: {
+            since: "2026-10-07T00:00:00Z",
+            reason: "stopped: the agent failed in episode 3 of 160",
+          },
+          cooldownUntil: new Date(Date.now() + 2 * 3_600_000).toISOString(),
+        },
+      },
+    });
+    expect(await screen.findByText(/Reported by the runner:/)).toBeTruthy();
+    expect(screen.getByText("Error: model quota exceeded")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toMatch(/Its score is superseded/);
+    expect(screen.getByText(/about 160 episodes. It may take up to 107 minutes/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Rate my agent" })).toHaveProperty("disabled", true);
+  });
+
+  it("asks a new owner to register again before rating", async () => {
+    vi.spyOn(api, "runner").mockResolvedValue(
+      runnerRecord({ token: { id: "t", createdAt: "" }, runner: connected }),
+    );
+    show({ registryOwner: "0x00000000000000000000000000000000000000ff" });
+    expect(await screen.findByText(/Re-register it to rate under your own config/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Rate my agent" })).toHaveProperty("disabled", true);
+  });
 });

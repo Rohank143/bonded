@@ -217,3 +217,13 @@ export function progressLine(
         : `, about ${Math.round(progress.etaSeconds / 60)} min left`;
   return `${progress.done}${of} episodes${eta}`;
 }
+
+/** What a rating of the owner's own agent will be, before it is asked for. */
+export function expectedLine(
+  plan: { episodes: number; budgetSeconds: number } | undefined,
+): string | undefined {
+  if (!plan) return undefined;
+  const minutes = Math.round(plan.budgetSeconds / 60);
+  const budget = minutes >= 120 ? `${Math.round(minutes / 60)} hours` : `${minutes} minutes`;
+  return `A rating is about ${plan.episodes} episodes. It may take up to ${budget}, and stops there.`;
+}

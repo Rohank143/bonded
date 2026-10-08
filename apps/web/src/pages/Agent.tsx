@@ -174,6 +174,11 @@ export function Agent() {
             </Badge>
           ))}
         {report && <Badge>{report.mandateMode} mode</Badge>}
+        {score.data?.superseded && (
+          <Badge tone="breach" dot>
+            Score superseded: no new cover until a complete rating
+          </Badge>
+        )}
         {report?.sentinel && (
           <Link to="/sentinel">
             <Badge tone="brand" dot>

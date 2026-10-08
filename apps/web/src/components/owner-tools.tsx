@@ -40,7 +40,13 @@ export function OwnerTools({
   // Anyone can see an operator-run agent's runner and declared code; only its owner acts on it.
   if (!isOwner)
     return self.data?.registered && self.data.kind === REMOTE_KIND ? (
-      <ConnectAgent agentId={agentId} record={self.data} scoreExpired={scoreExpired} readOnly />
+      <ConnectAgent
+        agentId={agentId}
+        record={self.data}
+        scoreExpired={scoreExpired}
+        readOnly
+        {...(owner ? { registryOwner: owner } : {})}
+      />
     ) : null;
   const remembered = recallAgent(deployment.chainId, agentId);
   const record = self.data;
@@ -77,6 +83,7 @@ export function OwnerTools({
         record={record}
         scoreExpired={scoreExpired}
         onRated={() => void self.refetch()}
+        {...(owner ? { registryOwner: owner } : {})}
       />
     );
   const waiting =

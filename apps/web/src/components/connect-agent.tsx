@@ -6,6 +6,7 @@ import type { BindingLevel, RemoteMode } from "@bonded/shared";
 import { api, type RatingAttempt, type SelfAgentRecord } from "../lib/api";
 import {
   BINDING_LABELS,
+  expectedLine,
   lapseReason,
   progressLine,
   ratingFailure,
@@ -32,6 +33,7 @@ export function ConnectAgent({
   scoreExpired,
   onRated,
   readOnly = false,
+  registryOwner,
 }: {
   agentId: string;
   record: Registered;
@@ -40,6 +42,8 @@ export function ConnectAgent({
   onRated?: () => void;
   /** Status only: the viewer isn't the owner (no token, no rating). */
   readOnly?: boolean;
+  /** The agent's owner in the registry now, to tell when it changed hands. */
+  registryOwner?: string;
 }) {
   const { signMessageAsync } = useSignMessage();
   const [token, setToken] = useState<{ value: string; gatewayUrl: string | null }>();
@@ -59,6 +63,15 @@ export function ConnectAgent({
   const connected = runner.data?.runner?.connected === true;
   const waiting = record.nextRatingAt && new Date(record.nextRatingAt) > new Date();
   const lapse = lapseReason({ expired: scoreExpired, connected });
+  const standing = record.standing;
+  const cooling =
+    standing?.cooldownUntil && Date.parse(standing.cooldownUntil) > Date.now()
+      ? standing.cooldownUntil
+      : undefined;
+  // Registered by an earlier owner: the new owner rates under their own config.
+  const handsChanged = Boolean(
+    registryOwner && record.owner && registryOwner.toLowerCase() !== record.owner.toLowerCase(),
+  );
   const gatewayUrl = token?.gatewayUrl ?? runner.data?.gatewayUrl ?? null;
   const commandInput = token && {
     gatewayUrl: gatewayUrl ?? "<gateway URL>",
@@ -137,6 +150,17 @@ export function ConnectAgent({
           </dd>
         </dl>
 
+        {standing?.superseded && (
+          <p
+            role="alert"
+            className="rounded-xl border border-breach/35 bg-breach-soft px-3.5 py-2.5"
+          >
+            Its score is superseded: the latest rating was stopped by the agent (
+            {standing.superseded.reason}). No new cover until a complete rating posts.
+            {cooling &&
+              ` The next rating can start ${when(Math.floor(Date.parse(cooling) / 1000))}; the wait doubles with each stop in a row, up to 48 hours.`}
+          </p>
+        )}
         {readOnly ? (
           <section className="flex flex-col gap-2">
             <p className="text-muted">
@@ -248,9 +272,25 @@ export function ConnectAgent({
                   {runner.data.lastSkip.reason}.
                 </p>
               )}
+              {expectedLine(record.expectedRating) && (
+                <p className="text-xs text-muted">{expectedLine(record.expectedRating)}</p>
+              )}
+              {handsChanged && (
+                <p className="rounded-xl border border-warn/30 bg-warn-soft px-3.5 py-2.5">
+                  This agent changed hands since it was registered. Re-register it to rate under
+                  your own config.
+                </p>
+              )}
               <div className="flex flex-wrap items-center gap-3">
                 <Button
-                  disabled={Boolean(busy) || !connected || Boolean(waiting) || running}
+                  disabled={
+                    Boolean(busy) ||
+                    !connected ||
+                    Boolean(waiting) ||
+                    running ||
+                    Boolean(cooling) ||
+                    handsChanged
+                  }
                   loading={busy === "rate"}
                   onClick={rate}
                 >
@@ -297,7 +337,7 @@ export function ConnectAgent({
                 </p>
               )}
               {runner.data?.attempts && runner.data.attempts.length > 0 && (
-                <Attempts attempts={runner.data.attempts} />
+                <Attempts agentId={agentId} attempts={runner.data.attempts} />
               )}
             </section>
           </>
@@ -358,23 +398,49 @@ export function BindingLine({ binding }: { binding: BindingLevel }) {
 }
 
 /** The agent's ratings, newest first: the stopped and failed ones too, so none is hidden. */
-function Attempts({ attempts }: { attempts: RatingAttempt[] }) {
+function Attempts({ agentId, attempts }: { agentId: string; attempts: RatingAttempt[] }) {
+  const [older, setOlder] = useState<RatingAttempt[]>([]);
+  const [page, setPage] = useState(1);
+  const [more, setMore] = useState(attempts.length >= 10);
+  const loadOlder = async () => {
+    const next = await api.ratings(agentId, page + 1);
+    setOlder((list) => [...list, ...next.items]);
+    setPage(next.page);
+    setMore(next.page < next.pages);
+  };
   return (
     <div className="flex flex-col gap-1.5">
       <span className="text-xs font-semibold text-soft">Ratings</span>
-      <ul className="flex flex-col gap-1 text-xs">
-        {attempts.map((a) => (
-          <li key={a.runId} className="flex flex-wrap items-baseline gap-2">
-            <span className="text-muted">{when(Math.floor(Date.parse(a.createdAt) / 1000))}</span>
-            <Badge
-              tone={a.status === "done" ? "safe" : a.status === "failed" ? "breach" : "neutral"}
-            >
-              {a.status === "done" && a.score !== null ? `score ${a.score}` : a.status}
-            </Badge>
-            {a.error && <span className="text-muted">{a.error}</span>}
+      <ul className="flex flex-col gap-1.5 text-xs">
+        {[...attempts, ...older].map((a) => (
+          <li key={a.runId} className="flex flex-col gap-0.5">
+            <span className="flex flex-wrap items-baseline gap-2">
+              <span className="text-muted">{when(Math.floor(Date.parse(a.createdAt) / 1000))}</span>
+              <Badge
+                tone={a.status === "done" ? "safe" : a.status === "failed" ? "breach" : "neutral"}
+              >
+                {a.status === "done" && a.score !== null ? `score ${a.score}` : a.status}
+              </Badge>
+              {a.agentCaused && <span className="text-breach">caused by the agent</span>}
+              {a.error && <span className="text-muted">{a.error}</span>}
+            </span>
+            {a.agentReport && (
+              <span className="pl-1 text-muted">
+                Reported by the runner: <span className="font-mono break-all">{a.agentReport}</span>
+              </span>
+            )}
           </li>
         ))}
       </ul>
+      {more && (
+        <button
+          type="button"
+          onClick={() => void loadOlder()}
+          className="self-start text-xs text-accent hover:underline"
+        >
+          Show older ratings
+        </button>
+      )}
     </div>
   );
 }

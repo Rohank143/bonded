@@ -223,6 +223,11 @@ export interface Coverage {
   readSurfaces: string[];
 }
 export interface ScoreRecord extends RatingFacts {
+  /** For an operator-run agent: its latest ratings, how many in all, and its standing. */
+  attempts?: RatingAttempt[];
+  attemptsTotal?: number;
+  superseded?: { since: string; reason: string } | null;
+  cooldownUntil?: string | null;
   runId: string;
   tx_hash: string;
   signed: { attestation: { reportHash: string; issuedAt: number; expiresAt: number } };
@@ -353,6 +358,10 @@ export type SelfAgentRecord =
       protection?: "vault" | "module";
       /** The vault's or module's address, for agents registered from the web app. */
       vault?: string | null;
+      /** What a rating of the owner's own agent will be: its episodes and time budget. */
+      expectedRating?: { episodes: number; budgetSeconds: number };
+      /** After a stop the agent caused: the superseded score and the cooldown. */
+      standing?: Standing;
     };
 
 /** GET /self/agents/:id/runner: the runner token (never the token itself) and the runner. */
@@ -381,9 +390,21 @@ export interface RunnerRecord {
 export interface RatingAttempt {
   runId: string;
   status: "queued" | "running" | "done" | "failed";
+  /** The system's own reason. */
   error: string | null;
+  /** It stopped because of the agent. */
+  agentCaused?: boolean;
+  /** What the agent or its runner said: the operator's words, shown as such. */
+  agentReport?: string | null;
   createdAt: string;
   score: number | null;
+}
+
+/** Where an operator-run agent stands after its ratings. */
+export interface Standing {
+  failuresInRow: number;
+  superseded: { since: string; reason: string } | null;
+  cooldownUntil: string | null;
 }
 
 /** A signed self-serve request with nothing else in it. */
@@ -461,6 +482,9 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     }),
+  /** Every rating of an agent, newest first, a page at a time. */
+  ratings: (agentId: string, page = 1, limit = 10) =>
+    request<Paged<RatingAttempt>>(`/self/agents/${agentId}/ratings${query({ page, limit })}`),
   /** The owner's own agent: its runner token (never the token) and its runner. */
   runner: (agentId: string) => request<RunnerRecord>(`/self/agents/${agentId}/runner`),
   /** A new runner token, shown once; it replaces the agent's current one. */
