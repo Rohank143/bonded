@@ -26,6 +26,7 @@ export {
 export {
   hashToken,
   newCapabilityToken,
+  newRunnerToken,
   type RunnerIdentity,
   type RunnerTokenValidator,
   StaticRunnerTokens,

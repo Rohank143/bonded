@@ -29,8 +29,8 @@ import {
 } from "../src/index.js";
 import { eventually, type FakeRunner, fakeRunner, mcpToolbox } from "./fixtures/gateway-client.js";
 
-const RUNNER_TOKEN = "runner-token-for-tests-0001";
-const OTHER_TOKEN = "runner-token-for-tests-0002";
+const RUNNER_TOKEN = "bonded_rt_runner-token-for-tests-0001";
+const OTHER_TOKEN = "bonded_rt_runner-token-for-tests-0002";
 
 let sandbox: Sandbox;
 let gateway: ArenaGateway;
@@ -656,6 +656,7 @@ describe("the runner socket", () => {
   it("refuses a missing or wrong token and other paths", async () => {
     expect(await connect({})).toBe(401);
     expect(await connect({ authorization: "Bearer not-a-real-token-at-all" })).toBe(401);
+    expect(await connect({ authorization: "Bearer bonded_rt_well-formed-but-unknown" })).toBe(401);
     expect(await connect({ authorization: RUNNER_TOKEN })).toBe(401);
     expect(await connect({ authorization: `Bearer ${RUNNER_TOKEN}` }, "/other")).toBe(404);
     expect(await connect({ authorization: `Bearer ${RUNNER_TOKEN}` })).toBe("open");
@@ -713,7 +714,7 @@ describe("the runner socket", () => {
   });
 
   it("disconnects a revoked runner within one heartbeat, even one that never pings", async () => {
-    const token = "a-token-that-will-be-revoked";
+    const token = "bonded_rt_a-token-that-will-be-revoked";
     tokens.add(token, "agent-3");
     const socket = await rawRunner(token);
     socket.send(hello());
@@ -760,23 +761,59 @@ describe("the runner socket", () => {
     expect(presence.filter((p) => p.type === "heartbeat").length).toBeLessThanOrEqual(1);
   });
 
-  it("limits upgrade attempts per address before checking any token", async () => {
-    const strict = new ArenaGateway({ tokens, limits: { upgradesPerMinute: 3 } });
+  /** One upgrade attempt: the HTTP status it was refused with, or "open". */
+  const attempt = (target: string, token: string, headers: Record<string, string> = {}) =>
+    new Promise<number | "open">((resolve) => {
+      const socket = new WebSocket(`${target.replace(/^http/, "ws")}/runner/connect`, {
+        headers: { authorization: `Bearer ${token}`, ...headers },
+      });
+      socket.once("open", () => {
+        socket.close();
+        resolve("open");
+      });
+      socket.once("unexpected-response", (_, res) => resolve(res.statusCode ?? 0));
+      socket.once("error", () => {});
+    });
+  const guess = (n: number) => `bonded_rt_guessing-a-token-${String(n).padStart(6, "0")}`;
+
+  it("never checks a malformed token, and can't be starved by them", async () => {
+    // The review's finding: behind a proxy every client shares one address, so ~30 anonymous
+    // requests a minute locked every runner out.
+    const strict = new ArenaGateway({ tokens, limits: { malformedUpgradesPerMinute: 3 } });
     const strictUrl = await strict.listen();
     cleanup.push(() => strict.close());
-    const attempt = () =>
-      new Promise<number | "open">((resolve) => {
-        const socket = new WebSocket(`${strictUrl.replace(/^http/, "ws")}/runner/connect`, {
-          headers: { authorization: "Bearer guessing-a-token-000000" },
-        });
-        socket.once("unexpected-response", (_, res) => resolve(res.statusCode ?? 0));
-        socket.once("error", () => {});
-      });
     const checksBefore = tokens.checks;
     const codes = [];
-    for (let i = 0; i < 6; i++) codes.push(await attempt());
+    for (let i = 0; i < 6; i++) codes.push(await attempt(strictUrl, "not-a-runner-token"));
     expect(codes).toEqual([401, 401, 401, 429, 429, 429]);
-    expect(tokens.checks - checksBefore).toBe(3);
+    expect(tokens.checks).toBe(checksBefore);
+    expect(await attempt(strictUrl, RUNNER_TOKEN)).toBe("open");
+  });
+
+  it("refuses an address after too many failed checks, keyed on the trusted proxy's client address", async () => {
+    const proxied = new ArenaGateway({ tokens, trustProxy: 1, limits: { upgradesPerMinute: 2 } });
+    const proxiedUrl = await proxied.listen();
+    cleanup.push(() => proxied.close());
+    const from = (ip: string, prefix = "") => ({ "x-forwarded-for": `${prefix}${ip}` });
+    const checksBefore = tokens.checks;
+    expect(await attempt(proxiedUrl, guess(1), from("203.0.113.7"))).toBe(401);
+    expect(await attempt(proxiedUrl, guess(2), from("203.0.113.7"))).toBe(401);
+    expect(await attempt(proxiedUrl, guess(3), from("203.0.113.7"))).toBe(429);
+    // A forged entry before the proxy's own doesn't change the address counted.
+    expect(await attempt(proxiedUrl, guess(4), from("203.0.113.7", "198.51.100.1, "))).toBe(429);
+    expect(tokens.checks - checksBefore).toBe(2);
+    // Another client behind the same proxy is unaffected.
+    expect(await attempt(proxiedUrl, RUNNER_TOKEN, from("198.51.100.20"))).toBe("open");
+  });
+
+  it("gives each token its own reconnect budget", async () => {
+    const strict = new ArenaGateway({ tokens, limits: { upgradesPerToken: 2 } });
+    const strictUrl = await strict.listen();
+    cleanup.push(() => strict.close());
+    expect(await attempt(strictUrl, RUNNER_TOKEN)).toBe("open");
+    expect(await attempt(strictUrl, RUNNER_TOKEN)).toBe("open");
+    expect(await attempt(strictUrl, RUNNER_TOKEN)).toBe(429);
+    expect(await attempt(strictUrl, OTHER_TOKEN)).toBe("open");
   });
 });
 

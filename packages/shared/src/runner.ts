@@ -23,6 +23,17 @@ export const RUNNER_TAIL_BYTES = 4_096;
 export const RUNNER_KILL_GRACE_MS = 5_000;
 /** Largest WebSocket message either side accepts. */
 export const RUNNER_MAX_MESSAGE_BYTES = 1024 * 1024;
+/** Every runner token starts with this, so one is recognisable in a config file or a log. */
+export const RUNNER_TOKEN_PREFIX = "bonded_rt_";
+
+/**
+ * Whether text is shaped like a runner token (the prefix, then base64url). The gateway only spends
+ * a token check, and per-address budget, on well-formed tokens.
+ */
+export function isWellFormedRunnerToken(token: string): boolean {
+  return /^bonded_rt_[A-Za-z0-9_-]{16,128}$/.test(token);
+}
+
 /** Path of the runner's WebSocket on the gateway. */
 export const RUNNER_CONNECT_PATH = "/runner/connect";
 

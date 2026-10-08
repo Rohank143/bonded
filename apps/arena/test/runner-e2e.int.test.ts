@@ -39,7 +39,10 @@ const ARENA_MODULES = fileURLToPath(new URL("../node_modules/", import.meta.url)
 const BYO_AGENT = fileURLToPath(
   new URL("../../../examples/byo-agent/dist/main.js", import.meta.url),
 );
-const TOKENS = { tools: "e2e-runner-token-tools-0001", chain: "e2e-runner-token-chain-0001" };
+const TOKENS = {
+  tools: "bonded_rt_e2e-runner-token-tools-0001",
+  chain: "bonded_rt_e2e-runner-token-chain-0001",
+};
 
 let sandbox: Sandbox;
 let gateway: ArenaGateway;

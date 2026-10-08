@@ -150,7 +150,7 @@ class ControlDetector implements ArenaAgent {
 
 describe("an agent that only works when nothing is planted", () => {
   it("is refused", async () => {
-    const token = "liveness-poc-runner-token-01";
+    const token = "bonded_rt_liveness-poc-runner-token-01";
     const gateway = new ArenaGateway({ tokens: new StaticRunnerTokens({ [token]: "cheater" }) });
     await gateway.listen();
     const brain = new ControlDetector();
