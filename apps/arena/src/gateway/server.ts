@@ -22,7 +22,7 @@ import {
 import { type WebSocket, WebSocketServer } from "ws";
 import type { ArenaToolbox } from "../toolbox.js";
 import { serveMcp } from "./mcp.js";
-import { handleRpc, type RpcBinding } from "./rpc.js";
+import { handleRpc, type RpcBinding, RpcBudget } from "./rpc.js";
 import {
   hashToken,
   newCapabilityToken,
@@ -59,8 +59,19 @@ export interface GatewayLimits {
   concurrentPerEpisode: number;
   /** Per call to the sandbox node. */
   upstreamTimeoutMs: number;
-  /** Largest sandbox node response passed on. */
+  /** Largest single sandbox node answer passed on. */
   upstreamResponseBytes: number;
+  /** Largest total of answers for one RPC request, a batch included. */
+  rpcRequestResponseBytes: number;
+  /** Gas cap for eth_call, eth_estimateGas, eth_createAccessList and each simulated call. */
+  rpcCallGas: bigint;
+  /** Blocks and calls one eth_simulateV1 may simulate. */
+  rpcSimulateBlocks: number;
+  rpcSimulateCalls: number;
+  /** Calls to the sandbox node one episode may make in all, and per second (with a burst). */
+  rpcCallsPerEpisode: number;
+  rpcCallsPerSecond: number;
+  rpcCallBurst: number;
   /** How long a request waits for a gated episode to open (a TEE-bound agent's evidence). */
   readyTimeoutMs: number;
   /** How long a new runner has to say hello. */
@@ -85,7 +96,14 @@ export const DEFAULT_GATEWAY_LIMITS: GatewayLimits = {
   rpcBatch: 50,
   concurrentPerEpisode: 8,
   upstreamTimeoutMs: 15_000,
-  upstreamResponseBytes: 8 * 1024 * 1024,
+  upstreamResponseBytes: 1024 * 1024,
+  rpcRequestResponseBytes: 2 * 1024 * 1024,
+  rpcCallGas: 10_000_000n,
+  rpcSimulateBlocks: 4,
+  rpcSimulateCalls: 16,
+  rpcCallsPerEpisode: 5_000,
+  rpcCallsPerSecond: 50,
+  rpcCallBurst: 200,
   readyTimeoutMs: 30_000,
   helloTimeoutMs: 10_000,
   heartbeatMs: RUNNER_HEARTBEAT_MS,
@@ -216,6 +234,8 @@ export class GatewayEpisode {
   finished: DoneRequest | undefined;
   inFlight = 0;
   private closed = false;
+  private readonly ended = new AbortController();
+  private budget: RpcBudget | undefined;
   private finish!: (body: DoneRequest) => void;
   private openGate!: () => void;
   private readonly gate: Promise<void>;
@@ -262,11 +282,27 @@ export class GatewayEpisode {
     this.finish(body);
   }
 
-  /** Ends the episode at the gateway: the token stops working at once. */
+  /** Ends the episode at the gateway: the token stops working at once, and RPC forwarding stops. */
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    this.ended.abort();
     this.detach();
+  }
+
+  /** Aborted when the episode ends. */
+  get signal(): AbortSignal {
+    return this.ended.signal;
+  }
+
+  /** @internal The episode's budget of calls to the sandbox node. */
+  rpcBudget(limits: GatewayLimits): RpcBudget {
+    this.budget ??= new RpcBudget(
+      limits.rpcCallsPerEpisode,
+      limits.rpcCallsPerSecond,
+      limits.rpcCallBurst,
+    );
+    return this.budget;
   }
 
   /** A tool call from MCP or HTTP: logged with its surface, then run by the toolbox. */
@@ -474,11 +510,20 @@ export class ArenaGateway {
         });
       const response = await handleRpc(
         body,
-        { ...episode.spec.chain, toolbox: episode.spec.toolbox },
+        {
+          ...episode.spec.chain,
+          toolbox: episode.spec.toolbox,
+          budget: episode.rpcBudget(this.limits),
+          signal: episode.signal,
+        },
         {
           batch: this.limits.rpcBatch,
           timeoutMs: this.limits.upstreamTimeoutMs,
           responseBytes: this.limits.upstreamResponseBytes,
+          requestResponseBytes: this.limits.rpcRequestResponseBytes,
+          callGas: this.limits.rpcCallGas,
+          simulateBlocks: this.limits.rpcSimulateBlocks,
+          simulateCalls: this.limits.rpcSimulateCalls,
         },
       );
       return reply(res, 200, response);

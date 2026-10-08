@@ -21,6 +21,7 @@ export {
   liveClientVersion,
   RPC_ALLOWED_METHODS,
   type RpcBinding,
+  RpcBudget,
 } from "./rpc.js";
 export {
   hashToken,

@@ -81,6 +81,42 @@ export interface RpcBinding {
    */
   clientVersion?: string;
   toolbox: ArenaToolbox;
+  /** The episode's budget of calls to the sandbox node (see `RpcBudget`). */
+  budget?: RpcBudget;
+  /** Aborted when the episode ends: nothing more is forwarded, and calls in flight stop. */
+  signal?: AbortSignal;
+}
+
+/**
+ * How much of the sandbox node one episode may use: a total number of upstream calls, and a rate
+ * (a token bucket), so an agent can't turn the RPC endpoint into unbounded work for the node.
+ */
+export class RpcBudget {
+  private used = 0;
+  private allowance: number;
+  private refilled = Date.now();
+
+  constructor(
+    private readonly total: number,
+    private readonly perSecond: number,
+    private readonly burst: number,
+  ) {
+    this.allowance = burst;
+  }
+
+  /** Takes one call from the budget; false when the total or the rate is spent. */
+  take(): boolean {
+    const now = Date.now();
+    this.allowance = Math.min(
+      this.burst,
+      this.allowance + ((now - this.refilled) / 1000) * this.perSecond,
+    );
+    this.refilled = now;
+    if (this.used >= this.total || this.allowance < 1) return false;
+    this.used++;
+    this.allowance--;
+    return true;
+  }
 }
 
 export interface RpcLimits {
@@ -88,8 +124,20 @@ export interface RpcLimits {
   batch: number;
   /** Per upstream call. */
   timeoutMs: number;
-  /** Largest upstream response passed on (a wide eth_getLogs on a fork can be huge). */
+  /** Largest single upstream answer passed on (a wide eth_getLogs on a fork can be huge). */
   responseBytes: number;
+  /** Largest total of answers for one HTTP request, a batch included. */
+  requestResponseBytes: number;
+  /** Gas any eth_call, eth_estimateGas, eth_createAccessList or simulated call may use. */
+  callGas: bigint;
+  /** Blocks and calls one eth_simulateV1 may simulate. */
+  simulateBlocks: number;
+  simulateCalls: number;
+}
+
+/** What is left of one HTTP request's response budget. */
+interface RequestBudget {
+  bytes: number;
 }
 
 type Id = string | number | null;
@@ -117,36 +165,103 @@ export async function handleRpc(
   binding: RpcBinding,
   limits: RpcLimits,
 ): Promise<RpcResponse | RpcResponse[]> {
+  const spent: RequestBudget = { bytes: limits.requestResponseBytes };
   if (Array.isArray(body)) {
     if (body.length === 0) return failure(null, -32600, "empty batch");
     if (body.length > limits.batch)
       return failure(null, -32600, `a batch can hold at most ${limits.batch} requests`);
     const out: RpcResponse[] = [];
     // In order, one at a time: a batch that sends a transaction then reads its receipt works.
-    for (const item of body) out.push(await handleOne(item, binding, limits));
+    for (const item of body) out.push(await handleOne(item, binding, limits, spent));
     return out;
   }
-  return handleOne(body, binding, limits);
+  return handleOne(body, binding, limits, spent);
 }
 
 async function handleOne(
   raw: unknown,
   binding: RpcBinding,
   limits: RpcLimits,
+  spent: RequestBudget,
 ): Promise<RpcResponse> {
   const request = parseRequest(raw);
   if (!("method" in request)) return request;
-  const { id, method, params } = request;
+  const { id, method } = request;
   if (!RPC_ALLOWED_METHODS.has(method))
     return failure(id, -32601, `method ${method} is not available in the Arena`);
-  if (method === "eth_sendRawTransaction") return sendRaw(request, binding, limits);
+  if (binding.signal?.aborted) return failure(id, -32000, "the episode is over");
   if (method === "web3_clientVersion" && binding.clientVersion)
     return { jsonrpc: "2.0", id, result: binding.clientVersion };
+  if (spent.bytes <= 0)
+    return failure(id, -32005, "this request's response budget is spent; send fewer calls");
+  if (binding.budget && !binding.budget.take())
+    return failure(id, -32005, "too many RPC calls for this episode; slow down");
+  const params = boundParams(method, request.params, limits);
+  if ("error" in params) return failure(id, -32602, params.error);
+  if (method === "eth_sendRawTransaction")
+    return sendRaw({ ...request, params: params.params }, binding, limits, spent);
   try {
-    return { ...(await forward(binding.upstream, method, params, limits)), id };
+    return { ...(await forward(binding, method, params.params, limits, spent)), id };
   } catch (error) {
     return failure(id, -32603, error instanceof Error ? error.message : String(error));
   }
+}
+
+const CALL_METHODS = new Set(["eth_call", "eth_estimateGas", "eth_createAccessList"]);
+
+/**
+ * Bounds the work one call can ask of the node: calls and estimates get at most `callGas` (memory
+ * a call can fill, and so the size of its answer, grows with its gas), and a simulation at most a
+ * few blocks and calls, each with that gas.
+ */
+function boundParams(
+  method: string,
+  params: unknown[],
+  limits: RpcLimits,
+): { params: unknown[] } | { error: string } {
+  const capGas = (call: unknown) => {
+    if (!call || typeof call !== "object" || Array.isArray(call)) return call;
+    const c = call as Record<string, unknown>;
+    let gas = limits.callGas;
+    try {
+      if (typeof c.gas === "string" || typeof c.gas === "number") {
+        const asked = BigInt(c.gas);
+        if (asked < gas) gas = asked;
+      }
+    } catch {
+      // Unparseable gas: the cap stands.
+    }
+    return { ...c, gas: `0x${gas.toString(16)}` };
+  };
+  if (CALL_METHODS.has(method)) return { params: [capGas(params[0]), ...params.slice(1)] };
+  if (method !== "eth_simulateV1") return { params };
+  const payload = params[0] as { blockStateCalls?: unknown } | undefined;
+  const blocks = payload?.blockStateCalls;
+  if (!Array.isArray(blocks)) return { error: "eth_simulateV1 needs blockStateCalls" };
+  if (blocks.length > limits.simulateBlocks)
+    return { error: `simulate at most ${limits.simulateBlocks} blocks` };
+  let calls = 0;
+  const bounded = blocks.map((block) => {
+    const b = (block ?? {}) as Record<string, unknown>;
+    const list = Array.isArray(b.calls) ? b.calls : [];
+    calls += list.length;
+    const overrides = (b.blockOverrides ?? undefined) as Record<string, unknown> | undefined;
+    return {
+      ...b,
+      calls: list.map(capGas),
+      ...(overrides
+        ? {
+            blockOverrides: {
+              ...overrides,
+              gasLimit: `0x${(limits.callGas * BigInt(Math.max(1, list.length))).toString(16)}`,
+            },
+          }
+        : {}),
+    };
+  });
+  if (calls > limits.simulateCalls)
+    return { error: `simulate at most ${limits.simulateCalls} calls` };
+  return { params: [{ ...(payload as object), blockStateCalls: bounded }, ...params.slice(1)] };
 }
 
 function parseRequest(raw: unknown): RpcRequest | RpcResponse {
@@ -170,6 +285,7 @@ async function sendRaw(
   request: RpcRequest,
   binding: RpcBinding,
   limits: RpcLimits,
+  spent: RequestBudget,
 ): Promise<RpcResponse> {
   const { id, params } = request;
   const raw = params[0];
@@ -180,7 +296,7 @@ async function sendRaw(
 
   let response: RpcResponse | undefined;
   const result = await binding.toolbox.recordTransaction(checked.call, async () => {
-    response = { ...(await forward(binding.upstream, request.method, params, limits)), id };
+    response = { ...(await forward(binding, request.method, params, limits, spent)), id };
     if ("error" in response) throw new Error(response.error.message);
     return response.result as `0x${string}`;
   });
@@ -222,20 +338,27 @@ export async function checkTransaction(
   }
 }
 
-/** One call to the sandbox node, with a time and size limit. */
+/**
+ * One call to the sandbox node, with a time limit and a size limit (the smaller of the per-answer
+ * cap and what is left of the request's budget, which the answer then uses up). It stops when the
+ * episode ends.
+ */
 async function forward(
-  upstream: string,
+  binding: Pick<RpcBinding, "upstream" | "signal">,
   method: string,
   params: unknown[],
   limits: RpcLimits,
+  spent: RequestBudget,
 ): Promise<{ jsonrpc: "2.0"; result: unknown } | { jsonrpc: "2.0"; error: RpcError }> {
-  const response = await fetch(upstream, {
+  const timeout = AbortSignal.timeout(limits.timeoutMs);
+  const response = await fetch(binding.upstream, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-    signal: AbortSignal.timeout(limits.timeoutMs),
+    signal: binding.signal ? AbortSignal.any([timeout, binding.signal]) : timeout,
   });
-  const text = await readCapped(response, limits.responseBytes);
+  const text = await readCapped(response, Math.min(limits.responseBytes, spent.bytes));
+  spent.bytes -= text === undefined ? spent.bytes : Buffer.byteLength(text);
   if (text === undefined)
     return {
       jsonrpc: "2.0",

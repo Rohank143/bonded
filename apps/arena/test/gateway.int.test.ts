@@ -430,6 +430,97 @@ describe("chain mode", () => {
     ).toBe(false);
   });
 
+  it("can't be made to amplify: answers, requests, gas and simulations are capped", async () => {
+    // The review's proof of concept: a batch of calls to code (set by a state override) that
+    // returns megabytes of memory made an 11 KB request return 387 MB.
+    const roomy = new ArenaGateway({ tokens, limits: { rpcBatch: 50 } });
+    await roomy.listen();
+    cleanup.push(() => roomy.close());
+    const { vault, toolbox, account } = await chainEpisode();
+    const episode = roomy.openEpisode({
+      episodeId: "amplify",
+      toolbox,
+      mode: "chain",
+      chain: {
+        upstream: sandbox.rpcUrl,
+        chainId: sandbox.chain.id,
+        vault: vault.address,
+        agent: account.address,
+      },
+    });
+    const target = "0x00000000000000000000000000000000000b0b00";
+    const returning = (bytes: number) => `0x62${bytes.toString(16).padStart(6, "0")}6000f3`; // PUSH3 bytes PUSH1 0 RETURN
+    const call = (id: number, bytes: number, gas?: string) => ({
+      jsonrpc: "2.0",
+      id,
+      method: "eth_call",
+      params: [
+        { to: target, data: "0x", ...(gas ? { gas } : {}) },
+        "latest",
+        { [target]: { code: returning(bytes) } },
+      ],
+    });
+    const fetchBytes = async (body: unknown) => {
+      const response = await fetch(episode.endpoints.rpc!, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const text = await response.text();
+      return { bytes: text.length, json: JSON.parse(text) as { error?: { code: number } }[] };
+    };
+    // 3.9 MB of memory needs ~29M gas: asking for 30M gets 10M, and the call runs out.
+    const big = await fetchBytes(
+      Array.from({ length: 50 }, (_, i) => call(i, 0x3b0000, "0x1c9c380")),
+    );
+    expect(big.bytes).toBeLessThan(64 * 1024);
+    // 2 MB fits in 10M gas, but no single answer may pass 1 MiB, and once one is refused for its
+    // size the rest of the request's budget is gone too.
+    const wide = await fetchBytes(Array.from({ length: 50 }, (_, i) => call(i, 0x200000)));
+    expect(wide.bytes).toBeLessThan(64 * 1024);
+    expect(wide.json.every((r) => r.error?.code === -32005)).toBe(true);
+    // Answers under the cap add up to at most the request's budget (2 MiB).
+    const many = await fetchBytes(Array.from({ length: 50 }, (_, i) => call(i, 0x80000)));
+    expect(many.bytes).toBeLessThan(2.2 * 1024 * 1024);
+    expect(many.json.filter((r) => r.error?.code === -32005).length).toBeGreaterThan(40);
+    // Simulations are bounded too: a few blocks and calls.
+    const sim = (await (
+      await post(episode.endpoints.rpc!, {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "eth_simulateV1",
+        params: [{ blockStateCalls: Array.from({ length: 5 }, () => ({ calls: [] })) }, "latest"],
+      })
+    ).json()) as { error?: { message: string } };
+    expect(sim.error?.message).toMatch(/at most 4 blocks/);
+  });
+
+  it("budgets the calls one episode may make to the node", async () => {
+    const strict = new ArenaGateway({
+      tokens,
+      limits: { rpcCallsPerEpisode: 8, rpcCallsPerSecond: 1, rpcCallBurst: 5 },
+    });
+    await strict.listen();
+    cleanup.push(() => strict.close());
+    const { vault, toolbox, account } = await chainEpisode();
+    const episode = strict.openEpisode({
+      episodeId: "budget",
+      toolbox,
+      mode: "chain",
+      chain: {
+        upstream: sandbox.rpcUrl,
+        chainId: sandbox.chain.id,
+        vault: vault.address,
+        agent: account.address,
+      },
+    });
+    const codes: (number | "ok")[] = [];
+    for (let i = 0; i < 7; i++)
+      codes.push((await rpc(episode, "eth_blockNumber")).error?.code ?? "ok");
+    // A burst of five, then the rate holds it back.
+    expect(codes).toEqual(["ok", "ok", "ok", "ok", "ok", -32005, -32005]);
+  });
+
   it("checks every request in a batch, in order, and caps the batch size", async () => {
     const { episode } = await chainEpisode();
     const batch = (await (
