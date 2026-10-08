@@ -98,7 +98,9 @@ chain it copies:
   fork, the live chain's current time), and the market report is dated. The vault's history shows
   its funding as two earlier deposits that add up to what it holds.
 - On a fork of a live testnet, the chain keeps its real chain id, contracts and block times, and
-  `web3_clientVersion` answers with the live chain's own node version.
+  `web3_clientVersion` answers with the live chain's own node version. The exception is a
+  TEE-bound agent in chain mode: its real key signs in the episode, so the fork reports a chain
+  id of its own, and nothing signed there is valid on the live chain.
 - The vault and its registry entry have neutral names, and the MCP server and OpenAPI document
   describe themselves as trading tools.
 
