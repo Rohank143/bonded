@@ -35,17 +35,26 @@ const OTHER_TOKEN = "runner-token-for-tests-0002";
 let sandbox: Sandbox;
 let gateway: ArenaGateway;
 let url: string;
-let tokens: StaticRunnerTokens;
+/** Counts token checks, to show they stay bounded whatever a runner sends. */
+class CountingTokens extends StaticRunnerTokens {
+  checks = 0;
+  override async validate(token: string) {
+    this.checks++;
+    return super.validate(token);
+  }
+}
+let tokens: CountingTokens;
 const presence: RunnerPresenceEvent[] = [];
 const cleanup: (() => Promise<void> | void)[] = [];
 
 beforeAll(async () => {
   sandbox = await Sandbox.start();
-  tokens = new StaticRunnerTokens({ [RUNNER_TOKEN]: "agent-1", [OTHER_TOKEN]: "agent-2" });
+  tokens = new CountingTokens({ [RUNNER_TOKEN]: "agent-1", [OTHER_TOKEN]: "agent-2" });
   gateway = new ArenaGateway({
     tokens,
     onRunnerPresence: (e) => presence.push(e),
-    limits: { bodyBytes: 4096, rpcBatch: 5, readyTimeoutMs: 300 },
+    // A one-second heartbeat, so the socket's timers can be tested quickly.
+    limits: { bodyBytes: 4096, rpcBatch: 5, readyTimeoutMs: 300, heartbeatMs: 1_000 },
   });
   url = await gateway.listen();
 });
@@ -599,7 +608,7 @@ describe("the runner socket", () => {
     expect(presence.at(-1)).toMatchObject({ type: "disconnected", key: "agent-1" });
   });
 
-  it("disconnects a runner on its next heartbeat once its token is revoked", async () => {
+  it("disconnects a revoked runner within one heartbeat, even one that never pings", async () => {
     const token = "a-token-that-will-be-revoked";
     tokens.add(token, "agent-3");
     const socket = await rawRunner(token);
@@ -607,8 +616,63 @@ describe("the runner socket", () => {
     await eventually(() => gateway.runner("agent-3") !== undefined);
     tokens.revoke(token);
     const code = closeCode(socket);
-    socket.send(JSON.stringify({ type: "ping" }));
+    const revokedAt = Date.now();
+    // Other messages don't count as liveness, and don't delay the check.
+    const chatter = setInterval(
+      () => socket.send(JSON.stringify({ type: "episode_started", episodeId: "nothing" })),
+      100,
+    );
     expect(await code).toBe(RUNNER_CLOSE.revoked);
+    clearInterval(chatter);
+    expect(Date.now() - revokedAt).toBeLessThan(2_500);
+    expect(gateway.runner("agent-3")).toBeUndefined();
+  });
+
+  it("drops a runner that sends anything but pings, after three heartbeats", async () => {
+    const socket = await rawRunner();
+    socket.send(hello());
+    await eventually(() => gateway.runner("agent-1") !== undefined);
+    const chatter = setInterval(
+      () => socket.send(JSON.stringify({ type: "episode_started", episodeId: "nothing" })),
+      200,
+    );
+    expect(await closeCode(socket)).toBe(RUNNER_CLOSE.heartbeat);
+    clearInterval(chatter);
+  });
+
+  it("closes a socket that floods, with token checks and presence reports bounded", async () => {
+    presence.length = 0;
+    const socket = await rawRunner();
+    socket.send(hello());
+    await eventually(() => gateway.runner("agent-1") !== undefined);
+    const checksBefore = tokens.checks;
+    const code = closeCode(socket);
+    for (let i = 0; i < 20_000 && socket.readyState === WebSocket.OPEN; i++)
+      socket.send('{"type":"ping"}');
+    expect(await code).toBe(RUNNER_CLOSE.rateLimited);
+    await new Promise((resolve) => setTimeout(resolve, 1_200));
+    // At most one check per heartbeat interval, not one per ping.
+    expect(tokens.checks - checksBefore).toBeLessThanOrEqual(2);
+    expect(presence.filter((p) => p.type === "heartbeat").length).toBeLessThanOrEqual(1);
+  });
+
+  it("limits upgrade attempts per address before checking any token", async () => {
+    const strict = new ArenaGateway({ tokens, limits: { upgradesPerMinute: 3 } });
+    const strictUrl = await strict.listen();
+    cleanup.push(() => strict.close());
+    const attempt = () =>
+      new Promise<number | "open">((resolve) => {
+        const socket = new WebSocket(`${strictUrl.replace(/^http/, "ws")}/runner/connect`, {
+          headers: { authorization: "Bearer guessing-a-token-000000" },
+        });
+        socket.once("unexpected-response", (_, res) => resolve(res.statusCode ?? 0));
+        socket.once("error", () => {});
+      });
+    const checksBefore = tokens.checks;
+    const codes = [];
+    for (let i = 0; i < 6; i++) codes.push(await attempt());
+    expect(codes).toEqual([401, 401, 401, 429, 429, 429]);
+    expect(tokens.checks - checksBefore).toBe(3);
   });
 });
 
@@ -616,7 +680,7 @@ describe("RemoteAgent", () => {
   const spec = () => loadAttackLibrary().find((s) => s.id === "A6-operator-impersonation-001")!;
 
   async function runner(options: Parameters<typeof fakeRunner>[0]): Promise<FakeRunner> {
-    const r = await fakeRunner(options);
+    const r = await fakeRunner({ pingMs: 250, ...options });
     cleanup.push(() => r.close());
     await eventually(
       () =>

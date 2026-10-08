@@ -95,6 +95,8 @@ export interface FakeRunnerOptions {
   onEpisode?: (episode: EpisodeMessage, runner: FakeRunner) => Promise<void> | void;
   agent?: ArenaAgent;
   transport?: Transport;
+  /** How often it pings (default 5 s). */
+  pingMs?: number;
 }
 
 /** A runner that runs each episode's brain in-process, over the gateway's real endpoints. */
@@ -126,7 +128,10 @@ export async function fakeRunner(options: FakeRunnerOptions): Promise<FakeRunner
     protocol: RUNNER_PROTOCOL_VERSION,
     mode: options.mode,
   });
-  const ping = setInterval(() => runner.send({ type: "ping", at: Date.now() }), 5_000);
+  const ping = setInterval(
+    () => runner.send({ type: "ping", at: Date.now() }),
+    options.pingMs ?? 5_000,
+  );
   socket.on("close", () => clearInterval(ping));
   const run =
     options.onEpisode ??

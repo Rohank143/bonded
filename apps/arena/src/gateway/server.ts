@@ -65,6 +65,18 @@ export interface GatewayLimits {
   readyTimeoutMs: number;
   /** How long a new runner has to say hello. */
   helloTimeoutMs: number;
+  /**
+   * The runner heartbeat: a runner silent (no ping) for three of these is dropped, and every
+   * connected runner's token is checked again once per interval, whatever it sends.
+   */
+  heartbeatMs: number;
+  /** Messages a runner may send per second, on average, with this many in a burst. */
+  runnerMessagesPerSecond: number;
+  runnerMessageBurst: number;
+  /** WebSocket upgrades (token checks) one address may attempt per minute. */
+  upgradesPerMinute: number;
+  /** Token checks for upgrades in flight at once, across all addresses. */
+  pendingUpgrades: number;
 }
 
 export const DEFAULT_GATEWAY_LIMITS: GatewayLimits = {
@@ -76,6 +88,11 @@ export const DEFAULT_GATEWAY_LIMITS: GatewayLimits = {
   upstreamResponseBytes: 8 * 1024 * 1024,
   readyTimeoutMs: 30_000,
   helloTimeoutMs: 10_000,
+  heartbeatMs: RUNNER_HEARTBEAT_MS,
+  runnerMessagesPerSecond: 20,
+  runnerMessageBurst: 100,
+  upgradesPerMinute: 30,
+  pendingUpgrades: 64,
 };
 
 /** A runner came, is still there, or left. The rating service records these as runner presence. */
@@ -284,6 +301,9 @@ export class ArenaGateway {
   });
   private server: Server | undefined;
   private base: string | undefined;
+  private upgradesInFlight = 0;
+  private upgradeWindowStart = 0;
+  private readonly upgradeAttempts = new Map<string, number>();
   private readonly log: (message: string) => void;
 
   constructor(private readonly options: GatewayOptions) {
@@ -476,18 +496,39 @@ export class ArenaGateway {
   async handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
     const path = new URL(req.url ?? "/", "http://gateway").pathname;
     if (path !== RUNNER_CONNECT_PATH) return refuse(socket, 404, "Not Found");
+    // Before any token check: a bounded number of attempts per address and in flight overall,
+    // so guessing tokens or flooding upgrades can't turn into unbounded database lookups.
+    if (!this.upgradeAllowed(req.socket.remoteAddress ?? "unknown"))
+      return refuse(socket, 429, "Too Many Requests");
+    if (this.upgradesInFlight >= this.limits.pendingUpgrades)
+      return refuse(socket, 503, "Service Unavailable");
     const token = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization ?? "")?.[1];
     if (!token) return refuse(socket, 401, "Unauthorized");
     let identity: RunnerIdentity | null;
+    this.upgradesInFlight++;
     try {
       identity = await this.options.tokens.validate(token);
     } catch (error) {
       this.log(`runner token check failed: ${(error as Error)?.message ?? error}`);
       return refuse(socket, 503, "Service Unavailable");
+    } finally {
+      this.upgradesInFlight--;
     }
     if (!identity) return refuse(socket, 401, "Unauthorized");
     const found = identity;
     this.wss.handleUpgrade(req, socket, head, (ws) => this.attach(ws, found, token));
+  }
+
+  /** A fixed one-minute window of upgrade attempts per remote address. */
+  private upgradeAllowed(address: string): boolean {
+    const now = Date.now();
+    if (now - this.upgradeWindowStart > 60_000) {
+      this.upgradeWindowStart = now;
+      this.upgradeAttempts.clear();
+    }
+    const count = (this.upgradeAttempts.get(address) ?? 0) + 1;
+    this.upgradeAttempts.set(address, count);
+    return count <= this.limits.upgradesPerMinute;
   }
 
   private attach(ws: WebSocket, identity: RunnerIdentity, token: string): void {
@@ -496,27 +537,68 @@ export class ArenaGateway {
     const presence = (event: Omit<RunnerPresenceEvent, "key" | "at">) =>
       this.options.onRunnerPresence?.({ ...event, key: identity.key, at: Date.now() });
 
+    const heartbeatMs = this.limits.heartbeatMs;
     const helloTimer = setTimeout(
       () => session.close(RUNNER_CLOSE.protocol, "no hello"),
       this.limits.helloTimeoutMs,
     );
+    // Once per heartbeat, whatever the runner sends: drop it if it hasn't pinged for three
+    // intervals, and check its token again (one check at a time), so a revoked token disconnects
+    // within one interval even if the runner never pings. Presence is reported from here too, at
+    // most once per interval, however often the runner pings.
+    let checking = false;
+    let pingedSinceReport = false;
     const heartbeat = setInterval(() => {
-      if (Date.now() - session.lastSeen > 3 * RUNNER_HEARTBEAT_MS)
+      if (Date.now() - session.lastSeen > 3 * heartbeatMs) {
         session.close(RUNNER_CLOSE.heartbeat, "no heartbeat");
-    }, RUNNER_HEARTBEAT_MS / 3);
+        return;
+      }
+      if (checking || !session.hello) return;
+      checking = true;
+      void this.options.tokens
+        .validate(token)
+        .then(
+          (still) => {
+            if (!still) session.close(RUNNER_CLOSE.revoked, "the runner token was revoked");
+            else if (pingedSinceReport) {
+              pingedSinceReport = false;
+              presence({ type: "heartbeat" });
+            }
+          },
+          () => {},
+        )
+        .finally(() => (checking = false));
+    }, heartbeatMs);
+
+    // A token bucket per socket: a runner needs a few messages a minute.
+    let allowance = this.limits.runnerMessageBurst;
+    let refilled = Date.now();
+    const withinRate = () => {
+      const now = Date.now();
+      allowance = Math.min(
+        this.limits.runnerMessageBurst,
+        allowance + ((now - refilled) / 1000) * this.limits.runnerMessagesPerSecond,
+      );
+      refilled = now;
+      if (allowance < 1) return false;
+      allowance -= 1;
+      return true;
+    };
 
     ws.on("message", (data, isBinary) => {
+      if (session.closed !== undefined) return;
+      if (!withinRate()) return session.close(RUNNER_CLOSE.rateLimited, "too many messages");
       const message = isBinary
         ? undefined
         : parseRunnerMessage(RunnerToServer, rawText(data as Buffer | Buffer[] | ArrayBuffer));
       if (!message) return session.close(RUNNER_CLOSE.protocol, "malformed message");
-      session.lastSeen = Date.now();
       if (!session.hello) {
         if (message.type !== "hello") return session.close(RUNNER_CLOSE.protocol, "hello first");
         if (message.protocol !== RUNNER_PROTOCOL_VERSION)
           return session.close(RUNNER_CLOSE.protocol, "unsupported protocol version");
         clearTimeout(helloTimer);
         session.hello = message;
+        session.lastSeen = Date.now();
         const previous = this.runners.get(identity.key);
         if (previous && previous !== session)
           previous.close(RUNNER_CLOSE.replaced, "another runner connected with this token");
@@ -527,15 +609,10 @@ export class ArenaGateway {
       }
       if (message.type === "hello") return;
       if (message.type === "ping") {
+        // Only a ping keeps a runner alive.
+        session.lastSeen = Date.now();
+        pingedSinceReport = true;
         session.send({ type: "pong", at: Date.now() });
-        // Re-check the token on every heartbeat, so revoking it disconnects the runner.
-        void this.options.tokens.validate(token).then(
-          (still) => {
-            if (!still) session.close(RUNNER_CLOSE.revoked, "the runner token was revoked");
-            else presence({ type: "heartbeat" });
-          },
-          () => {},
-        );
         return;
       }
       session.emit(message);
