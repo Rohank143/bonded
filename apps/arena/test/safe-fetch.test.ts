@@ -1,11 +1,28 @@
 import { createServer, type Server } from "node:http";
-import { afterEach, describe, expect, it } from "vitest";
+import { createServer as createTcpServer, type Server as TcpServer } from "node:net";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { attestTeeAgent, TeeVerificationError } from "../src/index.js";
-import { publicAddress } from "../src/safe-fetch.js";
+import { publicAddress, safeGet } from "../src/safe-fetch.js";
 
-const servers: Server[] = [];
+// Lets a test make the name lookup hang, the way a slow or hostile DNS server would.
+const dns = vi.hoisted(() => ({ stall: false }));
+vi.mock("node:dns", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:dns")>();
+  const lookup = (...args: unknown[]) => {
+    if (!dns.stall) (actual.lookup as (...a: unknown[]) => void)(...args);
+  };
+  return { ...actual, lookup };
+});
+
+const servers: (Server | TcpServer)[] = [];
+const timers: NodeJS.Timeout[] = [];
 afterEach(() => {
-  for (const s of servers.splice(0)) s.close();
+  dns.stall = false;
+  for (const t of timers.splice(0)) clearInterval(t);
+  for (const s of servers.splice(0)) {
+    if ("closeAllConnections" in s) s.closeAllConnections();
+    s.close();
+  }
 });
 
 async function serve(handler: Parameters<typeof createServer>[1]): Promise<number> {
@@ -92,5 +109,64 @@ describe("fetching an operator's TEE URL", () => {
     await expect(
       attestTeeAgent({ ...expectation, url: `http://127.0.0.1:${port}`, allowLoopback: true }),
     ).rejects.toThrow(/over 524288 bytes/);
+  });
+
+  describe("holds the whole fetch to one deadline, not an idle timeout", () => {
+    const limits = { timeoutMs: 300, maxBytes: 512 * 1024, allowLoopback: true };
+
+    /** How long `safeGet` took to give up on `url`, and why. */
+    async function giveUp(url: string): Promise<{ ms: number; error: unknown }> {
+      const start = Date.now();
+      const error = await safeGet(new URL(url), limits).then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+      return { ms: Date.now() - start, error };
+    }
+
+    it("gives up on a body that arrives a byte at a time", async () => {
+      // The review's repro: a byte every 40 ms never trips a 300 ms idle timeout, and at that rate
+      // the 512 KiB cap is hours away.
+      const port = await serve((_req, res) => {
+        res.writeHead(200, { "content-type": "application/json" });
+        const drip = setInterval(() => res.write(" "), 40);
+        timers.push(drip);
+        res.on("close", () => clearInterval(drip));
+      });
+      const { ms, error } = await giveUp(`http://127.0.0.1:${port}`);
+      expect(ms).toBeLessThan(1_500);
+      expect(String(error)).toMatch(/timed out after 300 ms/);
+    });
+
+    it("gives up on headers that arrive a line at a time", async () => {
+      const server = createTcpServer((socket) => {
+        socket.write("HTTP/1.1 200 OK\r\n");
+        const drip = setInterval(() => socket.write("x-wait: 1\r\n"), 40);
+        timers.push(drip);
+        socket.on("close", () => clearInterval(drip));
+        socket.on("error", () => clearInterval(drip));
+      });
+      servers.push(server);
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const { port } = server.address() as { port: number };
+      const { ms, error } = await giveUp(`http://127.0.0.1:${port}`);
+      expect(ms).toBeLessThan(1_500);
+      expect(String(error)).toMatch(/timed out after 300 ms/);
+    });
+
+    it("gives up on a name lookup that never answers", async () => {
+      dns.stall = true;
+      const { ms, error } = await giveUp("http://localhost:9");
+      expect(ms).toBeLessThan(1_500);
+      expect(String(error)).toMatch(/timed out after 300 ms/);
+    });
+
+    it("still returns a quick answer whole", async () => {
+      const port = await serve((_req, res) => res.end('{"ok":true}'));
+      await expect(safeGet(new URL(`http://127.0.0.1:${port}`), limits)).resolves.toEqual({
+        status: 200,
+        text: '{"ok":true}',
+      });
+    });
   });
 });

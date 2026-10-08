@@ -72,6 +72,9 @@ importers:
       '@bonded/runner':
         specifier: workspace:*
         version: link:../runner
+      '@bonded/sandbox':
+        specifier: workspace:*
+        version: link:../../packages/sandbox
       '@bonded/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk

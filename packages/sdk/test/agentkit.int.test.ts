@@ -21,6 +21,7 @@ import {
   type TestVault,
   withMulticall3,
 } from "./chain.js";
+import { fakeSentinelApi } from "./sentinel-api.js";
 
 let sandbox: Sandbox;
 let chain: Chain;
@@ -167,5 +168,56 @@ describe("the AgentKit wallet's limits", () => {
       }),
     });
     expect((await provider.waitForTransactionReceipt(hash)).status).toBe("success");
+  });
+});
+
+describe("AgentKit with Sentinel in the guard", () => {
+  it("signs the check with the AgentKit wallet, gets Sentinel's answer, then trades", async () => {
+    const v = await createTestVault(sandbox, { destinations: [sandbox.address("depositor")] });
+    const wallet = new ViemWalletProvider(
+      createWalletClient({
+        account: privateKeyToAccount(ANVIL_KEYS.agent),
+        chain,
+        transport: http(sandbox.rpcUrl),
+      }) as never,
+      { rpcUrl: sandbox.rpcUrl },
+    );
+    const signed: unknown[] = [];
+    const signMessage = wallet.signMessage.bind(wallet);
+    wallet.signMessage = (message) => {
+      signed.push(message);
+      return signMessage(message);
+    };
+    const sentinel = fakeSentinelApi({
+      chainId: chain.id,
+      agent: sandbox.address("agent"),
+      agentId: v.agentId,
+      vault: v.address,
+    });
+    const provider = new BondedWalletProvider({
+      wallet,
+      vault: v.address,
+      guard: { sentinel: { apiUrl: "http://api.test", mandate: v.mandate, fetch: sentinel.fetch } },
+    });
+    const kit = await AgentKit.from({
+      walletProvider: provider,
+      actionProviders: [erc20ActionProvider()],
+    });
+    const transfer = kit
+      .getActions()
+      .find((a: Action) => a.name === "ERC20ActionProvider_transfer")!;
+    const depositor = sandbox.address("depositor");
+    const before = await balanceOf(sandbox, sandbox.deployment.usdg, depositor);
+    const text = await transfer.invoke({
+      amount: "40",
+      tokenAddress: sandbox.deployment.usdg,
+      destinationAddress: depositor,
+    });
+    expect(text).toMatch(/^Transferred 40 /);
+    expect(signed).toHaveLength(1); // the Sentinel check, signed by the wallet
+    expect(sentinel.asked).toEqual([
+      { tool: "call", args: expect.objectContaining({ target: sandbox.deployment.usdg }) },
+    ]);
+    expect(await balanceOf(sandbox, sandbox.deployment.usdg, depositor)).toBe(before + usd(40));
   });
 });
