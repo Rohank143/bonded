@@ -489,7 +489,9 @@ describe("chain mode", () => {
     expect(big.bytes).toBeLessThan(64 * 1024);
     // 2 MB fits in 10M gas, but no single answer may pass 1 MiB, and once one is refused for its
     // size the rest of the request's budget is gone too.
-    const wide = await fetchBytes(Array.from({ length: 50 }, (_, i) => call(i, 0x200000)));
+    const wide = await fetchBytes(
+      Array.from({ length: 50 }, (_, i) => call(i, 0x200000, "0x989680")),
+    );
     expect(wide.bytes).toBeLessThan(64 * 1024);
     expect(wide.json.every((r) => r.error?.code === -32005)).toBe(true);
     // Answers under the cap add up to at most the request's budget (2 MiB).
