@@ -1,8 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   ANVIL_KEYS,
+  REMOTE_CONTROLS,
   Sandbox,
   createAgentVault,
+  loadAttackLibrary,
   signAttestation,
   type AgentVault,
   type VerifiedTee,
@@ -30,6 +32,7 @@ import {
 import { runTeeChecks, type Attest } from "../src/tee-watch.js";
 import { renewExpiringScores } from "../src/live-loop.js";
 import { workOne } from "../src/worker.js";
+import { DEFAULT_REMOTE_POLICY, type RemoteRatingPolicy } from "../src/remote-policy.js";
 import { postgres } from "./postgres.js";
 
 let pg: Awaited<ReturnType<typeof postgres>>;
@@ -49,14 +52,17 @@ const CODE = hash(0xc0de);
 const API_TOKEN = "test-api-token-at-least-24-characters";
 const remote: RemoteAgentSpec = { codeHash: CODE, mode: "tools" };
 
-function api(requests = { perClient: 1000, total: 1000, windowMs: 60_000 }) {
+function api(
+  requests = { perClient: 1000, total: 1000, windowMs: 60_000 },
+  limits: { perAgentMs?: number; remote?: RemoteRatingPolicy } = {},
+) {
   return createApi({
     db: pg.db,
     chain,
     attesterKey: ANVIL_KEYS.deployer,
     apiToken: API_TOKEN,
     gatewayUrl: "https://gateway.example",
-    selfServe: { requests, now: () => clock },
+    selfServe: { requests, now: () => clock, ...limits },
   });
 }
 
@@ -156,7 +162,7 @@ const revokeToken = async (v: AgentVault, who = owner) =>
     `/self/agents/${v.agentId}/runner-token`,
     await tokenRequest(v, "revoke-runner-token", who),
   );
-async function rate(v: AgentVault) {
+async function rate(v: AgentVault, a = app) {
   const timestamp = now();
   const agentId = v.agentId.toString();
   const signature = await sign({
@@ -165,7 +171,7 @@ async function rate(v: AgentVault) {
     agentId,
     timestamp,
   });
-  return send("POST", `/self/agents/${agentId}/rate`, { timestamp, signature });
+  return send("POST", `/self/agents/${agentId}/rate`, { timestamp, signature }, a);
 }
 /** Connect a runner for `token`, as the gateway would: validate, then report its hello. */
 async function connect(token: string, mode: "tools" | "chain" = "tools") {
@@ -386,7 +392,21 @@ describe("rating your own agent", () => {
     const queued = await rate(mine);
     expect(queued.status).toBe(202);
     // The usual limit applies: one rating an hour.
-    expect((await rate(mine)).status).toBe(429);
+    const again = await rate(mine);
+    expect(again.status).toBe(429);
+    expect((await bodyOf(again)).error).toMatch(/^one rating an hour per agent/);
+    // For an operator-run agent the interval is its policy's, not the built-in designs' one.
+    const tenMinutes = api(undefined, {
+      perAgentMs: 0,
+      remote: { ...DEFAULT_REMOTE_POLICY, perAgentMs: 10 * 60_000 },
+    });
+    const refused = await rate(mine, tenMinutes);
+    expect(refused.status).toBe(429);
+    expect((await bodyOf(refused)).error).toMatch(/^one rating every 10 minutes per agent/);
+    const status = await bodyOf(await tenMinutes.request(`/self/agents/${mine.agentId}`));
+    expect(
+      Date.parse(status.nextRatingAt as string) - Date.parse(status.lastRatingAt as string),
+    ).toBe(10 * 60_000);
   });
 
   it("fails at once, saying why, on a worker without the Arena Gateway", async () => {
@@ -614,10 +634,14 @@ describe("binding, cover caps and the live loop", () => {
 describe("who may be rated, and what a rating will be", () => {
   it("shows the expected size and time budget, and every rating a page at a time", async () => {
     const status = await bodyOf(await app.request(`/self/agents/${mine.agentId}`));
-    const plan = status.expectedRating as { episodes: number; budgetSeconds: number };
-    expect(plan.episodes).toBeGreaterThan(100);
+    const plan = status.expectedRating as { maxEpisodes: number; budgetSeconds: number };
+    // At most: every published attack 3 times, one held-out variant per class the library has
+    // seeds for, 3 times, and the controls (no assumed held-out size).
+    const library = loadAttackLibrary();
+    const classes = new Set(library.map((a) => a.class)).size;
+    expect(plan.maxEpisodes).toBe((library.length + classes) * 3 + REMOTE_CONTROLS);
     // 40 seconds an episode, at most 3 hours.
-    expect(plan.budgetSeconds).toBe(Math.min(3 * 3600, plan.episodes * 40));
+    expect(plan.budgetSeconds).toBe(Math.min(3 * 3600, plan.maxEpisodes * 40));
     expect(status.standing).toMatchObject({ failuresInRow: 0, superseded: null });
     const page = await bodyOf(await app.request(`/self/agents/${mine.agentId}/ratings?limit=2`));
     expect((page.items as unknown[]).length).toBe(2);

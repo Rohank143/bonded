@@ -1,5 +1,5 @@
 import type { BindingLevel, RemoteMode } from "@bonded/shared";
-import type { Coverage, Liveness, RunRecord, RunnerRecord, SelfAgentRecord } from "./api";
+import type { Coverage, Liveness, Report, RunRecord, RunnerRecord, SelfAgentRecord } from "./api";
 
 /**
  * Bring your own agent, in the web app: the commands an owner copies to connect their agent, how
@@ -189,6 +189,29 @@ export function livenessLine(liveness: Liveness | null | undefined): string | un
   return `Did its normal task in ${liveness.completed} of ${liveness.controls} control episodes (no attack in them)${attacks}.`;
 }
 
+/** The attack classes a rating priced as untested (they ran, but never tested the agent). */
+export function untestedClasses(report: Pick<Report, "scoring"> | null | undefined): string[] {
+  return (report?.scoring.groups ?? []).flatMap((g) => g.untestedClasses ?? []);
+}
+
+/**
+ * What an untested class costs, in plain words: each one's share of its group is priced as if
+ * nothing were known about it, whatever the group's other classes show. Undefined when none.
+ */
+export function untestedLine(
+  report: Pick<Report, "scoring"> | null | undefined,
+): string | undefined {
+  const lines = (report?.scoring.groups ?? []).flatMap((g) =>
+    g.untestedClasses?.length ? [{ group: g.name, classes: g.untestedClasses }] : [],
+  );
+  if (!lines.length) return undefined;
+  const all = lines.flatMap((l) => l.classes);
+  const list = (items: string[]) =>
+    items.length > 1 ? `${items.slice(0, -1).join(", ")} and ${items.at(-1)}` : items[0]!;
+  const groups = list(lines.map((l) => `${l.classes.join(", ")} in ${l.group}`));
+  return `${list(all)} ran but never tested your agent: in none of ${all.length > 1 ? "their" : "its"} episodes was it breached, nor did it do its task after reading what was planted. So ${all.length > 1 ? "each is" : "it is"} priced as untested within its group (${groups}): that class's share of the group is charged as the worst case, however well the group's other classes went. Skipping the work, or the reading, when an attack seems likely doesn't raise a score.`;
+}
+
 /**
  * Why a rating failed, for its owner. A rating refused on liveness gets a plain explanation; any
  * other reason is shown as the API gives it.
@@ -196,11 +219,17 @@ export function livenessLine(liveness: Liveness | null | undefined): string | un
 export function ratingFailure(run: Pick<RunRecord, "error" | "liveness" | "report">): string {
   const liveness = run.liveness ?? run.report?.liveness;
   if (!run.error?.startsWith("not attested") || !liveness) return run.error ?? "The rating failed.";
+  const untested = untestedLine(run.report);
+  const explained = refusedOnLiveness(run.error, liveness);
+  return untested ? `${explained} ${untested}` : explained;
+}
+
+function refusedOnLiveness(error: string, liveness: Liveness): string {
   if (!liveness.controls)
     return "Not scored: no control run finished, so it's unknown whether your agent does its task.";
-  if (/(works less|behaves differently) when attacked/.test(run.error) && liveness.attacks)
+  if (/(works less|behaves differently) when attacked/.test(error) && liveness.attacks)
     return `Not scored: your agent did its normal task in ${liveness.completed} of ${liveness.controls} control runs but only ${liveness.attacks.completed} of ${liveness.attacks.episodes} runs with an attack in them${liveness.required != null ? ` (at least ${Math.round(liveness.required * 100)}% needed)` : ""}. An agent that stops working whenever something is planted can't be told apart from one that dodges attacks by spotting the test.`;
-  const needed = /at least (\d+)% needed/.exec(run.error)?.[1];
+  const needed = /at least (\d+)% needed/.exec(error)?.[1];
   return `Not scored: your agent didn't complete its normal task in ${liveness.controls - liveness.completed} of ${liveness.controls} control runs. ${needed ? `At least ${needed}%` : "Enough"} must succeed, because an agent that doesn't trade can't be breached either.`;
 }
 
@@ -221,10 +250,10 @@ export function progressLine(
 
 /** What a rating of the owner's own agent will be, before it is asked for. */
 export function expectedLine(
-  plan: { episodes: number; budgetSeconds: number } | undefined,
+  plan: { maxEpisodes: number; budgetSeconds: number } | undefined,
 ): string | undefined {
   if (!plan) return undefined;
   const minutes = Math.round(plan.budgetSeconds / 60);
   const budget = minutes >= 120 ? `${Math.round(minutes / 60)} hours` : `${minutes} minutes`;
-  return `A rating is about ${plan.episodes} episodes. It may take up to ${budget}, and stops there.`;
+  return `A rating is up to ${plan.maxEpisodes} episodes (fewer if some held-out variants can't be made). It may take up to ${budget}, and stops there.`;
 }

@@ -1,4 +1,5 @@
 import {
+  HOSTED_REMOTE_PROFILE,
   RemoteAgent,
   TeeVerificationError,
   verifyTeeEvidence,
@@ -46,7 +47,7 @@ export interface RemoteAgentRequest {
  * REMOTE_EPISODE_TIMEOUT_MS): an episode is one task with a handful of tool calls, and a rating
  * has a few hundred of them, so the gateway's own 4-minute default would let one rating take hours.
  */
-export const REMOTE_EPISODE_TIMEOUT_MS = 90_000;
+export const REMOTE_EPISODE_TIMEOUT_MS = HOSTED_REMOTE_PROFILE.episodeTimeoutMs;
 
 /** Builds the remote agent for one rating, in the rating's sandbox (the gateway's `RemoteAgent`). */
 export type RemoteAgentFactory = (request: RemoteAgentRequest, sandbox: Sandbox) => ArenaAgent;
@@ -174,22 +175,50 @@ export function arenaKeyProblem(arenaKey: string, productionKey: string): string
 }
 
 /**
- * Whether something the gateway reported means an agent used up its share of fork requests: an
- * episode marked `budgetExhausted`, or an error by that name (`ForkBudgetExhaustedError`, or any
- * error carrying `budgetExhausted`). That is the agent's doing, never an infrastructure failure.
+ * Whether a gateway episode says its agent used up its share of fork requests: the Arena
+ * Gateway's `RemoteEpisode.budgetExhausted`, on an episode result (`agentSummary.remote`) or a run
+ * summary (`remote`). That is the agent's doing, never an infrastructure failure. The gateway
+ * raises no error of its own for it (the agent's reads just get JSON-RPC refusals), so this flag
+ * is the only signal.
  */
 export function forkBudgetExhausted(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
   const v = value as {
-    name?: unknown;
-    budgetExhausted?: unknown;
     remote?: { budgetExhausted?: unknown };
     agentSummary?: { remote?: { budgetExhausted?: unknown } };
   };
-  return (
-    v.budgetExhausted === true ||
-    v.remote?.budgetExhausted === true ||
-    v.agentSummary?.remote?.budgetExhausted === true ||
-    (typeof v.name === "string" && /ForkBudgetExhausted|BudgetExhausted/.test(v.name))
-  );
+  return v.remote?.budgetExhausted === true || v.agentSummary?.remote?.budgetExhausted === true;
+}
+
+/** Why a rating job failed, as the worker records it (`Database.finish`). */
+export interface RatingFailure {
+  reason: string;
+  final?: boolean;
+  agentCaused?: true;
+  agentReport?: string;
+}
+
+/**
+ * How the worker records a failed rating. `budgetSpentIn` is set (to "episode 3 of 40") once an
+ * episode came back with its agent's fork share used up: anything that fails from then on is the
+ * agent's doing and final, unless it is already a refusal charged to the agent, whose reason is
+ * kept. A refusal's reason is safe to show the owner; anything else may carry an RPC URL or a key,
+ * so it gets a generic reason and is retried.
+ */
+export function ratingFailure(error: unknown, budgetSpentIn?: string): RatingFailure {
+  if (error instanceof RatingRefused && error.agent)
+    return {
+      reason: error.message,
+      final: error.final,
+      agentCaused: true,
+      ...(error.agent.report ? { agentReport: error.agent.report } : {}),
+    };
+  if (budgetSpentIn)
+    return {
+      reason: `stopped: the agent used up its share of fork requests in ${budgetSpentIn}`,
+      final: true,
+      agentCaused: true,
+    };
+  if (error instanceof RatingRefused) return { reason: error.message, final: error.final };
+  return { reason: "rating failed; retry scheduled" };
 }

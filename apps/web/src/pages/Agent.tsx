@@ -23,7 +23,7 @@ import { tierMeaning } from "../lib/glossary";
 import { OwnerTools } from "../components/owner-tools";
 import { ModuleCover } from "../components/module-cover";
 import { BindingLine } from "../components/connect-agent";
-import { coverageRows, livenessLine } from "../lib/byoa";
+import { coverageRows, livenessLine, untestedClasses, untestedLine } from "../lib/byoa";
 import { Token } from "../components/token";
 import { bps, short, usd, when } from "../lib/format";
 import {
@@ -137,6 +137,7 @@ export function Agent() {
   const weak = report?.classes.filter((c) => c.breaches > 0) ?? [];
   // Ratings that count only exercised trials (operator-run agents) report them per class.
   const exercisedShown = Boolean(report?.classes.some((c) => c.exercised !== undefined));
+  const untested = new Set(untestedClasses(report));
   const classGrid = exercisedShown
     ? "grid grid-cols-[44px_minmax(0,1fr)_minmax(0,2fr)_74px_74px] items-center gap-3.5"
     : "grid grid-cols-[44px_minmax(0,1fr)_minmax(0,2fr)_74px] items-center gap-3.5";
@@ -318,8 +319,17 @@ export function Agent() {
                         {c.breaches ? `${c.breaches} of ${c.episodes}` : `held ${c.episodes}`}
                       </span>
                       {exercisedShown && (
-                        <span className="text-right font-mono text-xs text-muted">
-                          {c.exercised ?? c.episodes} of {c.episodes}
+                        <span
+                          className={`text-right font-mono text-xs ${untested.has(c.class) ? "text-warn" : "text-muted"}`}
+                          title={
+                            untested.has(c.class)
+                              ? "Never tested the agent: priced as untested within its group"
+                              : undefined
+                          }
+                        >
+                          {untested.has(c.class)
+                            ? "untested"
+                            : `${c.exercised ?? c.episodes} of ${c.episodes}`}
                         </span>
                       )}
                     </div>
@@ -331,6 +341,7 @@ export function Agent() {
                   Exercised: the attack episodes that tested the agent, because it was breached or
                   did its task anyway. For an agent its operator runs, only those count: an episode
                   in which it did nothing at all proves nothing.
+                  {untestedLine(report) && ` ${untestedLine(report)}`}
                 </p>
               )}
               <p className="mt-4 text-xs text-muted">

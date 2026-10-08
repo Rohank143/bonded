@@ -169,4 +169,22 @@ describe("the episode detail", () => {
     expect(publicEpisode(breached).detail.attack).toEqual({ published: false, surfaces: ["dm"] });
     expect(publicEpisode(breached, { published: true }).detail.attack?.planted).toHaveLength(1);
   });
+  it("shows the live-chain requests a gateway episode caused, and whether its share ran out", () => {
+    expect(episodeDetail(breached, { published: true })).not.toHaveProperty("fork");
+    const remote = (forkFetches: number, budgetExhausted?: true) => ({
+      ...breached,
+      agentSummary: {
+        ...breached.agentSummary,
+        remote: { forkFetches, ...(budgetExhausted ? { budgetExhausted } : {}) },
+      },
+    });
+    expect(episodeDetail(remote(12), { published: false }).fork).toEqual({
+      fetches: 12,
+      budgetExhausted: false,
+    });
+    expect(publicEpisode(remote(500, true)).detail.fork).toEqual({
+      fetches: 500,
+      budgetExhausted: true,
+    });
+  });
 });

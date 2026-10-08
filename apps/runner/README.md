@@ -30,7 +30,9 @@ the token is wrong or revoked, or another runner connects with the same token. I
 at a time.
 
 To rate an agent on your own machine against a local Arena, see `pnpm arena rate --agent remote`
-in the Bonded repository.
+in the Bonded repository. Add `--profile hosted` to run what the hosted service runs (3 runs of
+each attack, 90 s episodes, 6 controls, only exposed trials counted, its refusal rules), so the
+local result predicts the hosted one; add `--fork robinhood` to rate on the live chain's fork too.
 
 ## What your agent gets
 

@@ -35,6 +35,7 @@ import {
   RatingRefused,
   arenaKeyProblem,
   forkBudgetExhausted,
+  ratingFailure,
   TeeBinding,
   remoteAgentFor,
   type RemoteAgentFactory,
@@ -234,6 +235,9 @@ async function runLocked(
     if (leaseError) throw leaseError;
     await db.renew(job);
   };
+  // Set once a remote episode comes back with its agent's fork share used up ("episode 3 of 40"):
+  // whatever fails from then on was caused by the agent (ratingFailure).
+  let budgetSpentIn: string | undefined;
   try {
     const row = (
       await db.pool.query(
@@ -395,6 +399,9 @@ async function runLocked(
           ...(fresh ? { heldOut: fresh.heldOut } : {}),
           codeHash: ratedCodeHash(config),
           ...(config.repeats ? { repeats: config.repeats } : {}),
+          // An operator-run agent could skip its work, or its reading, when it suspects an
+          // attack: only episodes where it was exposed count as trials (rate.ts, `exercise`).
+          ...(config.kind === "remote" ? { exercise: "exposed" as const } : {}),
           ...(tee ? { tee } : {}),
           vault: { mandate: config.mandate as EvmMandateInput },
           onEpisode: async (episode, index, total) => {
@@ -407,13 +414,14 @@ async function runLocked(
                 .remote;
               agentMs += remoteEpisode?.durationMs ?? 0;
               const elapsed = Date.now() - ratingStarted;
-              if (forkBudgetExhausted(episode))
+              if (forkBudgetExhausted(episode)) {
+                budgetSpentIn = `episode ${index + 1} of ${total}`;
                 remoteStop = new RatingRefused(
-                  `stopped: the agent used up its share of fork requests in episode ${index + 1} of ${total}`,
+                  `stopped: the agent used up its share of fork requests in ${budgetSpentIn}`,
                   true,
                   { caused: true },
                 );
-              else if (episodeOutcome(episode) === "agent_error") {
+              } else if (episodeOutcome(episode) === "agent_error") {
                 const report = (episode.agentSummary.finalMessage ?? "").slice(0, 500);
                 remoteStop = new RatingRefused(
                   `stopped: the agent failed in episode ${index + 1} of ${total}`,
@@ -575,24 +583,12 @@ async function runLocked(
     await db.finish(job, undefined, { remote: config.kind === "remote" });
   } catch (error) {
     onError?.(error);
-    // A refusal's reason is safe to show the owner; anything else may carry an RPC URL or a key.
-    // The gateway's fork budget running out is the agent's doing, wherever it surfaces.
-    if (!(error instanceof RatingRefused) && forkBudgetExhausted(error))
-      await db.finish(job, "stopped: the agent used up its share of fork requests", {
-        final: true,
-        agentCaused: true,
-      });
-    else if (error instanceof RatingRefused)
-      await db.finish(job, error.message, {
-        final: error.final,
-        ...(error.agent
-          ? {
-              agentCaused: true,
-              ...(error.agent.report ? { agentReport: error.agent.report } : {}),
-            }
-          : {}),
-      });
-    else await db.finish(job, "rating failed; retry scheduled");
+    const failure = ratingFailure(error, budgetSpentIn);
+    await db.finish(job, failure.reason, {
+      ...(failure.final !== undefined ? { final: failure.final } : {}),
+      ...(failure.agentCaused ? { agentCaused: true } : {}),
+      ...(failure.agentReport ? { agentReport: failure.agentReport } : {}),
+    });
   } finally {
     clearInterval(heartbeat);
   }

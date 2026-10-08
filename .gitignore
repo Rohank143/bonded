@@ -20,6 +20,8 @@ __pycache__/
 # Local anvil deployments, and deployments not yet confirmed on-chain
 contracts/evm/deployments/31337*.json
 contracts/evm/deployments/*.pending.json
+# Arena sandbox deployments (DEPLOYMENTS_DIR=deployments/sandbox; see packages/sandbox)
+contracts/evm/deployments/sandbox/
 
 # Arena episode traces (local runs)
 traces/

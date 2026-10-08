@@ -66,7 +66,10 @@ export function selfServeCodeHash(kind: SelfServeKind): Hex {
 export interface SelfServeLimits {
   /** Runs of each attack in a self-serve rating (default 5, like the published scores). */
   repeats: number;
-  /** One rating per agent per this many milliseconds (default one hour). */
+  /**
+   * One rating of a built-in design per agent per this many milliseconds (default one hour). An
+   * operator-run agent's comes from `remote.perAgentMs`.
+   */
   perAgentMs: number;
   /** Self-serve ratings per chain per 24 hours (default 40). */
   dailyRatings: number;
@@ -337,7 +340,7 @@ export function selfServeRoutes(
               tee: config.tee ?? null,
               // Underwriting policy, not score: the most cover it can hold, by binding.
               coverCaps: options.coverCaps ?? UNDERWRITING_COVER_CAP_USD,
-              // What a rating will be, before the owner asks for one.
+              // The most a rating will be, before the owner asks for one.
               expectedRating: expectedRating(
                 (config as { repeats?: number }).repeats ?? limits.remote.repeats,
                 limits.remote,
@@ -350,7 +353,9 @@ export function selfServeRoutes(
         lastRatingAt: last ? new Date(last).toISOString() : null,
         nextRatingAt:
           record.source === "user" && last
-            ? new Date(last + limits.perAgentMs).toISOString()
+            ? new Date(
+                last + (config.kind === REMOTE_KIND ? limits.remote.perAgentMs : limits.perAgentMs),
+              ).toISOString()
             : null,
       });
     }),
@@ -473,9 +478,12 @@ export function selfServeRoutes(
       // The owner's own agent is rated through its runner, so one must be connected now.
       if (remote && !(await db.runnerIsConnected(rowId(agentId))))
         throw new Refused(409, "no runner is connected for this agent; start it, then rate");
+      // One rating per agent per interval (an hour by default): an operator-run agent's comes
+      // from its policy.
+      const perAgentMs = remote ? limits.remote.perAgentMs : limits.perAgentMs;
       const queued = await db.enqueueUserRating(rowId(agentId), d.chainId, {
         nowMs: now(),
-        perAgentMs: limits.perAgentMs,
+        perAgentMs,
         dailyCap: limits.dailyRatings,
         ...(remote ? { remote: remoteQuota(limits.remote, now()) } : {}),
       });
@@ -483,7 +491,7 @@ export function selfServeRoutes(
         throw new Refused(
           429,
           queued.refused === "hourly"
-            ? `one rating an hour per agent; next at ${queued.nextAt.toISOString()}`
+            ? `one rating ${perInterval(perAgentMs)} per agent; next at ${queued.nextAt.toISOString()}`
             : queued.refused === "daily"
               ? "today's self-serve ratings are used up; try again tomorrow"
               : remoteRefusalMessage(queued, limits.remote),
@@ -596,12 +604,32 @@ export function selfServeRoutes(
   );
 }
 
-/** Published attacks, read once: the base of every remote rating's size. */
-let publishedCount: number | undefined;
-/** A remote rating's episodes and time budget, before it is asked for (remote-policy.ts). */
+/** "an hour", "every 10 minutes": how often an agent may be rated, in words. */
+export function perInterval(ms: number): string {
+  if (ms === 3_600_000) return "an hour";
+  const minutes = Math.round(ms / 60_000);
+  return minutes >= 120 && minutes % 60 === 0
+    ? `every ${minutes / 60} hours`
+    : `every ${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
+}
+
+/** The published library, read once: the base of every remote rating's size. */
+let published: { attacks: number; classes: number } | undefined;
+/**
+ * The most a remote rating will be, and its time budget, before it is asked for
+ * (remote-policy.ts). Its held-out set is at most `heldOutPerClass` variants for each attack class
+ * the library has seeds for; a variant that can't be made is left out, so a rating can be smaller.
+ * The rating's progress counts its real size once the set is made.
+ */
 function expectedRating(repeats: number, policy: RemoteRatingPolicy = DEFAULT_REMOTE_POLICY) {
-  publishedCount ??= loadAttackLibrary().length;
-  // One held-out variant per attack class.
-  const plan = remoteRatingPlan(policy, { publishedAttacks: publishedCount, heldOut: 10, repeats });
-  return { episodes: plan.episodes, budgetSeconds: Math.round(plan.budgetMs / 1000) };
+  published ??= (() => {
+    const library = loadAttackLibrary();
+    return { attacks: library.length, classes: new Set(library.map((a) => a.class)).size };
+  })();
+  const plan = remoteRatingPlan(policy, {
+    publishedAttacks: published.attacks,
+    heldOut: published.classes * policy.heldOutPerClass,
+    repeats,
+  });
+  return { maxEpisodes: plan.episodes, budgetSeconds: Math.round(plan.budgetMs / 1000) };
 }

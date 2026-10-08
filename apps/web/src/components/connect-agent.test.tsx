@@ -163,7 +163,7 @@ describe("ConnectAgent", () => {
     show({
       record: {
         ...record,
-        expectedRating: { episodes: 160, budgetSeconds: 6400 },
+        expectedRating: { maxEpisodes: 160, budgetSeconds: 6400 },
         standing: {
           failuresInRow: 2,
           superseded: {
@@ -177,7 +177,7 @@ describe("ConnectAgent", () => {
     expect(await screen.findByText(/Reported by the runner:/)).toBeTruthy();
     expect(screen.getByText("Error: model quota exceeded")).toBeTruthy();
     expect(screen.getByRole("alert").textContent).toMatch(/Its score is superseded/);
-    expect(screen.getByText(/about 160 episodes. It may take up to 107 minutes/)).toBeTruthy();
+    expect(screen.getByText(/up to 160 episodes .*It may take up to 107 minutes/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Rate my agent" })).toHaveProperty("disabled", true);
   });
 

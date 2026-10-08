@@ -13,10 +13,12 @@ import {
 import { teeArenaReportData, teeReportData, type ArenaAgent } from "@bonded/shared";
 import type { Hex } from "viem";
 import {
+  GATEWAY_UNAVAILABLE,
   RatingRefused,
   TeeBinding,
   arenaKeyProblem,
   forkBudgetExhausted,
+  ratingFailure,
   gatewayAgents,
   remoteAgentFor,
 } from "../src/remote-agent.js";
@@ -405,17 +407,57 @@ describe("arenaKeyProblem", () => {
 });
 
 describe("forkBudgetExhausted", () => {
-  it("recognises the gateway's signal on an episode and as an error", () => {
+  it("reads the gateway's flag on an episode result and on a run summary", () => {
     expect(forkBudgetExhausted({ agentSummary: { remote: { budgetExhausted: true } } })).toBe(true);
-    expect(forkBudgetExhausted({ remote: { budgetExhausted: true } })).toBe(true);
-    const error = Object.assign(new Error("fork budget used up"), {
-      name: "ForkBudgetExhaustedError",
-    });
-    expect(forkBudgetExhausted(error)).toBe(true);
-    expect(forkBudgetExhausted(new Error("connection reset"))).toBe(false);
+    expect(forkBudgetExhausted({ remote: { budgetExhausted: true, forkFetches: 500 } })).toBe(true);
     expect(forkBudgetExhausted({ agentSummary: { remote: { budgetExhausted: false } } })).toBe(
       false,
     );
+    expect(forkBudgetExhausted({ agentSummary: { remote: { forkFetches: 12 } } })).toBe(false);
+    // The gateway raises no error of its own for it: an error is never taken as the signal.
+    const rpc = Object.assign(new Error("the agent's budget of live-chain requests is spent"), {
+      code: -32005,
+    });
+    expect(forkBudgetExhausted(rpc)).toBe(false);
     expect(forkBudgetExhausted(undefined)).toBe(false);
+  });
+});
+
+describe("ratingFailure: how a failed rating is recorded", () => {
+  const spent = "episode 3 of 40";
+
+  it("charges anything that fails after the agent used up its fork share to the agent, for good", () => {
+    for (const error of [
+      new Error("could not reach the fork: connection reset"),
+      new RatingRefused("stopped: the rating ran past its budget, not because of the agent", false),
+    ])
+      expect(ratingFailure(error, spent)).toEqual({
+        reason: "stopped: the agent used up its share of fork requests in episode 3 of 40",
+        final: true,
+        agentCaused: true,
+      });
+  });
+
+  it("keeps a refusal already charged to the agent as it is", () => {
+    const crashed = new RatingRefused("stopped: the agent failed in episode 3 of 40", true, {
+      caused: true,
+      report: "panic",
+    });
+    expect(ratingFailure(crashed, spent)).toEqual({
+      reason: "stopped: the agent failed in episode 3 of 40",
+      final: true,
+      agentCaused: true,
+      agentReport: "panic",
+    });
+  });
+
+  it("otherwise retries an unexpected error under a generic reason, and keeps a refusal's own", () => {
+    expect(ratingFailure(new Error("rpc https://key@rpc.example failed"))).toEqual({
+      reason: "rating failed; retry scheduled",
+    });
+    expect(ratingFailure(new RatingRefused(GATEWAY_UNAVAILABLE, true))).toEqual({
+      reason: GATEWAY_UNAVAILABLE,
+      final: true,
+    });
   });
 });

@@ -165,9 +165,15 @@ contract Deploy is Script {
         vm.serializeAddress(k, "disputeModule", d.disputeModule);
         vm.serializeAddress(k, "bountyBoard", d.bountyBoard);
         string memory json = vm.serializeAddress(k, "moduleFactory", d.moduleFactory);
-        string memory path = string.concat(
-            vm.projectRoot(), "/deployments/", vm.toString(block.chainid), ".pending.json"
+        // DEPLOYMENTS_DIR lets a throwaway local chain (the Arena sandbox) write somewhere
+        // git-ignored, away from the committed files. It must stay under ./deployments
+        // (foundry.toml's fs_permissions).
+        string memory dir = string.concat(
+            vm.projectRoot(), "/", vm.envOr("DEPLOYMENTS_DIR", string("deployments")), "/"
         );
+        // forge-lint: disable-next-line(unsafe-cheatcode)
+        vm.createDir(dir, true);
+        string memory path = string.concat(dir, vm.toString(block.chainid), ".pending.json");
         vm.writeJson(json, path);
         console2.log("Wrote", path);
     }
