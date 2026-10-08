@@ -560,7 +560,9 @@ export function NewAgent() {
           <StepCard n={2} title={<Term term="mandate">Mandate</Term>}>
             <div className="flex flex-col gap-5 text-sm">
               <fieldset className="flex flex-col gap-2">
-                <legend className="mb-2 font-medium">Vault mode</legend>
+                <legend className="mb-2 font-medium">
+                  {onModule ? "Module mode" : "Vault mode"}
+                </legend>
                 <div className="grid gap-2 sm:grid-cols-2">
                   <Choice
                     name="mode"

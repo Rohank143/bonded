@@ -38,6 +38,10 @@ pnpm demo             # THE demo, in one command: local chain, API, keeper and w
                       # Agent A and Agent B, buys cover, plants an address-poisoning attack,
                       # Agent A falls for it, the keeper's claim pays (bond first, then pool),
                       # then serves the web app at http://localhost:5180 (Ctrl-C stops it all)
+pnpm demo --byo       # also: your own agent (examples/byo-agent) connected through @bonded/runner
+                      # and a local Arena Gateway, rated with a held-out set of its own; and a
+                      # smart account (ERC-7579 reference account) protected by an Enforce-mode
+                      # mandate module, rated and covered. Prints both agents' pages.
 
 pnpm demo:local       # contracts only: deploy everything to a local chain, then run
                       # register → vault → bond → cover → breach → claim (the claim pays 4,500)

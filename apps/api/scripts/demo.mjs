@@ -4,6 +4,8 @@
 //   pnpm demo                    rate both agents with 5 runs per attack, like the published scores
 //   pnpm demo -- --runs 1        1 run per attack (faster, wider uncertainty, lower scores)
 //   pnpm demo -- --no-web        stop after the break-it run instead of serving the web app
+//   pnpm demo -- --byo           also connect your own agent through the runner and gateway, and a
+//                                smart account protected by a mandate module (demo-byo.mjs)
 //
 // It starts a local chain with the contracts and a throwaway Postgres, runs the API, keeper and
 // rating worker, then plays the demo:
@@ -71,6 +73,7 @@ const { values } = parseArgs({
     "no-web": { type: "boolean", default: false },
     "api-port": { type: "string", default: "3000" },
     "web-port": { type: "string", default: "5180" },
+    byo: { type: "boolean", default: false },
   },
 });
 const runs = Number(values.runs);
@@ -91,13 +94,18 @@ const freePort = () =>
     });
   });
 
-let sandbox, pg, db, server, web, directory, stopping;
+let sandbox, pg, db, server, web, directory, stopping, byoGateway;
 const loops = [];
+/** More to stop (the --byo runner). */
+const extraStops = [];
 async function stop(code = 0) {
   if (stopping) return;
   stopping = true;
   for (const step of [
+    ...extraStops,
     () => web?.pid && process.kill(-web.pid, "SIGTERM"),
+    // Bounded: an open runner connection mustn't hold up the rest of the cleanup.
+    () => byoGateway && Promise.race([byoGateway.close(), delay(3000)]),
     () => new Promise((resolve) => (server ? server.close(() => resolve()) : resolve())),
     () => db?.close(),
     () => pg?.stop(),
@@ -257,7 +265,19 @@ try {
   ]);
   const token = randomBytes(24).toString("hex");
   const webOrigin = `http://localhost:${values["web-port"]}`;
-  const app = createApi({ db, chain, attesterKey: key, apiToken: token, webOrigins: [webOrigin] });
+  // --byo: the Arena Gateway your own agent's runner connects to (demo-byo.mjs).
+  const byo = values.byo ? await import("./demo-byo.mjs") : undefined;
+  const started = byo ? await byo.startGateway(db, d.chainId) : undefined;
+  byoGateway = started?.gateway;
+  const workerOptions = started ? { remote: started.remote, heldOut: { perClass: 1 } } : {};
+  const app = createApi({
+    db,
+    chain,
+    attesterKey: key,
+    apiToken: token,
+    webOrigins: [webOrigin],
+    ...(started ? { gatewayUrl: started.url, selfServe: { repeats: runs } } : {}),
+  });
   server = serve({ fetch: app.fetch, port: Number(values["api-port"]) });
   const apiUrl = `http://localhost:${values["api-port"]}`;
   const post = async (path, body) => {
@@ -338,7 +358,7 @@ try {
   loops.push(
     (async () => {
       while (!stopping) {
-        await workOne(db, chain, rpc, key, () => {}).catch(() => {});
+        await workOne(db, chain, rpc, key, () => {}, undefined, workerOptions).catch(() => {});
         await delay(2000);
       }
     })(),
@@ -390,6 +410,23 @@ try {
   console.log(`  from bond ${$(c.fromBond)} (Agent A's operator had ${$(bondBefore)} staked)`);
   console.log(`  from pool ${$(c.fromPool)}`);
   if (c.premiumNetted > 0n) console.log(`  premium owed, netted: ${$(c.premiumNetted)}`);
+
+  const extra = byo
+    ? await byo.runByoDemo({
+        d,
+        rpc,
+        chain,
+        key,
+        db,
+        app,
+        send,
+        say,
+        mineBlocks,
+        template: agentA.mandate,
+        gatewayUrl: started.url,
+        onStop: (fn) => extraStops.push(fn),
+      })
+    : undefined;
 
   if (values["no-web"]) await stop(0);
   say("Serving the web app against this chain");
@@ -443,6 +480,10 @@ try {
   console.log(`  Web app:       ${webOrigin}`);
   console.log(`  Agent A:       ${webOrigin}/agents/${agentA.agentId}`);
   console.log(`  Agent B:       ${webOrigin}/agents/${agentB.agentId}`);
+  if (extra) {
+    console.log(`  Own agent:     ${webOrigin}/agents/${extra.byoId}`);
+    console.log(`  Smart account: ${webOrigin}/agents/${extra.moduleId}`);
+  }
   console.log(`  Claims:        ${webOrigin}/claims`);
   console.log(`  API:           ${apiUrl}/health`);
   console.log("\nPress Ctrl-C to stop everything.");
