@@ -12,8 +12,6 @@ import {
 } from "@bonded/shared";
 import {
   type Abi,
-  BaseError,
-  ContractFunctionRevertedError,
   encodeFunctionData,
   formatUnits,
   getAddress,
@@ -368,12 +366,14 @@ function address(text: string | undefined): `0x${string}` {
 
 /** A short, readable reason for a failed call (custom error name where there is one). */
 function describeError(error: unknown): string {
-  if (error instanceof BaseError) {
-    const revert = error.walk((e) => e instanceof ContractFunctionRevertedError);
-    if (revert instanceof ContractFunctionRevertedError && revert.data?.errorName) {
-      return `reverted: ${revert.data.errorName}`;
+  // Matched by name, not instanceof: the sandbox's clients come from @bonded/sandbox, whose copy
+  // of viem can differ from this package's.
+  if (error instanceof Error && error.name.endsWith("Error") && "shortMessage" in error) {
+    for (let e: unknown = error; e instanceof Error; e = e.cause) {
+      const errorName = (e as { data?: { errorName?: string } }).data?.errorName;
+      if (e.name === "ContractFunctionRevertedError" && errorName) return `reverted: ${errorName}`;
     }
-    return error.shortMessage;
+    return String(error.shortMessage);
   }
   return error instanceof Error ? error.message : String(error);
 }

@@ -2,7 +2,9 @@ import { useAccount, useReadContracts } from "wagmi";
 import { coverManagerAbi, mandateModuleAbi } from "@bonded/shared";
 import type { Address } from "viem";
 import { deployment } from "../config";
-import { MODULE_DEFERRED_NOTE } from "../lib/module";
+import { MODULE_COVER_NOTE } from "../lib/module";
+import { moduleCoverNote } from "../lib/chain";
+import { Card } from "./ui";
 import { BuyCover } from "../pages/Vault";
 
 /**
@@ -21,9 +23,20 @@ export function ModuleCover({ agentId, module }: { agentId: bigint; module: Addr
         functionName: "activePolicyOf",
         args: [module],
       },
+      { address: module, abi: mandateModuleAbi, functionName: "mode" },
     ],
   });
-  const [guardian, active] = reads.data ?? [];
+  const [guardian, active, mode] = reads.data ?? [];
+  const note = mode?.result !== undefined ? moduleCoverNote(mode.result) : undefined;
+  if (note && !note.insurable)
+    return (
+      <Card title="Cover">
+        <p className="text-sm text-muted">
+          This module runs in Monitor mode, so it can't hold cover: a breach would go through and be
+          paid to the account's own owner. A new module in Enforce mode can.
+        </p>
+      </Card>
+    );
   return (
     <div className="flex flex-col gap-2">
       <BuyCover
@@ -34,7 +47,7 @@ export function ModuleCover({ agentId, module }: { agentId: bigint; module: Addr
         )}
         hasActive={Boolean(active?.result)}
       />
-      <p className="px-1 text-xs text-muted">{MODULE_DEFERRED_NOTE}</p>
+      <p className="px-1 text-xs text-muted">{MODULE_COVER_NOTE}</p>
     </div>
   );
 }

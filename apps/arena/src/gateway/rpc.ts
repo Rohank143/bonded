@@ -15,7 +15,8 @@ import type { ArenaToolbox } from "../toolbox.js";
  *
  * The agent under test is untrusted, and the sandbox is an anvil node whose cheat methods could
  * rewrite balances, mine blocks, impersonate accounts or reveal the node's setup. So:
- * - only the methods below pass: standard reads, gas and fee queries, and one write,
+ * - only the methods below pass: standard reads (eth_call, eth_estimateGas and eth_simulateV1
+ *   included: their state overrides last only for that call), gas and fee queries, and one write,
  *   eth_sendRawTransaction. Every anvil_, hardhat_, evm_, debug_, trace_, ots_, txpool_, personal_
  *   and eth_sign* method, eth_sendTransaction (anvil would sign it with an unlocked development
  *   key), eth_accounts, filters and subscriptions are refused;
@@ -45,6 +46,8 @@ export const RPC_ALLOWED_METHODS: ReadonlySet<string> = new Set([
   "eth_getProof",
   "eth_call",
   "eth_estimateGas",
+  // Read-only: overrides apply to the simulation alone (the SDK's dry runs use it).
+  "eth_simulateV1",
   "eth_createAccessList",
   "eth_getBlockByNumber",
   "eth_getBlockByHash",

@@ -154,6 +154,27 @@ contract MandateModuleFactoryTest is ModuleTestBase {
         assertEq(moduleFactory.modulesCreated(account), 3);
     }
 
+    /// @dev Regression for the review's two-modules finding: only the module an account created
+    ///      last can be installed, whether the older one was never installed or is reinstalled.
+    function test_OnlyTheAccountsCurrentModuleCanBeInstalled() public {
+        address account = _newAccount(Kind.Msa);
+        MandateModule a = _createModule(account, BondedTypes.MandateMode.Enforce);
+        MandateModule b = _createModule(account, BondedTypes.MandateMode.Enforce);
+        vm.prank(ENTRY_POINT);
+        vm.expectRevert(MandateModule.NotCurrentModule.selector);
+        ITestAccount(account).installModule(EXECUTOR, address(a), "");
+        _install(account, address(b), EXECUTOR);
+
+        _uninstall(account, address(b), EXECUTOR);
+        MandateModule c = _createModule(account, BondedTypes.MandateMode.Enforce);
+        vm.prank(ENTRY_POINT);
+        vm.expectRevert(MandateModule.NotCurrentModule.selector);
+        ITestAccount(account).installModule(EXECUTOR, address(b), ""); // old one back: refused
+        _install(account, address(c), EXECUTOR);
+        assertEq(a.installs() + b.installs(), 0);
+        assertEq(c.installs(), 1);
+    }
+
     function test_PredictsTheAddressSoOneBatchCreatesAndInstalls() public {
         address account = _newAccount(Kind.Msa);
         BondedTypes.MandateParams memory p = _moduleParams(BondedTypes.MandateMode.Enforce);

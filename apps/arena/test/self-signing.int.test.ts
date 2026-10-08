@@ -6,7 +6,7 @@ import {
   mandateVaultAbi,
   testTokenAbi,
 } from "@bonded/shared";
-import { createWalletClient, encodeFunctionData, http, parseUnits } from "viem";
+import { createWalletClient, defineChain, encodeFunctionData, http, parseUnits } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -21,6 +21,14 @@ import {
 } from "../src/index.js";
 
 let sandbox: Sandbox;
+/** The sandbox's chain with this package's viem (@bonded/sandbox has its own copy). */
+const localChain = () =>
+  defineChain({
+    id: sandbox.chain.id,
+    name: "sandbox",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: { default: { http: [sandbox.rpcUrl] } },
+  });
 
 beforeAll(async () => {
   sandbox = await Sandbox.start();
@@ -37,7 +45,7 @@ async function ownKeyVault(mode: "monitor" | "enforce" = "monitor") {
   const vault = await createAgentVault(sandbox, { agent: account.address, mandate: { mode } });
   const wallet = createWalletClient({
     account,
-    chain: sandbox.chain,
+    chain: localChain(),
     transport: http(sandbox.rpcUrl),
   });
   const execute = (target: `0x${string}`, data: `0x${string}`) =>
@@ -174,7 +182,7 @@ describe("transactions an agent signs itself", () => {
         const box = tools as ArenaToolbox;
         const wallet = createWalletClient({
           account,
-          chain: sandbox.chain,
+          chain: localChain(),
           transport: http(sandbox.rpcUrl),
         });
         const attacker = privateKeyToAccount(generatePrivateKey()).address;

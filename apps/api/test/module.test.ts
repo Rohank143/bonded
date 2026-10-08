@@ -62,7 +62,8 @@ beforeAll(async () => {
     logs: receipt.logs,
     eventName: "Registered",
   })[0]!.args.agentId;
-  mandate = EvmMandate.parse({ ...template, agentId: agentId.toString() });
+  // Enforce: the only mode in which a module can hold cover.
+  mandate = EvmMandate.parse({ ...template, agentId: agentId.toString(), mode: "enforce" });
   // The "smart account" here is the operator's own address: the factory takes whoever calls it.
   const made = await op.read.waitForTransactionReceipt({
     hash: await op.send(d.moduleFactory, mandateModuleFactoryAbi, "createModule", [
@@ -200,4 +201,31 @@ it("is watched by the keeper like a vault, so its breaches are claimed", async (
     ])
   ).rows.map((r) => r.address);
   expect(watched).toContain(module.toLowerCase());
+}, 120_000);
+
+it("refuses to quote a Monitor-mode module, saying why, before the contract would", async () => {
+  const d = sandbox.deployment;
+  // Another smart account (here an address) with a Monitor-mode module for the same agent.
+  const other = connectChain(d, sandbox.rpcUrl, ANVIL_KEYS.depositor);
+  const monitor = EvmMandate.parse({ ...mandate, mode: "monitor" });
+  const made = await other.read.waitForTransactionReceipt({
+    hash: await other.send(d.moduleFactory!, mandateModuleFactoryAbi, "createModule", [
+      withMandateCommitment(toEvmMandateParams(monitor)),
+      other.wallet.account.address,
+      op.wallet.account.address,
+      agentId,
+    ]),
+  });
+  const monitorModule = parseEventLogs({
+    abi: mandateModuleFactoryAbi,
+    logs: made.logs,
+    eventName: "ModuleCreated",
+  })[0]!.args.module;
+  const res = await post("/quotes", {
+    agentId: agentId.toString(),
+    vault: monitorModule,
+    coverAmount: usd(1_000).toString(),
+  });
+  expect(res.status).toBe(409);
+  expect(await errorOf(res)).toMatch(/only in Enforce mode/);
 }, 120_000);

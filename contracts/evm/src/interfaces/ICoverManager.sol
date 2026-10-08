@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import {IMandateModuleFactory} from "./IMandateModuleFactory.sol";
+
 /// @title ICoverManager
 /// @notice What CoverPool, OperatorBond and ClaimsEngine need from CoverManager.
 interface ICoverManager {
@@ -44,6 +46,9 @@ interface ICoverManager {
     function coverEndOf(uint256 agentId) external view returns (uint64);
 
     function getPolicy(uint256 policyId) external view returns (Policy memory);
+
+    /// @notice MandateModuleFactory whose modules can hold cover (zero until set).
+    function moduleFactory() external view returns (IMandateModuleFactory);
 
     /// @notice Time range in which a breach is covered: [coveredFrom, coveredUntil].
     function coverageWindow(uint256 policyId)

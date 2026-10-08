@@ -18,7 +18,7 @@ import { ApiError, api } from "../lib/api";
 import { liveCheckView, teeView } from "../lib/tee";
 import { isRpcUnavailable } from "../lib/errors";
 import { apiLookups, isRegistered } from "../lib/agent";
-import { useAgents } from "../lib/chain";
+import { moduleCoverNote, useAgents } from "../lib/chain";
 import { tierMeaning } from "../lib/glossary";
 import { OwnerTools } from "../components/owner-tools";
 import { ModuleCover } from "../components/module-cover";
@@ -524,6 +524,7 @@ function AccountSummary({ module, account }: { module: Address; account: Address
       { ...m, functionName: "frozen" },
       { ...m, functionName: "breachCount" },
       { ...m, functionName: "installs" },
+      { ...m, functionName: "mode" },
       {
         address: deployment.coverManager,
         abi: coverManagerAbi,
@@ -532,7 +533,8 @@ function AccountSummary({ module, account }: { module: Address; account: Address
       },
     ],
   });
-  const [held, frozen, breaches, installs, active] = reads.data ?? [];
+  const [held, frozen, breaches, installs, mode, active] = reads.data ?? [];
+  const cover = mode?.result !== undefined ? moduleCoverNote(mode.result) : undefined;
   const policy = useReadContract({
     address: deployment.coverManager,
     abi: coverManagerAbi,
@@ -566,13 +568,17 @@ function AccountSummary({ module, account }: { module: Address; account: Address
                 ? "active"
                 : "…"}
         </dd>
+        <dt>Mode</dt>
+        <dd>{cover?.label ?? "…"}</dd>
         <dt>Breaches recorded</dt>
         <dd className="tabular-nums">{breaches?.result?.toString() ?? "…"}</dd>
         <dt>Cover left</dt>
         <dd className="tabular-nums">
           {policy
             ? `$${usd(policy.remainingCover, 0)} of $${usd(policy.coverAmount, 0)}`
-            : "no active cover"}
+            : cover && !cover.insurable
+              ? "not insurable"
+              : "no active cover"}
         </dd>
       </dl>
       <p className="mt-3 text-xs text-muted">

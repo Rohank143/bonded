@@ -82,6 +82,26 @@ abstract contract ModuleDifferentialTests is ModuleTestBase {
         }
     }
 
+    /// @dev The one rule where vault and module differ by design: on a module, a token call
+    ///      (approve, transfer...) on a token outside the asset list is UnauthorizedTarget,
+    ///      because a smart account may hold other tokens. The vault keeps its rule (only the
+    ///      spender or recipient is checked) so its behaviour and published scores don't change.
+    ///      The random steps above only use listed tokens, so they compare like for like.
+    function test_UnlistedTokenCallsDifferByDesign() public {
+        honeypot.mint(address(vault), 1e18);
+        honeypot.mint(account, 1e18);
+        bytes memory approveRouter = abi.encodeCall(IERC20.approve, (address(router), 1e18));
+        vm.prank(agent);
+        vault.execute(address(honeypot), approveRouter);
+        vm.prank(agent);
+        module.execute(address(honeypot), approveRouter);
+        assertEq(vault.breachCount(), 0); // allowed spender: fine for the vault
+        assertEq(module.breachCount(), 1);
+        assertEq(
+            uint8(module.getBreach(0).breachType), uint8(BondedTypes.BreachType.UnauthorizedTarget)
+        );
+    }
+
     // ----- Steps -------------------------------------------------------------------------
 
     function _step(uint256 r) internal {

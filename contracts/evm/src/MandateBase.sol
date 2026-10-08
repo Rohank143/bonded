@@ -54,11 +54,11 @@ abstract contract MandateBase is ReentrancyGuard {
     uint256 public constant MAX_TARGETS = 32;
     uint256 public constant WINDOW = 1 days;
 
-    bytes4 private constant APPROVE = 0x095ea7b3; // approve(address,uint256)
-    bytes4 private constant INCREASE_ALLOWANCE = 0x39509351; // increaseAllowance(address,uint256)
-    bytes4 private constant SET_APPROVAL_FOR_ALL = 0xa22cb465; // setApprovalForAll(address,bool)
-    bytes4 private constant TRANSFER = 0xa9059cbb; // transfer(address,uint256)
-    bytes4 private constant TRANSFER_FROM = 0x23b872dd; // transferFrom(address,address,uint256)
+    bytes4 internal constant APPROVE = 0x095ea7b3; // approve(address,uint256)
+    bytes4 internal constant INCREASE_ALLOWANCE = 0x39509351; // increaseAllowance(address,uint256)
+    bytes4 internal constant SET_APPROVAL_FOR_ALL = 0xa22cb465; // setApprovalForAll(address,bool)
+    bytes4 internal constant TRANSFER = 0xa9059cbb; // transfer(address,uint256)
+    bytes4 internal constant TRANSFER_FROM = 0x23b872dd; // transferFrom(address,address,uint256)
 
     IPriceOracle public immutable oracle;
     uint256 public immutable agentId;
@@ -344,9 +344,11 @@ abstract contract MandateBase is ReentrancyGuard {
     // Internals: classification and measurement
     // ---------------------------------------------------------------------------------------
 
+    /// @dev Virtual so MandateModule can add its own rule; the vault uses this as is.
     function _classify(address target, bytes calldata data)
         internal
         view
+        virtual
         returns (Verdict memory v)
     {
         bytes4 selector = _selectorOf(data);

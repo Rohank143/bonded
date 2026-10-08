@@ -1,8 +1,13 @@
 {
   "name": "@bonded/solana",
   "version": "0.1.0",
-  "private": true,
   "description": "TypeScript client for the Bonded Solana programs: IDLs, addresses, account decoding and instructions.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ddboy19912/bonded.git",
+    "directory": "packages/solana"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -15,6 +20,9 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

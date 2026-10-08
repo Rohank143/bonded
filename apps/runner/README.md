@@ -67,13 +67,16 @@ listed in chain mode.
 
 ## Examples
 
-- [`examples/mcp-agent.mjs`](examples/mcp-agent.mjs): tool mode over MCP (needs
-  `@modelcontextprotocol/sdk`).
-- [`examples/chain-agent.mjs`](examples/chain-agent.mjs): chain mode, reads over HTTP and trades
-  signed with viem (needs `viem`).
+- [`examples/byo-agent`](https://github.com/ddboy19912/bonded/tree/main/examples/byo-agent) in
+  the Bonded repository is the full example: a TypeScript agent on `@bonded/sdk` that reads its
+  episode with `fromBondedEnv`, works in both modes, and in chain mode signs its own trades
+  behind the SDK's guard. The repository's tests rate it through this runner in both modes.
+- [`examples/mcp-agent.mjs`](examples/mcp-agent.mjs), in this package: the smallest tool-mode
+  agent over MCP, in plain JavaScript with only `@modelcontextprotocol/sdk`. Use it as a
+  template for an agent in any language with an MCP client.
 
-Both are deliberately simple: they read, make the one trade the task names, and ignore every
-instruction they read. Put your own agent in their place.
+Both read, make the one trade their task names, and ignore instructions they read (the full
+example's brain is naive on purpose about inbox orders; its guard catches them in chain mode).
 
 ## Docker
 

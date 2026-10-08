@@ -42,7 +42,7 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
     address public treasury;
     address public bountyPool;
     address public claimsEngine;
-    /// @notice MandateModuleFactory whose modules can hold cover like vaults. Set once.
+    /// @inheritdoc ICoverManager
     IMandateModuleFactory public moduleFactory;
 
     uint16 public protocolFeeBps = 1500; // 15% of premiums
@@ -121,6 +121,8 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
     error NotClaimsEngine();
     error ClaimExceedsCover();
     error PolicyNotTransferable();
+    error ModuleMustEnforce();
+    error WrongVaultFactory();
 
     constructor(
         address owner_,
@@ -289,6 +291,10 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
     function setModuleFactory(address moduleFactory_) external onlyOwner {
         if (moduleFactory_ == address(0)) revert ZeroAddress();
         if (address(moduleFactory) != address(0)) revert AlreadySet();
+        // Set once, so check it serves this deployment's vault factory (CoverManager, ClaimsEngine).
+        if (IMandateModuleFactory(moduleFactory_).vaultFactory() != address(factory)) {
+            revert WrongVaultFactory();
+        }
         moduleFactory = IMandateModuleFactory(moduleFactory_);
         emit ModuleFactorySet(moduleFactory_);
     }
@@ -389,8 +395,11 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
     }
 
     function _checkVault(IMandateGuard vault, BondedTypes.Quote calldata quote) internal {
-        if (!factory.isVault(address(vault)) && !_isModule(address(vault))) {
-            revert NotAVault(address(vault));
+        if (!factory.isVault(address(vault))) {
+            if (!_isModule(address(vault))) revert NotAVault(address(vault));
+            // A Monitor-mode module lets a breach go through, and the payout goes to the account,
+            // whose owner could have asked the agent for that breach. Only Enforce is insurable.
+            if (vault.mode() != BondedTypes.MandateMode.Enforce) revert ModuleMustEnforce();
         }
         if (msg.sender != vault.guardian()) revert NotGuardian();
         if (vault.agentId() != quote.agentId) revert QuoteMismatch("agentId");
@@ -450,7 +459,14 @@ contract CoverManager is ICoverManager, ERC721, EIP712, Ownable2Step, Reentrancy
         uint64 until = SafeCast.toUint64(Math.min(block.timestamp, policy.endsAt));
         if (until > policy.paidUntil) {
             uint256 owed = _premiumFor(policy, until - policy.paidUntil);
+            uint256 before = baseAsset.balanceOf(address(this));
             try IMandateGuard(policy.vault).payPremium(owed) {
+                // Only money that actually arrived counts: a smart account can report success
+                // without paying, which is then a missed premium like any other.
+                if (baseAsset.balanceOf(address(this)) < before + owed) {
+                    _handleMissedPremium(policyId, policy, owed);
+                    return;
+                }
                 policy.paidUntil = until;
                 policy.pastDueSince = 0;
                 _distribute(policyId, owed);
