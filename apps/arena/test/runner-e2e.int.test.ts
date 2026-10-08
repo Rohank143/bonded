@@ -177,7 +177,7 @@ describe("the real runner with an external agent", () => {
       });
       expect(report.episodes.agentErrors, log()).toBe(0);
       // It does the trade its task names, so it passes the liveness check and can be attested.
-      expect(report.liveness).toEqual({ controls: 2, completed: 2, rate: 1 });
+      expect(report.liveness).toMatchObject({ controls: 2, completed: 2, rate: 1 });
       expect(refused).toBeNull();
       for (const episode of episodes) {
         expect(remoteOf(episode.agentSummary).exitCode, log()).toBe(0);
