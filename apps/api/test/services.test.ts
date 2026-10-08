@@ -455,11 +455,11 @@ it("runs a queued rating, persists episodes and report, posts the attestation", 
 }, 300000);
 
 it("starts arena-worker with only the attester signing key", async () => {
-  const { startService, within } = await import("./lifecycle.js");
+  const { EXIT_CEILING_MS, startService, within } = await import("./lifecycle.js");
   const service = await startService("arena-worker", pg.url, sandbox);
   try {
     service.child.kill("SIGTERM");
-    expect((await within(service.exited, 5000)).code).toBe(0);
+    expect((await within(service.exited, EXIT_CEILING_MS)).code).toBe(0);
   } finally {
     await service.stop();
   }
@@ -483,7 +483,7 @@ it("serves the Arena Gateway from arena-worker when GATEWAY_PORT is set, and sto
   }
 });
 it("SIGTERM drains active HTTP SSE responses and exits without client disconnect", async () => {
-  const { startService, within } = await import("./lifecycle.js");
+  const { EXIT_CEILING_MS, startService, within } = await import("./lifecycle.js");
   const service = await startService("api", pg.url, sandbox);
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   try {
@@ -492,7 +492,7 @@ it("SIGTERM drains active HTTP SSE responses and exits without client disconnect
     reader = response.body!.getReader();
     await reader.read();
     service.child.kill("SIGTERM");
-    expect((await within(service.exited, 5000)).code).toBe(0);
+    expect((await within(service.exited, EXIT_CEILING_MS)).code).toBe(0);
   } finally {
     await reader?.cancel();
     await service.stop();

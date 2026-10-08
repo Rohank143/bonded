@@ -51,7 +51,7 @@ import {
 import { registerForRatings } from "../lib/self-serve";
 import {
   ACCOUNT_TYPE_LABELS,
-  MODULE_DEFERRED_NOTE,
+  MODULE_COVER_NOTE,
   installSteps,
   type ModuleCall,
 } from "../lib/module";
@@ -169,6 +169,9 @@ export function NewAgent() {
     ...remoteErrors.filter((e): e is string => Boolean(e)),
     ...(protection === "module" && !deployment.moduleFactory
       ? ["Smart-account protection isn't deployed on this chain yet."]
+      : []),
+    ...(protection === "module" && mode !== "enforce"
+      ? ["A module on a smart account must use Enforce mode: in Monitor mode it can't hold cover."]
       : []),
     ...(protection === "module" && !isAddress(account.trim())
       ? ["Enter your smart account's address."]
@@ -642,7 +645,11 @@ export function NewAgent() {
                   <Choice
                     name="protection"
                     checked={onModule}
-                    onChange={() => setProtection("module")}
+                    onChange={() => {
+                      setProtection("module");
+                      // Only an Enforce-mode module can hold cover.
+                      setMode("enforce");
+                    }}
                     title="Protect the smart account I already use (ERC-7579 / Safe)"
                   >
                     {deployment.moduleFactory
@@ -671,7 +678,7 @@ export function NewAgent() {
                       placeholder="0x…"
                       error={account ? addressError(account) : null}
                     />
-                    <p className="text-xs text-muted">{MODULE_DEFERRED_NOTE}</p>
+                    <p className="text-xs text-muted">{MODULE_COVER_NOTE}</p>
                   </div>
                 )}
               </fieldset>

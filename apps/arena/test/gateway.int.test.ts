@@ -361,6 +361,66 @@ describe("chain mode", () => {
     expect(name).not.toMatch(/arena/i);
   });
 
+  it("lets calls, estimates and simulations run with overrides, without changing the fork", async () => {
+    const { episode, vault, account } = await chainEpisode();
+    const operator = sandbox.address("operator");
+    const read = sandbox.publicClient;
+    const before = {
+      block: await read.getBlockNumber(),
+      balance: await read.getBalance({ address: operator }),
+      code: await read.getCode({ address: vault.address }),
+      nonce: await read.getTransactionCount({ address: account.address }),
+    };
+    const breachCount = encodeFunctionData({ abi: mandateVaultAbi, functionName: "breachCount" });
+    const freeze = encodeFunctionData({ abi: mandateVaultAbi, functionName: "freeze" });
+    const overrides = { [operator]: { balance: "0x1" }, [vault.address]: { code: "0x00" } };
+
+    const call = await rpc(episode, "eth_call", [
+      { to: vault.address, data: breachCount },
+      "latest",
+      overrides,
+    ]);
+    expect(call.error, JSON.stringify(call)).toBeUndefined();
+    const plainCall = await rpc(episode, "eth_call", [
+      { to: vault.address, data: breachCount },
+      "latest",
+    ]);
+    const estimate = await rpc(episode, "eth_estimateGas", [
+      { from: operator, to: vault.address, data: freeze },
+    ]);
+    expect(estimate.result).toMatch(/^0x/);
+    // The operator may freeze its vault: simulated, it happens; on the fork, it doesn't.
+    const simulated = (await rpc(episode, "eth_simulateV1", [
+      {
+        blockStateCalls: [
+          {
+            stateOverrides: { [operator]: { balance: "0xde0b6b3a7640000" } },
+            calls: [
+              { from: operator, to: vault.address, data: freeze },
+              { to: vault.address, data: breachCount },
+            ],
+          },
+        ],
+      },
+      "latest",
+    ])) as { result?: { calls: { status: string; returnData: string }[] }[] };
+    expect(simulated.result?.[0]?.calls.map((c) => c.status)).toEqual(["0x1", "0x1"]);
+    // A simulation shows nothing a plain call can't: the same state, read the same way.
+    expect(simulated.result?.[0]?.calls[1]?.returnData).toBe(plainCall.result);
+
+    expect(await read.getBlockNumber()).toBe(before.block);
+    expect(await read.getBalance({ address: operator })).toBe(before.balance);
+    expect(await read.getCode({ address: vault.address })).toBe(before.code);
+    expect(await read.getTransactionCount({ address: account.address })).toBe(before.nonce);
+    expect(
+      await read.readContract({
+        address: vault.address,
+        abi: mandateVaultAbi,
+        functionName: "frozen",
+      }),
+    ).toBe(false);
+  });
+
   it("checks every request in a batch, in order, and caps the batch size", async () => {
     const { episode } = await chainEpisode();
     const batch = (await (
@@ -580,7 +640,9 @@ describe("RemoteAgent", () => {
     expect(result.agentSummary.steps).toBe(result.trace.length);
     const episode = fake.received[0]!;
     // The agent is never told which attack it faces, or anything else about it.
-    expect(JSON.stringify(episode)).not.toContain("A6");
+    // (Not a bare "A6": a random address or id can contain that.)
+    expect(JSON.stringify(episode)).not.toContain(spec().id);
+    expect(JSON.stringify(episode)).not.toMatch(/"A6"|attack|impersonation/i);
     expect(JSON.stringify(episode)).not.toContain(result.planted[0]!.text.slice(0, 20));
     expect(episode).not.toHaveProperty("sessionKey");
     expect((result.agentSummary as RemoteRunSummary).remote.reads).toMatchObject({

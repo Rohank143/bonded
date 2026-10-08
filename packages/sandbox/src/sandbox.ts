@@ -1,0 +1,273 @@
+import { type ChildProcess, execFile, spawn } from "node:child_process";
+import { readFileSync, rmSync } from "node:fs";
+import { createServer } from "node:net";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+import { type EvmDeployment, parseEvmDeployment } from "@bonded/shared";
+import {
+  type Account,
+  type Chain,
+  createPublicClient,
+  createWalletClient,
+  defineChain,
+  http,
+  type PublicClient,
+  type Transport,
+  type WalletClient,
+} from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+
+const run = promisify(execFile);
+
+/** contracts/evm, resolved from src/ or dist/ alike. */
+export const CONTRACTS_DIR = fileURLToPath(new URL("../../../contracts/evm/", import.meta.url));
+
+/**
+ * anvil's well-known development keys (public test keys, never used on a real network).
+ * anvil funds these with test ETH on fresh chains and on forks alike.
+ */
+export const ANVIL_KEYS = {
+  deployer: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+  operator: "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
+  agent: "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a",
+  depositor: "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6",
+} as const;
+export type SandboxRole = keyof typeof ANVIL_KEYS;
+
+/**
+ * What the agent's tools need from a chain: its deployment, a reader and the agent's wallet. A
+ * sandbox is one; a live chain (testnet, for the demo's break-it run) can be another.
+ */
+export type ChainHandle = Pick<Sandbox, "deployment" | "publicClient"> & {
+  wallet(role: SandboxRole): ReturnType<Sandbox["wallet"]>;
+};
+
+export interface SandboxOptions {
+  /**
+   * RPC of a live chain to fork (e.g. Robinhood Chain testnet). The sandbox then attaches to
+   * the committed deployment for that chain. Without it, a fresh local chain is started and
+   * the protocol is deployed to it.
+   */
+  forkUrl?: string;
+  /** Explicit deployment for a fork, including ephemeral local chains. */
+  forkDeployment?: EvmDeployment;
+  /** Port for anvil; a free one is picked by default. */
+  port?: number;
+  /** Progress messages (deploy output, etc.). */
+  log?: (message: string) => void;
+}
+
+type ArenaWallet = WalletClient<Transport, Chain, Account>;
+
+/**
+ * An isolated chain for Arena episodes: a local anvil node, either fresh (with the protocol
+ * deployed by the same scripts as production) or forking a live testnet. Nothing here can
+ * touch a real network: anvil keeps every transaction local.
+ */
+export class Sandbox {
+  private constructor(
+    private readonly anvil: ChildProcess,
+    readonly rpcUrl: string,
+    readonly chain: Chain,
+    readonly deployment: EvmDeployment,
+    readonly forked: boolean,
+    readonly publicClient: PublicClient<Transport, Chain>,
+    /** The live chain's RPC a fork was made from (may hold an API key: never shown to agents). */
+    readonly forkUrl?: string,
+  ) {}
+
+  static async start(options: SandboxOptions = {}): Promise<Sandbox> {
+    const log = options.log ?? (() => {});
+    const port = options.port ?? (await freePort());
+    const rpcUrl = `http://127.0.0.1:${port}`;
+
+    const args = ["--port", String(port), "--silent"];
+    if (!options.forkUrl) {
+      // A chain id unique to this sandbox (its port is unique while it runs), so sandboxes
+      // started at the same time write separate deployment files instead of racing on one.
+      args.push("--chain-id", String(313_370_000 + port));
+    }
+    if (options.forkUrl) {
+      // Fork a few blocks behind the tip: some public RPCs load-balance across nodes that lag,
+      // and a node that hasn't seen the tip yet can't serve state for it.
+      const upstream = createPublicClient({ transport: http(options.forkUrl) });
+      const tip = await upstream.getBlockNumber();
+      args.push("--fork-url", options.forkUrl, "--fork-block-number", String(tip - 5n));
+    }
+    const anvil = spawn("anvil", args, { stdio: ["ignore", "ignore", "pipe"] });
+    let stderr = "";
+    anvil.stderr?.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    const spawnError = new Promise<never>((_, reject) => {
+      anvil.once("error", (error) =>
+        reject(new Error(`could not start anvil (is Foundry installed?): ${error.message}`)),
+      );
+    });
+
+    try {
+      const chainId = await Promise.race([waitForRpc(rpcUrl, anvil, () => stderr), spawnError]);
+      const chain = defineChain({
+        id: chainId,
+        name: options.forkUrl ? `fork of chain ${chainId}` : "arena local",
+        nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+        rpcUrls: { default: { http: [rpcUrl] } },
+      });
+      // anvil mines instantly, so poll for receipts often rather than every 4 seconds.
+      const publicClient = createPublicClient({
+        chain,
+        transport: http(rpcUrl),
+        pollingInterval: 50,
+      });
+
+      let deployment: EvmDeployment;
+      if (options.forkUrl) {
+        deployment = options.forkDeployment ?? loadDeployment(chainId);
+        if (deployment.chainId !== chainId) throw new Error("fork deployment chain mismatch");
+        log(`Forked chain ${chainId}; attached to its committed deployment`);
+      } else {
+        log("Deploying the protocol to a fresh local chain");
+        deployment = await deployFresh(rpcUrl, chainId, log);
+        // The addresses now live in memory; the file only existed to hand them over.
+        rmSync(`${CONTRACTS_DIR}deployments/${chainId}.json`, { force: true });
+      }
+      return new Sandbox(
+        anvil,
+        rpcUrl,
+        chain,
+        deployment,
+        Boolean(options.forkUrl),
+        publicClient,
+        options.forkUrl,
+      );
+    } catch (error) {
+      anvil.kill();
+      throw error;
+    }
+  }
+
+  /** A wallet for one of the sandbox's funded development accounts. */
+  wallet(role: SandboxRole): ArenaWallet {
+    return createWalletClient({
+      account: privateKeyToAccount(ANVIL_KEYS[role]),
+      chain: this.chain,
+      transport: http(this.rpcUrl),
+    });
+  }
+
+  /**
+   * A wallet that sends as any address, with test ETH for gas (anvil impersonation). Used for
+   * the attacker, whose addresses (such as a lookalike) have no key the Arena knows.
+   */
+  async impersonate(address: `0x${string}`): Promise<WalletClient<Transport, Chain, Account>> {
+    await this.anvil_("anvil_impersonateAccount", [address]);
+    await this.fund(address);
+    return createWalletClient({
+      account: address,
+      chain: this.chain,
+      transport: http(this.rpcUrl),
+    });
+  }
+
+  /**
+   * Gives an address test ETH for gas (anvil's balance cheat, local to the sandbox). Used for a
+   * chain-mode agent's own key, which signs its transactions itself.
+   */
+  async fund(address: `0x${string}`, wei: bigint = 10n ** 18n): Promise<void> {
+    await this.anvil_("anvil_setBalance", [address, `0x${wei.toString(16)}`]);
+  }
+
+  private anvil_(method: string, params: unknown[]): Promise<unknown> {
+    return this.publicClient.request({ method: method as never, params: params as never });
+  }
+
+  address(role: SandboxRole): `0x${string}` {
+    return privateKeyToAccount(ANVIL_KEYS[role]).address;
+  }
+
+  async stop(): Promise<void> {
+    if (hasExited(this.anvil)) return;
+    const exited = new Promise<void>((resolve) => this.anvil.once("exit", () => resolve()));
+    this.anvil.kill();
+    await exited;
+  }
+}
+
+function loadDeployment(chainId: number): EvmDeployment {
+  const path = `${CONTRACTS_DIR}deployments/${chainId}.json`;
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    throw new Error(`no Bonded deployment recorded for chain ${chainId} (${path})`);
+  }
+  return parseEvmDeployment(text, chainId);
+}
+
+/** Deploys with the production scripts (deploy.sh: Deploy + RecordDeployment). */
+async function deployFresh(
+  rpcUrl: string,
+  chainId: number,
+  log: (message: string) => void,
+): Promise<EvmDeployment> {
+  try {
+    const { stdout } = await run("script/deploy.sh", [rpcUrl], {
+      cwd: CONTRACTS_DIR,
+      // Every role is set explicitly and .env is ignored, so testnet settings (a real attester
+      // or key in .env or the shell) never leak into a local sandbox.
+      env: {
+        ...process.env,
+        BONDED_SKIP_DOTENV: "1",
+        DEPLOYER_PRIVATE_KEY: ANVIL_KEYS.deployer,
+        ATTESTER: privateKeyToAccount(ANVIL_KEYS.deployer).address,
+        COUNCIL: privateKeyToAccount(ANVIL_KEYS.deployer).address,
+        WAITING_PERIOD: "0",
+      },
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    log(
+      stdout
+        .split("\n")
+        .filter((line) => line.includes("Verified on-chain"))
+        .join("\n"),
+    );
+  } catch (error) {
+    const detail = error instanceof Error && "stderr" in error ? String(error.stderr) : "";
+    throw new Error(`deploying to the sandbox failed: ${detail || String(error)}`, {
+      cause: error,
+    });
+  }
+  return loadDeployment(chainId);
+}
+
+/** True once the process has ended, whether it exited or was killed by a signal. */
+export function hasExited(child: ChildProcess): boolean {
+  return child.exitCode !== null || child.signalCode !== null;
+}
+
+async function waitForRpc(rpcUrl: string, anvil: ChildProcess, stderr: () => string) {
+  const client = createPublicClient({ transport: http(rpcUrl, { retryCount: 0 }) });
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    if (hasExited(anvil)) throw new Error(`anvil exited: ${stderr().trim()}`);
+    try {
+      return await client.getChainId();
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+  throw new Error("anvil did not start within 30 seconds");
+}
+
+async function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      server.close(() =>
+        typeof address === "object" && address
+          ? resolve(address.port)
+          : reject(new Error("no port")),
+      );
+    });
+  });
+}

@@ -1,5 +1,6 @@
 import {
   EvmMandate,
+  buildEvmMandate,
   demoRouterAbi,
   type EvmDeployment,
   type ModuleAccountType,
@@ -40,26 +41,24 @@ export function buildMandate(
     tAMZN: deployment.amzn,
     tNVDA: deployment.nvda,
   };
-  return EvmMandate.parse({
-    version: 1,
-    chain: { family: "evm", chainId: deployment.chainId },
-    agentId: agentId.toString(),
+  // The one mandate builder, shared with @bonded/sdk.
+  return buildEvmMandate({
+    chainId: deployment.chainId,
+    agentId,
     mode: form.mode,
     baseAsset: deployment.usdg,
-    assets: [deployment.usdg, ...form.tokens.map((t) => address[t])],
+    assets: form.tokens.map((t) => address[t]),
     targets: [
       {
         address: deployment.router,
-        selectors: [toFunctionSelector(getAbiItem({ abi: demoRouterAbi, name: "swap" }))],
+        functions: [toFunctionSelector(getAbiItem({ abi: demoRouterAbi, name: "swap" }))],
       },
     ],
     destinations: form.destinations,
-    limits: {
-      maxTxNotionalUsd: form.maxTxUsd,
-      maxDailyNotionalUsd: form.maxDailyUsd,
-      maxDrawdownBps: Math.round(form.maxDrawdownPct * 100),
-      maxSlippageBps: Math.round(form.maxSlippagePct * 100),
-    },
+    maxTradeUsd: form.maxTxUsd,
+    maxDailyUsd: form.maxDailyUsd,
+    maxDrawdownPct: form.maxDrawdownPct,
+    maxSlippagePct: form.maxSlippagePct,
     // Cover requires it (CoverManager refuses a vault that doesn't freeze on breach).
     freezeOnBreach: true,
     description: form.description,

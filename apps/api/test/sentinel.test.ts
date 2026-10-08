@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { ANVIL_KEYS, Sandbox, createAgentVault, type AgentVault } from "@bonded/arena";
 import { connectChain, type ServiceChain } from "@bonded/keeper";
 import type { SentinelModel } from "@bonded/demo-agents";
+import { checkWithSentinel } from "@bonded/sdk";
 import { sentinelCheckDigest, sentinelCheckMessage, type SentinelCheckBody } from "@bonded/shared";
 import { privateKeyToAccount } from "viem/accounts";
 import { createApi } from "../src/index.js";
@@ -312,3 +313,29 @@ it("attests a combined code hash whenever Sentinel is on, and refuses Sentinel w
     }).success,
   ).toBe(false);
 });
+
+it("answers the SDK's checkWithSentinel, as an agent outside Bonded would call it", async () => {
+  clock += 120_000;
+  // The SDK's client, with requests going to this API instead of over the network.
+  const fetch = ((url: string, init: RequestInit) =>
+    app.request(String(url), init)) as unknown as typeof globalThis.fetch;
+  const ask = (body: SentinelCheckBody, account = agentKey) =>
+    checkWithSentinel({
+      apiUrl: "http://api.test",
+      chainId: sandbox.deployment.chainId,
+      agentId: vault.agentId,
+      vault: vault.address,
+      ...body,
+      account,
+      fetch,
+      timestamp: now(),
+    });
+  expect(await ask(benign)).toMatchObject({ blocked: false, manipulated: 0.04 });
+  expect(await ask(planted)).toMatchObject({ blocked: true, manipulated: 0.93 });
+  // The owner's wallet isn't the agent key: the API refuses, and the SDK says why.
+  await expect(ask(benign, operator)).rejects.toMatchObject({
+    name: "SentinelError",
+    status: 403,
+    message: expect.stringMatching(/agent key/),
+  });
+}, 60_000);

@@ -45,6 +45,11 @@ export function installSteps(
   return plan.calls.map((call, i) => ({ label: labels[i]!, to: call.to, data: call.data }));
 }
 
-/** What cover on a module doesn't pay, in plain words. */
-export const MODULE_DEFERRED_NOTE =
-  "On a smart account, a loss the module only finds later (a deferred breach) is recorded but not paid: it can't be told apart from the account's owner moving funds. Breaches it catches as they happen are covered as usual.";
+/**
+ * What cover on a module means, in plain words. A module holds cover only in Enforce mode, so a
+ * breach is blocked rather than paid; a loss it only finds later (a deferred breach) is recorded
+ * but not paid, since it can't be told apart from the account's owner moving funds; and any other
+ * payout needs a dispute the council approves.
+ */
+export const MODULE_COVER_NOTE =
+  "On a smart account the module must run in Enforce mode: a breach it catches is blocked, so there is no loss to pay. A loss it only finds later (a deferred breach) is recorded but not paid, because it can't be told apart from the account's owner moving funds. Any other payout on a module needs a dispute the council approves.";

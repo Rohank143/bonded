@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentRows, claimPayee, protectedAccounts, waterfall } from "./chain";
+import { agentRows, claimPayee, moduleCoverNote, protectedAccounts, waterfall } from "./chain";
 
 it("splits the Gate 1 testnet claim like the contract did", () => {
   // ClaimPaid for policy 1 on chain 46630 (docs/progress/DAY-07.md).
@@ -73,6 +73,14 @@ describe("smart accounts protected by a MandateModule", () => {
     { module: module1, account: account1, agentId: 1n },
     { module: module2, account: account2, agentId: 1n },
   ];
+
+  it("only offers cover for Enforce-mode modules", () => {
+    expect(moduleCoverNote(1).insurable).toBe(true);
+    expect(moduleCoverNote(0)).toEqual({
+      insurable: false,
+      label: "Monitor: breaches go through; can't hold cover",
+    });
+  });
 
   it("lists protected accounts newest first", () => {
     expect(protectedAccounts(logs).map((p) => p.module)).toEqual([module2, module1]);

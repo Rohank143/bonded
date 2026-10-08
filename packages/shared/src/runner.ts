@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { AgentTask } from "./agent.js";
+import { evmAddress } from "./schemas/common.js";
 
 /**
  * The runner protocol: how an agent running on its operator's own servers is rated by the Arena
@@ -226,5 +227,100 @@ export function episodeEnv(episode: EpisodeMessage): Record<string, string> {
     BONDED_CHAIN_ID: String(episode.chainId),
     BONDED_CONTRACTS: JSON.stringify(episode.contracts),
     BONDED_DEADLINE_MS: String(episode.deadlineMs),
+  };
+}
+
+/** An environment variable holding JSON, parsed and then checked with `schema`. */
+const envJson = <T extends z.ZodType>(schema: T) =>
+  z
+    .string()
+    .transform((text, ctx) => {
+      try {
+        return JSON.parse(text) as unknown;
+      } catch {
+        ctx.addIssue({ code: "custom", message: "must be JSON" });
+        return z.NEVER;
+      }
+    })
+    .pipe(schema);
+
+/**
+ * The BONDED_* variables an agent reads, as `episodeEnv` writes them: the one schema for both
+ * sides (the SDK's `fromBondedEnv` uses it). `BONDED_DEADLINE_MS` is a duration.
+ */
+export const EpisodeEnv = z
+  .object({
+    BONDED_EPISODE_ID: id,
+    BONDED_MODE: AgentMode,
+    BONDED_TASK: envJson(AgentTaskSchema),
+    BONDED_MCP_URL: url,
+    BONDED_TOOLS_URL: url,
+    BONDED_OPENAPI_URL: url,
+    BONDED_DONE_URL: url,
+    BONDED_RPC_URL: url.optional(),
+    BONDED_SESSION_KEY: z
+      .string()
+      .regex(/^0x[0-9a-fA-F]{64}$/, "must be a 0x-prefixed 32-byte private key")
+      .transform((value) => value as `0x${string}`)
+      .optional(),
+    BONDED_VAULT: evmAddress,
+    BONDED_CHAIN_ID: z.coerce.number().int().positive(),
+    BONDED_CONTRACTS: envJson(
+      EpisodeContracts.extend({
+        tokens: z
+          .array(
+            z.object({
+              symbol: z.string().min(1),
+              address: evmAddress,
+              decimals: z.number().int().min(0).max(36),
+            }),
+          )
+          .min(1),
+        exchange: evmAddress,
+      }),
+    ),
+    BONDED_DEADLINE_MS: z.coerce.number().int().positive(),
+  })
+  .refine((env) => env.BONDED_MODE !== "chain" || env.BONDED_RPC_URL, {
+    message: "chain mode needs BONDED_RPC_URL",
+    path: ["BONDED_RPC_URL"],
+  });
+
+/** An episode as its agent sees it: the `episode` message, read back from the environment. */
+export type EpisodeFromEnv = Omit<EpisodeMessage, "type" | "nonce">;
+
+/**
+ * Reads an episode from BONDED_* variables (the inverse of `episodeEnv`). Addresses come back
+ * checksummed. Returns every problem, by variable, when the environment isn't a valid episode.
+ */
+export function parseEpisodeEnv(
+  env: Record<string, string | undefined>,
+): { ok: true; episode: EpisodeFromEnv } | { ok: false; problems: string[] } {
+  const parsed = EpisodeEnv.safeParse(env);
+  if (!parsed.success)
+    return {
+      ok: false,
+      problems: parsed.error.issues.map((i) => `${i.path.join(".") || "environment"} ${i.message}`),
+    };
+  const e = parsed.data;
+  return {
+    ok: true,
+    episode: {
+      episodeId: e.BONDED_EPISODE_ID,
+      task: e.BONDED_TASK,
+      mode: e.BONDED_MODE,
+      endpoints: {
+        mcp: e.BONDED_MCP_URL,
+        tools: e.BONDED_TOOLS_URL,
+        openapi: e.BONDED_OPENAPI_URL,
+        done: e.BONDED_DONE_URL,
+        ...(e.BONDED_RPC_URL ? { rpc: e.BONDED_RPC_URL } : {}),
+      },
+      chainId: e.BONDED_CHAIN_ID,
+      vault: e.BONDED_VAULT,
+      contracts: e.BONDED_CONTRACTS,
+      ...(e.BONDED_SESSION_KEY ? { sessionKey: e.BONDED_SESSION_KEY } : {}),
+      deadlineMs: e.BONDED_DEADLINE_MS,
+    },
   };
 }
