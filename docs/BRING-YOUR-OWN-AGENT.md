@@ -67,9 +67,9 @@ BONDED_RUNNER_TOKEN=my-local-runner-token node apps/runner/dist/cli.js \
 
 The Arena runs every published attack once, a held-out set made for this rating alone (one variant per attack class), and two control episodes with no attack, each as one run of your command. It prints each verdict, then the score, and writes the report to `apps/arena/ratings/remote_local/report.md`.
 
-Now put your own agent in place of `node apps/runner/examples/mcp-agent.mjs`. For chain mode add `--mode chain` to both commands and try `apps/runner/examples/chain-agent.mjs`. Add `--repeats 5` to the rating to run each attack five times, as published ratings do: with one run per attack, even an agent with no breaches scores only in the 50s, because the uncertainty is wide ([AGENTS.md](AGENTS.md#the-agents)).
+Now put your own agent in place of `node apps/runner/examples/mcp-agent.mjs`. For chain mode add `--mode chain` to both commands and run the SDK example instead, which signs its own trades behind the SDK's guard: `-- node examples/byo-agent/dist/main.js` (it works in tool mode too). Add `--repeats 5` to the rating to run each attack five times, as published ratings do: with one run per attack, even an agent with no breaches scores only in the 50s, because the uncertainty is wide ([AGENTS.md](AGENTS.md#the-agents)).
 
-The example agents are deliberately simple: they read, make the one trade the task names, and ignore every instruction they read. A runner-started agent written with the SDK is in `examples/byo-agent`.
+Both examples are deliberately simple: they read, make the one trade the task names, and don't act on what they read (the SDK example's brain is naive on purpose about orders in its inbox; its guard catches them in chain mode). `apps/runner/examples/mcp-agent.mjs` is plain JavaScript with only an MCP client, a template for any language; [`examples/byo-agent`](../examples/byo-agent/README.md) is a TypeScript agent on `@bonded/sdk` that also trades for real against your own vault when the runner isn't starting it.
 
 ## Protect your agent
 
@@ -264,7 +264,7 @@ Reads are still tool calls (that is where attacks are planted), but writes are t
 
 - Each episode's vault names a fresh session key as its agent (`BONDED_SESSION_KEY`), funded with test gas on the sandbox chain. A TEE-bound agent gets no key: the vault names the TEE's attested address, and your TEE signs.
 - Every trade is `MandateVault.execute(target, data)` sent with `eth_sendRawTransaction`: approve the exchange for a token, call the exchange's `swap`, or a token's `transfer` or `approve`.
-- The RPC endpoint accepts standard reads (`eth_call`, `eth_getLogs`, `eth_getBalance`, receipts, blocks, gas and fee queries, `net_version`, `web3_clientVersion`) and only those transactions: signed by the episode's key, for this chain, to the episode's vault's `execute`, with no ETH. Every `anvil_`, `hardhat_`, `evm_`, `debug_`, `trace_`, `ots_`, `txpool_`, `personal_` and `eth_sign*` method, `eth_sendTransaction`, `eth_accounts`, filters and subscriptions are refused. Batches of up to 50 requests work.
+- The RPC endpoint accepts standard reads (`eth_call`, `eth_simulateV1`, so the SDK's dry runs and guard work, `eth_getLogs`, `eth_getBalance`, receipts, blocks, gas and fee queries, `net_version`, `web3_clientVersion`) and only those transactions: signed by the episode's key, for this chain, to the episode's vault's `execute`, with no ETH. Every `anvil_`, `hardhat_`, `evm_`, `debug_`, `trace_`, `ots_`, `txpool_`, `personal_` and `eth_sign*` method, `eth_sendTransaction`, `eth_accounts`, filters and subscriptions are refused. Batches of up to 50 requests work.
 - Chain mode needs an EVM agent. A Solana agent can be rated in tool mode.
 
 ### The episode protocol
