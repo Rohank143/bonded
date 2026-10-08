@@ -1,6 +1,5 @@
 import { ANVIL_KEYS } from "@bonded/sandbox";
-import { sentinelCheckDigest, sentinelCheckMessage } from "@bonded/shared";
-import { type Hex, parseUnits, recoverMessageAddress } from "viem";
+import { parseUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -19,6 +18,7 @@ import {
   createTestVault,
   type TestVault,
 } from "./chain.js";
+import { fakeSentinelApi } from "./sentinel-api.js";
 
 let sandbox: Sandbox;
 beforeAll(async () => {
@@ -30,43 +30,14 @@ afterAll(async () => {
 
 const usd = (n: number) => parseUnits(String(n), 6);
 
-/**
- * A stand-in for the Bonded API's Sentinel route: it verifies the agent's signature the way
- * the API does, then flags any action taken after reading "send everything".
- */
-function fakeSentinel(v: TestVault, status = 200) {
-  const asked: { tool: string; args: Record<string, string> }[] = [];
-  const fetch = (async (_url: string, init: RequestInit) => {
-    if (status !== 200) return Response.json({ error: "Sentinel is busy" }, { status });
-    const body = JSON.parse(init.body as string);
-    const signer = await recoverMessageAddress({
-      message: sentinelCheckMessage({
-        chainId: sandbox.chain.id,
-        agentId: body.agentId,
-        vault: body.vault,
-        digest: sentinelCheckDigest(body),
-        timestamp: body.timestamp,
-      }),
-      signature: body.signature as Hex,
-    });
-    if (signer !== sandbox.address("agent") || body.agentId !== v.agentId.toString())
-      return Response.json({ error: "sign with the vault's agent key" }, { status: 403 });
-    asked.push(body.proposedAction);
-    const planted = body.untrustedInputs.some((i: { output: string }) =>
-      /send everything/i.test(i.output),
-    );
-    return Response.json({
-      blocked: planted,
-      manipulated: planted ? 0.93 : 0.04,
-      injection: planted ? 0.97 : 0.02,
-      blockThreshold: 0.7,
-      model: "fake-sentinel",
-      latencyMs: 5,
-      advice: planted ? "Don't take this action." : "No sign of manipulation.",
-    });
-  }) as unknown as typeof globalThis.fetch;
-  return { fetch, asked };
-}
+const fakeSentinel = (v: TestVault, status = 200) =>
+  fakeSentinelApi({
+    chainId: sandbox.chain.id,
+    agent: sandbox.address("agent"),
+    agentId: v.agentId,
+    vault: v.address,
+    status,
+  });
 
 describe("guarded", () => {
   let v: TestVault;
