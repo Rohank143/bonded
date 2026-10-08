@@ -161,3 +161,35 @@ export class TeeBinding {
     return undefined;
   }
 }
+
+/**
+ * Why a rating's Arena key can't be used, or undefined when it can. The TEE must derive a key of
+ * its own for the rating: code that answers with its production key would have the agent sign, in
+ * the Arena (whose fork keeps the live chain's id), transactions valid on the live chain.
+ */
+export function arenaKeyProblem(arenaKey: string, productionKey: string): string | undefined {
+  return arenaKey.toLowerCase() === productionKey.toLowerCase()
+    ? "TEE binding failed: the TEE answered the Arena key request with its production key, so what it signs in the Arena would be valid on the live chain"
+    : undefined;
+}
+
+/**
+ * Whether something the gateway reported means an agent used up its share of fork requests: an
+ * episode marked `budgetExhausted`, or an error by that name (`ForkBudgetExhaustedError`, or any
+ * error carrying `budgetExhausted`). That is the agent's doing, never an infrastructure failure.
+ */
+export function forkBudgetExhausted(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const v = value as {
+    name?: unknown;
+    budgetExhausted?: unknown;
+    remote?: { budgetExhausted?: unknown };
+    agentSummary?: { remote?: { budgetExhausted?: unknown } };
+  };
+  return (
+    v.budgetExhausted === true ||
+    v.remote?.budgetExhausted === true ||
+    v.agentSummary?.remote?.budgetExhausted === true ||
+    (typeof v.name === "string" && /ForkBudgetExhausted|BudgetExhausted/.test(v.name))
+  );
+}

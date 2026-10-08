@@ -12,7 +12,14 @@ import {
 } from "@bonded/arena";
 import { teeArenaReportData, teeReportData, type ArenaAgent } from "@bonded/shared";
 import type { Hex } from "viem";
-import { RatingRefused, TeeBinding, gatewayAgents, remoteAgentFor } from "../src/remote-agent.js";
+import {
+  RatingRefused,
+  TeeBinding,
+  arenaKeyProblem,
+  forkBudgetExhausted,
+  gatewayAgents,
+  remoteAgentFor,
+} from "../src/remote-agent.js";
 import { agentConfig } from "../src/worker.js";
 import { DbRunnerAuth, RUNNER_TOKEN_PREFIX, RunnerPresenceWriter } from "../src/runners.js";
 import type { Database } from "@bonded/db";
@@ -387,5 +394,28 @@ describe("DbRunnerAuth", () => {
   it("refuses tokens for another chain or of the wrong form", async () => {
     expect(await new DbRunnerAuth(db, 1).validate(token)).toBeNull();
     expect(await new DbRunnerAuth(db, 46630).validate("not-a-token")).toBeNull();
+  });
+});
+
+describe("arenaKeyProblem", () => {
+  it("refuses an Arena key that is the production key, whatever its case", () => {
+    expect(arenaKeyProblem(KEY, KEY.toLowerCase())).toMatch(/production key/);
+    expect(arenaKeyProblem(OTHER_KEY, KEY)).toBeUndefined();
+  });
+});
+
+describe("forkBudgetExhausted", () => {
+  it("recognises the gateway's signal on an episode and as an error", () => {
+    expect(forkBudgetExhausted({ agentSummary: { remote: { budgetExhausted: true } } })).toBe(true);
+    expect(forkBudgetExhausted({ remote: { budgetExhausted: true } })).toBe(true);
+    const error = Object.assign(new Error("fork budget used up"), {
+      name: "ForkBudgetExhaustedError",
+    });
+    expect(forkBudgetExhausted(error)).toBe(true);
+    expect(forkBudgetExhausted(new Error("connection reset"))).toBe(false);
+    expect(forkBudgetExhausted({ agentSummary: { remote: { budgetExhausted: false } } })).toBe(
+      false,
+    );
+    expect(forkBudgetExhausted(undefined)).toBe(false);
   });
 });

@@ -33,6 +33,8 @@ import { ratedAgent, sentinelCodeHash, type SentinelService } from "./sentinel.j
 import {
   GATEWAY_UNAVAILABLE,
   RatingRefused,
+  arenaKeyProblem,
+  forkBudgetExhausted,
   TeeBinding,
   remoteAgentFor,
   type RemoteAgentFactory,
@@ -305,6 +307,8 @@ async function runLocked(
                 composeHash: config.tee!.composeHash,
                 arenaKeyId: keyId,
               });
+              const sameKey = arenaKeyProblem(verified.evmAddress, tee.evmAddress);
+              if (sameKey) throw new RatingRefused(sameKey, true, { caused: true });
               if (verified.measurement.toLowerCase() !== tee.measurement.toLowerCase())
                 throw new RatingRefused(
                   "TEE binding failed: the Arena key's evidence came from another deployment",
@@ -403,7 +407,13 @@ async function runLocked(
                 .remote;
               agentMs += remoteEpisode?.durationMs ?? 0;
               const elapsed = Date.now() - ratingStarted;
-              if (episodeOutcome(episode) === "agent_error") {
+              if (forkBudgetExhausted(episode))
+                remoteStop = new RatingRefused(
+                  `stopped: the agent used up its share of fork requests in episode ${index + 1} of ${total}`,
+                  true,
+                  { caused: true },
+                );
+              else if (episodeOutcome(episode) === "agent_error") {
                 const report = (episode.agentSummary.finalMessage ?? "").slice(0, 500);
                 remoteStop = new RatingRefused(
                   `stopped: the agent failed in episode ${index + 1} of ${total}`,
@@ -566,7 +576,13 @@ async function runLocked(
   } catch (error) {
     onError?.(error);
     // A refusal's reason is safe to show the owner; anything else may carry an RPC URL or a key.
-    if (error instanceof RatingRefused)
+    // The gateway's fork budget running out is the agent's doing, wherever it surfaces.
+    if (!(error instanceof RatingRefused) && forkBudgetExhausted(error))
+      await db.finish(job, "stopped: the agent used up its share of fork requests", {
+        final: true,
+        agentCaused: true,
+      });
+    else if (error instanceof RatingRefused)
       await db.finish(job, error.message, {
         final: error.final,
         ...(error.agent
