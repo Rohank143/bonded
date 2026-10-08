@@ -17,7 +17,8 @@ import { runEpisode } from "./episode.js";
  *   BONDED_TOKENS      the base asset first, then the others: SYMBOL:0xaddress:decimals,...
  *   BONDED_TARGET      the token to hold (a symbol from BONDED_TOKENS)
  *   BONDED_TRADE_SIZE  base asset to spend per trade, in whole units (default 100)
- *   BONDED_INBOX       optional: a file with one message per line, read as untrusted input
+ *   BONDED_INBOX       optional: a file with one message per line: untrusted context for
+ *                      Sentinel, never acted on
  *   BONDED_API_URL     optional: ask Sentinel at this Bonded API before each trade
  *   BONDED_MANDATE     with BONDED_API_URL: the mandate in plain words
  */
@@ -57,11 +58,13 @@ async function main() {
     account: privateKeyToAccount(env("BONDED_AGENT_KEY") as Hex),
     router: getAddress(env("BONDED_ROUTER")),
   });
+  // Messages are data: they go to Sentinel as untrusted context and never become actions.
   const inboxFile = process.env.BONDED_INBOX;
   const inbox = inboxFile
     ? readFileSync(inboxFile, "utf8")
         .split("\n")
         .filter((line) => line.trim())
+        .map((output) => ({ tool: "read_inbox", output }))
     : [];
   const apiUrl = process.env.BONDED_API_URL;
   const outcomes = await runOnce(
