@@ -49,6 +49,7 @@ import {
   limitError,
 } from "../lib/validate";
 import { registerForRatings } from "../lib/self-serve";
+import { AllowanceWarning } from "../components/module-cover";
 import {
   ACCOUNT_TYPE_LABELS,
   MODULE_COVER_NOTE,
@@ -711,6 +712,21 @@ export function NewAgent() {
                       error={account ? addressError(account) : null}
                     />
                     <p className="text-xs text-muted">{MODULE_COVER_NOTE}</p>
+                    <AllowanceWarning
+                      account={isAddress(account.trim()) ? (account.trim() as Address) : undefined}
+                      targets={[deployment.router]}
+                      assets={[
+                        deployment.usdg,
+                        ...tokens.map(
+                          (t) =>
+                            ({
+                              tTSLA: deployment.tsla,
+                              tAMZN: deployment.amzn,
+                              tNVDA: deployment.nvda,
+                            })[t],
+                        ),
+                      ]}
+                    />
                   </div>
                 )}
               </fieldset>
@@ -719,6 +735,12 @@ export function NewAgent() {
                   <Term term="agentKey">The agent's key</Term>, the only key that can act{" "}
                   {onModule ? "through the module on your smart account" : "for the vault"}
                 </legend>
+                {onModule && (
+                  <p className="mb-2 text-xs text-muted">
+                    It must not be an owner, a validator or an ERC-1271 signer of the smart account:
+                    that would let the agent act as the account itself, around the module.
+                  </p>
+                )}
                 <div className="grid gap-2 sm:grid-cols-2">
                   <Choice
                     name="key"
@@ -727,7 +749,7 @@ export function NewAgent() {
                     title="My wallet"
                   >
                     {onModule
-                      ? "For testing: you act as the agent yourself, through the module."
+                      ? "For testing: you act as the agent yourself, through the module. Not if your wallet owns the account."
                       : "For testing: lets you simulate a breach from the vault page."}
                   </Choice>
                   <Choice
