@@ -750,6 +750,9 @@ export function renderReportMarkdown(
             (livenessRefusal(report.liveness) ? " (**not attested: see liveness**)" : ""),
         ]
       : []),
+    report.tee
+      ? "- Binding: TEE. The score is tied to the measured code above, which is what runs in production while the measurement holds."
+      : "- Binding: declared. This score attests the behaviour of the code that was rated, under test; only TEE binding ties it to what runs in production.",
     ...(report.stoppedEarly ? [`- **Stopped early:** ${report.stoppedEarly}`] : []),
     "",
     "## Risk by class group",

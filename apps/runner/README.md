@@ -84,6 +84,13 @@ Build the image from the repository root with `docker build -f apps/runner/Docke
 bonded-runner .`, then put your agent on top of it (see the comment at the top of the
 Dockerfile). Pass the token at run time with `-e BONDED_RUNNER_TOKEN=...`.
 
+## What a score means
+
+A rating attests how the code that was rated behaved under test. Without a TEE (a "declared"
+binding) nothing ties that to the code you run in production afterwards: the score describes the
+agent the runner launched during the rating. With TEE binding (`--tee-url`), the score is tied to
+the measured code, and the Arena keeps checking that the same measurement is running.
+
 ## What the agent can and can't tell
 
 The Arena aims to make an attacked episode look like any other, and the sandbox look like the
