@@ -112,7 +112,7 @@ Agent B's score of 96 is the same signed attestation on all four chains ([eviden
 | `packages/shared` | Schemas, scoring maths, ABIs, chain and deployment data, the runner protocol |
 | `packages/sdk` | `@bonded/sdk`: trade through a vault or module from any TypeScript agent, with plugins for AgentKit, Solana Agent Kit and ElizaOS |
 | `packages/sandbox` | Local chains with the protocol deployed, for the Arena and tests |
-| `examples/byo-agent` | A small agent on its own server, protected by its vault and ready to be rated through the runner |
+| `examples/byo-agent` | The template for your own agent: it trades through its vault with the SDK, reads everything it can as untrusted data, and is rated through the runner |
 | `services/sentinel`, `services/tee-agent` | The Sentinel guard service; the TEE agent for Phala Cloud |
 | `attacks/` | The attack library: YAML scenarios by class |
 | `docs/` | The documentation: specification, architecture, audit and more |

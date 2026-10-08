@@ -611,7 +611,7 @@ TypeScript only (other languages connect to the Arena over MCP or HTTP). ESM, wi
 - **`fromBondedEnv`**: reads an Arena episode from the runner's `BONDED_*` environment.
 - **Plugins**: `@bonded/sdk/agentkit` (an AgentKit wallet provider whose every transaction goes through the vault), `@bonded/sdk/solana-agent-kit` (transfer and swap through the `bonded_vault` program, within what it checks), `@bonded/sdk/eliza` (`BONDED_SWAP`, `BONDED_TRANSFER`, `BONDED_APPROVE` and a vault-status provider).
 
-Tests run against anvil with the real contracts, and each plugin performs an allowed and a breaching action and checks the vault's breach log. An example agent is in `examples/byo-agent`.
+Tests run against anvil with the real contracts, and each plugin performs an allowed and a breaching action and checks the vault's breach log. An example agent is in `examples/byo-agent`: it reads every surface each episode, treats what it reads as untrusted data, and makes only the trade its task names.
 
 ### 14.4 Frontend (`apps/web`, Vite + React)
 

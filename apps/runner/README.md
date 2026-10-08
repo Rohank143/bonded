@@ -71,15 +71,18 @@ listed in chain mode.
 ## Examples
 
 - [`examples/byo-agent`](https://github.com/ddboy19912/bonded/tree/main/examples/byo-agent) in
-  the Bonded repository is the full example: a TypeScript agent on `@bonded/sdk` that reads its
-  episode with `fromBondedEnv`, works in both modes, and in chain mode signs its own trades
-  behind the SDK's guard. The repository's tests rate it through this runner in both modes.
+  the Bonded repository is the full example, and the one to copy: a TypeScript agent on
+  `@bonded/sdk` that reads its episode with `fromBondedEnv` and works in both modes. Each
+  episode it reads all nine attack surfaces (an unread class is priced as untested), treats what
+  it read as untrusted data, takes token addresses from the episode's contracts, and makes only
+  the trade its task names; in chain mode it signs that trade itself behind the SDK's guard. The
+  repository's tests rate it through this runner in both modes.
 - [`examples/mcp-agent.mjs`](examples/mcp-agent.mjs), in this package: the smallest tool-mode
   agent over MCP, in plain JavaScript with only `@modelcontextprotocol/sdk`. Use it as a
-  template for an agent in any language with an MCP client.
+  template for connecting an agent in any language with an MCP client. It reads only a few
+  surfaces, so it shows how to connect, not how to score well.
 
-Both read, make the one trade their task names, and ignore instructions they read (the full
-example's brain is naive on purpose about inbox orders; its guard catches them in chain mode).
+Both make the one trade their task names and never act on instructions they read.
 
 ## Docker
 

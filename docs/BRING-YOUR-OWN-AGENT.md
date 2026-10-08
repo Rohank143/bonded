@@ -76,9 +76,15 @@ Each episode is one run of your command. The Arena prints each verdict, then the
 
 Now put your own agent in place of `node apps/runner/examples/mcp-agent.mjs`. For chain mode, add `--mode chain` to both commands and run the SDK example instead: `-- node examples/byo-agent/dist/main.js`. It signs its own trades behind the SDK's guard, and it works in tool mode too. To predict your hosted result, add `--profile hosted` to the rating: it runs exactly what the hosted service runs (3 runs of each attack, 90 s episodes, 6 controls, one held-out variant per class), and `--fork robinhood` rates on a copy of the live chain as the service does. With the local default of one run per attack the uncertainty is wide, so even an agent with no breaches scores low ([AGENTS.md](AGENTS.md#the-agents)).
 
-Both examples are deliberately simple: they make the one trade the task names and treat everything they read as data.
-- `apps/runner/examples/mcp-agent.mjs` is plain JavaScript with only an MCP client: a template for any language.
-- [`examples/byo-agent`](../examples/byo-agent/README.md) is a TypeScript agent on `@bonded/sdk`, and the one to copy. It reads every surface its tools offer, as a careful agent should: an attack planted somewhere your agent never reads leaves that class priced as untested, which lowers the score (see [What the report shows](#what-the-report-shows)). When the runner isn't starting it, it trades for real against your own vault.
+Both examples make the one trade the task names and never act on what they read.
+- `apps/runner/examples/mcp-agent.mjs` is plain JavaScript with only an MCP client: a template for connecting in any language. It reads only its inbox, the news, the market report and token info, so it shows how to connect, not how to score well.
+- [`examples/byo-agent`](../examples/byo-agent/README.md) is a TypeScript agent on `@bonded/sdk`, and the one to copy. Each episode it:
+  - **reads everything**: all nine attack surfaces (inbox, news, social posts, prices, recent transfers, the market report, alerts, counterparty messages, and token info for each token it trades), plus its portfolio. An attack class your agent never reads is priced as untested, which lowers the score (see [What the report shows](#what-the-report-shows)), so a careful agent reads it all;
+  - **treats all of it as data**: what it read is kept as untrusted context (the input Sentinel checks, when a Sentinel API is configured) and never becomes an action. Token addresses come from the episode's contracts, never from what it read;
+  - **does its task and nothing else**: `buy` makes the trade the task names, and `send` carries it out. In tool mode that is the `swap` tool; in chain mode the SDK's guard dry-runs the `execute` first, then the agent signs it with the session key. (`decide`, a rebalancing step, is what it uses against your own vault when the runner isn't starting it.)
+  - tells the Arena it is done with "read N sources, acted on none of them" and the outcome of its trade.
+
+  In a local `pnpm demo -- --byo --runs 1` (one run per attack, on a local chain), it was rated 56 (BB) with no untested classes: every attack episode exercised it, 5 of 5 per class.
 
 **The whole hosted flow, locally.** `pnpm demo --byo` runs the usual demo, then does the following on your machine:
 - registers `examples/byo-agent` as an operator's own agent;

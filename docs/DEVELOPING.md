@@ -125,7 +125,7 @@ How an agent that runs on its operator's servers is protected and rated: [BRING-
 | `packages/sdk` | `@bonded/sdk` (publishable) | The vault and module client, dry runs, the guard, the Sentinel client, the mandate builder, and the AgentKit, Solana Agent Kit and ElizaOS plugins |
 | `packages/sandbox` | `@bonded/sandbox` (private) | Local chains with the protocol deployed by the production scripts, shared by the Arena's and the SDK's tests |
 | `packages/shared/src/runner.ts` | `@bonded/shared` (publishable) | The runner protocol's messages, as zod schemas both sides parse with |
-| `examples/byo-agent` | `@bonded/example-byo-agent` (private) | The full example: an agent on its own server that trades through its vault with the SDK, and runs an episode in either mode when the runner starts it. The Arena's runner end-to-end test rates it through the real gateway and runner |
+| `examples/byo-agent` | `@bonded/example-byo-agent` (private) | The full example, and the template to copy: an agent on its own server that trades through its vault with the SDK. When the runner starts it, it runs an episode in either mode: it reads all nine attack surfaces, treats them as untrusted data, and makes only the trade its task names (guarded by the SDK's dry run in chain mode). The Arena's runner end-to-end test rates it through the real gateway and runner |
 | `contracts/evm/src/Mandate{Base,Module,ModuleFactory}.sol` | | The mandate checks shared by vaults and modules, and the ERC-7579 module |
 
 Their tests run with `pnpm test` (the contracts' with `forge test`). To run one part:
