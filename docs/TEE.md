@@ -95,6 +95,25 @@ The TEE service doesn't operate a vault yet (it has no route that sends transact
 
 Then run a rating through the deployed API with `scripts/rate-live-tee.sh <agent id>`, after the config is deployed. It asks for the API token with no echo, starts the VM, runs the rating, prints the result and **always stops the VM when it ends**. When the score is posted, the agent's page shows the TEE badge.
 
+## Bring your own TEE
+
+Your own agent, running in your own TEE, can be rated with its TEE proven at every episode ([BRING-YOUR-OWN-AGENT.md](BRING-YOUR-OWN-AGENT.md#bring-your-own-tee)). It must be rated in chain mode: in tool mode the tool calls come from the runner, outside the TEE, so the TEE would bind nothing. The checks are the ones above, against your deployment instead of Bonded's:
+
+- **Same platform.** Phala dstack on Intel TDX, booted from an approved production OS image (`APPROVED_OS_IMAGES` in `apps/arena/src/tee.ts`).
+- **Same evidence.** Your service answers `GET /attestation?nonce=<32 bytes hex>` with `{ quote, eventLog, composeHash, codeHash, evmAddress, solanaPublicKey?, nonce }`. The quote's report data is `teeReportData` from `@bonded/shared`. `solanaPublicKey` is optional, for EVM-only agents. `services/tee-agent` is a working reference to copy.
+- **A per-rating Arena key.** The fork keeps the live chain's id, so a transaction signed with your production key in the Arena would be valid on the live chain. So in a rating your TEE signs with a key it derives for that rating:
+  - The Arena asks `GET /attestation?nonce=…&purpose=arena&key=<id>`.
+  - Your TEE answers with evidence for the derived key, carrying `purpose: "arena"` and the `keyId`, with report data `teeArenaReportData` under its own domain.
+  - Bonded's TEE agent derives it from the dstack path `bonded/agent/v1/arena/<id>` (`AgentIdentity.arenaAccount`).
+  - Your agent gets the id as `BONDED_TEE_KEY_ID`.
+  - A TEE that answers with its production key fails the rating.
+- **Your compose hash and code hash.** Register both with your agent (onboarding step 1, "My own agent"), with the TEE's URL. The code hash your TEE reports must be the one you register.
+- **A public https URL.** The Arena fetches it under fixed rules: https only, every address the name resolves to must be public (checked when connecting), no redirects, and at most 512 KB per answer.
+- **At every episode.** The rating worker challenges the URL before the rating starts, for the production key and for the rating's Arena key. Then each episode carries a fresh nonce: your runner (`--tee-url`) fetches the evidence and forwards it unchanged, and the worker verifies it. Every episode must show the same measurement and Arena key, or the rating fails.
+- **Afterwards.** The live checks below apply as they do to Bonded's agent, against the production key. When the measurement changes, new quotes stop, and a re-rating is queued if your runner is connected.
+
+For cover, the vault's (or module's) agent key must be the TEE's attested production key, as for Agent 3. A TEE-bound score lifts the cover cap for an agent its operator runs from 5,000 to 20,000 tUSDG (underwriting policy).
+
 ## What the TEE does to the price
 
 A rating includes a key-custody term. It is an assumption, not a measurement: an operator-held key is assumed more likely to be stolen than a key in a verified TEE, so the same agent rates a little better in a verified TEE. The assumption is stated in the report next to the number.

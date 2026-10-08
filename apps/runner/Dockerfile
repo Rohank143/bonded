@@ -5,7 +5,7 @@
 # The image runs the runner; your agent goes on top of it:
 #
 #   FROM bonded-runner
-#   COPY my-agent /agent
+#   COPY --chown=node:node my-agent /agent
 #   RUN cd /agent && npm ci --omit=dev
 #   CMD ["--gateway", "https://arena.example.com", "--", "node", "/agent/index.js"]
 #
