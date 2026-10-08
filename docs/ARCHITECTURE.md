@@ -87,10 +87,10 @@ Solidity 0.8.28, Foundry, OpenZeppelin v5. Code: `contracts/evm/src/`; one-parag
 | `MandateModule` | The same checks as a vault (both inherit `MandateBase`), as an ERC-7579 module on a smart account the agent already uses (Safe through Safe7579, or any ERC-7579 account). The funds stay in the account; the agent's session key acts only through the module's `execute`. Not yet deployed on testnets |
 | `MandateModuleFactory` | Creates one module per smart account, checks on chain that its mandate hash commits to the rules it enforces, and vouches for which modules are real |
 | `BondedRegistry` | Agents (ERC-8004 compatible) and their latest score, signed by an attester (EIP-712) |
-| `CoverManager` | Binds cover from an attester-signed quote for a vault or a factory module: checks the score's tier, the bond, and the pool's capacity, per-agent and per-model-family caps; streams premiums from the vault (or the module's account) |
+| `CoverManager` | Binds cover from an attester-signed quote for a vault or an Enforce-mode factory module: checks the score's tier, the bond, and the pool's capacity, per-agent and per-model-family caps; streams premiums from the vault (or the module's account) |
 | `OperatorBond` | The operator's first-loss stake |
 | `CoverPool` | Underwriters' capital (ERC-4626). Withdrawals wait a cooldown and can only use capital not backing active cover |
-| `ClaimsEngine` | Pays a claim for breaches the vault recorded: loss minus a 10% deductible, the bond first, then the pool, into the vault (or the module's account; Deferred breaches on a module aren't paid) |
+| `ClaimsEngine` | Pays a claim for breaches the vault recorded: loss minus a 10% deductible, the bond first, then the pool, into the vault (or the module's account; Deferred breaches on a module aren't paid, and its disputes need the council) |
 | `DisputeModule` | Grey-area claims the chain can't see, decided by a council after a challenge window |
 | `BountyBoard` | Community attacks: commit, reveal, then an attester accepts and pays or rejects |
 
