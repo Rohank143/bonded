@@ -375,7 +375,9 @@ describe("chain mode", () => {
     const operator = sandbox.address("operator");
     const read = sandbox.publicClient;
     const before = {
-      block: await read.getBlockNumber(),
+      // Uncached: viem reuses a block number read in the last polling interval, which can be from
+      // before the vault's setup transactions were mined.
+      block: await read.getBlockNumber({ cacheTime: 0 }),
       balance: await read.getBalance({ address: operator }),
       code: await read.getCode({ address: vault.address }),
       nonce: await read.getTransactionCount({ address: account.address }),
@@ -417,7 +419,18 @@ describe("chain mode", () => {
     // A simulation shows nothing a plain call can't: the same state, read the same way.
     expect(simulated.result?.[0]?.calls[1]?.returnData).toBe(plainCall.result);
 
-    expect(await read.getBlockNumber()).toBe(before.block);
+    // Nothing these calls did reached the chain: any block mined since (there should be none)
+    // holds no transaction from the operator or the agent key, or to the vault.
+    const now = await read.getBlockNumber({ cacheTime: 0 });
+    for (let n = before.block + 1n; n <= now; n++) {
+      const block = await read.getBlock({ blockNumber: n, includeTransactions: true });
+      for (const tx of block.transactions) {
+        expect([operator, account.address].map((x) => x.toLowerCase())).not.toContain(
+          tx.from.toLowerCase(),
+        );
+        expect(tx.to?.toLowerCase()).not.toBe(vault.address.toLowerCase());
+      }
+    }
     expect(await read.getBalance({ address: operator })).toBe(before.balance);
     expect(await read.getCode({ address: vault.address })).toBe(before.code);
     expect(await read.getTransactionCount({ address: account.address })).toBe(before.nonce);
