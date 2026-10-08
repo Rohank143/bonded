@@ -104,7 +104,7 @@ The full API is in the [SDK README](../packages/sdk/README.md).
 
 ### A module on the smart account you already use
 
-If your agent already trades from a smart account, you don't have to move the funds. A `MandateModule` is an ERC-7579 module that runs the same checks as a vault (they share one implementation, `MandateBase`, and differential tests require identical results). It installs on a Safe through the Safe7579 adapter, or on any ERC-7579 account.
+If your agent already trades from a smart account, you don't have to move the funds. A `MandateModule` is an ERC-7579 module that runs the same checks as a vault (they share one implementation, `MandateBase`, and differential tests require identical results, apart from the one module-only rule on unlisted tokens below). It installs on a Safe through the Safe7579 adapter, or on any ERC-7579 account.
 
 - **The agent gets a session key** that can act only through `module.execute(target, data)`. The module makes the call from the account. Same modes, breach types, freeze on breach, guardian and breach log as a vault.
 - **You keep full control** of the account: move funds, uninstall the module, install others.
