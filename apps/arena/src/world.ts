@@ -5,7 +5,8 @@ import {
   counterpartyMessage,
   inboxMessage,
   marketAlert,
-  marketReport,
+  inboxSender,
+  marketReportParts,
   newsArticle,
   pick,
   plantedNewsTitle,
@@ -14,6 +15,7 @@ import {
   socialPost,
   TOKEN_DESCRIPTIONS,
   tokenNote,
+  transferNote,
 } from "./world-content.js";
 
 /**
@@ -129,6 +131,8 @@ export class World {
    * any two real price sources. Overrides (an attack) replace the price outright.
    */
   readonly priceNoise = new Map<string, number>();
+  private readonly tokenParts = new Map<string, { base: string; note: string }>();
+  private readonly reportParts: { lead: string; outlook: string };
 
   /**
    * A fresh benign world for one episode (world-content.ts): its counts, wording, times, prices
@@ -156,7 +160,8 @@ export class World {
     this.social = some(2, 4, socialPost);
     this.marketAlerts = some(1, 3, marketAlert);
     this.counterpartyMessages = some(0, 2, counterpartyMessage);
-    this.marketReport = marketReport(random, this.now.toISOString().slice(0, 10));
+    this.reportParts = marketReportParts(random, this.now.toISOString().slice(0, 10));
+    this.marketReport = `${this.reportParts.lead}${this.reportParts.outlook}`;
     this.tokenList = tokens.map((token) => {
       const details = TOKEN_DETAILS[token.symbol];
       const phrasings = TOKEN_DESCRIPTIONS[token.symbol];
@@ -164,13 +169,16 @@ export class World {
         ...token,
         name: details?.name ?? token.symbol,
         description: phrasings
-          ? `${pick(random, phrasings)}${tokenNote(random)}`
+          ? this.describe(token.symbol, pick(random, phrasings), tokenNote(random))
           : (details?.description ?? ""),
       };
     });
     for (const token of tokens) {
-      const spread = token.symbol === "tUSDG" ? 0.002 : 0.006;
-      this.priceNoise.set(token.symbol, 1 + (random() * 2 - 1) * spread);
+      // Usually a few tenths of a percent off the oracle; now and then a stock's feed is a few
+      // percent off, as real feeds are on a busy day (a spoofed price, A3, is far larger).
+      const big = token.symbol !== "tUSDG" && random() < 0.15;
+      const spread = token.symbol === "tUSDG" ? 0.002 : big ? 0.02 + random() * 0.04 : 0.006;
+      this.priceNoise.set(token.symbol, 1 + (random() < 0.5 ? -1 : 1) * random() * spread);
     }
     // The vault's funding: one to three deposits from the depositor that add up to what it
     // holds, over the past days. Sometimes a zero-value transfer from an unknown address, as
@@ -196,9 +204,16 @@ export class World {
         token: "tUSDG",
         amount: "0",
         counterparty: randomAddress(random),
+        ...(random() < 0.5 ? { note: transferNote(random) } : {}),
         time: dated(),
       });
     this.order();
+  }
+
+  /** A token description from its phrasing and note, kept so planted text can go between them. */
+  private describe(symbol: string, base: string, note: string): string {
+    this.tokenParts.set(symbol, { base, note });
+    return `${base}${note}`;
   }
 
   /** Newest first for feeds; oldest first for the inbox, counterparty messages and history. */
@@ -228,7 +243,7 @@ export class World {
     switch (content.surface) {
       case "dm":
         this.inbox.push({
-          from: content.sender ?? "unknown@example.com",
+          from: content.sender ?? inboxSender(this.random),
           subject: plantedSubject(this.random),
           body: content.text,
           time: this.recent(),
@@ -237,7 +252,7 @@ export class World {
         return;
       case "news":
         this.news.push({
-          source: content.sender ?? "Breaking News",
+          source: content.sender ?? newsArticle(this.random).source,
           title: plantedNewsTitle(this.random),
           body: content.text,
           time: this.recent(),
@@ -246,7 +261,7 @@ export class World {
         return;
       case "social":
         this.social.push({
-          author: content.sender ?? "@anon",
+          author: content.sender ?? socialPost(this.random).author,
           text: content.text,
           time: this.recent(),
         });
@@ -256,11 +271,21 @@ export class World {
         const symbol = content.token ?? "tNVDA";
         const listing = this.findToken(symbol);
         if (!listing) throw new Error(`token_metadata attack targets unknown token ${symbol}`);
-        listing.description = `${listing.description} ${content.text}`;
+        // Blended into the description, not tacked onto its end.
+        const parts = this.tokenParts.get(listing.symbol);
+        listing.description = parts
+          ? this.random() < 0.5
+            ? `${parts.base} ${content.text}${parts.note}`
+            : `${content.text} ${parts.base}${parts.note}`
+          : `${listing.description} ${content.text}`;
         return;
       }
       case "tool_output":
-        this.marketReport = `${this.marketReport}\n\n${content.text}`;
+        // Before or after the report's outlook, when it has one.
+        this.marketReport =
+          this.reportParts.outlook.startsWith("\n") && this.random() < 0.5
+            ? `${this.reportParts.lead}\n\n${content.text}${this.reportParts.outlook}`
+            : `${this.marketReport}\n\n${content.text}`;
         return;
       case "price_feed": {
         // Prices come from delivery.prices, or from "SYMBOL=PRICE" lines in the payload
@@ -306,7 +331,7 @@ export class World {
         return;
       case "counterparty":
         this.counterpartyMessages.push({
-          from: content.sender ?? "counterparty-agent",
+          from: content.sender ?? counterpartyMessage(this.random).from,
           text: content.text,
           time: this.recent(),
         });

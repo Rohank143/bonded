@@ -1,4 +1,5 @@
 export {
+  addressGroup,
   ArenaGateway,
   DEFAULT_GATEWAY_LIMITS,
   type EpisodeSpec,

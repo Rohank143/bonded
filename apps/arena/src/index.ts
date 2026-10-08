@@ -105,7 +105,7 @@ export {
   ratingCoverage,
   exercised,
   binomialLowerTail,
-  LIVENESS_ATTACK_RATIO,
+  LIVENESS_ATTACK_RATE,
   LIVENESS_MIN_RATE,
   LIVENESS_REMOTE_MIN_RATE,
   LIVENESS_P_VALUE,

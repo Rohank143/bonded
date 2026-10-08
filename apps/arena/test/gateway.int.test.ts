@@ -11,6 +11,7 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { WebSocket } from "ws";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
+  addressGroup,
   ANVIL_KEYS,
   ArenaGateway,
   ArenaToolbox,
@@ -872,6 +873,37 @@ describe("the runner socket", () => {
     expect(tokens.checks - checksBefore).toBe(2);
     // Another client behind the same proxy is unaffected.
     expect(await attempt(proxiedUrl, RUNNER_TOKEN, from("198.51.100.20"))).toBe("open");
+  });
+
+  it("counts an IPv6 client by its /64", () => {
+    expect(addressGroup("2001:db8:1:2:3:4:5:6")).toBe("2001:db8:1:2::/64");
+    expect(addressGroup("2001:db8:1:2::abcd")).toBe("2001:db8:1:2::/64");
+    expect(addressGroup("2001:0db8::1")).toBe("2001:db8:0:0::/64");
+    expect(addressGroup("::ffff:203.0.113.9")).toBe("203.0.113.9");
+    expect(addressGroup("203.0.113.9")).toBe("203.0.113.9");
+  });
+
+  it("refuses a rotating IPv6 block and a global wave of failures, but not a known runner", async () => {
+    const strict = new ArenaGateway({
+      tokens,
+      trustProxy: 1,
+      limits: { upgradesPerMinute: 2, failedChecksPerMinute: 4 },
+    });
+    const strictUrl = await strict.listen();
+    cleanup.push(() => strict.close());
+    const from = (ip: string) => ({ "x-forwarded-for": ip });
+    // A runner that has connected before.
+    expect(await attempt(strictUrl, RUNNER_TOKEN, from("198.51.100.30"))).toBe("open");
+    // Fresh addresses in one /64 count as one client.
+    expect(await attempt(strictUrl, guess(10), from("2001:db8:7:7::1"))).toBe(401);
+    expect(await attempt(strictUrl, guess(11), from("2001:db8:7:7::2"))).toBe(401);
+    expect(await attempt(strictUrl, guess(12), from("2001:db8:7:7::3"))).toBe(429);
+    // Failures spread over many addresses still hit the global cap ...
+    expect(await attempt(strictUrl, guess(13), from("203.0.113.40"))).toBe(401);
+    expect(await attempt(strictUrl, guess(14), from("203.0.113.41"))).toBe(401);
+    expect(await attempt(strictUrl, guess(15), from("203.0.113.42"))).toBe(429);
+    // ... but a token that has passed a check keeps its own budget, from anywhere.
+    expect(await attempt(strictUrl, RUNNER_TOKEN, from("192.0.2.200"))).toBe("open");
   });
 
   it("gives each token its own reconnect budget", async () => {

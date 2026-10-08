@@ -90,6 +90,14 @@ export interface RemoteEpisode {
   reportedUsage?: DoneRequest["usage"];
   /** The TEE evidence the runner forwarded for this episode, as received. */
   teeEvidence?: unknown;
+  /**
+   * On a budgeted fork: the agent spent its share of reads from the live chain during this
+   * episode, and further reads were refused. Anything that fails for lack of fork budget during
+   * or after such an episode was caused by the agent, not the rating.
+   */
+  budgetExhausted?: boolean;
+  /** Live-chain requests the agent's episode caused (budgeted forks only). */
+  forkFetches?: number;
   nonce?: `0x${string}`;
 }
 
@@ -164,6 +172,8 @@ export class RemoteAgent implements SelfSigningAgent {
     );
     let episode: GatewayEpisode | undefined;
     let sent = false;
+    // On a budgeted fork, what the agent's reads cost the live chain is charged to it alone.
+    const forkScope = sandbox.forkScope();
     const cleanups: (() => void)[] = [];
     // The runner's exit report for this episode (undefined if the runner goes away first). It
     // stays subscribed past the episode's end, so a report arriving late is still caught.
@@ -206,6 +216,7 @@ export class RemoteAgent implements SelfSigningAgent {
                 chainId: sandbox.chain.id,
                 vault: toolbox.vault,
                 agent: signer!,
+                ...(forkScope ? { forkScope } : {}),
                 ...(clientVersion ? { clientVersion } : {}),
               },
             }
@@ -298,6 +309,11 @@ export class RemoteAgent implements SelfSigningAgent {
     } finally {
       for (const cleanup of cleanups) cleanup();
       episode?.close();
+      if (forkScope) {
+        forkScope.close();
+        record.forkFetches = forkScope.used;
+        if (forkScope.exhausted) record.budgetExhausted = true;
+      }
       // Free the runner only once its process is gone, so the next episode can't overlap it.
       if (!sent || exited || runner.closed) gateway.releaseRunner(runner, episodeId);
       else void exit.then(() => gateway.releaseRunner(runner, episodeId));

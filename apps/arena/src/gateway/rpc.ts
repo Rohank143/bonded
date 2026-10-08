@@ -93,6 +93,11 @@ export interface RpcBinding {
   gas?: RpcBudget;
   /** Aborted when the episode ends: nothing more is forwarded, and calls in flight stop. */
   signal?: AbortSignal;
+  /**
+   * On a budgeted fork, the agent's share of live-chain requests (Sandbox.forkScope): once it is
+   * spent, the agent's calls are refused here, before they reach the fork.
+   */
+  forkScope?: { readonly exhausted: boolean };
 }
 
 /**
@@ -200,6 +205,8 @@ async function handleOne(
   if (!RPC_ALLOWED_METHODS.has(method))
     return failure(id, -32601, `method ${method} is not available in the Arena`);
   if (binding.signal?.aborted) return failure(id, -32000, "the episode is over");
+  if (binding.forkScope?.exhausted)
+    return failure(id, -32005, "this episode's budget of reads from the live chain is spent");
   if (method === "web3_clientVersion" && binding.clientVersion)
     return { jsonrpc: "2.0", id, result: binding.clientVersion };
   if (spent.bytes <= 0)

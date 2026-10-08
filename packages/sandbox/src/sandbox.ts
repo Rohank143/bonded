@@ -20,6 +20,7 @@ import {
   DEFAULT_FORK_BUDGET,
   type ForkBudget,
   type ForkProxy,
+  type ForkScope,
   startForkProxy,
 } from "./fork-proxy.js";
 
@@ -91,6 +92,14 @@ export class Sandbox {
   /** Requests the fork has sent to the live RPC so far, when its budget is enforced. */
   get forkFetches(): number | undefined {
     return this.forkProxy?.forwarded;
+  }
+
+  /**
+   * Charges the fork's live-chain requests to an agent until the scope is closed (fork-proxy.ts):
+   * a RemoteAgent opens one around each episode. Undefined when the sandbox isn't a budgeted fork.
+   */
+  forkScope(): ForkScope | undefined {
+    return this.forkProxy?.openScope();
   }
 
   static async start(options: SandboxOptions = {}): Promise<Sandbox> {
