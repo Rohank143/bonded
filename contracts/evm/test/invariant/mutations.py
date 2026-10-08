@@ -151,9 +151,16 @@ MUTATIONS = [
     (
         "Module lets the agent move tokens outside the asset list",
         "src/MandateModule.sol",
-        "if (tokenCall && !isAsset[target]) {",
+        "if (tokenCall && !revoking && !isAsset[target]) {",
         "if (false) {",
         "test_UnlistedTokenCantBeDrainedThroughAnAllowedTarget",
+    ),
+    (
+        "Module treats revoking an unlisted token's approval as a breach",
+        "src/MandateModule.sol",
+        "if (tokenCall && !revoking && !isAsset[target]) {",
+        "if (tokenCall && !isAsset[target]) {",
+        "test_RevokingOnUnlistedTokensIsAllowed",
     ),
     (
         "Bounty accepted twice (status check removed)",

@@ -200,7 +200,7 @@ F-10 is fixed for modules: `MandateModuleFactory.createModule` refuses a mandate
 | Vault and module agree | Differential tests feed the same random sequences (16 steps of agent actions, outside pulls, price moves, guardian steps and time) to a vault and a module with the same mandate and funds, in both modes, on the ERC-7579 reference account and on a Safe with Safe7579. After every step: same call outcome and data, breach log field by field, freeze state, 24h window, recorded and actual balances, and BreachRecorded and Executed events. A fixed sequence makes sure every breach type is compared. The one difference by design (F-17: token calls on unlisted tokens) has its own test, and the random steps only use listed tokens |
 | Real accounts | The module tests run on the ERC-7579 reference account (`MSAAdvanced` 0.0.2) and on Safe 1.4.1 with Safe7579 1.0.2, installed as executor and hook through each account's own entry points, plus a Safe flow that uses only the owner's `execTransaction` |
 | Invariants | A module handler runs beside the existing protocol handler and its two vaults, with three insured Enforce-mode modules (a reference account, a Safe, and an account that only pretends to execute), a Monitor-mode module and an older module of one account: 13 invariants. Payouts reach the account; Deferred breaches on modules are never paid; Monitor-mode modules are never insured; premium collection never stalls; an account never has two modules installed; module disputes are only paid by the council; modules never hold funds; a frozen agent gets nothing through and owner withdrawals through the account are never breaches; plus the waterfall, deductible, paid-once, exposure, bond and pool properties with modules in the mix |
-| Planted bugs | `mutations.py` now plants 21 bugs (10 for the module); 21 of 21 caught |
+| Planted bugs | `mutations.py` now plants 22 bugs (11 for the module); 22 of 22 caught |
 | Slither 0.11.6 | Same command as above, after the review fixes. 0 high, 12 medium, 58 low, 22 informational, 5 optimisation. Every medium is the same finding as before, now reported on `MandateBase` where the code moved. New against the main review: 5 `calls-loop` on the module's account reads (bounded by 16 assets), 1 `timestamp` (`DisputeModule.resolve` waits for the challenge period, intended), 1 `unindexed-event-address` (`ModuleFactorySet`, set-once admin event), 1 `cyclomatic-complexity` (`CoverManager._checkVault`, a list of independent checks), 1 `too-many-digits` (the module's creation code in `predictModule`, a false positive). The `missing-zero-check` on `measuredCall` is gone (the call moved behind `_call`) |
 
 ### F-16 (High) The account owner could collect a payout for a breach they asked for
@@ -218,13 +218,15 @@ Fixed for modules. `_classify` checks an approval's spender and a transfer's rec
 - **Fix (modules only):** on a module, `approve`, `increaseAllowance`, `setApprovalForAll`, `transfer` or `transferFrom` called on a token outside the asset list is a T1 UnauthorizedTarget breach (blocked in Enforce mode). The vault keeps MandateBase's rule unchanged, so its behaviour and published scores don't change.
 - **Not covered:** a token outside the list that the owner already approved to an allowed target (before or outside the module) can still be pulled by that target when the agent calls it; the module doesn't measure that token. Use a dedicated account for the agent, holding only the mandate's assets.
 - **Vault equivalent, for #67:** a vault can be sent tokens outside its asset list, and the same approve-then-swap path moves them. Those tokens aren't part of NAV, so depositors don't count on them, but the vault rule should match the module's at the next deployment (it changes verdicts, so it needs a re-rating).
-- **Tests:** `test_UnlistedTokenCantBeDrainedThroughAnAllowedTarget`, `test_TokenCallsOnUnlistedTokensAreUnauthorizedTargets`, `test_UnlistedTokenCallsDifferByDesign`.
+- **Revoking stays allowed:** `approve(x, 0)` and `setApprovalForAll(x, false)` on any token are not breaches (as on a vault), so the agent can clean up approvals without being frozen. `increaseAllowance` is never a revocation.
+- **Tests:** `test_UnlistedTokenCantBeDrainedThroughAnAllowedTarget`, `test_TokenCallsOnUnlistedTokensAreUnauthorizedTargets`, `test_RevokingOnUnlistedTokensIsAllowed`, `test_UnlistedTokenCallsDifferByDesign`.
 
 ### F-18 (Medium) An account that only pretended to pay kept its policy alive for ever
 
 Fixed. A contract that claims every execution succeeded made `payPremium` return without paying. CoverManager then failed to distribute money it never received, so `accrue` reverted: the policy was never marked past due, never lapsed or expired, couldn't be cancelled, and kept its cover counted against the pool's caps. The owner could switch to paying whenever a claim became worth it.
 
 - **Fix:** CoverManager measures its base-asset balance around `payPremium` and treats any shortfall as a missed premium (the usual past-due, grace-period and lapse path). Vault premium transfers always arrive, so vault flows are unchanged.
+- **Assumption:** the base asset moves exactly. A fee-on-transfer or rebasing base asset would make every premium look missed (USDG is neither).
 - **Tests:** `test_PremiumThatNeverArrivesIsMissed`; invariant `PremiumAccrualNeverStalls`.
 
 ### F-19 (Low) Two modules could be installed on one account
@@ -235,6 +237,8 @@ Fixed. "One module in use per account" was checked only when a module was create
 - **Tests:** `test_OnlyTheAccountsCurrentModuleCanBeInstalled`; invariant `OneModulePerAccount`.
 
 Also from the review: `CoverManager.setModuleFactory` is set once, so it now checks the factory's `vaultFactory()` is this deployment's vault factory (`WrongVaultFactory`). And predicting a module's address then changing the oracle doesn't half-install anything: Safe7579 refuses to install the empty predicted address (`test_InstallingAStalePredictionFails`).
+
+Also: the agent's key must not also be an owner, validator or ERC-1271 signer of the account. If it is, it can sign approvals (Permit2-style signature transfers, for example) that the account honours without any call through the module. The contracts README says so; the module can't check it on every account type.
 
 ### F-11 (Medium) Monitor mode on a smart account reaches further than on a vault
 
