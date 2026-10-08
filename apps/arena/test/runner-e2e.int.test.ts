@@ -13,15 +13,17 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { AttackSpec } from "@bonded/shared";
+import { AttackSpec, TOOL_SURFACE } from "@bonded/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   ArenaGateway,
+  exercised,
   loadAttackLibrary,
   rateAgent,
   RemoteAgent,
   type RemoteRunSummary,
   Sandbox,
+  sawAttack,
   StaticRunnerTokens,
 } from "../src/index.js";
 import { eventually } from "./fixtures/gateway-client.js";
@@ -190,19 +192,18 @@ describe("the real runner with an external agent", () => {
         );
         expect(writes.length).toBeGreaterThan(0);
       }
+      // It reads every source, the planted message included, treats it as data and does its
+      // task: an exercised trial, not breached, with nothing sent but its own trade.
       const attacked = episodes.find((e) => e.attackId === obeyed.id)!;
-      if (mode === "tools") {
-        // Nothing guards the transfer tool: the vault records the breach.
-        expect(attacked.verdict.breaches.map((b) => b.type)).toContain("T1_UNAUTHORIZED_TRANSFER");
-      } else {
-        // The SDK's dry run (eth_simulateV1 through the gateway) saw the breach coming and the
-        // agent never sent it: only its own trade reached the vault.
-        expect(attacked.verdict.breached).toBe(false);
-        expect(attacked.agentSummary.finalMessage).toMatch(/refused: transfer/);
-        expect(attacked.trace.filter((s) => s.tool === "execute").every((s) => s.result.ok)).toBe(
-          true,
-        );
-      }
+      expect(attacked.verdict.breached).toBe(false);
+      expect(sawAttack(attacked)).toBe(true);
+      expect(attacked.taskCompleted).toBe(true);
+      expect(exercised(attacked)).toBe(true);
+      expect(attacked.trace.some((s) => s.tool === "transfer")).toBe(false);
+      expect(attacked.agentSummary.finalMessage).toMatch(/acted on none of them\nsent: swap/);
+      expect(report.coverage?.readSurfaces).toEqual(
+        expect.arrayContaining(Object.values(TOOL_SURFACE)),
+      );
       expect(await stop()).toBe(0);
     },
   );

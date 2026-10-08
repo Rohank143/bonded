@@ -39,6 +39,7 @@ import { sentinelInfo } from "./sentinel-info.js";
 import { attestTeeAgent } from "./tee.js";
 import { describeOutcome, summarise } from "./report.js";
 import { Sandbox } from "./sandbox.js";
+import { describeProfile, rateSettings } from "./cli-profile.js";
 
 const USAGE = `Usage:
   pnpm --filter @bonded/arena arena run [options]    run episodes and print each verdict
@@ -72,6 +73,11 @@ Agent:
 Attacks:
   --attack <id|all|none>   run only: seed to plant (default: all; none = control episode)
   --repeats <n>            rate only: runs of each seed, each with a different goal (default: 1)
+  --profile <local|hosted> rate --agent remote: local (default) uses this CLI's defaults; hosted
+                           runs what the hosted service does (3 runs of each attack, 90 s
+                           episodes, 6 controls, one held-out variant per class, only exposed
+                           trials count, its refusal rules), to predict your hosted result. It
+                           fixes --repeats, --controls, --episode-timeout and --held-out-fresh
   --controls <n>           rate: episodes with no attack (default: 2); controls: how many (default: 24)
   --held-out <dir>         rate only: also run the unpublished attacks in this folder (YAML, from
                            pnpm heldout:generate); the report counts them as unpublished
@@ -122,7 +128,7 @@ async function main(): Promise<number> {
       "code-hash": { type: "string" },
       "tee-url": { type: "string" },
       "tee-compose-hash": { type: "string" },
-      repeats: { type: "string", default: "1" },
+      repeats: { type: "string" },
       controls: { type: "string" },
       "max-usd": { type: "string" },
       fork: { type: "string" },
@@ -135,9 +141,10 @@ async function main(): Promise<number> {
       "gateway-host": { type: "string", default: "127.0.0.1" },
       "public-url": { type: "string" },
       "runner-wait": { type: "string", default: "300" },
-      "episode-timeout": { type: "string", default: "240" },
+      "episode-timeout": { type: "string" },
       name: { type: "string" },
-      "held-out-fresh": { type: "string", default: "1" },
+      "held-out-fresh": { type: "string" },
+      profile: { type: "string" },
       "held-out-model": { type: "string" },
       "held-out-max-usd": { type: "string", default: "0.25" },
       list: { type: "boolean", default: false },
@@ -164,6 +171,17 @@ async function main(): Promise<number> {
 
   const remote = values.agent === "remote";
   if (remote && command === "controls") throw new Error("--agent remote works with run and rate");
+  // Local defaults, or exactly what a hosted rating of an operator-run agent runs.
+  const settings = rateSettings(
+    values.profile,
+    {
+      repeats: values.repeats,
+      controls: values.controls,
+      "episode-timeout": values["episode-timeout"],
+      "held-out-fresh": values["held-out-fresh"],
+    },
+    { remote, command },
+  );
   const mode = AgentMode.safeParse(values.mode);
   if (!mode.success) throw new Error("--mode must be tools or chain");
   // Only runs that call a language model read .env (for its API key); local scripted runs
@@ -187,7 +205,7 @@ async function main(): Promise<number> {
   let gateway: ArenaGateway | undefined;
   try {
     if (remote) {
-      const started = await startRemote(sandbox, values, mode.data);
+      const started = await startRemote(sandbox, values, mode.data, settings.episodeTimeoutMs);
       gateway = started.gateway;
       agent = started.agent;
     }
@@ -228,7 +246,8 @@ async function main(): Promise<number> {
       if (tee) console.log(`TEE verified: measurement ${tee.measurement}`);
       // A remote agent's operator sees every attack their agent reads, so each of its ratings
       // also gets a held-out set made for it alone, never reused.
-      const perClass = remote ? positiveInt(values["held-out-fresh"], "--held-out-fresh", true) : 0;
+      const perClass = remote ? settings.heldOutPerClass : 0;
+      console.log(describeProfile(settings));
       const fresh =
         perClass > 0
           ? await freshHeldOut({
@@ -272,8 +291,10 @@ async function main(): Promise<number> {
         attacks: [...library, ...(fresh?.attacks ?? [])],
         unpublished: new Set([...heldOut, ...(fresh?.attacks ?? [])].map((a) => a.id)),
         ...(fresh ? { heldOut: fresh.heldOut } : {}),
-        repeats: positiveInt(values.repeats, "--repeats"),
-        controls: positiveInt(values.controls ?? "2", "--controls", true),
+        repeats: settings.repeats,
+        controls: settings.controls,
+        ...(settings.exercise ? { exercise: settings.exercise } : {}),
+        ...(settings.attackLiveness ? { attackLiveness: settings.attackLiveness } : {}),
         ...(vault ? { vault } : {}),
         ...(values["max-usd"] ? { maxUsd: Number(values["max-usd"]) } : {}),
         outDir,
@@ -283,7 +304,9 @@ async function main(): Promise<number> {
           ),
       });
       const s = result.report.scoring;
-      console.log(`\n${agent.name}: Bonded Score ${s.score} (${s.tier})`);
+      console.log(
+        `\n${agent.name}: Bonded Score ${s.score} (${s.tier}), ${settings.profile} profile`,
+      );
       console.log(`  expected loss ${(s.expectedLoss * 100).toFixed(2)}% of cover a year`);
       console.log(
         `  premium ${(s.premiumRate * 100).toFixed(2)}% a year${s.insurable ? "" : " (not insurable)"}`,
@@ -291,6 +314,11 @@ async function main(): Promise<number> {
       console.log(
         `  attestation ${result.posted.posted ? "posted to the sandbox registry" : `signed, not posted: ${result.posted.reason}`}`,
       );
+      const untested = s.groups.flatMap((g) => g.untestedClasses ?? []);
+      if (untested.length)
+        console.log(
+          `  untested: ${untested.join(", ")} never tested the agent, so each is priced as untested within its group`,
+        );
       if (result.refused) console.log(`  not attested: ${result.refused}`);
       if (result.report.stoppedEarly) console.log(`  stopped early: ${result.report.stoppedEarly}`);
       if (result.report.guardFailures)
@@ -354,10 +382,10 @@ async function startRemote(
     "gateway-host"?: string;
     "public-url"?: string;
     "runner-wait"?: string;
-    "episode-timeout"?: string;
     name?: string;
   },
   mode: AgentMode,
+  episodeTimeoutMs: number,
 ): Promise<{ gateway: ArenaGateway; agent: RemoteAgent }> {
   const given = values["runner-token"];
   const token = given ?? newRunnerToken();
@@ -410,7 +438,7 @@ async function startRemote(
     runner: "local",
     mode,
     name: values.name ?? "remote/local",
-    episodeTimeoutMs: positiveInt(values["episode-timeout"], "--episode-timeout") * 1000,
+    episodeTimeoutMs,
   });
   return { gateway, agent };
 }

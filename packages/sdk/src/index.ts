@@ -60,6 +60,12 @@ export {
 export type { BreachType } from "@bonded/shared";
 export { bondedEpisodeEnv, fromBondedEnv, type BondedEpisode } from "./episode.js";
 export {
+  checkUnprotectedAllowances,
+  deploymentTokens,
+  unprotectedAllowancesWarning,
+  type AllowanceCheck,
+  type AllowanceFinding,
+  type TokenRef,
   installMandateModule,
   type InstallMandateModuleInput,
   type ModuleAccountType,

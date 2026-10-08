@@ -338,6 +338,7 @@ export function Choice({
   children,
   name,
   type = "radio",
+  disabled = false,
 }: {
   checked: boolean;
   onChange: () => void;
@@ -345,12 +346,21 @@ export function Choice({
   children?: ReactNode;
   name?: string;
   type?: "radio" | "checkbox";
+  /** Not available here; `children` should say why. */
+  disabled?: boolean;
 }) {
   return (
     <label
-      className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 text-sm transition ${checked ? "border-accent/60 bg-accent-soft" : "border-line-strong hover:bg-white/[0.03]"}`}
+      className={`flex items-start gap-3 rounded-2xl border p-4 text-sm transition ${disabled ? "cursor-not-allowed border-line-strong opacity-60" : checked ? "cursor-pointer border-accent/60 bg-accent-soft" : "cursor-pointer border-line-strong hover:bg-white/[0.03]"}`}
     >
-      <input type={type} name={name} checked={checked} onChange={onChange} className="mt-0.5" />
+      <input
+        type={type}
+        name={name}
+        checked={checked}
+        onChange={onChange}
+        disabled={disabled}
+        className="mt-0.5"
+      />
       <span>
         <span className="font-semibold">{title}</span>
         {children && <span className="mt-0.5 block text-muted">{children}</span>}

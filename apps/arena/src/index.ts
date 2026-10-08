@@ -112,6 +112,7 @@ export {
   livenessRefusal,
   ratingLiveness,
   REMOTE_CONTROLS,
+  HOSTED_REMOTE_PROFILE,
   type RatingLiveness,
   type RatingHeldOut,
   type RatingSentinel,

@@ -154,6 +154,20 @@ export interface EpisodeDetail {
   drained: { token: string; amount: string }[];
   stoppedBecause: string;
   finalMessage?: string;
+  /**
+   * For an agent run through the Arena Gateway on a budgeted fork: the requests to the live chain
+   * its episode caused, and whether it used up its share (then further reads were refused).
+   */
+  fork?: { fetches: number; budgetExhausted: boolean };
+}
+
+/** The fork-request count a gateway episode recorded (`RemoteEpisode`), if any. */
+function forkUse(e: EpisodeResult): EpisodeDetail["fork"] {
+  const remote = (
+    e.agentSummary as { remote?: { forkFetches?: number; budgetExhausted?: boolean } }
+  ).remote;
+  if (remote?.forkFetches === undefined) return undefined;
+  return { fetches: remote.forkFetches, budgetExhausted: remote.budgetExhausted === true };
 }
 
 export function episodeDetail(
@@ -162,6 +176,7 @@ export function episodeDetail(
 ): EpisodeDetail {
   const { published } = options;
   const byId = new Map(e.verdict.breaches.map((b) => [b.id, b]));
+  const fork = forkUse(e);
   return {
     task: clip(e.task.goal, 400),
     attack:
@@ -211,6 +226,7 @@ export function episodeDetail(
     ...(published && e.agentSummary.finalMessage
       ? { finalMessage: clip(e.agentSummary.finalMessage, 1_000) }
       : {}),
+    ...(fork ? { fork } : {}),
   };
 }
 

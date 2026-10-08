@@ -136,6 +136,33 @@ export class Keeper {
       )
     ).flat();
     const block = await read.getBlock({ blockNumber: to });
+    // What each breach was and when, for observed breach rates (GET /stats/observed-rates). Read
+    // before the transaction; breaches are rare, so a few reads per batch at most.
+    const agentOf = new Map<string, Promise<bigint>>();
+    const timeOf = new Map<bigint, Promise<bigint>>();
+    const details = await Promise.all(
+      breaches.map(async (b) => {
+        const vault = b.address.toLowerCase();
+        if (!agentOf.has(vault))
+          agentOf.set(
+            vault,
+            read.readContract({
+              address: b.address,
+              abi: mandateVaultAbi,
+              functionName: "agentId",
+            }),
+          );
+        if (!timeOf.has(b.blockNumber))
+          timeOf.set(
+            b.blockNumber,
+            read.getBlock({ blockNumber: b.blockNumber }).then((x) => x.timestamp),
+          );
+        return {
+          agentId: (await agentOf.get(vault)!).toString(),
+          at: new Date(Number(await timeOf.get(b.blockNumber)!) * 1000),
+        };
+      }),
+    );
     await this.db.transaction(async (c) => {
       for (const address of vaults)
         await c.query("INSERT INTO keeper_vaults VALUES($1,$2) ON CONFLICT DO NOTHING", [
@@ -148,14 +175,19 @@ export class Keeper {
           p.args.policyId.toString(),
           p.args.vault.toLowerCase(),
         ]);
-      for (const b of breaches)
+      for (const [i, b] of breaches.entries())
         await c.query(
-          "INSERT INTO handled_events(id,chain_id,vault,breach_id) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+          `INSERT INTO handled_events(id,chain_id,vault,breach_id,agent_id,breach_type,blocked,occurred_at)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING`,
           [
             `${d.chainId}:${b.transactionHash}:${b.logIndex}`,
             d.chainId,
             b.address.toLowerCase(),
             b.args.breachId.toString(),
+            details[i]!.agentId,
+            b.args.breachType,
+            b.args.blocked,
+            details[i]!.at,
           ],
         );
       await c.query(

@@ -13,10 +13,13 @@ import {
 } from "@bonded/db";
 import {
   QuoteError,
+  REMOTE_KIND,
   SELF_SERVE_MAX_COVER_USD,
+  UNDERWRITING_COVER_CAP_USD,
   bondedRegistryAbi,
   bountyBoardAbi,
   leaderboardHeadline,
+  type BindingLevel,
 } from "@bonded/shared";
 import {
   readLeaderboard,
@@ -40,6 +43,8 @@ import { teeQuoteBlock } from "./tee-watch.js";
 import { RateLimiter, clientAddress } from "./rate-limit.js";
 import { selfServeRoutes, type SelfServeLimits } from "./self-serve.js";
 import { libraryRoutes, MAX_BODY_BYTES } from "./library.js";
+import { observedRatesRoute } from "./observed-rates.js";
+import { ratingFacts } from "./rating-facts.js";
 export { issueQuote } from "./quotes.js";
 /** A decimal id, in canonical form: "01" and "1" are the same agent, so they must be the same key. */
 const uint = z
@@ -110,6 +115,13 @@ export function createApi(options: {
   sentinel?: SentinelService;
   /** Limits on Sentinel checks (see sentinel.ts). */
   sentinelLimits?: Partial<SentinelLimits>;
+  /** The Arena Gateway's public URL, shown to owners in the runner command. */
+  gatewayUrl?: string;
+  /**
+   * Underwriting policy: total cover caps, in tUSDG, for agents their operators run, by binding
+   * (default `UNDERWRITING_COVER_CAP_USD`: 5,000 declared, 20,000 TEE).
+   */
+  coverCaps?: Readonly<Record<BindingLevel, number>>;
 }) {
   const { db, chain } = options;
   if (options.apiToken.length < 24)
@@ -122,7 +134,7 @@ export function createApi(options: {
     "*",
     cors({
       origin: (origin) => (originAllowed(origin, origins) ? origin : null),
-      allowMethods: ["GET", "POST"],
+      allowMethods: ["GET", "POST", "DELETE"],
       allowHeaders: ["Content-Type", "Authorization", "Last-Event-ID"],
       maxAge: 600,
     }),
@@ -141,22 +153,26 @@ export function createApi(options: {
     c.req.path === "/sentinel/check" ? checkBodies(c, next) : smallBodies(c, next),
   );
   // POSTs that need no operator token: a bounty reveal (the hash check against the chain's
-  // revealed specURI authenticates it), self-serve requests (signed by the agent's owner) and
-  // quotes (capped without the token; buyCover checks the guardian on chain) and Sentinel checks
-  // (signed by the agent's own key, see sentinel.ts).
+  // revealed specURI authenticates it), self-serve requests (signed by the agent's owner: register,
+  // rate, and create or revoke a runner token) and quotes (capped without the token; buyCover
+  // checks the guardian on chain) and Sentinel checks (signed by the agent's own key, see
+  // sentinel.ts). Every other POST or DELETE needs the operator token.
   const PUBLIC_POST =
-    /^\/(bounties\/\d{1,78}\/reveal|self\/agents(\/\d{1,78}\/rate)?|quotes|sentinel\/check)$/;
+    /^\/(bounties\/\d{1,78}\/reveal|self\/agents(\/\d{1,78}\/(rate|runner-token))?|quotes|sentinel\/check)$/;
+  const PUBLIC_DELETE = /^\/self\/agents\/\d{1,78}\/runner-token$/;
   const hasToken = (header: string | undefined) => {
     const token = Buffer.from(header ?? "");
     const expected = Buffer.from(`Bearer ${options.apiToken}`);
     return token.length === expected.length && timingSafeEqual(token, expected);
   };
   app.use("*", async (c, next) => {
-    if (
-      c.req.method === "POST" &&
-      !PUBLIC_POST.test(c.req.path) &&
-      !hasToken(c.req.header("Authorization"))
-    )
+    const open =
+      c.req.method === "POST"
+        ? PUBLIC_POST.test(c.req.path)
+        : c.req.method === "DELETE"
+          ? PUBLIC_DELETE.test(c.req.path)
+          : true;
+    if (!open && !hasToken(c.req.header("Authorization")))
       return c.json({ error: "unauthorized" }, 401);
     await next();
   });
@@ -172,13 +188,24 @@ export function createApi(options: {
     await db.pool.query("SELECT 1");
     return c.json({ ok: true, chainId: chain.deployment.chainId });
   });
+  // The latest posted score, with its binding level, coverage and held-out seed when the report
+  // has them (bring your own agent).
   app.get("/agents/:id/score", async (c) => {
     const id = uint.parse(c.req.param("id"));
     const r = await db.pool.query(
-      'SELECT id AS "runId",signed,tx_hash FROM attestations WHERE agent_id=$1 ORDER BY created_at DESC LIMIT 1',
+      `SELECT s.id AS "runId",s.signed,s.tx_hash,r.report FROM attestations s
+       JOIN ratings r ON r.id=s.id WHERE s.agent_id=$1 ORDER BY s.created_at DESC LIMIT 1`,
       [`${chain.deployment.chainId}:${id}`],
     );
-    return r.rowCount ? c.json(r.rows[0]) : c.json({ error: "score not found" }, 404);
+    if (!r.rowCount) return c.json({ error: "score not found" }, 404);
+    const { report, ...row } = r.rows[0];
+    return c.json({
+      ...row,
+      ...ratingFacts(row.signed?.attestation?.teeMeasurement, report),
+      // Every rating of the agent, failed ones included, next to the score they didn't replace
+      // (the first page; GET /self/agents/:id/ratings has the rest).
+      ...(await ratingHistory(`${chain.deployment.chainId}:${id}`)),
+    });
   });
   app.get("/agents/:id/tee", async (c) => {
     const id = uint.parse(c.req.param("id"));
@@ -204,6 +231,24 @@ export function createApi(options: {
     // New cover for an agent with TEE custody needs the vault's key to be the TEE's key and no
     // outstanding failure (ADR-013, ADR-014). Decided against the same block the quote is built at.
     const teeRow = await db.teeCheck(`${chain.deployment.chainId}:${input.agentId}`);
+    const agentKey = `${chain.deployment.chainId}:${input.agentId}`;
+    // After a stop the agent caused, its score no longer stands: no new cover until a complete
+    // rating posts. Rerolling a bad rating by crashing gains nothing. Checked whatever the agent
+    // is registered as now, so registering it again can't lift it.
+    const { superseded } = await db.agentStanding(agentKey);
+    if (superseded)
+      return c.json(
+        {
+          error: `this agent's score is superseded: its latest rating was stopped by the agent (${superseded.reason}); cover waits for a complete rating`,
+          ...(await ratingHistory(agentKey)),
+        },
+        409,
+      );
+    const record = await db.agentRecord(agentKey);
+    // Whether the score's agent is one its operator runs (cover capped by binding: underwriting
+    // policy, not score) comes from the rating that posted the score, never from a later
+    // registration. A score of an earlier registration prices no cover.
+    let operatorRun = false;
     const signed = await issueQuote(
       chain,
       { ...input, vault: input.vault as Hex },
@@ -215,6 +260,22 @@ export function createApi(options: {
           vaultAgent,
           row: teeRow,
         }),
+      async ({ reportHash }) => {
+        const rating = await db.ratingBehindScore(agentKey, reportHash);
+        if (rating && !rating.current)
+          return {
+            refused:
+              "this agent was registered again after its current score was posted; cover waits for a complete rating of its current registration",
+          };
+        // A score this service didn't post: the registration is all there is to go on.
+        operatorRun = rating
+          ? rating.kind === REMOTE_KIND
+          : record?.enabled === true && (record.config as { kind?: string }).kind === REMOTE_KIND;
+        return {
+          capByBinding: operatorRun,
+          caps: options.coverCaps ?? UNDERWRITING_COVER_CAP_USD,
+        };
+      },
     );
     await db.pool.query("INSERT INTO quotes(id,chain_id,agent_id,signed) VALUES($1,$2,$3,$4)", [
       randomUUID(),
@@ -222,8 +283,21 @@ export function createApi(options: {
       input.agentId,
       json(signed),
     ]);
-    return c.json(signed, 201);
+    return c.json({ ...signed, ...(operatorRun ? await ratingHistory(agentKey) : {}) }, 201);
   });
+  /** An agent's standing and its latest ratings, failed ones included, for scores and quotes. */
+  async function ratingHistory(agentKey: string) {
+    const [page, standing] = await Promise.all([
+      db.ratingAttempts(agentKey),
+      db.agentStanding(agentKey),
+    ]);
+    return {
+      attempts: page.items,
+      attemptsTotal: page.total,
+      superseded: standing.superseded,
+      cooldownUntil: standing.cooldownUntil,
+    };
+  }
   app.post("/arena/runs", async (c) => {
     const { agentId } = z.strictObject({ agentId: uint }).parse(await c.req.json());
     const id = `${chain.deployment.chainId}:${agentId}`;
@@ -248,7 +322,21 @@ export function createApi(options: {
               },
               202,
             );
-      return c.json(row);
+      // How far it has got, and a rough estimate of the time left, from its published episodes.
+      const progress = await db.runProgress(id);
+      const elapsed =
+        progress.startedAt && progress.lastAt
+          ? progress.lastAt.getTime() - progress.startedAt.getTime()
+          : 0;
+      const etaSeconds =
+        row.status === "running" && progress.total && progress.done > 1
+          ? Math.round(((elapsed / (progress.done - 1)) * (progress.total - progress.done)) / 1000)
+          : null;
+      return c.json({
+        ...row,
+        ...(row.report ? ratingFacts(undefined, row.report) : {}),
+        progress: { done: progress.done, total: progress.total, etaSeconds },
+      });
     });
   // Class-level results only (docs/disclosures). Each entry posted on this API's chain is checked
   // against the registry: `verified` means its current score has the same report hash.
@@ -408,7 +496,14 @@ export function createApi(options: {
     if (!episode) return c.json({ error: "episode not found; older episodes are pruned" }, 404);
     return c.json(withPublished(episode));
   });
-  selfServeRoutes(app, { db, chain, ...(options.selfServe ? { limits: options.selfServe } : {}) });
+  selfServeRoutes(app, {
+    db,
+    chain,
+    ...(options.selfServe ? { limits: options.selfServe } : {}),
+    ...(options.gatewayUrl ? { gatewayUrl: options.gatewayUrl } : {}),
+    ...(options.coverCaps ? { coverCaps: options.coverCaps } : {}),
+  });
+  observedRatesRoute(app, { db, chainId: chain.deployment.chainId });
   libraryRoutes(app, { db, chainId: chain.deployment.chainId });
   sentinelRoutes(app, {
     db,

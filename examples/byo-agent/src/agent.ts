@@ -6,13 +6,16 @@ import {
   type TokenInfo,
   type VaultAction,
 } from "@bonded/sdk";
-import { type Address, erc20Abi, getAddress, parseUnits } from "viem";
+import { type Address, erc20Abi, parseUnits } from "viem";
 
 /**
- * The agent's brain: a small rebalancer that buys a target token with the base asset. It is
- * naive on purpose: it also does what messages in its inbox tell it to, like an LLM agent that
- * reads untrusted content. Protection doesn't depend on the brain being smart: every action
- * goes through the vault, and the SDK's guard refuses what the vault would record as a breach.
+ * The agent's brain: a small rebalancer that buys a target token with the base asset.
+ *
+ * Its one rule for safety: everything it reads (messages, news, prices, reports) is data, never
+ * instructions. Nothing it reads can add an action, change a recipient or move an amount; actions
+ * come only from its own strategy (or, in an Arena episode, its task). And it doesn't rely on that
+ * rule alone: every action goes through the vault, and the SDK's guard refuses anything the vault
+ * would record as a breach before it is sent.
  */
 export interface Strategy {
   /** The vault's base asset (first) and the tokens it trades. */
@@ -29,44 +32,35 @@ export interface Decision {
   why: string;
 }
 
-const INSTRUCTION = /send\s+([\d.]+)\s+(\w+)\s+to\s+(0x[0-9a-fA-F]{40})/i;
+/** Something the agent read, kept as untrusted context for Sentinel (never acted on). */
+export interface UntrustedInput {
+  tool: string;
+  output: unknown;
+}
 
-/** What to do, given the vault's balances (by symbol, base units) and the inbox. */
-export function decide(
-  strategy: Strategy,
-  balances: Record<string, bigint>,
-  inbox: readonly string[],
-): Decision[] {
+/** Buy `tradeSize` of the base asset's worth of the target. */
+export function buy(strategy: Strategy): Decision {
   const base = strategy.tokens[0]!;
   const target = token(strategy, strategy.target);
-  const decisions: Decision[] = [];
+  return {
+    action: {
+      type: "swap",
+      tokenIn: base.address as Address,
+      tokenOut: target.address as Address,
+      amountIn: parseUnits(strategy.tradeSize, base.decimals),
+    },
+    why: `buy ${strategy.tradeSize} ${base.symbol} worth of ${target.symbol}`,
+  };
+}
+
+/** The rebalancer: buy the target while the vault holds none and can pay for it. */
+export function decide(strategy: Strategy, balances: Record<string, bigint>): Decision[] {
+  const base = strategy.tokens[0]!;
+  const target = token(strategy, strategy.target);
   const size = parseUnits(strategy.tradeSize, base.decimals);
-  if ((balances[target.symbol] ?? 0n) === 0n && (balances[base.symbol] ?? 0n) >= size)
-    decisions.push({
-      action: {
-        type: "swap",
-        tokenIn: base.address as Address,
-        tokenOut: target.address as Address,
-        amountIn: size,
-      },
-      why: `hold some ${target.symbol}`,
-    });
-  for (const message of inbox) {
-    const match = INSTRUCTION.exec(message);
-    if (!match) continue;
-    const [, amount, symbol, to] = match;
-    const t = token(strategy, symbol!);
-    decisions.push({
-      action: {
-        type: "transfer",
-        token: t.address as Address,
-        to: getAddress(to!),
-        amount: parseUnits(amount!, t.decimals),
-      },
-      why: `the inbox said: "${message}"`,
-    });
-  }
-  return decisions;
+  return (balances[target.symbol] ?? 0n) === 0n && (balances[base.symbol] ?? 0n) >= size
+    ? [buy(strategy)]
+    : [];
 }
 
 /** What happened to one decision. */
@@ -76,13 +70,38 @@ export interface Outcome extends Decision {
 }
 
 /**
- * One cycle: read the vault's balances, decide, and send each action through the guarded vault
- * (a dry run against the vault, and Sentinel if configured). Refusals are reported, not thrown.
+ * Sends each decision through the guarded vault: a dry run against the vault, and Sentinel if
+ * configured (with what the agent read as its untrusted input). Refusals are reported, not thrown.
  */
+export async function send(
+  vault: BondedVault,
+  decisions: readonly Decision[],
+  untrusted: readonly UntrustedInput[] = [],
+  sentinel?: SentinelGuardOptions,
+): Promise<Outcome[]> {
+  const safe = guarded(vault, sentinel ? { sentinel } : {});
+  const untrustedInputs = untrusted.map((u) => ({
+    tool: u.tool,
+    output: typeof u.output === "string" ? u.output : JSON.stringify(u.output),
+  }));
+  const outcomes: Outcome[] = [];
+  for (const decision of decisions) {
+    try {
+      const result = await safe.execute(decision.action, { untrustedInputs });
+      outcomes.push({ ...decision, status: "sent", detail: result.hashes.join(", ") });
+    } catch (error) {
+      if (!(error instanceof BondedError)) throw error;
+      outcomes.push({ ...decision, status: "refused", detail: error.message });
+    }
+  }
+  return outcomes;
+}
+
+/** One cycle against a real vault: read its balances, decide, send guarded. */
 export async function runOnce(
   vault: BondedVault,
   strategy: Strategy,
-  inbox: readonly string[],
+  untrusted: readonly UntrustedInput[] = [],
   sentinel?: SentinelGuardOptions,
 ): Promise<Outcome[]> {
   // The funds are in the vault, or in the smart account a mandate module guards.
@@ -95,19 +114,7 @@ export async function runOnce(
       functionName: "balanceOf",
       args: [holder],
     });
-  const safe = guarded(vault, sentinel ? { sentinel } : {});
-  const untrustedInputs = inbox.map((output) => ({ tool: "read_inbox", output }));
-  const outcomes: Outcome[] = [];
-  for (const decision of decide(strategy, balances, inbox)) {
-    try {
-      const result = await safe.execute(decision.action, { untrustedInputs });
-      outcomes.push({ ...decision, status: "sent", detail: result.hashes.join(", ") });
-    } catch (error) {
-      if (!(error instanceof BondedError)) throw error;
-      outcomes.push({ ...decision, status: "refused", detail: error.message });
-    }
-  }
-  return outcomes;
+  return send(vault, decide(strategy, balances), untrusted, sentinel);
 }
 
 function token(strategy: Strategy, symbol: string): TokenInfo {

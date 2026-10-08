@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { serve } from "@hono/node-server";
-import { loadDotEnv } from "@bonded/arena";
+import { ArenaGateway, loadDotEnv } from "@bonded/arena";
 import { Database } from "@bonded/db";
 import { Keeper, SolanaKeeper, connectChain, connectSolana, parseSolanaKey } from "@bonded/keeper";
 import { parseEvmDeployment } from "@bonded/shared";
@@ -9,9 +9,20 @@ import { z } from "zod";
 import { createApi } from "./index.js";
 import { runTeeChecks, teeCheckInterval } from "./tee-watch.js";
 import { agentConfig, workOne } from "./worker.js";
+import { remotePolicyFromEnv, remoteQuota } from "./remote-policy.js";
+import { remoteRatingProblem } from "./eligibility.js";
 import { sentinelFromEnv } from "./sentinel.js";
 import { workBountyOne } from "./bounty-worker.js";
 import { Alerter, LoopHealth, Watchdog, telegramFromEnv } from "./alerts.js";
+import { renewExpiringScores } from "./live-loop.js";
+import {
+  OpenAICompatibleClient,
+  bondedRegistryAbi,
+  UNDERWRITING_COVER_CAP_USD,
+  llmConfigFromEnv,
+} from "@bonded/shared";
+import { REMOTE_EPISODE_TIMEOUT_MS, gatewayAgents } from "./remote-agent.js";
+import { DbRunnerAuth, RunnerPresenceWriter } from "./runners.js";
 
 loadDotEnv();
 const role = process.env.ROLE ?? "api";
@@ -43,6 +54,26 @@ const key = (name: string) =>
     .templateLiteral(["0x", z.string()])
     .refine((v) => /^0x[0-9a-fA-F]{64}$/.test(v))
     .parse(required(name));
+/** A cover cap in whole tUSDG from the environment, or its default. */
+const usdCap = (name: string, fallback: number) =>
+  z.coerce
+    .number()
+    .int()
+    .min(0)
+    .parse(process.env[name] ?? fallback);
+/**
+ * The gateway's public URL: GATEWAY_PUBLIC_URL, a full URL or a bare host (Railway's
+ * RAILWAY_PUBLIC_DOMAIN of the arena-worker), which is taken as https.
+ */
+const gatewayUrl = () => {
+  const value = process.env.GATEWAY_PUBLIC_URL?.trim();
+  if (!value) return undefined;
+  return z
+    .url({ protocol: /^https?$/ })
+    .parse(/^https?:\/\//.test(value) ? value : `https://${value}`);
+};
+/** Sizes, caps and budgets for operator-run agents' ratings: the one configured policy. */
+const remotePolicy = remotePolicyFromEnv();
 const db = new Database(required("DATABASE_URL"));
 await db.migrate();
 if (role === "migrate") {
@@ -89,6 +120,7 @@ if (role === "migrate") {
   // Production Sentinel (SENTINEL_URL and LAYA_API_KEY), for checks and Sentinel-on ratings.
   const sentinel = sentinelFromEnv();
   let server: ReturnType<typeof serve> | undefined;
+  let gateway: ArenaGateway | undefined;
   let api: ReturnType<typeof createApi> | undefined;
   if (role === "api" || role === "all") {
     api = createApi({
@@ -102,6 +134,15 @@ if (role === "migrate") {
         .filter(Boolean),
       // Sentinel checks for agents, when SENTINEL_URL is set (docs/SENTINEL.md).
       ...(sentinel ? { sentinel } : {}),
+      // The Arena Gateway's public URL (the arena-worker's domain), for the runner command.
+      ...(gatewayUrl() ? { gatewayUrl: gatewayUrl()! } : {}),
+      // Underwriting policy for agents their operators run: total cover caps by binding.
+      // The same configured policy for operator-run agents as the worker and keeper use.
+      selfServe: { remote: remotePolicy },
+      coverCaps: {
+        declared: usdCap("DECLARED_COVER_CAP_USD", UNDERWRITING_COVER_CAP_USD.declared),
+        tee: usdCap("TEE_COVER_CAP_USD", UNDERWRITING_COVER_CAP_USD.tee),
+      },
     });
     server = serve({
       fetch: api.fetch,
@@ -136,7 +177,17 @@ if (role === "migrate") {
     }
     // Re-check TEE-hosted agents against their rated measurement. A stopped VM is just "unreachable".
     const teeEvery = teeCheckInterval.parse(process.env.TEE_CHECK_MS ?? 600_000);
-    tasks.push(loop("TEE checks", () => runTeeChecks(db, chain), teeEvery));
+    tasks.push(
+      loop(
+        "TEE checks",
+        () =>
+          runTeeChecks(db, chain, undefined, {
+            quota: remoteQuota(remotePolicy, Date.now()),
+            rerateGapMs: remotePolicy.perAgentMs,
+          }),
+        teeEvery,
+      ),
+    );
     // The keeper role is always deployed once, so it owns event retention.
     const retentionDays = z.coerce
       .number()
@@ -164,11 +215,127 @@ if (role === "migrate") {
   if (role === "arena-worker" || role === "all") {
     // Separate account/nonce flow from the keeper, even in all mode.
     const worker = connectChain(deployment, rpc, key("ATTESTER_KEY"));
+    // The Arena Gateway (bring your own agent, docs/BRING-YOUR-OWN-AGENT.md): runners of agents
+    // their operators run connect to it, and their agents reach their episodes through it. It
+    // starts when GATEWAY_PORT is set; without it a remote agent's rating fails at once with
+    // "gateway not available".
+    const gatewayPort = process.env.GATEWAY_PORT
+      ? z.coerce.number().int().min(1).max(65535).parse(process.env.GATEWAY_PORT)
+      : undefined;
+    if (gatewayPort) {
+      const presence = new RunnerPresenceWriter(db, (line) => console.error(line));
+      const publicUrl = gatewayUrl();
+      gateway = new ArenaGateway({
+        // A token stops working when the agent changes hands: the registry is checked too.
+        tokens: new DbRunnerAuth(db, deployment.chainId, async (agentId) =>
+          worker.read.readContract({
+            address: deployment.registry,
+            abi: bondedRegistryAbi,
+            functionName: "agentOwner",
+            args: [BigInt(agentId)],
+          }),
+        ),
+        ...(publicUrl ? { publicUrl } : {}),
+        onRunnerPresence: presence.onEvent,
+        // Proxies in front of the gateway whose X-Forwarded-For it trusts for per-address limits:
+        // 1 behind Railway's edge, 0 (the socket's address) anywhere else.
+        trustProxy: z.coerce
+          .number()
+          .int()
+          .min(0)
+          .max(5)
+          .parse(process.env.GATEWAY_TRUST_PROXY ?? 0),
+        // Agent ids only; never a token or an episode's capability.
+        log: (line) => console.info(`gateway: ${line}`),
+      });
+      await gateway.listen({ port: gatewayPort, host: "0.0.0.0" });
+      console.info(`Arena Gateway listening on port ${gatewayPort}`);
+    }
+    // Held-out variants for remote ratings: drafted by a cheap model when a key is set (it is
+    // advisory text; every variant is still checked against the undefended reference agent),
+    // otherwise deterministic rewrites.
+    const llmKey = process.env.LLM_API_KEY ?? process.env.OPENROUTER_API_KEY;
+    const heldOut = {
+      perClass: remotePolicy.heldOutPerClass,
+      ...(llmKey
+        ? {
+            llm: {
+              client: new OpenAICompatibleClient(llmConfigFromEnv()),
+              model: process.env.HELD_OUT_MODEL ?? "deepseek/deepseek-v4.1-flash",
+              maxUsd: z.coerce
+                .number()
+                .min(0)
+                .parse(process.env.HELD_OUT_MAX_USD ?? 0.25),
+            },
+          }
+        : {}),
+    };
+    const ms = (name: string, fallback: number) =>
+      z.coerce
+        .number()
+        .int()
+        .min(1000)
+        .parse(process.env[name] ?? fallback);
+    if (gateway) {
+      // Two lanes, each with its own lock: Bonded's own ratings never wait behind an operator's
+      // agent, and remote ratings take turns by owner.
+      const remote = gatewayAgents(gateway, {
+        episodeTimeoutMs: ms("REMOTE_EPISODE_TIMEOUT_MS", REMOTE_EPISODE_TIMEOUT_MS),
+      });
+      const ownerOf = (agentId: string) =>
+        worker.read.readContract({
+          address: deployment.registry,
+          abi: bondedRegistryAbi,
+          functionName: "agentOwner",
+          args: [BigInt(agentId)],
+        });
+      tasks.push(
+        loop(
+          "The rating worker",
+          () =>
+            workOne(db, worker, rpc, key("ATTESTER_KEY"), undefined, sentinel, {
+              lane: "builtin",
+            }),
+          1000,
+        ),
+        loop(
+          "The remote rating worker",
+          () =>
+            workOne(db, worker, rpc, key("ATTESTER_KEY"), undefined, sentinel, {
+              lane: "remote",
+              remote,
+              heldOut,
+              remotePolicy,
+              ownerOf,
+            }),
+          1000,
+        ),
+      );
+    } else
+      tasks.push(
+        loop(
+          "The rating worker",
+          () => workOne(db, worker, rpc, key("ATTESTER_KEY"), undefined, sentinel, { heldOut }),
+          1000,
+        ),
+      );
+    // Renew bring-your-own agents' scores before they lapse, while their runners are connected.
     tasks.push(
       loop(
-        "The rating worker",
-        () => workOne(db, worker, rpc, key("ATTESTER_KEY"), undefined, sentinel),
-        1000,
+        "Score renewals",
+        () =>
+          renewExpiringScores(db, deployment.chainId, undefined, {
+            quota: remoteQuota(remotePolicy, Date.now()),
+            problem: async (agentKey) => {
+              const record = await db.agentRecord(agentKey);
+              return remoteRatingProblem(worker, agentKey.split(":")[1]!, record?.owner ?? null);
+            },
+          }),
+        z.coerce
+          .number()
+          .int()
+          .min(60_000)
+          .parse(process.env.RENEW_CHECK_MS ?? 600_000),
       ),
     );
     // Error names only: messages can carry the RPC URL and its key.
@@ -188,6 +355,7 @@ if (role === "migrate") {
     server.close((error) => (error ? reject(error) : resolve()));
   });
   await api?.close();
+  await gateway?.close();
   // Streams have released their listeners; reap sockets that became idle during that drain.
   if (server && "closeIdleConnections" in server) server.closeIdleConnections();
   await Promise.all([...tasks, httpClosed]);

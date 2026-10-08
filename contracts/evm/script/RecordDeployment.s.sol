@@ -40,7 +40,10 @@ contract RecordDeployment is Script {
     ];
 
     function run() external {
-        string memory dir = string.concat(vm.projectRoot(), "/deployments/");
+        // Same directory Deploy.s.sol wrote to (see DEPLOYMENTS_DIR there).
+        string memory dir = string.concat(
+            vm.projectRoot(), "/", vm.envOr("DEPLOYMENTS_DIR", string("deployments")), "/"
+        );
         string memory id = vm.toString(block.chainid);
         string memory pending = string.concat(dir, id, ".pending.json");
         // reading and promoting our own deployment file is the point of this script

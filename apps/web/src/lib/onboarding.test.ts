@@ -86,6 +86,17 @@ describe("remember and recall", () => {
     });
     expect(recallAgent(deployment.chainId, "13")).toBeUndefined();
   });
+  it("keeps what the owner declared about their own agent", () => {
+    const mandate = buildMandate(deployment, 14n, form);
+    const remote = { codeHash: `0x${"c".repeat(64)}`, mode: "chain" as const };
+    rememberAgent(deployment.chainId, "14", { vault: "0xabc", kind: "remote", mandate, remote });
+    expect(recallAgent(deployment.chainId, "14")).toEqual({
+      vault: "0xabc",
+      kind: "remote",
+      mandate,
+      remote,
+    });
+  });
 });
 
 describe("validateOnboarding", () => {

@@ -281,6 +281,14 @@ it("rejects capacity, signs an API quote, binds it and automatically pays a brea
   expect(after - before).toBeGreaterThan(usd(899));
   const paid = await pg.db.pool.query("SELECT * FROM handled_events WHERE status='claimed'");
   expect(paid.rowCount).toBeGreaterThan(0);
+  // What the breach was and when, for observed breach rates: an unauthorised transfer (type 2),
+  // not blocked (Monitor mode), by this vault's agent.
+  expect(paid.rows[0]).toMatchObject({
+    agent_id: vault.agentId.toString(),
+    breach_type: 2,
+    blocked: false,
+  });
+  expect(paid.rows[0].occurred_at).toBeInstanceOf(Date);
   const events = await pg.db.pool.query("SELECT * FROM events WHERE topic='claim.paid'");
   expect(events.rowCount).toBe(1);
   await new Keeper(pg.db, chain, 0n).tick();
@@ -452,6 +460,24 @@ it("starts arena-worker with only the attester signing key", async () => {
   try {
     service.child.kill("SIGTERM");
     expect((await within(service.exited, EXIT_CEILING_MS)).code).toBe(0);
+  } finally {
+    await service.stop();
+  }
+});
+it("serves the Arena Gateway from arena-worker when GATEWAY_PORT is set, and stops it on SIGTERM", async () => {
+  const { startService, within } = await import("./lifecycle.js");
+  const service = await startService("arena-worker", pg.url, sandbox, { gateway: true });
+  try {
+    // An episode route with an unknown capability: the gateway answers, and gives nothing away.
+    const response = await fetch(`${service.url}/e/not-a-capability/tools`);
+    expect(response.status).toBe(404);
+    // A runner with no token is refused at the upgrade.
+    const refused = await fetch(`${service.url}/runner/connect`, {
+      headers: { Connection: "Upgrade", Upgrade: "websocket" },
+    }).catch(() => undefined);
+    expect(refused?.status ?? 401).not.toBe(101);
+    service.child.kill("SIGTERM");
+    expect((await within(service.exited, 5000)).code).toBe(0);
   } finally {
     await service.stop();
   }

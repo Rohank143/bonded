@@ -1,4 +1,5 @@
-import type { AttackSpec, SelfServeKind } from "@bonded/shared";
+import type { BindingLevel, RemoteMode, SelfServeAgentKind, SelfServeKind } from "@bonded/shared";
+import type { AttackSpec } from "@bonded/shared";
 import { apiUrl } from "../config";
 import type { EpisodeCard, EpisodeCounts, Outcome } from "./events";
 
@@ -89,6 +90,8 @@ export interface EpisodeDetail {
   drained: { token: string; amount: string }[];
   stoppedBecause: string;
   finalMessage?: string;
+  /** An operator-run agent on a budgeted fork: live-chain requests it caused, and if it ran out. */
+  fork?: { fetches: number; budgetExhausted: boolean };
 }
 
 /** GET /episodes/:eventId. `detail` is null for episodes from before it was recorded. */
@@ -195,7 +198,40 @@ function post<T>(path: string, token: string, body: unknown): Promise<T> {
   });
 }
 
-export interface ScoreRecord {
+/** What the API adds to a score or run: binding level, coverage and the held-out seed. */
+export interface RatingFacts {
+  /** `tee` when the score carries a verified TEE measurement, otherwise `declared`. */
+  binding?: BindingLevel;
+  /** Which attack surfaces the agent read (reports that record it). */
+  coverage?: Coverage | null;
+  /** The held-out set made for this rating alone (remote ratings). */
+  heldOut?: { seed: string; attacks?: number; source?: string; model?: string } | null;
+  /** Control episodes in which the agent did its normal task. */
+  liveness?: Liveness | null;
+}
+/** Control episodes, and how many the agent did its normal task in (rate: completed ÷ controls). */
+export interface Liveness {
+  controls: number;
+  completed: number;
+  rate: number | null;
+  /** Attack episodes the vault didn't breach, and how many of them the agent did its task in. */
+  attacks?: { episodes: number; completed: number; rate: number | null };
+  /** The share of attack episodes it must complete, from its control rate. */
+  required?: number | null;
+  /** Chance the gap between attacks and controls is luck (one-sided test). */
+  pValue?: number | null;
+}
+/** Per surface: episodes that attacked it, and episodes in which the agent read it. */
+export interface Coverage {
+  surfaces: Record<string, { attacked: number; read: number }>;
+  readSurfaces: string[];
+}
+export interface ScoreRecord extends RatingFacts {
+  /** For an operator-run agent: its latest ratings, how many in all, and its standing. */
+  attempts?: RatingAttempt[];
+  attemptsTotal?: number;
+  superseded?: { since: string; reason: string } | null;
+  cooldownUntil?: string | null;
   runId: string;
   tx_hash: string;
   signed: { attestation: { reportHash: string; issuedAt: number; expiresAt: number } };
@@ -211,7 +247,9 @@ export interface TeeCheckRecord {
   checkedAt: string;
   verifiedAt: string | null;
 }
-export interface RunRecord {
+export interface RunRecord extends RatingFacts {
+  /** Episodes published so far, of how many, and a rough estimate of the seconds left. */
+  progress?: { done: number; total: number | null; etaSeconds: number | null };
   id: string;
   status: "queued" | "running" | "done" | "failed";
   error: string | null;
@@ -225,11 +263,24 @@ export interface Report {
   forked: boolean;
   startedAt: string;
   durationMs: number;
-  scoring: { score: number; tier: string };
+  scoring: {
+    score: number;
+    tier: string;
+    /**
+     * Groups of attack classes as priced. `untestedClasses`: classes that ran but never tested an
+     * operator-run agent; each one's share of its group is priced as untested (older reports and
+     * in-process ratings don't have it).
+     */
+    groups?: { id: string; name: string; classes: string[]; untestedClasses?: string[] }[];
+  };
   episodes: { total: number; attacks: number; controls: number; agentErrors: number };
   controls: { episodes: number; breaches: number };
   /** Accepted bounties and held-out attacks in the rating; older reports don't have it. */
   unpublished?: { attacks: number; episodes: number };
+  /** Which attack surfaces the agent read; reports from before bring-your-own agents don't have it. */
+  coverage?: Coverage;
+  /** Whether the agent did its normal task in the control episodes; older reports don't have it. */
+  liveness?: Liveness;
   /** Set when the agent proved it runs in a TEE; reports from before Day 11 don't have it. */
   tee?: {
     measurement: `0x${string}`;
@@ -256,6 +307,8 @@ export interface Report {
     attackSucceeded: number;
     agentErrors: number;
     lossUsd: number;
+    /** Attack episodes that tested the agent (breached, or it did its task): remote ratings. */
+    exercised?: number;
   }[];
 }
 export interface SignedQuoteResponse {
@@ -310,7 +363,71 @@ export type SelfAgentRecord =
       owner: string | null;
       lastRatingAt: string | null;
       nextRatingAt: string | null;
+      /** The owner's own agent (kind "remote"): what was declared. */
+      codeHash?: string;
+      mode?: RemoteMode;
+      tee?: { url: string; composeHash: string } | null;
+      /** Underwriting policy: the most cover it can hold, in tUSDG, by binding. */
+      coverCaps?: Record<BindingLevel, number>;
+      /** What protects the funds: a Bonded vault, or a module on the owner's smart account. */
+      protection?: "vault" | "module";
+      /** The vault's or module's address, for agents registered from the web app. */
+      vault?: string | null;
+      /** What a rating of the owner's own agent will be: its episodes and time budget. */
+      /** The most a rating will be: its held-out set can come out smaller. */
+      expectedRating?: { maxEpisodes: number; budgetSeconds: number };
+      /** After a stop the agent caused: the superseded score and the cooldown. */
+      standing?: Standing;
     };
+
+/** GET /self/agents/:id/runner: the runner token (never the token itself) and the runner. */
+export interface RunnerRecord {
+  token: { id: string; createdAt: string } | null;
+  runner: {
+    connected: boolean;
+    connectedAt: string;
+    lastHeartbeatAt: string;
+    disconnectedAt: string | null;
+    runnerVersion: string | null;
+    mode: string | null;
+    teeUrl: string | null;
+  } | null;
+  /** The latest rating the live loop had to skip, and why. */
+  lastSkip: { cause: string; reason: string; at: string } | null;
+  /** Why a runner that is there doesn't count (e.g. started in the other mode), or null. */
+  problem?: string | null;
+  /** Every rating of the agent, newest first, failed ones included. */
+  attempts?: RatingAttempt[];
+  /** The Arena Gateway's public URL, for the runner command; null when it isn't configured. */
+  gatewayUrl: string | null;
+}
+
+/** One rating of an agent, as its history shows it. */
+export interface RatingAttempt {
+  runId: string;
+  status: "queued" | "running" | "done" | "failed";
+  /** The system's own reason. */
+  error: string | null;
+  /** It stopped because of the agent. */
+  agentCaused?: boolean;
+  /** What the agent or its runner said: the operator's words, shown as such. */
+  agentReport?: string | null;
+  createdAt: string;
+  score: number | null;
+}
+
+/** Where an operator-run agent stands after its ratings. */
+export interface Standing {
+  failuresInRow: number;
+  superseded: { since: string; reason: string } | null;
+  cooldownUntil: string | null;
+}
+
+/** A signed self-serve request with nothing else in it. */
+export interface SignedRequest {
+  timestamp: number;
+  signature: string;
+}
 
 /** A community bounty as the API lists it: no payload, which stays private. */
 export interface BountyRecord {
@@ -359,8 +476,13 @@ export const api = {
   registerSelfAgent: (input: {
     agentId: string;
     vault: string;
-    kind: SelfServeKind;
+    kind: SelfServeKind | SelfServeAgentKind;
     mandate: unknown;
+    sentinel?: boolean;
+    protection?: "vault" | "module";
+    codeHash?: string;
+    mode?: RemoteMode;
+    tee?: { url: string; composeHash: string };
     timestamp: number;
     signature: string;
   }) =>
@@ -373,6 +495,28 @@ export const api = {
   rateSelfAgent: (agentId: string, input: { timestamp: number; signature: string }) =>
     request<{ runId: string }>(`/self/agents/${agentId}/rate`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  /** Every rating of an agent, newest first, a page at a time. */
+  ratings: (agentId: string, page = 1, limit = 10) =>
+    request<Paged<RatingAttempt>>(`/self/agents/${agentId}/ratings${query({ page, limit })}`),
+  /** The owner's own agent: its runner token (never the token) and its runner. */
+  runner: (agentId: string) => request<RunnerRecord>(`/self/agents/${agentId}/runner`),
+  /** A new runner token, shown once; it replaces the agent's current one. */
+  createRunnerToken: (agentId: string, input: SignedRequest) =>
+    request<{ token: string; tokenId: string; createdAt: string; gatewayUrl: string | null }>(
+      `/self/agents/${agentId}/runner-token`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      },
+    ),
+  /** Revoke the agent's runner token; a connected runner is dropped. */
+  revokeRunnerToken: (agentId: string, input: SignedRequest) =>
+    request<{ revoked: number }>(`/self/agents/${agentId}/runner-token`, {
+      method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     }),
