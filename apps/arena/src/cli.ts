@@ -217,6 +217,8 @@ async function main(): Promise<number> {
       const tee = values["tee-url"]
         ? await attestTeeAgent({
             url: values["tee-url"],
+            // A local CLI run may check a TEE simulator on this machine.
+            allowLoopback: true,
             codeHash: codeHash ?? required("--code-hash with --tee-url"),
             composeHash:
               hex32(values["tee-compose-hash"], "--tee-compose-hash") ??
@@ -374,8 +376,14 @@ async function startRemote(
   });
   console.log(`\nArena Gateway listening at ${url}`);
   console.log("Start your agent's runner in another terminal:\n");
+  const tokenShown = given ? "<your token>" : token;
   console.log(
-    `  BONDED_RUNNER_TOKEN=${given ? "<your token>" : token} npx @bonded/runner --gateway ${url} ` +
+    `  BONDED_RUNNER_TOKEN=${tokenShown} npx @bonded/runner --gateway ${url} ` +
+      `--mode ${mode} -- <your agent command>\n`,
+  );
+  console.log("or, from this repository (until @bonded/runner is published):\n");
+  console.log(
+    `  BONDED_RUNNER_TOKEN=${tokenShown} node apps/runner/dist/cli.js --gateway ${url} ` +
       `--mode ${mode} -- <your agent command>\n`,
   );
   const waitMs = positiveInt(values["runner-wait"], "--runner-wait") * 1000;

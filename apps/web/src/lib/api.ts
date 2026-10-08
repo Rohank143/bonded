@@ -264,7 +264,8 @@ export interface Report {
     measurement: `0x${string}`;
     composeHash: `0x${string}`;
     evmAddress: string;
-    solanaPublicKey: string;
+    /** Absent for a TEE agent that only acts on EVM chains. */
+    solanaPublicKey?: string;
     tcbStatus: string;
   } | null;
   /** Sentinel was in front of the agent for this rating; older reports don't have it. */

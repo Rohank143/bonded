@@ -61,7 +61,9 @@ export interface RemoteAgentOptions {
   };
   /**
    * Chain mode, TEE-bound: the attested EVM address the episode's vault names as its agent. No
-   * key is sent; the TEE signs. Without it, each episode gets a fresh session key.
+   * key is sent; the TEE signs. Without it, each episode gets a fresh session key. On a fork the
+   * sandbox must report a chain id of its own (`forkChainId`), so the TEE's signed transactions
+   * can't be replayed on the live chain; the agent then sees that id instead of the live one.
    */
   agentAddress?: `0x${string}`;
 }
@@ -112,6 +114,13 @@ export class RemoteAgent implements SelfSigningAgent {
   async episodeSigner(sandbox: Sandbox): Promise<`0x${string}` | undefined> {
     if (this.options.mode !== "chain") return undefined;
     if (this.options.agentAddress) {
+      // A real key (the TEE's) signs on this chain. On a fork that reports the live chain's id,
+      // its transactions would also be valid on the live chain, and could be replayed there.
+      if (sandbox.forked && sandbox.chain.id === sandbox.liveChainId)
+        throw new Error(
+          "a TEE-key chain-mode rating needs a fork with its own chain id " +
+            "(Sandbox.start({ forkUrl, forkChainId })), so nothing signed in it is valid live",
+        );
       this.pendingKey = undefined;
       await sandbox.fund(this.options.agentAddress);
       return this.options.agentAddress;

@@ -28,8 +28,8 @@ export const TeeEvidence = z.strictObject({
   codeHash: bytes32,
   /** The agent's session key on EVM chains, derived inside the TEE. */
   evmAddress,
-  /** The agent's session key on Solana, derived inside the TEE. */
-  solanaPublicKey: solanaKey,
+  /** The agent's session key on Solana, derived inside the TEE. Absent for an EVM-only agent. */
+  solanaPublicKey: solanaKey.optional(),
   /** The Arena's challenge, echoed back so an old quote can't be replayed. */
   nonce: hex32,
 });
@@ -44,13 +44,17 @@ export function toHex32(value: string): `0x${string}` {
 }
 
 /**
- * The 32 bytes the TEE puts in the quote's report data: a hash of the code it runs, both session
+ * The 32 bytes the TEE puts in the quote's report data: a hash of the code it runs, its session
  * keys and the Arena's nonce. Binding them in one hash is what ties "this key" to "this code".
+ *
+ * An EVM-only agent has no Solana key, and its part is empty. That stays unambiguous: every other
+ * part has a fixed length, and a Solana key is never empty (32 to 44 base58 characters), so the
+ * hashed bytes say whether there was a key, and which.
  */
 export function teeReportData(input: {
   codeHash: `0x${string}`;
   evmAddress: `0x${string}`;
-  solanaPublicKey: string;
+  solanaPublicKey?: string | undefined;
   nonce: string;
 }): `0x${string}` {
   return keccak256(
@@ -58,7 +62,7 @@ export function teeReportData(input: {
       stringToHex(TEE_REPORT_DOMAIN),
       input.codeHash,
       input.evmAddress,
-      stringToHex(input.solanaPublicKey),
+      stringToHex(input.solanaPublicKey ?? ""),
       toHex32(input.nonce),
     ]),
   );

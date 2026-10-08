@@ -32,8 +32,16 @@ export const RUNNER_CONNECT_PATH = "/runner/connect";
  * - protocol: a message didn't parse, or the runner's protocol version is unsupported.
  * - heartbeat: the runner went quiet for too long.
  * - revoked: the runner token is no longer valid.
+ * - rateLimited: too many messages; the runner may reconnect after backing off.
  */
-export const RUNNER_CLOSE = { replaced: 4000, protocol: 4002, heartbeat: 4003, revoked: 4004 };
+export const RUNNER_CLOSE = {
+  replaced: 4000,
+  protocol: 4002,
+  heartbeat: 4003,
+  revoked: 4004,
+  /** The runner sent messages faster than any runner needs to (it may reconnect). */
+  rateLimited: 4005,
+};
 
 /**
  * How the agent acts:

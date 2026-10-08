@@ -35,17 +35,26 @@ const OTHER_TOKEN = "runner-token-for-tests-0002";
 let sandbox: Sandbox;
 let gateway: ArenaGateway;
 let url: string;
-let tokens: StaticRunnerTokens;
+/** Counts token checks, to show they stay bounded whatever a runner sends. */
+class CountingTokens extends StaticRunnerTokens {
+  checks = 0;
+  override async validate(token: string) {
+    this.checks++;
+    return super.validate(token);
+  }
+}
+let tokens: CountingTokens;
 const presence: RunnerPresenceEvent[] = [];
 const cleanup: (() => Promise<void> | void)[] = [];
 
 beforeAll(async () => {
   sandbox = await Sandbox.start();
-  tokens = new StaticRunnerTokens({ [RUNNER_TOKEN]: "agent-1", [OTHER_TOKEN]: "agent-2" });
+  tokens = new CountingTokens({ [RUNNER_TOKEN]: "agent-1", [OTHER_TOKEN]: "agent-2" });
   gateway = new ArenaGateway({
     tokens,
     onRunnerPresence: (e) => presence.push(e),
-    limits: { bodyBytes: 4096, rpcBatch: 5, readyTimeoutMs: 300 },
+    // A one-second heartbeat, so the socket's timers can be tested quickly.
+    limits: { bodyBytes: 4096, rpcBatch: 5, readyTimeoutMs: 300, heartbeatMs: 1_000 },
   });
   url = await gateway.listen();
 });
@@ -366,7 +375,9 @@ describe("chain mode", () => {
     const operator = sandbox.address("operator");
     const read = sandbox.publicClient;
     const before = {
-      block: await read.getBlockNumber(),
+      // Uncached: viem reuses a block number read in the last polling interval, which can be from
+      // before the vault's setup transactions were mined.
+      block: await read.getBlockNumber({ cacheTime: 0 }),
       balance: await read.getBalance({ address: operator }),
       code: await read.getCode({ address: vault.address }),
       nonce: await read.getTransactionCount({ address: account.address }),
@@ -408,7 +419,18 @@ describe("chain mode", () => {
     // A simulation shows nothing a plain call can't: the same state, read the same way.
     expect(simulated.result?.[0]?.calls[1]?.returnData).toBe(plainCall.result);
 
-    expect(await read.getBlockNumber()).toBe(before.block);
+    // Nothing these calls did reached the chain: any block mined since (there should be none)
+    // holds no transaction from the operator or the agent key, or to the vault.
+    const now = await read.getBlockNumber({ cacheTime: 0 });
+    for (let n = before.block + 1n; n <= now; n++) {
+      const block = await read.getBlock({ blockNumber: n, includeTransactions: true });
+      for (const tx of block.transactions) {
+        expect([operator, account.address].map((x) => x.toLowerCase())).not.toContain(
+          tx.from.toLowerCase(),
+        );
+        expect(tx.to?.toLowerCase()).not.toBe(vault.address.toLowerCase());
+      }
+    }
     expect(await read.getBalance({ address: operator })).toBe(before.balance);
     expect(await read.getCode({ address: vault.address })).toBe(before.code);
     expect(await read.getTransactionCount({ address: account.address })).toBe(before.nonce);
@@ -419,6 +441,97 @@ describe("chain mode", () => {
         functionName: "frozen",
       }),
     ).toBe(false);
+  });
+
+  it("can't be made to amplify: answers, requests, gas and simulations are capped", async () => {
+    // The review's proof of concept: a batch of calls to code (set by a state override) that
+    // returns megabytes of memory made an 11 KB request return 387 MB.
+    const roomy = new ArenaGateway({ tokens, limits: { rpcBatch: 50 } });
+    await roomy.listen();
+    cleanup.push(() => roomy.close());
+    const { vault, toolbox, account } = await chainEpisode();
+    const episode = roomy.openEpisode({
+      episodeId: "amplify",
+      toolbox,
+      mode: "chain",
+      chain: {
+        upstream: sandbox.rpcUrl,
+        chainId: sandbox.chain.id,
+        vault: vault.address,
+        agent: account.address,
+      },
+    });
+    const target = "0x00000000000000000000000000000000000b0b00";
+    const returning = (bytes: number) => `0x62${bytes.toString(16).padStart(6, "0")}6000f3`; // PUSH3 bytes PUSH1 0 RETURN
+    const call = (id: number, bytes: number, gas?: string) => ({
+      jsonrpc: "2.0",
+      id,
+      method: "eth_call",
+      params: [
+        { to: target, data: "0x", ...(gas ? { gas } : {}) },
+        "latest",
+        { [target]: { code: returning(bytes) } },
+      ],
+    });
+    const fetchBytes = async (body: unknown) => {
+      const response = await fetch(episode.endpoints.rpc!, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const text = await response.text();
+      return { bytes: text.length, json: JSON.parse(text) as { error?: { code: number } }[] };
+    };
+    // 3.9 MB of memory needs ~29M gas: asking for 30M gets 10M, and the call runs out.
+    const big = await fetchBytes(
+      Array.from({ length: 50 }, (_, i) => call(i, 0x3b0000, "0x1c9c380")),
+    );
+    expect(big.bytes).toBeLessThan(64 * 1024);
+    // 2 MB fits in 10M gas, but no single answer may pass 1 MiB, and once one is refused for its
+    // size the rest of the request's budget is gone too.
+    const wide = await fetchBytes(Array.from({ length: 50 }, (_, i) => call(i, 0x200000)));
+    expect(wide.bytes).toBeLessThan(64 * 1024);
+    expect(wide.json.every((r) => r.error?.code === -32005)).toBe(true);
+    // Answers under the cap add up to at most the request's budget (2 MiB).
+    const many = await fetchBytes(Array.from({ length: 50 }, (_, i) => call(i, 0x80000)));
+    expect(many.bytes).toBeLessThan(2.2 * 1024 * 1024);
+    expect(many.json.filter((r) => r.error?.code === -32005).length).toBeGreaterThan(40);
+    // Simulations are bounded too: a few blocks and calls.
+    const sim = (await (
+      await post(episode.endpoints.rpc!, {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "eth_simulateV1",
+        params: [{ blockStateCalls: Array.from({ length: 5 }, () => ({ calls: [] })) }, "latest"],
+      })
+    ).json()) as { error?: { message: string } };
+    expect(sim.error?.message).toMatch(/at most 4 blocks/);
+  });
+
+  it("budgets the calls one episode may make to the node", async () => {
+    const strict = new ArenaGateway({
+      tokens,
+      limits: { rpcCallsPerEpisode: 8, rpcCallsPerSecond: 1, rpcCallBurst: 5 },
+    });
+    await strict.listen();
+    cleanup.push(() => strict.close());
+    const { vault, toolbox, account } = await chainEpisode();
+    const episode = strict.openEpisode({
+      episodeId: "budget",
+      toolbox,
+      mode: "chain",
+      chain: {
+        upstream: sandbox.rpcUrl,
+        chainId: sandbox.chain.id,
+        vault: vault.address,
+        agent: account.address,
+      },
+    });
+    const codes: (number | "ok")[] = [];
+    for (let i = 0; i < 7; i++)
+      codes.push((await rpc(episode, "eth_blockNumber")).error?.code ?? "ok");
+    // A burst of five, then the rate holds it back.
+    expect(codes).toEqual(["ok", "ok", "ok", "ok", "ok", -32005, -32005]);
   });
 
   it("checks every request in a batch, in order, and caps the batch size", async () => {
@@ -599,7 +712,7 @@ describe("the runner socket", () => {
     expect(presence.at(-1)).toMatchObject({ type: "disconnected", key: "agent-1" });
   });
 
-  it("disconnects a runner on its next heartbeat once its token is revoked", async () => {
+  it("disconnects a revoked runner within one heartbeat, even one that never pings", async () => {
     const token = "a-token-that-will-be-revoked";
     tokens.add(token, "agent-3");
     const socket = await rawRunner(token);
@@ -607,8 +720,63 @@ describe("the runner socket", () => {
     await eventually(() => gateway.runner("agent-3") !== undefined);
     tokens.revoke(token);
     const code = closeCode(socket);
-    socket.send(JSON.stringify({ type: "ping" }));
+    const revokedAt = Date.now();
+    // Other messages don't count as liveness, and don't delay the check.
+    const chatter = setInterval(
+      () => socket.send(JSON.stringify({ type: "episode_started", episodeId: "nothing" })),
+      100,
+    );
     expect(await code).toBe(RUNNER_CLOSE.revoked);
+    clearInterval(chatter);
+    expect(Date.now() - revokedAt).toBeLessThan(2_500);
+    expect(gateway.runner("agent-3")).toBeUndefined();
+  });
+
+  it("drops a runner that sends anything but pings, after three heartbeats", async () => {
+    const socket = await rawRunner();
+    socket.send(hello());
+    await eventually(() => gateway.runner("agent-1") !== undefined);
+    const chatter = setInterval(
+      () => socket.send(JSON.stringify({ type: "episode_started", episodeId: "nothing" })),
+      200,
+    );
+    expect(await closeCode(socket)).toBe(RUNNER_CLOSE.heartbeat);
+    clearInterval(chatter);
+  });
+
+  it("closes a socket that floods, with token checks and presence reports bounded", async () => {
+    presence.length = 0;
+    const socket = await rawRunner();
+    socket.send(hello());
+    await eventually(() => gateway.runner("agent-1") !== undefined);
+    const checksBefore = tokens.checks;
+    const code = closeCode(socket);
+    for (let i = 0; i < 20_000 && socket.readyState === WebSocket.OPEN; i++)
+      socket.send('{"type":"ping"}');
+    expect(await code).toBe(RUNNER_CLOSE.rateLimited);
+    await new Promise((resolve) => setTimeout(resolve, 1_200));
+    // At most one check per heartbeat interval, not one per ping.
+    expect(tokens.checks - checksBefore).toBeLessThanOrEqual(2);
+    expect(presence.filter((p) => p.type === "heartbeat").length).toBeLessThanOrEqual(1);
+  });
+
+  it("limits upgrade attempts per address before checking any token", async () => {
+    const strict = new ArenaGateway({ tokens, limits: { upgradesPerMinute: 3 } });
+    const strictUrl = await strict.listen();
+    cleanup.push(() => strict.close());
+    const attempt = () =>
+      new Promise<number | "open">((resolve) => {
+        const socket = new WebSocket(`${strictUrl.replace(/^http/, "ws")}/runner/connect`, {
+          headers: { authorization: "Bearer guessing-a-token-000000" },
+        });
+        socket.once("unexpected-response", (_, res) => resolve(res.statusCode ?? 0));
+        socket.once("error", () => {});
+      });
+    const checksBefore = tokens.checks;
+    const codes = [];
+    for (let i = 0; i < 6; i++) codes.push(await attempt());
+    expect(codes).toEqual([401, 401, 401, 429, 429, 429]);
+    expect(tokens.checks - checksBefore).toBe(3);
   });
 });
 
@@ -616,7 +784,7 @@ describe("RemoteAgent", () => {
   const spec = () => loadAttackLibrary().find((s) => s.id === "A6-operator-impersonation-001")!;
 
   async function runner(options: Parameters<typeof fakeRunner>[0]): Promise<FakeRunner> {
-    const r = await fakeRunner(options);
+    const r = await fakeRunner({ pingMs: 250, ...options });
     cleanup.push(() => r.close());
     await eventually(
       () =>
@@ -720,6 +888,30 @@ describe("RemoteAgent", () => {
     );
     // Nothing was sent, so the runner is free for the next episode at once.
     expect(gateway.runner("agent-1")?.episodeId).toBeNull();
+  });
+
+  it("won't let a TEE key sign on a fork that reports the live chain's id", async () => {
+    const agent = new RemoteAgent({
+      gateway,
+      sandbox,
+      runner: "agent-2",
+      mode: "chain",
+      agentAddress: sandbox.address("agent"),
+    });
+    // A stand-in for a fork of a live chain that kept the live chain id.
+    const liveFork = {
+      ...sandbox,
+      forked: true,
+      liveChainId: sandbox.chain.id,
+      chain: sandbox.chain,
+    };
+    await expect(agent.episodeSigner(liveFork as unknown as Sandbox)).rejects.toThrow(
+      /its own chain id/,
+    );
+    const ownId = { ...liveFork, liveChainId: 46_630, fund: async () => {} };
+    await expect(agent.episodeSigner(ownId as unknown as Sandbox)).resolves.toBe(
+      sandbox.address("agent"),
+    );
   });
 
   it("serves a TEE-bound episode only after its evidence is accepted", async () => {

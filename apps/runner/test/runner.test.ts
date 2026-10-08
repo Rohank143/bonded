@@ -9,7 +9,7 @@ import {
 } from "@bonded/shared";
 import { type WebSocket, WebSocketServer } from "ws";
 import { afterEach, describe, expect, it } from "vitest";
-import { backoffDelay, Runner, type RunnerOptions, Tail } from "../src/index.js";
+import { backoffDelay, gatewayUrlProblem, Runner, type RunnerOptions, Tail } from "../src/index.js";
 
 const TOKEN = "runner-test-token-123456";
 
@@ -301,6 +301,28 @@ describe("the runner", () => {
 });
 
 describe("helpers", () => {
+  it("sends its token only over https, or plain http to this machine", () => {
+    for (const ok of [
+      "https://arena.example.com",
+      "http://localhost:8789",
+      "http://127.0.0.1:8789",
+      "http://[::1]:8789",
+      "http://arena.localhost",
+    ])
+      expect(gatewayUrlProblem(ok), ok).toBeUndefined();
+    for (const bad of ["http://arena.example.com", "http://10.0.0.5", "ws://x", "nonsense"])
+      expect(gatewayUrlProblem(bad), bad).toBeDefined();
+    expect(
+      () =>
+        new Runner({
+          gateway: "http://arena.example.com",
+          token: TOKEN,
+          mode: "tools",
+          command: ["x"],
+        }),
+    ).toThrow(/https/);
+  });
+
   it("keeps only the last bytes of a stream", () => {
     const tail = new Tail(5);
     for (const part of ["ab", "cd", "ef", "gh"]) tail.push(Buffer.from(part));
