@@ -40,6 +40,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { gatewayAgents } from "../dist/remote-agent.js";
+export { DEFAULT_REMOTE_POLICY } from "../dist/remote-policy.js";
 import { DbRunnerAuth, RunnerPresenceWriter } from "../dist/runners.js";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
@@ -130,6 +131,9 @@ export async function runByoDemo(ctx) {
   })[0].args.vault;
   await send(d.usdg, testTokenAbi, "approve", [byoVault, usd(50_000)]);
   await send(byoVault, mandateVaultAbi, "deposit", [usd(50_000), operator]);
+  // A rating of your own agent needs an operator bond staked (skin in the game).
+  await send(d.usdg, testTokenAbi, "approve", [d.bond, usd(2_000)]);
+  await send(d.bond, operatorBondAbi, "stake", [byoId, usd(2_000)]);
   const codeHash = keccak256(stringToBytes("examples/byo-agent"));
   const remote = { codeHash, mode: "tools" };
   const base = { chainId: d.chainId, agentId: byoId.toString() };

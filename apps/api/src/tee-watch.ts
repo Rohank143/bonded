@@ -4,7 +4,7 @@ import {
   TeeVerificationError,
   type VerifiedTee,
 } from "@bonded/arena";
-import type { Database, TeeCheckRow } from "@bonded/db";
+import type { Database, RemoteQuota, TeeCheckRow } from "@bonded/db";
 import type { ServiceChain } from "@bonded/keeper";
 import { bondedRegistryAbi, isTeeMeasurement } from "@bonded/shared";
 import { z } from "zod";
@@ -120,7 +120,7 @@ export async function runTeeChecks(
   db: Database,
   chain: ServiceChain,
   attest: Attest = attestTeeAgent,
-  options: { rerateGapMs?: number } = {},
+  options: { rerateGapMs?: number; quota?: RemoteQuota } = {},
 ): Promise<number> {
   const rows = await db.pool.query(
     "SELECT agent_id,config FROM agents WHERE chain_id=$1 AND enabled",
@@ -178,15 +178,15 @@ export async function runTeeChecks(
       ...result,
     });
     if (result.status === "mismatch" && config.data.kind === "remote")
-      await rerateChanged(db, key, options.rerateGapMs ?? 60 * 60_000);
+      await rerateChanged(db, key, options.rerateGapMs ?? 60 * 60_000, options.quota);
     checked++;
   }
   return checked;
 }
 
 /** A remote agent's TEE changed: re-rate it through its runner, or record why it can't be. */
-async function rerateChanged(db: Database, key: string, gapMs: number) {
-  if (await db.runnerIsConnected(key)) await db.enqueueIfIdle(key, gapMs);
+async function rerateChanged(db: Database, key: string, gapMs: number, quota?: RemoteQuota) {
+  if (await db.runnerIsConnected(key)) await db.enqueueIfIdle(key, gapMs, quota);
   else
     await db.recordRatingSkip(
       key,

@@ -202,8 +202,9 @@ export function createApi(options: {
     return c.json({
       ...row,
       ...ratingFacts(row.signed?.attestation?.teeMeasurement, report),
-      // Every rating of the agent, failed ones included, next to the score they didn't replace.
-      attempts: await db.ratingAttempts(`${chain.deployment.chainId}:${id}`),
+      // Every rating of the agent, failed ones included, next to the score they didn't replace
+      // (the first page; GET /self/agents/:id/ratings has the rest).
+      ...(await ratingHistory(`${chain.deployment.chainId}:${id}`)),
     });
   });
   app.get("/agents/:id/tee", async (c) => {
@@ -234,6 +235,20 @@ export function createApi(options: {
     const record = await db.agentRecord(`${chain.deployment.chainId}:${input.agentId}`);
     const operatorRun =
       record?.enabled === true && (record.config as { kind?: string }).kind === REMOTE_KIND;
+    const agentKey = `${chain.deployment.chainId}:${input.agentId}`;
+    // After a stop the agent caused, its score no longer stands: no new cover until a complete
+    // rating posts. Rerolling a bad rating by crashing gains nothing.
+    if (operatorRun) {
+      const { superseded } = await db.agentStanding(agentKey);
+      if (superseded)
+        return c.json(
+          {
+            error: `this agent's score is superseded: its latest rating was stopped by the agent (${superseded.reason}); cover waits for a complete rating`,
+            ...(await ratingHistory(agentKey)),
+          },
+          409,
+        );
+    }
     const signed = await issueQuote(
       chain,
       { ...input, vault: input.vault as Hex },
@@ -253,8 +268,21 @@ export function createApi(options: {
       input.agentId,
       json(signed),
     ]);
-    return c.json(signed, 201);
+    return c.json({ ...signed, ...(operatorRun ? await ratingHistory(agentKey) : {}) }, 201);
   });
+  /** An agent's standing and its latest ratings, failed ones included, for scores and quotes. */
+  async function ratingHistory(agentKey: string) {
+    const [page, standing] = await Promise.all([
+      db.ratingAttempts(agentKey),
+      db.agentStanding(agentKey),
+    ]);
+    return {
+      attempts: page.items,
+      attemptsTotal: page.total,
+      superseded: standing.superseded,
+      cooldownUntil: standing.cooldownUntil,
+    };
+  }
   app.post("/arena/runs", async (c) => {
     const { agentId } = z.strictObject({ agentId: uint }).parse(await c.req.json());
     const id = `${chain.deployment.chainId}:${agentId}`;

@@ -34,6 +34,15 @@ import {
   type Hex,
 } from "viem";
 import { RateLimiter, clientAddress } from "./rate-limit.js";
+import {
+  DEFAULT_REMOTE_POLICY,
+  remoteQuota,
+  remoteRatingPlan,
+  remoteRefusalMessage,
+  type RemoteRatingPolicy,
+} from "./remote-policy.js";
+import { remoteRatingProblem } from "./eligibility.js";
+import { loadAttackLibrary } from "@bonded/arena";
 import { helloProblem, newRunnerToken, runnerTokenHash } from "./runners.js";
 import { agentConfig, teeConfig } from "./worker.js";
 
@@ -63,6 +72,8 @@ export interface SelfServeLimits {
   dailyRatings: number;
   /** Requests per client and in total, per window, across the self-serve routes. */
   requests: ConstructorParameters<typeof RateLimiter>[0];
+  /** Sizes, caps and budgets for ratings of the owner's own agent (remote-policy.ts). */
+  remote: RemoteRatingPolicy;
   now?: () => number;
 }
 
@@ -71,6 +82,7 @@ export const DEFAULT_SELF_SERVE_LIMITS: SelfServeLimits = {
   perAgentMs: 60 * 60_000,
   dailyRatings: 40,
   requests: { perClient: 30, total: 600, windowMs: 10 * 60_000 },
+  remote: DEFAULT_REMOTE_POLICY,
 };
 
 const uint = z
@@ -325,6 +337,13 @@ export function selfServeRoutes(
               tee: config.tee ?? null,
               // Underwriting policy, not score: the most cover it can hold, by binding.
               coverCaps: options.coverCaps ?? UNDERWRITING_COVER_CAP_USD,
+              // What a rating will be, before the owner asks for one.
+              expectedRating: expectedRating(
+                (config as { repeats?: number }).repeats ?? limits.remote.repeats,
+                limits.remote,
+              ),
+              // After a stop the agent caused: superseded score and the cooldown.
+              standing: await db.agentStanding(rowId(agentId)),
             }
           : {}),
         owner: record.owner,
@@ -392,7 +411,7 @@ export function selfServeRoutes(
               codeHash: input.codeHash,
               mode: input.mode,
               ...(input.tee ? { tee: input.tee } : {}),
-              repeats: limits.repeats,
+              repeats: limits.remote.repeats,
               ...(module ? { protection: "module" } : {}),
               vault: input.vault,
             }
@@ -445,23 +464,29 @@ export function selfServeRoutes(
       // can only be rated by its new owner.
       if ((await ownerOf(agentId)) !== who)
         throw new Refused(403, "only the agent's owner can ask for a rating");
+      const remote = (record.config as { kind?: string }).kind === REMOTE_KIND;
+      // Skin in the game, and the registered owner's own config: read from the chain now.
+      if (remote) {
+        const problem = await remoteRatingProblem(chain, agentId, record.owner);
+        if (problem) throw new Refused(409, problem);
+      }
       // The owner's own agent is rated through its runner, so one must be connected now.
-      if (
-        (record.config as { kind?: string }).kind === REMOTE_KIND &&
-        !(await db.runnerIsConnected(rowId(agentId)))
-      )
+      if (remote && !(await db.runnerIsConnected(rowId(agentId))))
         throw new Refused(409, "no runner is connected for this agent; start it, then rate");
       const queued = await db.enqueueUserRating(rowId(agentId), d.chainId, {
         nowMs: now(),
         perAgentMs: limits.perAgentMs,
         dailyCap: limits.dailyRatings,
+        ...(remote ? { remote: remoteQuota(limits.remote, now()) } : {}),
       });
       if ("refused" in queued)
         throw new Refused(
           429,
           queued.refused === "hourly"
             ? `one rating an hour per agent; next at ${queued.nextAt.toISOString()}`
-            : "today's self-serve ratings are used up; try again tomorrow",
+            : queued.refused === "daily"
+              ? "today's self-serve ratings are used up; try again tomorrow"
+              : remoteRefusalMessage(queued, limits.remote),
         );
       return c.json({ runId: queued.runId }, 202);
     }),
@@ -545,7 +570,7 @@ export function selfServeRoutes(
       return c.json({
         ...status,
         // Every rating of the agent, failed ones included, so a stopped attempt is visible.
-        attempts: await db.ratingAttempts(rowId(agentId)),
+        attempts: (await db.ratingAttempts(rowId(agentId))).items,
         // Why a runner that is there doesn't count, e.g. it was started in the other mode.
         problem: status.runner?.mode
           ? (helloProblem({ mode }, { mode: status.runner.mode }) ?? null)
@@ -554,4 +579,29 @@ export function selfServeRoutes(
       });
     }),
   );
+
+  /** Every rating of an agent, newest first, a numbered page at a time: failed ones included. */
+  app.get(
+    "/self/agents/:id/ratings",
+    handle(async (c) => {
+      const agentId = uint.parse(c.req.param("id"));
+      const q = z
+        .strictObject({
+          page: z.coerce.number().int().min(1).max(1_000_000).optional(),
+          limit: z.coerce.number().int().min(1).max(100).optional(),
+        })
+        .parse(c.req.query());
+      return c.json(await db.ratingAttempts(rowId(agentId), q));
+    }),
+  );
+}
+
+/** Published attacks, read once: the base of every remote rating's size. */
+let publishedCount: number | undefined;
+/** A remote rating's episodes and time budget, before it is asked for (remote-policy.ts). */
+function expectedRating(repeats: number, policy: RemoteRatingPolicy = DEFAULT_REMOTE_POLICY) {
+  publishedCount ??= loadAttackLibrary().length;
+  // One held-out variant per attack class.
+  const plan = remoteRatingPlan(policy, { publishedAttacks: publishedCount, heldOut: 10, repeats });
+  return { episodes: plan.episodes, budgetSeconds: Math.round(plan.budgetMs / 1000) };
 }

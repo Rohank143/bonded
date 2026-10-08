@@ -276,7 +276,15 @@ try {
     attesterKey: key,
     apiToken: token,
     webOrigins: [webOrigin],
-    ...(started ? { gatewayUrl: started.url, selfServe: { repeats: runs } } : {}),
+    ...(started
+      ? {
+          gatewayUrl: started.url,
+          selfServe: {
+            repeats: runs,
+            remote: { ...byo.DEFAULT_REMOTE_POLICY, repeats: Math.min(runs, 3) },
+          },
+        }
+      : {}),
   });
   server = serve({ fetch: app.fetch, port: Number(values["api-port"]) });
   const apiUrl = `http://localhost:${values["api-port"]}`;

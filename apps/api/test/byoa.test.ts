@@ -11,6 +11,8 @@ import { connectChain, type ServiceChain } from "@bonded/keeper";
 import {
   attestationMessage,
   bondedRegistryAbi,
+  operatorBondAbi,
+  testTokenAbi,
   mandateHash,
   mandateVaultAbi,
   selfServeMessage,
@@ -64,6 +66,16 @@ beforeAll(async () => {
   chain = connectChain(sandbox.deployment, sandbox.rpcUrl, ANVIL_KEYS.deployer);
   mine = await createAgentVault(sandbox);
   builtIn = await createAgentVault(sandbox);
+  // Its operator stakes a bond: ratings of an operator-run agent need one.
+  {
+    const op = connectChain(sandbox.deployment, sandbox.rpcUrl, ANVIL_KEYS.operator);
+    const d = sandbox.deployment;
+    await op.send(d.usdg, testTokenAbi, "faucet", [1_000_000_000n]);
+    await op.send(d.usdg, testTokenAbi, "approve", [d.bond, 1_000_000_000n]);
+    await op.read.waitForTransactionReceipt({
+      hash: await op.send(d.bond, operatorBondAbi, "stake", [mine.agentId, 1_000_000_000n]),
+    });
+  }
   app = api();
   auth = new DbRunnerAuth(pg.db, sandbox.deployment.chainId);
   presence = new RunnerPresenceWriter(pg.db);
@@ -215,7 +227,8 @@ describe("registering your own agent", () => {
       coverCaps: { declared: 5_000, tee: 20_000 },
     });
     const config = (await pg.db.agentRecord(key(mine)))!.config;
-    expect(config).toMatchObject({ kind: "remote", codeHash: CODE, mode: "tools", repeats: 5 });
+    // Remote ratings run each published attack 3 times by default (built-in designs: 5).
+    expect(config).toMatchObject({ kind: "remote", codeHash: CODE, mode: "tools", repeats: 3 });
   });
 });
 
@@ -595,5 +608,68 @@ describe("binding, cover caps and the live loop", () => {
     expect(res.exposure).toMatchObject({ agentYears: expect.any(Number) });
     expect((res.groups as unknown[]).length).toBe(5);
     expect((res.assumptions as string[]).length).toBeGreaterThan(0);
+  });
+});
+
+describe("who may be rated, and what a rating will be", () => {
+  it("shows the expected size and time budget, and every rating a page at a time", async () => {
+    const status = await bodyOf(await app.request(`/self/agents/${mine.agentId}`));
+    const plan = status.expectedRating as { episodes: number; budgetSeconds: number };
+    expect(plan.episodes).toBeGreaterThan(100);
+    // 40 seconds an episode, at most 3 hours.
+    expect(plan.budgetSeconds).toBe(Math.min(3 * 3600, plan.episodes * 40));
+    expect(status.standing).toMatchObject({ failuresInRow: 0, superseded: null });
+    const page = await bodyOf(await app.request(`/self/agents/${mine.agentId}/ratings?limit=2`));
+    expect((page.items as unknown[]).length).toBe(2);
+    expect(page.total).toBeGreaterThan(2);
+    const next = await bodyOf(
+      await app.request(`/self/agents/${mine.agentId}/ratings?limit=2&page=2`),
+    );
+    expect(next.page).toBe(2);
+  });
+
+  it("refuses a rating with no operator bond, and one under an earlier owner's config", async () => {
+    const nobond = await createAgentVault(sandbox);
+    tick();
+    expect((await registerRemote(nobond)).status).toBe(201);
+    tick();
+    await connect((await bodyOf(await createToken(nobond))).token as string);
+    clock += 2 * 3_600_000;
+    const res = await rate(nobond);
+    expect(res.status).toBe(409);
+    expect((await bodyOf(res)).error).toMatch(/stake an operator bond/);
+
+    // The agent changed hands (here: its registration names someone else).
+    await pg.db.pool.query("UPDATE agents SET owner=$2 WHERE id=$1", [
+      key(mine),
+      stranger.address.toLowerCase(),
+    ]);
+    const moved = await rate(mine);
+    expect(moved.status).toBe(409);
+    expect((await bodyOf(moved)).error).toMatch(/re-register to rate under your own config/);
+    // Renewals check the same, and record why they couldn't.
+    const { remoteRatingProblem } = await import("../src/eligibility.js");
+    expect(await remoteRatingProblem(chain, mine.agentId.toString(), stranger.address)).toMatch(
+      /changed hands/,
+    );
+    await pg.db.pool.query("UPDATE agents SET owner=$2 WHERE id=$1", [
+      key(mine),
+      owner.address.toLowerCase(),
+    ]);
+  });
+
+  it("holds a stopped agent's next rating back for the cooldown, saying when", async () => {
+    tick();
+    await connect((await bodyOf(await createToken(mine))).token as string, "chain");
+    // An hour of cooldown, on the API's clock.
+    await pg.db.pool.query(
+      `INSERT INTO agent_standing(agent_id,failures_in_row,superseded_at,superseded_reason,cooldown_until)
+       VALUES($1,1,now(),'stopped: x',to_timestamp($2))`,
+      [key(mine), clock / 1000 + 3600],
+    );
+    const res = await rate(mine);
+    expect(res.status).toBe(429);
+    expect((await bodyOf(res)).error).toMatch(/stopped by the agent, so the next waits until/);
+    await pg.db.pool.query("DELETE FROM agent_standing WHERE agent_id=$1", [key(mine)]);
   });
 });

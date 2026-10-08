@@ -1,3 +1,4 @@
+import { DEFAULT_REMOTE_POLICY, remoteQuota } from "./remote-policy.js";
 import type { Database } from "@bonded/db";
 import {
   Sandbox,
@@ -119,11 +120,15 @@ async function workLocked(
         reward: onChain.reward.toString(),
       };
       await check();
-      await db.finishBounty(job, {
-        status: accepted ? "accepted" : "rejected",
-        verdict,
-        txHash: await settledTransaction(chain, id, accepted),
-      });
+      await db.finishBounty(
+        job,
+        {
+          status: accepted ? "accepted" : "rejected",
+          verdict,
+          txHash: await settledTransaction(chain, id, accepted),
+        },
+        remoteQuota(DEFAULT_REMOTE_POLICY, Date.now()),
+      );
       return true;
     }
     if (onChain.status !== REVEALED) throw new Error(`submission ${id} isn't revealed on chain`);
@@ -232,11 +237,12 @@ async function workLocked(
             [id, reasonHash(verdict.reason)],
             lifecycle,
           );
-    await db.finishBounty(job, {
-      status: verdict.decision === "accept" ? "accepted" : "rejected",
-      verdict,
-      txHash,
-    });
+    // Operator-run agents' re-ratings count against their caps like any other rating.
+    await db.finishBounty(
+      job,
+      { status: verdict.decision === "accept" ? "accepted" : "rejected", verdict, txHash },
+      remoteQuota(DEFAULT_REMOTE_POLICY, Date.now()),
+    );
   } catch (error) {
     onError?.(error);
     await db

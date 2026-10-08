@@ -84,6 +84,11 @@ export class RatingRefused extends Error {
     message: string,
     /** True when retrying can't help (the job fails at once instead of being retried). */
     readonly final: boolean,
+    /**
+     * The agent caused it (crash, timeout, too slow): its score is superseded and a cooldown
+     * starts. `agentReport` is what the agent or its runner said, kept apart from `message`.
+     */
+    readonly agent?: { caused: true; report?: string },
   ) {
     super(message);
     this.name = "RatingRefused";

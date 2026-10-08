@@ -8,7 +8,9 @@ import { parseEvmDeployment } from "@bonded/shared";
 import { z } from "zod";
 import { createApi } from "./index.js";
 import { runTeeChecks, teeCheckInterval } from "./tee-watch.js";
-import { REMOTE_RATING_BUDGET_MS, agentConfig, workOne } from "./worker.js";
+import { agentConfig, workOne } from "./worker.js";
+import { DEFAULT_REMOTE_POLICY, remoteQuota, type RemoteRatingPolicy } from "./remote-policy.js";
+import { remoteRatingProblem } from "./eligibility.js";
 import { sentinelFromEnv } from "./sentinel.js";
 import { workBountyOne } from "./bounty-worker.js";
 import { Alerter, LoopHealth, Watchdog, telegramFromEnv } from "./alerts.js";
@@ -70,6 +72,24 @@ const gatewayUrl = () => {
     .url({ protocol: /^https?$/ })
     .parse(/^https?:\/\//.test(value) ? value : `https://${value}`);
 };
+/** Sizes, caps and budgets for operator-run agents' ratings, from the environment. */
+const remotePolicy: RemoteRatingPolicy = (() => {
+  const int = (name: string, fallback: number, min = 1) =>
+    z.coerce
+      .number()
+      .int()
+      .min(min)
+      .parse(process.env[name] ?? fallback);
+  const d = DEFAULT_REMOTE_POLICY;
+  return {
+    repeats: int("REMOTE_REPEATS", d.repeats),
+    perOwnerDaily: int("REMOTE_RATINGS_PER_OWNER_DAILY", d.perOwnerDaily),
+    perAgentDaily: int("REMOTE_RATINGS_PER_AGENT_DAILY", d.perAgentDaily),
+    laneDaily: int("REMOTE_RATINGS_DAILY", d.laneDaily),
+    episodeBudgetMs: int("REMOTE_EPISODE_BUDGET_MS", d.episodeBudgetMs, 1000),
+    budgetCeilingMs: int("REMOTE_RATING_MAX_MS", d.budgetCeilingMs, 60_000),
+  };
+})();
 const db = new Database(required("DATABASE_URL"));
 await db.migrate();
 if (role === "migrate") {
@@ -171,7 +191,13 @@ if (role === "migrate") {
     }
     // Re-check TEE-hosted agents against their rated measurement. A stopped VM is just "unreachable".
     const teeEvery = teeCheckInterval.parse(process.env.TEE_CHECK_MS ?? 600_000);
-    tasks.push(loop("TEE checks", () => runTeeChecks(db, chain), teeEvery));
+    tasks.push(
+      loop(
+        "TEE checks",
+        () => runTeeChecks(db, chain, undefined, { quota: remoteQuota(remotePolicy, Date.now()) }),
+        teeEvery,
+      ),
+    );
     // The keeper role is always deployed once, so it owns event retention.
     const retentionDays = z.coerce
       .number()
@@ -263,7 +289,13 @@ if (role === "migrate") {
       const remote = gatewayAgents(gateway, {
         episodeTimeoutMs: ms("REMOTE_EPISODE_TIMEOUT_MS", REMOTE_EPISODE_TIMEOUT_MS),
       });
-      const budget = ms("REMOTE_RATING_BUDGET_MS", REMOTE_RATING_BUDGET_MS);
+      const ownerOf = (agentId: string) =>
+        worker.read.readContract({
+          address: deployment.registry,
+          abi: bondedRegistryAbi,
+          functionName: "agentOwner",
+          args: [BigInt(agentId)],
+        });
       tasks.push(
         loop(
           "The rating worker",
@@ -280,7 +312,8 @@ if (role === "migrate") {
               lane: "remote",
               remote,
               heldOut,
-              remoteBudgetMs: budget,
+              remotePolicy,
+              ownerOf,
             }),
           1000,
         ),
@@ -297,7 +330,14 @@ if (role === "migrate") {
     tasks.push(
       loop(
         "Score renewals",
-        () => renewExpiringScores(db, deployment.chainId),
+        () =>
+          renewExpiringScores(db, deployment.chainId, undefined, {
+            quota: remoteQuota(remotePolicy, Date.now()),
+            problem: async (agentKey) => {
+              const record = await db.agentRecord(agentKey);
+              return remoteRatingProblem(worker, agentKey.split(":")[1]!, record?.owner ?? null);
+            },
+          }),
         z.coerce
           .number()
           .int()

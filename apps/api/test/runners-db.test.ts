@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { RUNNER_FRESH_MS, type Database } from "@bonded/db";
+import { RUNNER_FRESH_MS, remoteCooldownMs, type Database } from "@bonded/db";
 import { postgres } from "./postgres.js";
 
 let pg: Awaited<ReturnType<typeof postgres>>;
@@ -23,12 +23,12 @@ beforeAll(async () => {
 }, 120_000);
 afterAll(() => pg?.stop());
 
-describe("migrations 0014 to 0016", () => {
+describe("migrations 0014 to 0017", () => {
   it("apply once, in order, and again is a no-op", async () => {
     const versions = (
       await db.pool.query("SELECT version FROM schema_migrations ORDER BY version")
     ).rows.map((r) => r.version);
-    expect(versions).toEqual(Array.from({ length: 16 }, (_, i) => i + 1));
+    expect(versions).toEqual(Array.from({ length: 17 }, (_, i) => i + 1));
     await db.migrate();
     const tables = (
       await db.pool.query(
@@ -331,8 +331,107 @@ describe("rating lanes", () => {
     await db.pool.query("UPDATE ratings SET status='failed',error='stopped: x' WHERE id=$1", [
       runId,
     ]);
-    expect(await db.ratingAttempts(key)).toEqual([
-      expect.objectContaining({ runId, status: "failed", error: "stopped: x", score: null }),
+    expect(await db.ratingAttempts(key)).toEqual({
+      items: [
+        expect.objectContaining({
+          runId,
+          status: "failed",
+          error: "stopped: x",
+          agentCaused: false,
+          score: null,
+        }),
+      ],
+      page: 1,
+      pages: 1,
+      total: 1,
+    });
+  });
+});
+
+describe("standing and caps of operator-run agents", () => {
+  const quota = (over = {}) => ({
+    nowMs: Date.now(),
+    perOwnerDaily: 3,
+    perAgentDaily: 2,
+    laneDaily: 20,
+    ...over,
+  });
+  async function leased(key: string) {
+    const runId = await db.enqueue(key);
+    const token = "00000000-0000-0000-0000-000000000001";
+    await db.pool.query(
+      "UPDATE jobs SET status='running',token=$2,lease_until=now()+interval '1 minute' WHERE id=$1",
+      [runId, token],
+    );
+    return { id: runId, token };
+  }
+
+  it("doubles the cooldown with each agent-caused stop, supersedes the score, and resets on success", async () => {
+    expect([1, 2, 3, 4, 7, 9].map((n) => remoteCooldownMs(n) / 3_600_000)).toEqual([
+      1, 2, 4, 8, 48, 48,
     ]);
+    const key = await agent(60);
+    await db.finish(await leased(key), "stopped: the agent failed in episode 1 of 8", {
+      final: true,
+      agentCaused: true,
+      agentReport: "Traceback: boom",
+    });
+    let standing = await db.agentStanding(key);
+    expect(standing.failuresInRow).toBe(1);
+    expect(standing.superseded?.reason).toBe("stopped: the agent failed in episode 1 of 8");
+    const first = standing.cooldownUntil!.getTime();
+    await db.finish(await leased(key), "stopped: again", { final: true, agentCaused: true });
+    standing = await db.agentStanding(key);
+    expect(standing.failuresInRow).toBe(2);
+    expect(standing.cooldownUntil!.getTime() - first).toBeGreaterThan(3_500_000);
+    // The runner's words are kept apart from the system's reason.
+    const attempts = (await db.ratingAttempts(key)).items;
+    expect(attempts.at(-1)).toMatchObject({ agentCaused: true, agentReport: "Traceback: boom" });
+    // An infrastructure failure doesn't count against the agent.
+    await db.finish(await leased(key), "rating failed; retry scheduled");
+    expect((await db.agentStanding(key)).failuresInRow).toBe(2);
+    // While cooling down, nothing is queued for it, renewals included.
+    expect(await db.enqueueIfIdle(key, 0, quota())).toBeUndefined();
+    await db.finish(await leased(key), undefined, { remote: true });
+    expect(await db.agentStanding(key)).toEqual({
+      failuresInRow: 0,
+      superseded: null,
+      cooldownUntil: null,
+    });
+  });
+
+  it("caps remote ratings per agent, per owner and for the lane, apart from the built-in designs", async () => {
+    const chain = 999;
+    const add = async (n: number, owner: string, kind: string) => {
+      await db.pool.query(
+        "INSERT INTO agents(id,chain_id,agent_id,config,source,owner) VALUES($1,$2,$3,$4,'user',$5)",
+        [`${chain}:${n}`, chain, n, JSON.stringify({ kind }), owner],
+      );
+      return `${chain}:${n}`;
+    };
+    const [a1, a2, b1, design] = [
+      await add(1, "0xa", "remote"),
+      await add(2, "0xa", "remote"),
+      await add(3, "0xb", "remote"),
+      await add(4, "0xc", "hardened"),
+    ];
+    const rate = (key: string, over = {}) =>
+      db.enqueueUserRating(key, chain, {
+        nowMs: Date.now(),
+        perAgentMs: 0,
+        dailyCap: 1,
+        remote: quota(over),
+      });
+    expect(await rate(a1)).toHaveProperty("runId");
+    expect(await rate(a1)).toHaveProperty("runId");
+    expect(await rate(a1)).toEqual({ refused: "agent-daily" });
+    expect(await rate(a2)).toHaveProperty("runId");
+    // Owner 0xa has had three today.
+    expect(await rate(a2)).toEqual({ refused: "owner-daily" });
+    expect(await rate(b1, { laneDaily: 3 })).toEqual({ refused: "lane-daily" });
+    // The remote ratings didn't use the built-in designs' daily allowance (1 here).
+    expect(
+      await db.enqueueUserRating(design, chain, { nowMs: Date.now(), perAgentMs: 0, dailyCap: 1 }),
+    ).toHaveProperty("runId");
   });
 });
