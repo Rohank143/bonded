@@ -68,7 +68,9 @@ async function setup(options: Partial<RunnerOptions> & { command: string[] }) {
     token: TOKEN,
     mode: "tools",
     echo: false,
-    heartbeatMs: 100,
+    // The runner reconnects (and stops its agent) after three heartbeats with no pong. Under a
+    // loaded test run 300 ms can pass without one, so only the heartbeat test goes this fast.
+    heartbeatMs: 1_000,
     backoff: { initialMs: 20, maxMs: 50 },
     killGraceMs: 300,
     ...options,
@@ -116,7 +118,12 @@ const node = (script: string) => [process.execPath, "-e", script];
 
 describe("the runner", () => {
   it("says hello with its mode and keeps a heartbeat", async () => {
-    const { gateway } = await setup({ command: node(""), mode: "chain", version: "9.9.9" });
+    const { gateway } = await setup({
+      command: node(""),
+      mode: "chain",
+      version: "9.9.9",
+      heartbeatMs: 100,
+    });
     expect(gateway.of("hello")[0]).toMatchObject({
       runnerVersion: "9.9.9",
       protocol: 1,
