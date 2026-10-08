@@ -1,6 +1,7 @@
 import { BorshCoder, type Idl } from "@anchor-lang/core";
 import {
   type AccountMeta,
+  type Commitment,
   type Connection,
   Ed25519Program,
   PublicKey,
@@ -79,6 +80,19 @@ export interface Vault {
   breaches: Breach[];
 }
 
+/** Everything a vault account holds: what `execute` checks an action against. */
+export interface VaultAccount extends Vault {
+  baseAccount: PublicKey;
+  mandateHash: Uint8Array;
+  /** Enforce mode: a breaching action is stopped (Monitor lets it through and records it). */
+  enforce: boolean;
+  freezeOnBreach: boolean;
+  /** Programs the agent may call through the vault. */
+  allowedPrograms: PublicKey[];
+  /** Largest net base-asset outflow of one call, in base units (the T2 limit). */
+  maxOutflowPerCall: bigint;
+}
+
 export interface Policy {
   address: PublicKey;
   policyId: bigint;
@@ -101,7 +115,7 @@ type Raw = Record<string, unknown>;
 const big = (v: unknown) => BigInt((v as BN).toString());
 const num = (v: unknown) => Number((v as BN).toString());
 
-export function decodeVault(address: PublicKey, data: Buffer): Vault {
+export function decodeVault(address: PublicKey, data: Buffer): VaultAccount {
   const v = coders.vault.accounts.decode("Vault", data) as Raw;
   return {
     address,
@@ -109,6 +123,12 @@ export function decodeVault(address: PublicKey, data: Buffer): Vault {
     agent: v.agent as PublicKey,
     agentId: big(v.agent_id),
     baseMint: v.base_mint as PublicKey,
+    baseAccount: v.base_account as PublicKey,
+    mandateHash: Uint8Array.from(v.mandate_hash as number[]),
+    enforce: v.enforce as boolean,
+    freezeOnBreach: v.freeze_on_breach as boolean,
+    allowedPrograms: v.allowed_programs as PublicKey[],
+    maxOutflowPerCall: big(v.max_outflow_per_call),
     frozen: v.frozen as boolean,
     breaches: (v.breaches as Raw[]).map((b, id) => ({
       id,
@@ -171,7 +191,7 @@ function bs58(bytes: Buffer): string {
   return out;
 }
 
-export async function fetchVaults(connection: Connection): Promise<Vault[]> {
+export async function fetchVaults(connection: Connection): Promise<VaultAccount[]> {
   const accounts = await accountsOf(connection, bondedVaultIdl, PROGRAM_IDS.vault, "Vault");
   return accounts.map((a) => decodeVault(a.pubkey, a.account.data));
 }
@@ -185,6 +205,163 @@ export async function fetchCoverConfig(connection: Connection): Promise<CoverCon
   const info = await connection.getAccountInfo(address.coverConfig());
   if (!info) throw new Error("the cover program isn't initialized on this cluster");
   return decodeCoverConfig(info.data);
+}
+
+/** One vault, or null if there is no account at `vault`. */
+export async function fetchVault(
+  connection: Connection,
+  vault: PublicKey,
+  commitment?: Commitment,
+): Promise<VaultAccount | null> {
+  const info = await connection.getAccountInfo(vault, commitment);
+  return info ? decodeVault(vault, info.data) : null;
+}
+
+// ---------------------------------------------------------------- vault instructions
+
+export interface VaultParams {
+  agentId: bigint;
+  /** The agent's session key: the only key that can call `execute`. */
+  agent: PublicKey;
+  mandateHash: Uint8Array;
+  enforce: boolean;
+  freezeOnBreach: boolean;
+  allowedPrograms: PublicKey[];
+  /** Largest net base-asset outflow of one call, in base units. */
+  maxOutflowPerCall: bigint;
+}
+
+/** Create a vault for one agent; `guardian` signs and pays. The vault's address is `address.vault`. */
+export function createVaultInstruction(
+  guardian: PublicKey,
+  baseMint: PublicKey,
+  params: VaultParams,
+): TransactionInstruction {
+  const vault = address.vault(guardian, params.agentId);
+  return new TransactionInstruction({
+    programId: PROGRAM_IDS.vault,
+    data: coders.vault.instruction.encode("create_vault", {
+      params: {
+        agent_id: new BN(params.agentId.toString()),
+        agent: params.agent,
+        mandate_hash: [...params.mandateHash],
+        enforce: params.enforce,
+        freeze_on_breach: params.freezeOnBreach,
+        allowed_programs: params.allowedPrograms,
+        max_outflow_per_call: new BN(params.maxOutflowPerCall.toString()),
+      },
+    }),
+    keys: metas(bondedVaultIdl, "create_vault", {
+      vault,
+      base_account: address.vaultBase(vault),
+      base_mint: baseMint,
+      guardian,
+      token_program: TOKEN_PROGRAM,
+      system_program: SYSTEM_PROGRAM,
+    }),
+  });
+}
+
+/** Add `amount` base units to the vault from `from`, a token account `depositor` controls. */
+export function depositInstruction(
+  vault: Pick<Vault, "address" | "baseMint">,
+  from: PublicKey,
+  depositor: PublicKey,
+  amount: bigint,
+): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: PROGRAM_IDS.vault,
+    data: coders.vault.instruction.encode("deposit", { amount: new BN(amount.toString()) }),
+    keys: metas(bondedVaultIdl, "deposit", {
+      vault: vault.address,
+      base_account: address.vaultBase(vault.address),
+      base_mint: vault.baseMint,
+      from,
+      depositor,
+      token_program: TOKEN_PROGRAM,
+    }),
+  });
+}
+
+/**
+ * Wrap `inner`, an instruction the vault should perform (the vault as its signer, e.g. as a
+ * token account's owner), in the vault's `execute`, signed by the agent's key. The program
+ * checks it against the mandate before running it.
+ */
+export function executeInstruction(
+  vault: Pick<Vault, "address" | "agent">,
+  inner: TransactionInstruction,
+): TransactionInstruction {
+  // The vault signs the inner call by PDA seeds, never as a transaction signer.
+  const remaining = inner.keys.map((key) =>
+    key.pubkey.equals(vault.address) ? { ...key, isSigner: false } : key,
+  );
+  return new TransactionInstruction({
+    programId: PROGRAM_IDS.vault,
+    data: coders.vault.instruction.encode("execute", { data: inner.data }),
+    keys: [
+      ...metas(bondedVaultIdl, "execute", {
+        vault: vault.address,
+        agent: vault.agent,
+        base_account: address.vaultBase(vault.address),
+        target_program: inner.programId,
+      }),
+      ...remaining,
+    ],
+  });
+}
+
+// ---------------------------------------------------------------- reading a transaction's outcome
+
+/** A breach the vault recorded, from its `BreachRecorded` event. */
+export interface BreachEvent {
+  breachId: number;
+  type: string;
+  target: PublicKey;
+  /** Base-asset units that left the vault (0 when blocked). */
+  loss: bigint;
+  /** Enforce mode stopped the call: nothing moved. */
+  blocked: boolean;
+}
+
+/**
+ * The `BreachRecorded` events in a transaction's logs. Only events the vault program itself
+ * emitted count: a program the vault calls can print anything, so lines logged while another
+ * program is running are ignored.
+ */
+export function breachEventsFromLogs(logs: readonly string[]): BreachEvent[] {
+  const vault = PROGRAM_IDS.vault.toBase58();
+  const stack: string[] = [];
+  const events: BreachEvent[] = [];
+  for (const line of logs) {
+    const invoke = /^Program (\w+) invoke \[\d+\]$/.exec(line);
+    if (invoke) {
+      stack.push(invoke[1]!);
+      continue;
+    }
+    if (/^Program \w+ (success|failed)/.test(line)) {
+      stack.pop();
+      continue;
+    }
+    if (stack.at(-1) !== vault || !line.startsWith("Program data: ")) continue;
+    const event = coders.vault.events.decode(line.slice("Program data: ".length));
+    if (event?.name !== "BreachRecorded") continue;
+    const e = event.data as Raw;
+    events.push({
+      breachId: e.breach_id as number,
+      type: Object.keys(e.breach_type as object)[0]!,
+      target: e.target as PublicKey,
+      loss: big(e.loss),
+      blocked: e.blocked as boolean,
+    });
+  }
+  return events;
+}
+
+/** The vault program's error for a custom error code (e.g. 6000 is `Frozen`), if it is one. */
+export function vaultError(code: number): { name: string; message: string } | undefined {
+  const error = bondedVaultIdl.errors?.find((e) => e.code === code);
+  return error ? { name: error.name, message: error.msg ?? error.name } : undefined;
 }
 
 // ---------------------------------------------------------------- claims

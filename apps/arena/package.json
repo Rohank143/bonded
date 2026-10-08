@@ -36,6 +36,7 @@
   },
   "dependencies": {
     "@bonded/demo-agents": "workspace:*",
+    "@bonded/sandbox": "workspace:*",
     "@bonded/shared": "workspace:*",
     "@bonded/solana": "workspace:*",
     "@phala/dcap-qvl": "0.6.5",
