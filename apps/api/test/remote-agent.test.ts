@@ -14,6 +14,8 @@ import { teeReportData, type ArenaAgent } from "@bonded/shared";
 import type { Hex } from "viem";
 import { RatingRefused, TeeBinding, gatewayAgents, remoteAgentFor } from "../src/remote-agent.js";
 import { agentConfig } from "../src/worker.js";
+import { DbRunnerAuth, RUNNER_TOKEN_PREFIX, RunnerPresenceWriter } from "../src/runners.js";
+import type { Database } from "@bonded/db";
 
 // Evidence a dstack TEE would return, built from the spec's rules (as in apps/arena/test/tee.test.ts),
 // with a stand-in quote verifier that returns the facts the "hardware" signed.
@@ -256,6 +258,14 @@ describe("agentConfig", () => {
       }).success,
     ).toBe(false);
     expect(agentConfig.safeParse({ ...remote, sentinel: true }).success).toBe(false);
+    // A TEE in tool mode binds nothing: the tool calls come from the runner, outside it.
+    expect(
+      agentConfig.safeParse({
+        ...remote,
+        mode: "tools",
+        tee: { url: "https://tee.example", composeHash: COMPOSE },
+      }).success,
+    ).toBe(false);
   });
 
   it("still refuses Sentinel with a TEE for a built-in design", () => {
@@ -267,5 +277,91 @@ describe("agentConfig", () => {
       tee: { url: "https://tee.example", composeHash: COMPOSE },
     };
     expect(agentConfig.safeParse(builtIn).success).toBe(false);
+  });
+});
+
+describe("RunnerPresenceWriter", () => {
+  it("writes one event at a time per agent, in order, and coalesces heartbeats", async () => {
+    const writes: string[] = [];
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const db = {
+      runnerConnected: async () => {
+        writes.push("connected");
+        await gate;
+        return "c1";
+      },
+      runnerHeartbeat: async () => {
+        writes.push("heartbeat");
+        return true;
+      },
+      runnerDisconnected: async () => {
+        writes.push("disconnected");
+      },
+    } as unknown as Database;
+    const writer = new RunnerPresenceWriter(db);
+    const hello = {
+      type: "hello" as const,
+      runnerVersion: "1",
+      protocol: 1,
+      mode: "tools" as const,
+    };
+    writer.onEvent({ type: "connected", key: "k", at: 0, hello });
+    // While the slow write runs, a thousand heartbeats wait as one.
+    for (let i = 0; i < 1000; i++) writer.onEvent({ type: "heartbeat", key: "k", at: i });
+    expect(writer.pending("k")).toBe(1);
+    writer.onEvent({ type: "disconnected", key: "k", at: 2000 });
+    expect(writer.pending("k")).toBe(2);
+    release();
+    await writer.flush();
+    expect(writes).toEqual(["connected", "heartbeat", "disconnected"]);
+  });
+});
+
+describe("DbRunnerAuth", () => {
+  const token = `${RUNNER_TOKEN_PREFIX}${"a".repeat(43)}`;
+  const record = {
+    tokenId: "t",
+    agentKey: "46630:12",
+    chainId: 46630,
+    agentId: "12",
+    createdBy: "0xowner",
+    config: {
+      kind: "remote",
+      mandate: {
+        version: 1,
+        chain: { family: "evm", chainId: 46630 },
+        agentId: "12",
+        mode: "monitor",
+        baseAsset: "0x0000000000000000000000000000000000000001",
+        assets: ["0x0000000000000000000000000000000000000001"],
+        targets: [],
+        destinations: [],
+        limits: {
+          maxTxNotionalUsd: 100,
+          maxDailyNotionalUsd: 1000,
+          maxDrawdownBps: 1500,
+          maxSlippageBps: 300,
+        },
+        freezeOnBreach: true,
+        description: "x",
+      },
+      codeHash: CODE,
+      mode: "tools",
+    },
+  };
+  const db = { runnerToken: async () => record } as unknown as Database;
+
+  it("accepts a token only while its maker still owns the agent", async () => {
+    let owner = "0xOWNER";
+    const auth = new DbRunnerAuth(db, 46630, async () => owner, 0);
+    expect(await auth.validate(token)).toMatchObject({ key: "46630:12", mode: "tools" });
+    owner = "0xnewowner";
+    expect(await auth.validate(token)).toBeNull();
+  });
+
+  it("refuses tokens for another chain or of the wrong form", async () => {
+    expect(await new DbRunnerAuth(db, 1).validate(token)).toBeNull();
+    expect(await new DbRunnerAuth(db, 46630).validate("not-a-token")).toBeNull();
   });
 });

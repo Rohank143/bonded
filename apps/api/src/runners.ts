@@ -55,16 +55,26 @@ export function helloProblem(
   return undefined;
 }
 
+/** The agent's current owner in the registry, lowercase. */
+export type OwnerOf = (agentId: string) => Promise<string>;
+
 /**
  * The gateway's runner token check, against the database: a live token of an enabled agent on
- * this worker's chain, registered as the owner's own agent. The gateway asks again at every
- * heartbeat, so revoking a token disconnects its runner within one.
+ * this worker's chain, registered as the owner's own agent, and made by the agent's current
+ * registry owner (a token doesn't survive a transfer of the agent). The gateway asks again at
+ * every heartbeat, so revoking a token, or the agent changing hands, drops its runner within one.
  */
 export class DbRunnerAuth implements RunnerTokenValidator {
+  private readonly owners = new Map<string, { owner: string; at: number }>();
+
   constructor(
     private readonly db: Database,
     /** Only tokens for agents on this chain are accepted: one worker serves one chain. */
     private readonly chainId: number,
+    /** Reads the registry; without it the owner isn't checked (tests of the database only). */
+    private readonly ownerOf?: OwnerOf,
+    /** How long an owner read is reused (default a minute: heartbeats come every 15 s). */
+    private readonly ownerCacheMs = 60_000,
   ) {}
 
   async validate(token: string): Promise<RunnerIdentity | null> {
@@ -73,6 +83,8 @@ export class DbRunnerAuth implements RunnerTokenValidator {
     if (!record || record.chainId !== this.chainId) return null;
     const config = agentConfig.safeParse(record.config);
     if (!config.success || config.data.kind !== "remote") return null;
+    if (this.ownerOf && (await this.owner(record.agentId)) !== record.createdBy.toLowerCase())
+      return null;
     return {
       key: record.agentKey,
       tokenId: record.tokenId,
@@ -82,16 +94,26 @@ export class DbRunnerAuth implements RunnerTokenValidator {
       ...(config.data.tee ? { teeUrl: config.data.tee.url } : {}),
     };
   }
+
+  private async owner(agentId: string): Promise<string> {
+    const cached = this.owners.get(agentId);
+    if (cached && Date.now() - cached.at < this.ownerCacheMs) return cached.owner;
+    const owner = (await this.ownerOf!(agentId)).toLowerCase();
+    this.owners.set(agentId, { owner, at: Date.now() });
+    return owner;
+  }
 }
 
 /**
  * Writes the gateway's runner presence events to the database (`onRunnerPresence`). Events come
- * synchronously and in order; the writes for one agent run in the same order, one at a time, and
- * a failed write is logged, never thrown into the gateway.
+ * synchronously; for each agent, one write runs at a time, in order. Heartbeats coalesce: while a
+ * write is running, a newer heartbeat replaces a waiting one, so a slow database can't build an
+ * unbounded queue. A failed write is logged, never thrown into the gateway.
  */
 export class RunnerPresenceWriter {
   private readonly connections = new Map<string, string>();
-  private readonly queues = new Map<string, Promise<void>>();
+  private readonly waiting = new Map<string, RunnerPresenceEvent[]>();
+  private readonly running = new Map<string, Promise<void>>();
 
   constructor(
     private readonly db: Database,
@@ -100,19 +122,39 @@ export class RunnerPresenceWriter {
 
   /** The gateway's `onRunnerPresence`. */
   readonly onEvent = (event: RunnerPresenceEvent): void => {
-    const previous = this.queues.get(event.key) ?? Promise.resolve();
-    const next = previous
-      .then(() => this.write(event))
-      .catch(() => this.log(`runner presence for ${event.key} could not be recorded`));
-    this.queues.set(event.key, next);
-    void next.finally(() => {
-      if (this.queues.get(event.key) === next) this.queues.delete(event.key);
-    });
+    const queue = this.waiting.get(event.key) ?? [];
+    // A heartbeat only says "still here": the newest one is enough.
+    if (event.type === "heartbeat" && queue.at(-1)?.type === "heartbeat") queue.pop();
+    queue.push(event);
+    // Connections come and go at most a few times a second; keep the latest few.
+    if (queue.length > 8) queue.splice(0, queue.length - 8);
+    this.waiting.set(event.key, queue);
+    if (!this.running.has(event.key)) this.drain(event.key);
   };
 
   /** Resolves once every event received so far is written. */
   async flush(): Promise<void> {
-    await Promise.all([...this.queues.values()]);
+    while (this.running.size) await Promise.all([...this.running.values()]);
+  }
+
+  private drain(key: string) {
+    const work = (async () => {
+      for (;;) {
+        const event = this.waiting.get(key)?.shift();
+        if (!event) break;
+        await this.write(event).catch(() =>
+          this.log(`runner presence for ${key} could not be recorded`),
+        );
+      }
+      this.waiting.delete(key);
+      this.running.delete(key);
+    })();
+    this.running.set(key, work);
+  }
+
+  /** Events waiting to be written for an agent (for tests). */
+  pending(key: string): number {
+    return this.waiting.get(key)?.length ?? 0;
   }
 
   private async write(event: RunnerPresenceEvent) {

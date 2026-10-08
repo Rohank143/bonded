@@ -347,6 +347,11 @@ export function selfServeRoutes(
     handle(async (c) => {
       limit(c);
       const input = registerInput.parse(await c.req.json());
+      if (input.kind === REMOTE_KIND && input.tee && input.mode === "tools")
+        throw new Refused(
+          400,
+          "a TEE-bound agent must be rated in chain mode: in tool mode its tool calls come from the runner, outside the TEE, so the TEE would bind nothing",
+        );
       const hash = mandateHash(input.mandate);
       const module = input.protection === "module";
       const base = {
@@ -404,13 +409,11 @@ export function selfServeRoutes(
       const previous = await db.agentRecord(rowId(input.agentId));
       const stored = await db.upsertUserAgent(d.chainId, input.agentId, who, config);
       if (!stored) throw new Refused(409, "this agent is managed by Bonded's operator");
-      // A runner connected for another mode must reconnect, so the gateway checks it again.
-      const before = previous?.config as { kind?: string; mode?: string } | undefined;
-      if (
-        before?.kind === REMOTE_KIND &&
-        (config.kind !== REMOTE_KIND || before.mode !== config.mode)
-      )
-        await db.dropRunner(rowId(input.agentId));
+      // A new registration (another mode, another owner, other code) starts with no runner
+      // token: the gateway drops a connected runner at its next heartbeat, and the owner makes
+      // a new token. No token outlives the registration it was made for.
+      const before = previous?.config as { kind?: string } | undefined;
+      if (before?.kind === REMOTE_KIND) await db.revokeAllRunnerTokens(rowId(input.agentId));
       return c.json(
         {
           registered: true,
@@ -541,6 +544,8 @@ export function selfServeRoutes(
       const mode = (record.config as { mode: AgentMode }).mode;
       return c.json({
         ...status,
+        // Every rating of the agent, failed ones included, so a stopped attempt is visible.
+        attempts: await db.ratingAttempts(rowId(agentId)),
         // Why a runner that is there doesn't count, e.g. it was started in the other mode.
         problem: status.runner?.mode
           ? (helloProblem({ mode }, { mode: status.runner.mode }) ?? null)

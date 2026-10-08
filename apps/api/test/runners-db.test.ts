@@ -78,9 +78,9 @@ describe("runner tokens", () => {
 
   it("refuses a request signed no later than the last one, for create and revoke", async () => {
     const key = await agent(2);
-    await db.createRunnerToken(key, { hash: sha("a"), createdBy: "x", signedAt: 200 });
+    await db.createRunnerToken(key, { hash: sha("a"), createdBy: "0xowner", signedAt: 200 });
     expect(
-      await db.createRunnerToken(key, { hash: sha("b"), createdBy: "x", signedAt: 200 }),
+      await db.createRunnerToken(key, { hash: sha("b"), createdBy: "0xowner", signedAt: 200 }),
     ).toEqual({ refused: "replayed" });
     expect(await db.revokeRunnerToken(key, 199)).toEqual({ refused: "replayed" });
     expect(await db.revokeRunnerToken(key, 201)).toEqual({ revoked: 1 });
@@ -92,7 +92,7 @@ describe("runner tokens", () => {
 
   it("doesn't validate a token of a disabled agent", async () => {
     const key = await agent(3, remote, false);
-    await db.createRunnerToken(key, { hash: sha("off"), createdBy: "x", signedAt: 1 });
+    await db.createRunnerToken(key, { hash: sha("off"), createdBy: "0xowner", signedAt: 1 });
     expect(await db.runnerToken(sha("off"))).toBeUndefined();
   });
 });
@@ -110,7 +110,11 @@ describe("held-out ledger", () => {
 describe("runner presence", () => {
   it("is connected while heartbeats are fresh, and a replaced connection can't touch the new one", async () => {
     const key = await agent(10);
-    const t = await db.createRunnerToken(key, { hash: sha("p"), createdBy: "x", signedAt: 1 });
+    const t = await db.createRunnerToken(key, {
+      hash: sha("p"),
+      createdBy: "0xowner",
+      signedAt: 1,
+    });
     if (!("id" in t)) throw new Error("no token");
     expect(await db.runnerIsConnected(key)).toBe(false);
     const first = await db.runnerConnected(key, { ...hello, teeUrl: "https://tee.example" });
@@ -143,9 +147,22 @@ describe("runner presence", () => {
     expect(await db.runnerIsConnected(key)).toBe(false);
   });
 
+  it("doesn't count a runner whose token wasn't made by the agent's owner", async () => {
+    const key = await agent(12);
+    await db.createRunnerToken(key, { hash: sha("q"), createdBy: "0xsomeoneelse", signedAt: 1 });
+    expect(await db.runnerConnected(key, hello)).toBeTruthy();
+    expect(await db.runnerIsConnected(key)).toBe(false);
+    expect(await db.revokeAllRunnerTokens(key)).toBe(1);
+    expect((await db.runnerStatus(key)).token).toBeNull();
+  });
+
   it("revoking the token disconnects the runner and stops its heartbeats", async () => {
     const key = await agent(11);
-    const t = await db.createRunnerToken(key, { hash: sha("r"), createdBy: "x", signedAt: 1 });
+    const t = await db.createRunnerToken(key, {
+      hash: sha("r"),
+      createdBy: "0xowner",
+      signedAt: 1,
+    });
     if (!("id" in t)) throw new Error("no token");
     const connection = await db.runnerConnected(key, hello);
     await db.revokeRunnerToken(key, 2);
@@ -160,7 +177,7 @@ describe("live loop", () => {
   async function connect(key: string, signedAt = 1) {
     const t = await db.createRunnerToken(key, {
       hash: sha(`${key}:${signedAt}`),
-      createdBy: "x",
+      createdBy: "0xowner",
       signedAt,
     });
     if (!("id" in t)) throw new Error("no token");
@@ -225,7 +242,7 @@ describe("live loop", () => {
       [3, { kind: "partial" }],
     ] as const)
       await db.pool.query(
-        "INSERT INTO agents(id,chain_id,agent_id,config,source) VALUES($1,$2,$3,$4,'user')",
+        "INSERT INTO agents(id,chain_id,agent_id,config,source,owner) VALUES($1,$2,$3,$4,'user','0xowner')",
         [`${chain}:${n}`, chain, n, JSON.stringify(cfg)],
       );
     await connect(ids.online);
@@ -272,5 +289,50 @@ describe("live loop", () => {
         { agentId: null, at: null, blocked: null },
       ]),
     );
+  });
+});
+
+describe("rating lanes", () => {
+  it("keeps remote ratings apart from Bonded's own, and takes turns by owner", async () => {
+    const chain = 888;
+    const add = async (n: number, owner: string, kind: string) => {
+      await db.pool.query(
+        "INSERT INTO agents(id,chain_id,agent_id,config,source,owner) VALUES($1,$2,$3,$4,'user',$5)",
+        [`${chain}:${n}`, chain, n, JSON.stringify({ kind }), owner],
+      );
+      return `${chain}:${n}`;
+    };
+    const builtIn = await add(1, "0xa", "hardened");
+    const busy1 = await add(2, "0xbusy", "remote");
+    const busy2 = await add(3, "0xbusy", "remote");
+    const quiet = await add(4, "0xquiet", "remote");
+    // The busy owner already had a rating today; its queued ones are older than the quiet one's.
+    const old = await db.enqueue(busy1);
+    await db.pool.query("UPDATE jobs SET status='done' WHERE id=$1", [old]);
+    const first = await db.enqueue(busy2);
+    const second = await db.enqueue(quiet);
+    const own = await db.enqueue(builtIn);
+    await db.pool.query("UPDATE jobs SET available_at=now()-interval '1 minute' WHERE id=$1", [
+      first,
+    ]);
+    // The builtin lane only sees Bonded's own; the remote lane picks the quiet owner first.
+    expect((await db.takeJob(chain, "builtin"))?.id).toBe(own);
+    expect((await db.takeJob(chain, "remote"))?.id).toBe(second);
+    expect((await db.takeJob(chain, "remote"))?.id).toBe(first);
+    expect(await db.takeJob(chain, "remote")).toBeUndefined();
+  });
+
+  it("reports a run's progress and an agent's attempts", async () => {
+    const key = await agent(50);
+    const runId = await db.enqueue(key);
+    for (let index = 0; index < 3; index++)
+      await db.publish("rating.episode", { runId, index, total: 10, episode: {} });
+    expect(await db.runProgress(runId)).toMatchObject({ done: 3, total: 10 });
+    await db.pool.query("UPDATE ratings SET status='failed',error='stopped: x' WHERE id=$1", [
+      runId,
+    ]);
+    expect(await db.ratingAttempts(key)).toEqual([
+      expect.objectContaining({ runId, status: "failed", error: "stopped: x", score: null }),
+    ]);
   });
 });

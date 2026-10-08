@@ -8,17 +8,18 @@ import { parseEvmDeployment } from "@bonded/shared";
 import { z } from "zod";
 import { createApi } from "./index.js";
 import { runTeeChecks, teeCheckInterval } from "./tee-watch.js";
-import { agentConfig, workOne } from "./worker.js";
+import { REMOTE_RATING_BUDGET_MS, agentConfig, workOne } from "./worker.js";
 import { sentinelFromEnv } from "./sentinel.js";
 import { workBountyOne } from "./bounty-worker.js";
 import { Alerter, LoopHealth, Watchdog, telegramFromEnv } from "./alerts.js";
 import { renewExpiringScores } from "./live-loop.js";
 import {
   OpenAICompatibleClient,
+  bondedRegistryAbi,
   UNDERWRITING_COVER_CAP_USD,
   llmConfigFromEnv,
 } from "@bonded/shared";
-import { gatewayAgents } from "./remote-agent.js";
+import { REMOTE_EPISODE_TIMEOUT_MS, gatewayAgents } from "./remote-agent.js";
 import { DbRunnerAuth, RunnerPresenceWriter } from "./runners.js";
 
 loadDotEnv();
@@ -209,7 +210,15 @@ if (role === "migrate") {
       const presence = new RunnerPresenceWriter(db, (line) => console.error(line));
       const publicUrl = gatewayUrl();
       gateway = new ArenaGateway({
-        tokens: new DbRunnerAuth(db, deployment.chainId),
+        // A token stops working when the agent changes hands: the registry is checked too.
+        tokens: new DbRunnerAuth(db, deployment.chainId, async (agentId) =>
+          worker.read.readContract({
+            address: deployment.registry,
+            abi: bondedRegistryAbi,
+            functionName: "agentOwner",
+            args: [BigInt(agentId)],
+          }),
+        ),
         ...(publicUrl ? { publicUrl } : {}),
         onRunnerPresence: presence.onEvent,
         // Agent ids only; never a token or an episode's capability.
@@ -242,17 +251,48 @@ if (role === "migrate") {
           }
         : {}),
     };
-    const workerOptions = {
-      heldOut,
-      ...(gateway ? { remote: gatewayAgents(gateway) } : {}),
-    };
-    tasks.push(
-      loop(
-        "The rating worker",
-        () => workOne(db, worker, rpc, key("ATTESTER_KEY"), undefined, sentinel, workerOptions),
-        1000,
-      ),
-    );
+    const ms = (name: string, fallback: number) =>
+      z.coerce
+        .number()
+        .int()
+        .min(1000)
+        .parse(process.env[name] ?? fallback);
+    if (gateway) {
+      // Two lanes, each with its own lock: Bonded's own ratings never wait behind an operator's
+      // agent, and remote ratings take turns by owner.
+      const remote = gatewayAgents(gateway, {
+        episodeTimeoutMs: ms("REMOTE_EPISODE_TIMEOUT_MS", REMOTE_EPISODE_TIMEOUT_MS),
+      });
+      const budget = ms("REMOTE_RATING_BUDGET_MS", REMOTE_RATING_BUDGET_MS);
+      tasks.push(
+        loop(
+          "The rating worker",
+          () =>
+            workOne(db, worker, rpc, key("ATTESTER_KEY"), undefined, sentinel, {
+              lane: "builtin",
+            }),
+          1000,
+        ),
+        loop(
+          "The remote rating worker",
+          () =>
+            workOne(db, worker, rpc, key("ATTESTER_KEY"), undefined, sentinel, {
+              lane: "remote",
+              remote,
+              heldOut,
+              remoteBudgetMs: budget,
+            }),
+          1000,
+        ),
+      );
+    } else
+      tasks.push(
+        loop(
+          "The rating worker",
+          () => workOne(db, worker, rpc, key("ATTESTER_KEY"), undefined, sentinel, { heldOut }),
+          1000,
+        ),
+      );
     // Renew bring-your-own agents' scores before they lapse, while their runners are connected.
     tasks.push(
       loop(

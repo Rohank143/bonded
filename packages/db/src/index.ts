@@ -211,6 +211,8 @@ export interface RunnerTokenRecord {
   chainId: number;
   agentId: string;
   config: unknown;
+  /** Who made the token: the agent's registry owner when it was made. */
+  createdBy: string;
 }
 
 /** What a runner said when it connected. */
@@ -244,8 +246,30 @@ export interface RunnerStatus {
  */
 const RUNNER_CONNECTED = `EXISTS (SELECT 1 FROM runner_presence p JOIN runner_tokens t ON t.id=p.token_id
   WHERE p.agent_id=a.id AND p.connected AND t.revoked_at IS NULL
+    AND t.created_by IS NOT DISTINCT FROM a.owner
     AND p.mode IS NOT DISTINCT FROM a.config->>'mode'
     AND p.last_heartbeat_at > now() - make_interval(secs => ${RUNNER_FRESH_MS / 1000}))`;
+
+/** Which ratings a worker takes (see `takeJob`). */
+export type RatingLane = "builtin" | "remote";
+
+/** A rating's progress: episodes published so far, of how many, since when. */
+export interface RunProgress {
+  done: number;
+  total: number | null;
+  startedAt: Date | null;
+  lastAt: Date | null;
+}
+
+/** One rating of an agent, as its history shows it. */
+export interface RatingAttempt {
+  runId: string;
+  status: string;
+  error: string | null;
+  createdAt: Date;
+  /** The score, when the rating finished and was posted. */
+  score: number | null;
+}
 
 /** Raised when a caller tries to queue an agent outside the configured set. */
 export class AgentNotConfiguredError extends Error {}
@@ -518,7 +542,7 @@ export class Database {
   /** The live token with this hash, for an enabled agent; undefined for anything else. */
   async runnerToken(hash: string): Promise<RunnerTokenRecord | undefined> {
     const r = await this.pool.query(
-      `SELECT t.id,t.agent_id,a.chain_id,a.agent_id::text AS onchain,a.config FROM runner_tokens t
+      `SELECT t.id,t.agent_id,t.created_by,a.chain_id,a.agent_id::text AS onchain,a.config FROM runner_tokens t
        JOIN agents a ON a.id=t.agent_id
        WHERE t.token_hash=$1 AND t.revoked_at IS NULL AND a.enabled`,
       [hash],
@@ -531,6 +555,7 @@ export class Database {
         chainId: row.chain_id,
         agentId: row.onchain,
         config: row.config,
+        createdBy: row.created_by,
       }
     );
   }
@@ -800,6 +825,49 @@ export class Database {
       [rating.agentId, rating.ratedMeasurement, rating.evmAddress, rating.ratedReportHash],
     );
   }
+  /** How far a rating has got: the episodes its worker has published (see `publish`). */
+  async runProgress(runId: string): Promise<RunProgress> {
+    const r = await this.pool.query(
+      `SELECT count(*)::int AS done, max((payload->>'total')::int) AS total,
+         min(created_at) AS started, max(created_at) AS last
+       FROM events WHERE topic='rating.episode' AND payload->>'runId'=$1`,
+      [runId],
+    );
+    const row = r.rows[0];
+    return { done: row.done, total: row.total, startedAt: row.started, lastAt: row.last };
+  }
+  /** An agent's latest ratings, newest first: every attempt, failed ones included, with the score. */
+  async ratingAttempts(agentKey: string, limit = 10): Promise<RatingAttempt[]> {
+    const r = await this.pool.query(
+      `SELECT r.id,r.status,r.error,r.created_at,(s.signed->'attestation'->>'score')::int AS score
+       FROM ratings r LEFT JOIN attestations s ON s.id=r.id
+       WHERE r.agent_id=$1 ORDER BY r.created_at DESC LIMIT $2`,
+      [agentKey, limit],
+    );
+    return r.rows.map((row) => ({
+      runId: row.id,
+      status: row.status,
+      error: row.error,
+      createdAt: row.created_at,
+      score: row.score,
+    }));
+  }
+  /**
+   * Revoke every runner token of an agent and drop its runner, without a signed request: used when
+   * the agent is registered again (perhaps by a new owner), so no old token outlives it.
+   */
+  async revokeAllRunnerTokens(agentKey: string, c?: Connection): Promise<number> {
+    const q = c ?? this.pool;
+    const r = await q.query(
+      "UPDATE runner_tokens SET revoked_at=now() WHERE agent_id=$1 AND revoked_at IS NULL",
+      [agentKey],
+    );
+    await q.query(
+      "UPDATE runner_presence SET connected=false,disconnected_at=now() WHERE agent_id=$1 AND connected",
+      [agentKey],
+    );
+    return r.rowCount ?? 0;
+  }
   /** Remove an agent's TEE row, e.g. when its TEE is no longer configured. */
   async clearTee(agentId: string) {
     await this.pool.query("DELETE FROM tee_checks WHERE agent_id=$1", [agentId]);
@@ -846,8 +914,16 @@ export class Database {
     await this.publish("rating.queued", { runId: id }, c);
     return id;
   }
-  /** Reap exhausted leases and claim one eligible job, fencing stale workers with a new token. */
-  async takeJob(chainId?: number): Promise<{ id: string; token: string } | undefined> {
+  /**
+   * Reap exhausted leases and claim one eligible job, fencing stale workers with a new token.
+   * `lane` splits the queue: "remote" takes only ratings of agents their operators run (oldest
+   * first among the owners who have had the fewest ratings in the last day, so one owner can't
+   * crowd out the rest), "builtin" everything else; without it, any job.
+   */
+  async takeJob(
+    chainId?: number,
+    lane?: RatingLane,
+  ): Promise<{ id: string; token: string } | undefined> {
     return this.transaction(async (c) => {
       const exhausted = await c.query(
         `WITH candidates AS (
@@ -870,8 +946,14 @@ export class Database {
         WHERE id=(SELECT j.id FROM jobs j JOIN ratings r ON r.id=j.id JOIN agents a ON a.id=r.agent_id
           WHERE ($2::integer IS NULL OR a.chain_id=$2) AND a.enabled AND j.attempts<3
           AND ((j.status='queued' AND j.available_at<=now()) OR (j.status='running' AND j.lease_until<now()))
-          ORDER BY j.available_at FOR UPDATE OF j SKIP LOCKED LIMIT 1) RETURNING id,token`,
-        [randomUUID(), chainId ?? null],
+          AND ($3::text IS NULL OR ((a.config->>'kind')='remote') = ($3='remote'))
+          ORDER BY CASE WHEN $3='remote' THEN (
+              SELECT count(*) FROM ratings r2 JOIN agents a2 ON a2.id=r2.agent_id
+              WHERE a2.owner IS NOT DISTINCT FROM a.owner AND r2.id<>r.id
+                AND r2.created_at > now() - interval '1 day') ELSE 0 END,
+            j.available_at
+          FOR UPDATE OF j SKIP LOCKED LIMIT 1) RETURNING id,token`,
+        [randomUUID(), chainId ?? null, lane ?? null],
       );
       return r.rows[0];
     });

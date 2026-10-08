@@ -199,7 +199,12 @@ export function createApi(options: {
     );
     if (!r.rowCount) return c.json({ error: "score not found" }, 404);
     const { report, ...row } = r.rows[0];
-    return c.json({ ...row, ...ratingFacts(row.signed?.attestation?.teeMeasurement, report) });
+    return c.json({
+      ...row,
+      ...ratingFacts(row.signed?.attestation?.teeMeasurement, report),
+      // Every rating of the agent, failed ones included, next to the score they didn't replace.
+      attempts: await db.ratingAttempts(`${chain.deployment.chainId}:${id}`),
+    });
   });
   app.get("/agents/:id/tee", async (c) => {
     const id = uint.parse(c.req.param("id"));
@@ -274,7 +279,21 @@ export function createApi(options: {
               },
               202,
             );
-      return c.json({ ...row, ...(row.report ? ratingFacts(undefined, row.report) : {}) });
+      // How far it has got, and a rough estimate of the time left, from its published episodes.
+      const progress = await db.runProgress(id);
+      const elapsed =
+        progress.startedAt && progress.lastAt
+          ? progress.lastAt.getTime() - progress.startedAt.getTime()
+          : 0;
+      const etaSeconds =
+        row.status === "running" && progress.total && progress.done > 1
+          ? Math.round(((elapsed / (progress.done - 1)) * (progress.total - progress.done)) / 1000)
+          : null;
+      return c.json({
+        ...row,
+        ...(row.report ? ratingFacts(undefined, row.report) : {}),
+        progress: { done: progress.done, total: progress.total, etaSeconds },
+      });
     });
   // Class-level results only (docs/disclosures). Each entry posted on this API's chain is checked
   // against the registry: `verified` means its current score has the same report hash.

@@ -176,14 +176,24 @@ describe("registering your own agent", () => {
   it("signs the declared code hash, mode and TEE: changing any after signing is refused", async () => {
     expect((await registerRemote(mine, remote, { mode: "chain" })).status).toBe(403);
     expect((await registerRemote(mine, remote, { codeHash: hash(1) })).status).toBe(403);
+    const chainMode = { ...remote, mode: "chain" as const };
     expect(
       (
-        await registerRemote(mine, remote, {
+        await registerRemote(mine, chainMode, {
           tee: { url: "https://tee.example", composeHash: hash(9) },
         })
       ).status,
     ).toBe(403);
     expect((await registerRemote(mine, remote, {}, stranger)).status).toBe(403);
+  });
+
+  it("refuses a TEE in tool mode: the runner's tool calls come from outside the TEE", async () => {
+    const res = await registerRemote(mine, {
+      ...remote,
+      tee: { url: "https://tee.example", composeHash: hash(9) },
+    });
+    expect(res.status).toBe(400);
+    expect((await bodyOf(res)).error).toMatch(/must be rated in chain mode/);
   });
 
   it("refuses Sentinel and a plain-http TEE for your own agent", async () => {
@@ -519,7 +529,17 @@ describe("binding, cover caps and the live loop", () => {
   it("checks an operator's TEE like Bonded's own; a changed measurement blocks quotes and re-rates", async () => {
     const tee = { url: "https://tee.example", composeHash: hash(9) };
     tick();
-    expect((await registerRemote(mine, { ...remote, tee })).status).toBe(201);
+    const tokenBefore = (await bodyOf(await app.request(`/self/agents/${mine.agentId}/runner`)))
+      .token;
+    expect(tokenBefore).not.toBeNull();
+    expect((await registerRemote(mine, { ...remote, mode: "chain", tee })).status).toBe(201);
+    // Registering again revokes the runner token: the owner makes a new one for the new setup.
+    expect(
+      (await bodyOf(await app.request(`/self/agents/${mine.agentId}/runner`))).token,
+    ).toBeNull();
+    tick();
+    await connect((await bodyOf(await createToken(mine))).token as string, "chain");
+    await pg.db.dropRunner(key(mine));
     const rated = hash(5);
     const signed = await postScore(mine, rated);
     const vaultAgent = await chain.read.readContract({

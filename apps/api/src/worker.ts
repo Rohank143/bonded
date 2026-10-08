@@ -1,6 +1,7 @@
-import { Database, json } from "@bonded/db";
+import { Database, json, type RatingLane } from "@bonded/db";
 import {
   Sandbox,
+  episodeOutcome,
   freshHeldOut,
   rateAgent,
   attestTeeAgent,
@@ -91,16 +92,24 @@ const builtInConfig = z
  * operator's servers and is rated through the Arena Gateway by its runner. `codeHash` is what the
  * operator declares; with `tee`, every episode must prove it with TEE evidence.
  */
-const remoteConfig = z.strictObject({
-  kind: z.literal("remote"),
-  mandate: EvmMandate,
-  codeHash,
-  mode: z.enum(REMOTE_MODES),
-  tee: teeConfig.optional(),
-  repeats,
-  protection,
-  vault: guardAddress,
-});
+const remoteConfig = z
+  .strictObject({
+    kind: z.literal("remote"),
+    mandate: EvmMandate,
+    codeHash,
+    mode: z.enum(REMOTE_MODES),
+    tee: teeConfig.optional(),
+    repeats,
+    protection,
+    vault: guardAddress,
+  })
+  // In tool mode the agent's tool calls come from the runner, outside the TEE, so a measurement
+  // would bind nothing about how it behaves. Only chain mode, where the TEE's own key signs every
+  // write, can be TEE-bound (and then the compose file must be reviewed: it decides what runs).
+  .refine((c) => !(c.tee && c.mode === "tools"), {
+    message: "a TEE-bound agent must be rated in chain mode: in tool mode the TEE binds nothing",
+    path: ["tee"],
+  });
 
 // Operators provision these records, or owners register them signed (self-serve.ts); callers
 // cannot choose RPCs, commands or model URLs. A remote agent's code runs on its operator's side.
@@ -132,7 +141,23 @@ export interface WorkerOptions {
   heldOut?: { perClass?: number; llm?: { client: ChatClient; model: string; maxUsd: number } };
   /** Narrows the attack library a rating runs (tests and local checks only). */
   selectAttacks?: (attacks: AttackSpec[]) => AttackSpec[];
+  /**
+   * Which ratings this worker takes: "remote" (agents their operators run) or "builtin"
+   * (everything else), each under its own lock, so a slow remote agent can't hold up Bonded's own
+   * ratings. Without it, any rating (one worker for all).
+   */
+  lane?: RatingLane;
+  /**
+   * Wall-clock budget for one remote rating (default 45 minutes, REMOTE_RATING_BUDGET_MS). Past
+   * it the rating stops and fails, recorded, so one operator can't hold the worker for hours.
+   */
+  remoteBudgetMs?: number;
 }
+
+/** Default wall-clock budget for a remote rating. */
+export const REMOTE_RATING_BUDGET_MS = 45 * 60_000;
+/** Advisory lock keys: one per lane and chain. */
+const LANE_LOCK: Record<RatingLane | "all", number> = { all: 7004, builtin: 7004, remote: 7008 };
 
 /**
  * The code hash a rating attests. `codeHash` is always the agent's own code; with Sentinel in
@@ -154,7 +179,10 @@ export async function workOne(
 ) {
   const lock = await db.pool.connect();
   const locked = (
-    await lock.query("SELECT pg_try_advisory_lock(7004,$1) AS locked", [chain.deployment.chainId])
+    await lock.query("SELECT pg_try_advisory_lock($2,$1) AS locked", [
+      chain.deployment.chainId,
+      LANE_LOCK[options.lane ?? "all"],
+    ])
   ).rows[0].locked;
   if (!locked) {
     lock.release();
@@ -163,7 +191,10 @@ export async function workOne(
   try {
     return await runLocked(db, chain, rpcUrl, key, onError, sentinel, options);
   } finally {
-    await lock.query("SELECT pg_advisory_unlock(7004,$1)", [chain.deployment.chainId]);
+    await lock.query("SELECT pg_advisory_unlock($2,$1)", [
+      chain.deployment.chainId,
+      LANE_LOCK[options.lane ?? "all"],
+    ]);
     lock.release();
   }
 }
@@ -177,7 +208,7 @@ async function runLocked(
   sentinel?: SentinelService,
   options: WorkerOptions = {},
 ) {
-  const job = await db.takeJob(chain.deployment.chainId);
+  const job = await db.takeJob(chain.deployment.chainId, options.lane);
   if (!job) return false;
   let leaseError: unknown;
   const heartbeat = setInterval(() => {
@@ -247,7 +278,14 @@ async function runLocked(
           : undefined;
       if (config.kind === "remote" && !options.remote)
         throw new RatingRefused(GATEWAY_UNAVAILABLE, true);
-      const attacks = options.selectAttacks?.(library.attacks) ?? library.attacks;
+      // A remote agent's operator sees every attack its agent reads. So it never gets the shared
+      // held-out set or accepted bounties (that would leak them, and they'd no longer be unseen
+      // by the next agent): only the published library, and a held-out set made for it alone.
+      const selected = options.selectAttacks?.(library.attacks) ?? library.attacks;
+      const attacks =
+        config.kind === "remote"
+          ? selected.filter((a) => !library.unpublished.has(a.id))
+          : selected;
       const sandbox = await Sandbox.start({ forkUrl: rpcUrl, forkDeployment: chain.deployment });
       try {
         const agent: ArenaAgent =
@@ -286,14 +324,17 @@ async function runLocked(
               })
             : undefined;
         await check();
+        let remoteStop: string | undefined;
+        const ratingStarted = Date.now();
+        const remoteBudget = options.remoteBudgetMs ?? REMOTE_RATING_BUDGET_MS;
         const result = await rateAgent(sandbox, {
           agent,
           ...(withSentinel && sentinel ? { sentinel: sentinel.info } : {}),
           attacks: [...attacks, ...(fresh?.attacks ?? [])],
-          unpublished: new Set([
-            ...library.unpublished,
-            ...(fresh?.attacks ?? []).map((a) => a.id),
-          ]),
+          unpublished:
+            config.kind === "remote"
+              ? new Set((fresh?.attacks ?? []).map((a) => a.id))
+              : library.unpublished,
           ...(fresh ? { heldOut: fresh.heldOut } : {}),
           codeHash: ratedCodeHash(config),
           ...(config.repeats ? { repeats: config.repeats } : {}),
@@ -301,6 +342,21 @@ async function runLocked(
           vault: { mandate: config.mandate as EvmMandateInput },
           onEpisode: async (episode, index, total) => {
             await check();
+            // A remote rating stops at the first episode its agent fails (crash, exit, timeout,
+            // runner gone) and at its time budget: the attempt is recorded and not retried, so an
+            // operator can neither hold the worker nor choose which run counts by crashing.
+            if (config.kind === "remote") {
+              if (episodeOutcome(episode) === "agent_error")
+                remoteStop = `stopped: the agent failed in episode ${index + 1} of ${total} (${(
+                  episode.agentSummary.finalMessage ?? "no answer"
+                ).slice(0, 200)})`;
+              else if (Date.now() - ratingStarted > remoteBudget)
+                remoteStop = `stopped: the rating ran past its ${
+                  remoteBudget >= 60_000
+                    ? `${Math.round(remoteBudget / 60_000)}-minute`
+                    : `${Math.ceil(remoteBudget / 1000)}-second`
+                } budget after ${index + 1} of ${total} episodes`;
+            }
             // Verdict only: planted text and traces can carry a private bounty payload.
             await db.publish("rating.episode", {
               runId: job.id,
@@ -309,6 +365,7 @@ async function runLocked(
               // A library attack's text is public in attacks/; held-out and bounty text never is.
               episode: publicEpisode(episode, publishedAs(episode.attackId)),
             });
+            if (remoteStop) throw new RatingRefused(remoteStop, true);
           },
         });
         // Every episode must have shown the same TEE deployment, or the measurement isn't earned.
@@ -316,7 +373,9 @@ async function runLocked(
         const unbound = binding?.verdict(result.report.episodes.total);
         if (unbound) throw new RatingRefused(unbound, false);
         if (result.report.stoppedEarly || result.report.episodes.agentErrors)
-          throw new Error("incomplete rating");
+          throw config.kind === "remote"
+            ? new RatingRefused("stopped: the agent failed an episode", true)
+            : new Error("incomplete rating");
         // A guard that couldn't answer refused the write to stay safe, but that's no evidence the
         // guard works: never attest a score that leaned on it.
         if (result.report.guardFailures)
