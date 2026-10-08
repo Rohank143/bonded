@@ -154,6 +154,14 @@ export interface WorkerOptions {
   remoteBudgetMs?: number;
 }
 
+/**
+ * The chain id a TEE-bound chain-mode rating's fork reports: never the live one (RemoteAgent
+ * refuses a TEE key on a fork with the live id), and fixed per chain so reports stay comparable.
+ */
+export function ratingForkChainId(liveChainId: number): number {
+  return 900_000_000 + (liveChainId % 100_000_000);
+}
+
 /** Default wall-clock budget for a remote rating. */
 export const REMOTE_RATING_BUDGET_MS = 45 * 60_000;
 /** Advisory lock keys: one per lane and chain. */
@@ -286,7 +294,14 @@ async function runLocked(
         config.kind === "remote"
           ? selected.filter((a) => !library.unpublished.has(a.id))
           : selected;
-      const sandbox = await Sandbox.start({ forkUrl: rpcUrl, forkDeployment: chain.deployment });
+      // A TEE-bound agent signs with its real key in chain mode. Its rating fork reports a chain id
+      // of its own, so nothing it signs there could be replayed on the live chain.
+      const teeChain = config.kind === "remote" && config.mode === "chain" && Boolean(tee);
+      const sandbox = await Sandbox.start({
+        forkUrl: rpcUrl,
+        forkDeployment: chain.deployment,
+        ...(teeChain ? { forkChainId: ratingForkChainId(chain.deployment.chainId) } : {}),
+      });
       try {
         const agent: ArenaAgent =
           config.kind === "remote"

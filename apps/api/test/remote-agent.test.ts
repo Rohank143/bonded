@@ -13,7 +13,7 @@ import {
 import { teeReportData, type ArenaAgent } from "@bonded/shared";
 import type { Hex } from "viem";
 import { RatingRefused, TeeBinding, gatewayAgents, remoteAgentFor } from "../src/remote-agent.js";
-import { agentConfig } from "../src/worker.js";
+import { agentConfig, ratingForkChainId } from "../src/worker.js";
 import { DbRunnerAuth, RUNNER_TOKEN_PREFIX, RunnerPresenceWriter } from "../src/runners.js";
 import type { Database } from "@bonded/db";
 
@@ -363,5 +363,13 @@ describe("DbRunnerAuth", () => {
   it("refuses tokens for another chain or of the wrong form", async () => {
     expect(await new DbRunnerAuth(db, 1).validate(token)).toBeNull();
     expect(await new DbRunnerAuth(db, 46630).validate("not-a-token")).toBeNull();
+  });
+});
+
+describe("ratingForkChainId", () => {
+  it("never reports the live chain's id, so a TEE key's fork transactions can't be replayed live", () => {
+    for (const live of [1, 46630, 421614, 11155111, 31337])
+      expect(ratingForkChainId(live)).not.toBe(live);
+    expect(ratingForkChainId(46630)).toBe(ratingForkChainId(46630));
   });
 });

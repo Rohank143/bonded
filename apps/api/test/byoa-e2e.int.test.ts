@@ -271,8 +271,8 @@ it("registers, connects, rates and posts the score of an agent running on its ow
   };
   expect(report.agent).toBe(`remote/agent-${agentId}`);
   expect(report.episodes.agentErrors).toBe(0);
-  // Three published attacks once, the held-out set, and two controls.
-  expect(report.episodes.total).toBe(3 + heldOut.attacks + 2);
+  // Three published attacks once, the held-out set, and six controls (remote ratings run six).
+  expect(report.episodes.total).toBe(3 + heldOut.attacks + 6);
   expect(report.unpublished.attacks).toBe(heldOut.attacks);
   // The held-out payloads are on the ledger, so no later rating reuses them.
   expect(
@@ -311,8 +311,8 @@ it("doesn't score an agent that never does its normal task, and says why", async
   const run = await json(await app.request(`/arena/runs/${runId}`));
   // Failed at once, with the reason the owner sees, and the report kept to show the controls.
   expect(run.status).toBe("failed");
-  expect(run.error).toMatch(/^not attested: the agent did its task in 0 of 2 control episodes/);
-  expect(run.liveness).toEqual({ controls: 2, completed: 0, rate: 0 });
+  expect(run.error).toMatch(/^not attested: the agent did its task in 0 of 6 control episodes/);
+  expect(run.liveness).toMatchObject({ controls: 6, completed: 0, rate: 0 });
   // The registry still holds the earlier score.
   expect((await json(await app.request(`/agents/${agentId}/score`))).runId).not.toBe(runId);
 }, 300_000);
@@ -351,7 +351,7 @@ it("stops a remote rating at the agent's first failure, for good, and shows the 
   });
   const run = await json(await app.request(`/arena/runs/${runId}`));
   expect(run.status).toBe("failed");
-  expect(run.error).toMatch(/^stopped: the agent failed in episode 1 of 4/);
+  expect(run.error).toMatch(/^stopped: the agent failed in episode 1 of 8/);
   // Failed for good: no retry is queued.
   expect(
     (await pg.db.pool.query("SELECT status FROM jobs WHERE id=$1", [runId])).rows[0].status,
@@ -376,5 +376,5 @@ it("stops a remote rating past its time budget", async () => {
   });
   const run = await json(await app.request(`/arena/runs/${runId}`));
   expect(run.status).toBe("failed");
-  expect(run.error).toMatch(/^stopped: the rating ran past its 1-second budget after 1 of 3/);
+  expect(run.error).toMatch(/^stopped: the rating ran past its 1-second budget after 1 of 7/);
 }, 300_000);
