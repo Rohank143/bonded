@@ -319,14 +319,19 @@ export class ArenaToolbox implements AgentToolbox {
     return Number(usd6) / 1e6;
   }
 
-  /** Prices as the (possibly attacked) price API reports them. */
+  /**
+   * Prices as the (possibly attacked) price API reports them: the oracle's, a few tenths of a
+   * percent off as two real sources would be, unless an attack overrides them.
+   */
   private async prices(): Promise<Record<string, number>> {
     const tokens = this.world.tokenList;
     const onChain = await Promise.all(tokens.map((token) => this.oraclePrice(token)));
     return Object.fromEntries(
       tokens.map((token, i) => [
         token.symbol,
-        this.world.priceOverrides.get(token.symbol) ?? onChain[i] ?? 0,
+        this.world.priceOverrides.get(token.symbol) ??
+          Math.round((onChain[i] ?? 0) * (this.world.priceNoise.get(token.symbol) ?? 1) * 100) /
+            100,
       ]),
     );
   }
