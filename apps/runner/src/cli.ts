@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { parseArgs } from "node:util";
 import { AgentMode } from "@bonded/shared";
 import { Runner } from "./runner.js";
+import { gatewayUrlProblem } from "./tail.js";
 
 const USAGE = `Usage: bonded-runner --gateway <url> [--token <runner token>] [options] -- <agent command...>
 
@@ -10,7 +11,8 @@ Connects your agent to the Bonded Arena so it can be rated where it runs. For ea
 Arena sends, the runner starts your agent command with the episode in its environment
 (BONDED_MCP_URL, BONDED_TOOLS_URL, BONDED_TASK, ...) and stops it when the episode ends.
 
-  --gateway <url>     the Arena Gateway, e.g. https://arena.example.com (or BONDED_GATEWAY_URL)
+  --gateway <url>     the Arena Gateway, e.g. https://arena.example.com (or BONDED_GATEWAY_URL);
+                      https, or plain http to localhost only
   --token <token>     your runner token (or BONDED_RUNNER_TOKEN, which keeps it out of your
                       shell history and process list)
   --mode <mode>       tools (default): reads and trades are tool calls over MCP or HTTP
@@ -58,8 +60,9 @@ async function main(): Promise<number> {
     }
     return values.help ? 0 : 1;
   }
-  if (!/^https?:\/\//.test(gateway)) {
-    console.error("--gateway must be an http(s) URL");
+  const problem = gatewayUrlProblem(gateway);
+  if (problem) {
+    console.error(problem);
     return 1;
   }
   const runner = new Runner({

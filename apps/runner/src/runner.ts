@@ -15,7 +15,7 @@ import {
   ServerToRunner,
 } from "@bonded/shared";
 import { WebSocket } from "ws";
-import { backoffDelay, Tail } from "./tail.js";
+import { backoffDelay, gatewayUrlProblem, Tail } from "./tail.js";
 
 /**
  * The Bonded runner: lets the Arena rate an agent that runs on its operator's own servers.
@@ -81,6 +81,8 @@ export class Runner {
 
   constructor(private readonly options: RunnerOptions) {
     if (options.command.length === 0) throw new Error("no agent command given");
+    const problem = gatewayUrlProblem(options.gateway);
+    if (problem) throw new Error(problem);
     this.log = options.log ?? (() => {});
   }
 
