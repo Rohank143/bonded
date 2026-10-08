@@ -403,7 +403,7 @@ Fair-use limits for operator-run agents keep one operator from holding the ratin
 | Ratings per owner, across their agents | 3 a day | `REMOTE_RATINGS_PER_OWNER_DAILY` |
 | Ratings of all operator-run agents on a chain | 20 a day | `REMOTE_RATINGS_DAILY` |
 
-These are a lane of their own: they don't use up the built-in designs' self-serve allowance, and the built-in designs don't use up theirs. **Every** rating counts: the ones you ask for, renewals, and re-ratings after a TEE change.
+These are a lane of their own: they don't use up the built-in designs' self-serve allowance, and the built-in designs don't use up theirs. **Every** rating counts: the ones you ask for, renewals, and re-ratings after a TEE change. A rating is counted as what it was queued as, against the owner it was charged to, so registering an agent again or transferring it doesn't take earlier ratings off the counts.
 
 The same flow is plain HTTP, for scripts. Each write is an EIP-191 `personal_sign` of a short text message built by `selfServeMessage` in `@bonded/shared`, valid for 10 minutes. For example, `Bonded: create runner token`, `chain 46630`, `agent 12` and `time <unix seconds>`, each on its own line. A runner-token signature can be used once.
 
@@ -434,7 +434,7 @@ A rating of your agent stops at the first episode your agent fails, and the stop
 - its TEE answered the Arena-key request with its production key.
 
 This stops anyone from rerolling a bad rating by crashing. After a stop your agent caused:
-- **The current score is superseded.** It stays on chain until it expires, but the API signs no new cover quotes for the agent until a complete rating posts. Cover already bound is not touched.
+- **The current score is superseded.** It stays on chain until it expires, but the API signs no new cover quotes for the agent until a complete rating posts, whatever the agent is registered as in the meantime. Cover already bound is not touched.
 - **A cooldown starts:** 1 hour after the first stop, doubling with each stop in a row (2, 4, 8 hours…), up to 48 hours. A complete rating ends the run of stops.
 - **The attempt stays in the agent's history** with its reason. Anything the runner or agent reported (its last output, a final message) is shown apart, labelled "Reported by the runner", because Bonded doesn't vouch for it.
 
@@ -452,7 +452,7 @@ A stop that isn't your agent's doing (the rating worker restarting, the budget r
 
 Only a TEE binds the score to what trades in production. A declared score says what your code did in the Arena; you could run different code afterwards, which is why its cover is capped lower.
 
-The key-custody term is an assumption, not a measurement, and the report says so next to the number. The caps are a policy choice the API applies when it signs a quote; `DECLARED_COVER_CAP_USD` and `TEE_COVER_CAP_USD` set them per deployment. The web app labels them as underwriting policy. Bonded's own built-in designs have no binding cap.
+The key-custody term is an assumption, not a measurement, and the report says so next to the number. The caps are a policy choice the API applies when it signs a quote; `DECLARED_COVER_CAP_USD` and `TEE_COVER_CAP_USD` set them per deployment. The web app labels them as underwriting policy. Bonded's own built-in designs have no binding cap. The cap follows the rating behind the current score, not the agent's registration today: each rating records the registration it rated, and a quote looks up that rating from the score's report hash. Registering the agent again (as a built-in design, say) doesn't lift the cap, and a score from an earlier registration gets no new quotes until a complete rating of the current registration posts.
 
 ### Bring your own TEE
 
