@@ -18,6 +18,7 @@ import { createRunnerToken, requestRating, revokeRunnerToken } from "../lib/self
 import { useRatingRun } from "../lib/rating-run";
 import { when } from "../lib/format";
 import { DOCS_BYOA } from "../lib/routes";
+import { deployment } from "../config";
 import { Badge, Button, Card, ErrorText, linkClass } from "./ui";
 
 type Registered = Extract<SelfAgentRecord, { registered: true }>;
@@ -46,10 +47,18 @@ export function ConnectAgent({
   registryOwner?: string;
 }) {
   const { signMessageAsync } = useSignMessage();
-  const [token, setToken] = useState<{ value: string; gatewayUrl: string | null }>();
-  const [runId, setRunId] = useState<string>();
-  const [busy, setBusy] = useState<"token" | "revoke" | "rate">();
-  const [error, setError] = useState<unknown>(null);
+  // Everything the owner did here belongs to one agent. Where it is rendered the panel is keyed
+  // by the agent, and the state is also tagged with it: a token, rating or error from another
+  // agent (one whose request finished after the page moved on) is never shown for this one.
+  const identity = `${deployment.chainId}:${agentId}`;
+  const [made, setToken] = useState<{ for: string; value: string; gatewayUrl: string | null }>();
+  const [asked, setRunId] = useState<{ for: string; id: string }>();
+  const [busy, setBusy] = useState<{ for: string; kind: "token" | "revoke" | "rate" }>();
+  const [failed, setError] = useState<{ for: string; error: unknown }>();
+  const token = made?.for === identity ? made : undefined;
+  const runId = asked?.for === identity ? asked.id : undefined;
+  const error = failed?.for === identity ? failed.error : null;
+  const working = busy?.for === identity ? busy.kind : undefined;
   const runner = useQuery({
     queryKey: ["runner", agentId],
     queryFn: () => api.runner(agentId),
@@ -80,21 +89,22 @@ export function ConnectAgent({
     teeUrl: record.tee?.url ?? null,
   };
 
-  async function act(kind: NonNullable<typeof busy>, fn: () => Promise<unknown>) {
-    setBusy(kind);
-    setError(null);
+  async function act(kind: "token" | "revoke" | "rate", fn: (forId: string) => Promise<unknown>) {
+    const forId = identity;
+    setBusy({ for: forId, kind });
+    setError(undefined);
     try {
-      await fn();
+      await fn(forId);
     } catch (e) {
-      setError(e);
+      setError({ for: forId, error: e });
     } finally {
-      setBusy(undefined);
+      setBusy((b) => (b?.for === forId ? undefined : b));
     }
   }
   const makeToken = () =>
-    act("token", async () => {
-      const made = await createRunnerToken(signMessageAsync, agentId);
-      setToken({ value: made.token, gatewayUrl: made.gatewayUrl });
+    act("token", async (forId) => {
+      const created = await createRunnerToken(signMessageAsync, agentId);
+      setToken({ for: forId, value: created.token, gatewayUrl: created.gatewayUrl });
       await runner.refetch();
     });
   const revoke = () =>
@@ -104,9 +114,9 @@ export function ConnectAgent({
       await runner.refetch();
     });
   const rate = () =>
-    act("rate", async () => {
+    act("rate", async (forId) => {
       const { runId: id } = await requestRating(signMessageAsync, agentId);
-      setRunId(id);
+      setRunId({ for: forId, id });
       onRated?.();
     });
 
@@ -195,11 +205,11 @@ export function ConnectAgent({
               <div className="flex flex-wrap gap-2">
                 <Button
                   size="sm"
-                  loading={busy === "token"}
-                  disabled={Boolean(busy)}
+                  loading={working === "token"}
+                  disabled={Boolean(working)}
                   onClick={makeToken}
                 >
-                  {busy === "token"
+                  {working === "token"
                     ? "Sign in your wallet…"
                     : runner.data?.token
                       ? "Replace the token"
@@ -209,8 +219,8 @@ export function ConnectAgent({
                   <Button
                     size="sm"
                     kind="secondary"
-                    loading={busy === "revoke"}
-                    disabled={Boolean(busy)}
+                    loading={working === "revoke"}
+                    disabled={Boolean(working)}
                     onClick={revoke}
                   >
                     Revoke it
@@ -284,17 +294,17 @@ export function ConnectAgent({
               <div className="flex flex-wrap items-center gap-3">
                 <Button
                   disabled={
-                    Boolean(busy) ||
+                    Boolean(working) ||
                     !connected ||
                     Boolean(waiting) ||
                     running ||
                     Boolean(cooling) ||
                     handsChanged
                   }
-                  loading={busy === "rate"}
+                  loading={working === "rate"}
                   onClick={rate}
                 >
-                  {busy === "rate" ? "Sign in your wallet…" : "Rate my agent"}
+                  {working === "rate" ? "Sign in your wallet…" : "Rate my agent"}
                 </Button>
                 {!connected && <span className="text-xs text-muted">Start the runner first.</span>}
                 {waiting && (
@@ -337,7 +347,7 @@ export function ConnectAgent({
                 </p>
               )}
               {runner.data?.attempts && runner.data.attempts.length > 0 && (
-                <Attempts agentId={agentId} attempts={runner.data.attempts} />
+                <Attempts key={identity} agentId={agentId} attempts={runner.data.attempts} />
               )}
             </section>
           </>

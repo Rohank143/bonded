@@ -41,6 +41,7 @@ export function OwnerTools({
   if (!isOwner)
     return self.data?.registered && self.data.kind === REMOTE_KIND ? (
       <ConnectAgent
+        key={`${deployment.chainId}:${agentId}`}
         agentId={agentId}
         record={self.data}
         scoreExpired={scoreExpired}
@@ -79,6 +80,7 @@ export function OwnerTools({
   if (record?.registered && record.kind === REMOTE_KIND)
     return (
       <ConnectAgent
+        key={`${deployment.chainId}:${agentId}`}
         agentId={agentId}
         record={record}
         scoreExpired={scoreExpired}

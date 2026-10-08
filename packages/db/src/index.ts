@@ -355,6 +355,7 @@ export class Database {
       "0015_breach_details.sql",
       "0016_held_out_payloads.sql",
       "0017_agent_standing.sql",
+      "0018_rating_registration.sql",
     ];
     await this.transaction(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(7001)");
@@ -524,8 +525,7 @@ export class Database {
       const today = (
         await c.query(
           `SELECT count(*)::int AS n FROM ratings r JOIN agents a ON a.id=r.agent_id
-           WHERE a.chain_id=$1 AND a.source='user' AND coalesce(a.config->>'kind','')<>'remote'
-             AND r.created_at>=$2`,
+           WHERE a.chain_id=$1 AND a.source='user' AND r.kind<>'remote' AND r.created_at>=$2`,
           [chainId, new Date(quota.nowMs - 86_400_000)],
         )
       ).rows[0].n as number;
@@ -919,6 +919,26 @@ export class Database {
     }));
     return { items, page: at.page, pages: at.pages, total };
   }
+  /**
+   * The rating that produced a posted score (found by the attestation's report hash): what kind
+   * of registration it rated, and whether that registration is still the agent's current one.
+   * Undefined for a score this service didn't post.
+   */
+  async ratingBehindScore(
+    agentKey: string,
+    reportHash: string,
+  ): Promise<{ runId: string; kind: string; current: boolean } | undefined> {
+    const row = (
+      await this.pool.query(
+        `SELECT r.id, r.kind, (r.config IS NOT DISTINCT FROM a.config) AS current
+         FROM attestations s JOIN ratings r ON r.id=s.id JOIN agents a ON a.id=r.agent_id
+         WHERE s.agent_id=$1 AND lower(s.signed->'attestation'->>'reportHash')=lower($2)
+         ORDER BY s.created_at DESC LIMIT 1`,
+        [agentKey, reportHash],
+      )
+    ).rows[0];
+    return row ? { runId: row.id, kind: row.kind, current: row.current } : undefined;
+  }
   /** An agent's standing after its ratings (see `AgentStanding`). */
   async agentStanding(agentKey: string): Promise<AgentStanding> {
     const row = (
@@ -935,7 +955,9 @@ export class Database {
   /**
    * Whether a remote rating may be queued for this agent now, inside a caller's transaction: no
    * cooldown, and under the per-owner, per-agent and lane-wide daily caps. Every remote rating
-   * counts, whoever asked for it (owner, renewal, TEE change, bounty).
+   * counts, whoever asked for it (owner, renewal, TEE change). Ratings are counted by what they
+   * were when queued (their kind and the owner charged), so registering an agent again, as
+   * another kind or under another owner, doesn't take earlier ratings off the count.
    */
   private async remoteQuotaIn(
     c: Connection,
@@ -953,11 +975,11 @@ export class Database {
       await c.query(
         `SELECT
            count(*) FILTER (WHERE r.agent_id=$1)::int AS agent,
-           count(*) FILTER (WHERE a.owner IS NOT DISTINCT FROM (SELECT owner FROM agents WHERE id=$1))::int AS owner,
+           count(*) FILTER (WHERE r.charged_owner IS NOT DISTINCT FROM (SELECT owner FROM agents WHERE id=$1))::int AS owner,
            count(*)::int AS lane
          FROM ratings r JOIN agents a ON a.id=r.agent_id
          WHERE a.chain_id=(SELECT chain_id FROM agents WHERE id=$1)
-           AND a.config->>'kind'='remote' AND r.created_at>=$2`,
+           AND r.kind='remote' AND r.created_at>=$2`,
         [agentKey, since],
       )
     ).rows[0];
@@ -1015,15 +1037,25 @@ export class Database {
   /** Queue a rating inside a caller's transaction. */
   private async enqueueIn(c: Connection, agentId: string, createdAt?: Date): Promise<string> {
     const id = randomUUID();
-    const agent = await c.query("SELECT id FROM agents WHERE id=$1 AND enabled FOR SHARE", [
-      agentId,
-    ]);
+    const agent = await c.query(
+      "SELECT config,owner FROM agents WHERE id=$1 AND enabled FOR SHARE",
+      [agentId],
+    );
     if (!agent.rowCount) throw new AgentNotConfiguredError("agent not configured");
-    await c.query("INSERT INTO ratings(id,agent_id,created_at) VALUES($1,$2,coalesce($3,now()))", [
-      id,
-      agentId,
-      createdAt ?? null,
-    ]);
+    // The registration it rates and the owner it is charged to, fixed now (0018).
+    const { config, owner } = agent.rows[0] as { config: { kind?: unknown }; owner: string | null };
+    await c.query(
+      `INSERT INTO ratings(id,agent_id,created_at,kind,charged_owner,config)
+       VALUES($1,$2,coalesce($3,now()),$4,$5,$6)`,
+      [
+        id,
+        agentId,
+        createdAt ?? null,
+        typeof config?.kind === "string" ? config.kind : "",
+        owner,
+        json(config),
+      ],
+    );
     await c.query("INSERT INTO jobs(id) VALUES($1)", [id]);
     await this.publish("rating.queued", { runId: id }, c);
     return id;
@@ -1060,10 +1092,10 @@ export class Database {
         WHERE id=(SELECT j.id FROM jobs j JOIN ratings r ON r.id=j.id JOIN agents a ON a.id=r.agent_id
           WHERE ($2::integer IS NULL OR a.chain_id=$2) AND a.enabled AND j.attempts<3
           AND ((j.status='queued' AND j.available_at<=now()) OR (j.status='running' AND j.lease_until<now()))
-          AND ($3::text IS NULL OR ((a.config->>'kind')='remote') = ($3='remote'))
+          AND ($3::text IS NULL OR (r.kind='remote') = ($3='remote'))
           ORDER BY CASE WHEN $3='remote' THEN (
-              SELECT count(*) FROM ratings r2 JOIN agents a2 ON a2.id=r2.agent_id
-              WHERE a2.owner IS NOT DISTINCT FROM a.owner AND r2.id<>r.id
+              SELECT count(*) FROM ratings r2
+              WHERE r2.charged_owner IS NOT DISTINCT FROM r.charged_owner AND r2.id<>r.id
                 AND r2.created_at > now() - interval '1 day') ELSE 0 END,
             j.available_at
           FOR UPDATE OF j SKIP LOCKED LIMIT 1) RETURNING id,token`,
@@ -1118,8 +1150,6 @@ export class Database {
       agentCaused?: boolean;
       /** What the agent or its runner reported, kept apart from `error`. */
       agentReport?: string;
-      /** For a success: the agent is an operator-run one, whose standing resets. */
-      remote?: boolean;
     },
   ) {
     await this.transaction(async (c) => {
@@ -1155,8 +1185,9 @@ export class Database {
              superseded_reason=$3,cooldown_until=now()+make_interval(secs => $4)`,
           [rating.agent_id, failures, error, remoteCooldownMs(failures) / 1000],
         );
-      } else if (!error && options?.remote)
-        // A complete rating posted: the new score stands, and the run of failures is over.
+      } else if (!error)
+        // A complete rating posted: the new score stands, and the run of failures is over. Also
+        // for an agent registered again as a built-in design: its old standing ends only here.
         await c.query("DELETE FROM agent_standing WHERE agent_id=$1", [rating.agent_id]);
       await this.publish(
         `rating.${r.rows[0].status === "queued" ? "retry" : r.rows[0].status}`,

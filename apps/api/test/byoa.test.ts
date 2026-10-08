@@ -528,6 +528,56 @@ describe("binding, cover caps and the live loop", () => {
     expect((await bodyOf(await quote(builtIn, 6_000))).error).not.toMatch(/underwriting policy/);
   }, 120_000);
 
+  it("keeps a remote score's restrictions when the agent is registered again as a built-in design", async () => {
+    // The founder's sequence: a declared remote score, cover over the cap refused, the same
+    // vault and mandate registered again as "hardened". The old score must not price cover
+    // without its cap, and an outstanding supersession stays whatever the agent is now.
+    const v = await createAgentVault(sandbox);
+    tick();
+    expect((await registerRemote(v)).status).toBe(201);
+    await postScore(v, hash(0));
+    expect((await bodyOf(await quote(v, 6_000))).error).toMatch(/^underwriting policy/);
+    tick();
+    const signature = await sign({
+      action: "register",
+      chainId: sandbox.deployment.chainId,
+      agentId: v.agentId.toString(),
+      vault: v.address,
+      kind: "hardened",
+      mandateHash: mandateHash(v.mandate),
+      timestamp: now(),
+    });
+    const again = await send("POST", "/self/agents", {
+      agentId: v.agentId.toString(),
+      vault: v.address,
+      kind: "hardened",
+      mandate: v.mandate,
+      timestamp: now(),
+      signature,
+    });
+    expect(again.status).toBe(201);
+    const refused = await quote(v, 6_000);
+    expect(refused.status).toBe(409);
+    expect((await bodyOf(refused)).error).toMatch(
+      /^this agent was registered again after its current score was posted/,
+    );
+    // A stop the agent caused while it was remote still supersedes its score as a built-in.
+    await pg.db.pool.query(
+      `INSERT INTO agent_standing(agent_id,failures_in_row,superseded_at,superseded_reason,cooldown_until)
+       VALUES($1,1,now(),'stopped: the agent failed in episode 2 of 40',now())`,
+      [key(v)],
+    );
+    expect((await bodyOf(await quote(v, 6_000))).error).toMatch(/score is superseded/);
+    // A complete rating of the current registration ends both (posting one clears the standing,
+    // as the runners-db test shows): a built-in design's score has no binding cap.
+    await pg.db.pool.query("DELETE FROM agent_standing WHERE agent_id=$1", [key(v)]);
+    await postScore(v, hash(0));
+    const priced = await bodyOf(await quote(v, 6_000));
+    expect(String(priced.error ?? "")).not.toMatch(
+      /underwriting policy|registered again|superseded/,
+    );
+  }, 120_000);
+
   it("renews a score about to expire only while the runner is connected", async () => {
     // Earlier tests' ratings are done with, and a day old.
     await pg.db.pool.query("UPDATE jobs SET status='failed' WHERE status<>'done'");

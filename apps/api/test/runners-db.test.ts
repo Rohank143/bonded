@@ -23,12 +23,12 @@ beforeAll(async () => {
 }, 120_000);
 afterAll(() => pg?.stop());
 
-describe("migrations 0014 to 0017", () => {
+describe("migrations 0014 to 0018", () => {
   it("apply once, in order, and again is a no-op", async () => {
     const versions = (
       await db.pool.query("SELECT version FROM schema_migrations ORDER BY version")
     ).rows.map((r) => r.version);
-    expect(versions).toEqual(Array.from({ length: 17 }, (_, i) => i + 1));
+    expect(versions).toEqual(Array.from({ length: 18 }, (_, i) => i + 1));
     await db.migrate();
     const tables = (
       await db.pool.query(
@@ -47,6 +47,13 @@ describe("migrations 0014 to 0017", () => {
       )
     ).rows.map((r) => r.column_name);
     expect(columns).toEqual(["agent_id", "blocked", "breach_type", "occurred_at"]);
+    // 0018: what each rating was queued under.
+    const rated = (
+      await db.pool.query(
+        "SELECT column_name FROM information_schema.columns WHERE table_name='ratings' AND column_name IN ('kind','charged_owner','config') ORDER BY 1",
+      )
+    ).rows.map((r) => r.column_name);
+    expect(rated).toEqual(["charged_owner", "config", "kind"]);
   });
 });
 
@@ -398,7 +405,7 @@ describe("standing and caps of operator-run agents", () => {
     expect((await db.agentStanding(key)).failuresInRow).toBe(2);
     // While cooling down, nothing is queued for it, renewals included.
     expect(await db.enqueueIfIdle(key, 0, quota())).toBeUndefined();
-    await db.finish(await leased(key), undefined, { remote: true });
+    await db.finish(await leased(key));
     expect(await db.agentStanding(key)).toEqual({
       failuresInRow: 0,
       superseded: null,
@@ -439,5 +446,39 @@ describe("standing and caps of operator-run agents", () => {
     expect(
       await db.enqueueUserRating(design, chain, { nowMs: Date.now(), perAgentMs: 0, dailyCap: 1 }),
     ).toHaveProperty("runId");
+  });
+
+  it("counts ratings by what they were queued as, so registering again doesn't reset the caps", async () => {
+    const chain = 998;
+    const add = async (n: number, owner: string, kind: string) => {
+      await db.pool.query(
+        `INSERT INTO agents(id,chain_id,agent_id,config,source,owner) VALUES($1,$2,$3,$4,'user',$5)
+         ON CONFLICT(id) DO UPDATE SET config=EXCLUDED.config,owner=EXCLUDED.owner`,
+        [`${chain}:${n}`, chain, n, JSON.stringify({ kind }), owner],
+      );
+      return `${chain}:${n}`;
+    };
+    const [one, two] = [await add(1, "0xa", "remote"), await add(2, "0xa", "remote")];
+    const caps = { perOwnerDaily: 1, perAgentDaily: 1, laneDaily: 1 };
+    const rate = (key: string) =>
+      db.enqueueUserRating(key, chain, {
+        nowMs: Date.now(),
+        perAgentMs: 0,
+        dailyCap: 100,
+        remote: quota(caps),
+      });
+    expect(await rate(one)).toHaveProperty("runId");
+    expect(await rate(two)).toEqual({ refused: "owner-daily" });
+    // Agent 1 registered again as a built-in design: its remote rating still counts, for its owner
+    // and for the lane.
+    await add(1, "0xa", "hardened");
+    expect(await rate(two)).toEqual({ refused: "owner-daily" });
+    // And another owner registering agent 1 doesn't move the charge off 0xa.
+    await add(1, "0xz", "hardened");
+    expect(await rate(two)).toEqual({ refused: "owner-daily" });
+    const queued = (
+      await db.pool.query("SELECT kind,charged_owner,config FROM ratings WHERE agent_id=$1", [one])
+    ).rows;
+    expect(queued).toEqual([{ kind: "remote", charged_owner: "0xa", config: { kind: "remote" } }]);
   });
 });
