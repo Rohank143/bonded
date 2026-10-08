@@ -56,12 +56,20 @@ export interface RemoteAgentOptions {
    */
   tee?: {
     onEvidence(evidence: unknown, context: { episodeId: string; nonce: `0x${string}` }): unknown;
+    /**
+     * Chain mode: the rating's Arena key id. Each episode asks the TEE to attest the key it derives
+     * for this id (verify with `arenaKeyId`), and `agentAddress` should be that key, so nothing
+     * the agent signs in the Arena (whose fork keeps the live chain's id) is valid for its
+     * production key. Get its address before the rating with attestTeeAgent({ arenaKeyId }).
+     */
+    keyId?: `0x${string}`;
     /** How long to wait for the evidence (default 30 s). */
     timeoutMs?: number;
   };
   /**
-   * Chain mode, TEE-bound: the attested EVM address the episode's vault names as its agent. No
-   * key is sent; the TEE signs. Without it, each episode gets a fresh session key.
+   * Chain mode, TEE-bound: the attested EVM address the episode's vault names as its agent: the
+   * rating's Arena key (`tee.keyId`), never the production key. No key is sent; the TEE signs.
+   * Without it, each episode gets a fresh session key.
    */
   agentAddress?: `0x${string}`;
 }
@@ -82,6 +90,14 @@ export interface RemoteEpisode {
   reportedUsage?: DoneRequest["usage"];
   /** The TEE evidence the runner forwarded for this episode, as received. */
   teeEvidence?: unknown;
+  /**
+   * On a budgeted fork: the agent spent its share of reads from the live chain during this
+   * episode, and further reads were refused. Anything that fails for lack of fork budget during
+   * or after such an episode was caused by the agent, not the rating.
+   */
+  budgetExhausted?: boolean;
+  /** Live-chain requests the agent's episode caused (budgeted forks only). */
+  forkFetches?: number;
   nonce?: `0x${string}`;
 }
 
@@ -156,6 +172,8 @@ export class RemoteAgent implements SelfSigningAgent {
     );
     let episode: GatewayEpisode | undefined;
     let sent = false;
+    // On a budgeted fork, what the agent's reads cost the live chain is charged to it alone.
+    const forkScope = sandbox.forkScope();
     const cleanups: (() => void)[] = [];
     // The runner's exit report for this episode (undefined if the runner goes away first). It
     // stays subscribed past the episode's end, so a report arriving late is still caught.
@@ -198,6 +216,7 @@ export class RemoteAgent implements SelfSigningAgent {
                 chainId: sandbox.chain.id,
                 vault: toolbox.vault,
                 agent: signer!,
+                ...(forkScope ? { forkScope } : {}),
                 ...(clientVersion ? { clientVersion } : {}),
               },
             }
@@ -257,6 +276,7 @@ export class RemoteAgent implements SelfSigningAgent {
           : {}),
         deadlineMs: timeoutMs,
         ...(nonce ? { nonce } : {}),
+        ...(nonce && this.options.tee?.keyId ? { teeKeyId: this.options.tee.keyId } : {}),
       };
       if (!runner.send(message)) throw new Error("the runner disconnected");
       sent = true;
@@ -289,6 +309,11 @@ export class RemoteAgent implements SelfSigningAgent {
     } finally {
       for (const cleanup of cleanups) cleanup();
       episode?.close();
+      if (forkScope) {
+        forkScope.close();
+        record.forkFetches = forkScope.used;
+        if (forkScope.exhausted) record.budgetExhausted = true;
+      }
       // Free the runner only once its process is gone, so the next episode can't overlap it.
       if (!sent || exited || runner.closed) gateway.releaseRunner(runner, episodeId);
       else void exit.then(() => gateway.releaseRunner(runner, episodeId));

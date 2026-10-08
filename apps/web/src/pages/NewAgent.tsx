@@ -49,6 +49,7 @@ import {
   limitError,
 } from "../lib/validate";
 import { registerForRatings } from "../lib/self-serve";
+import { AllowanceWarning } from "../components/module-cover";
 import {
   ACCOUNT_TYPE_LABELS,
   MODULE_COVER_NOTE,
@@ -140,13 +141,18 @@ export function NewAgent() {
   // agent behind or silently skip a funding step.
   const own = kind === REMOTE_KIND;
   const remoteErrors = own
-    ? [codeHashError(codeHash), teeUrlError(teeUrl), composeHashError(composeHash, teeUrl)]
+    ? [
+        codeHashError(codeHash),
+        ...(remoteMode === "chain"
+          ? [teeUrlError(teeUrl), composeHashError(composeHash, teeUrl)]
+          : []),
+      ]
     : [];
   const remote: RemoteAgentSpec | undefined = own
     ? {
         codeHash: normaliseCodeHash(codeHash),
         mode: remoteMode,
-        ...(teeUrl.trim()
+        ...(teeUrl.trim() && remoteMode === "chain"
           ? {
               tee: {
                 url: teeUrl.trim(),
@@ -178,6 +184,18 @@ export function NewAgent() {
       : []),
   ];
   const onModule = protection === "module";
+  // What the owner will be asked to approve, counted from the steps that will run.
+  const bondUnits = parseAmount(bond) ?? 0n;
+  const depositUnits = onModule ? 0n : (parseAmount(deposit) ?? 0n);
+  const confirmations =
+    1 + // register
+    (onModule ? 0 : 1) + // create the vault
+    (bondUnits + depositUnits > 0n ? 1 : 0) + // faucet
+    (bondUnits > 0n ? 2 : 0) + // approve and stake the bond
+    (depositUnits > 0n ? 2 : 0); // approve and deposit
+  const confirmationsLine = `${confirmations} wallet confirmation${confirmations === 1 ? "" : "s"}${
+    onModule ? ", the module's install sent from your smart account," : ","
+  } then one signature${kind === REMOTE_KIND ? "; the runner token is made on the agent's page" : ""}.`;
   const stepLabels = onModule ? MODULE_STEPS : STEPS;
   const saved = user ? loadProgress(deployment.chainId, user) : undefined;
   const unfinished = saved && nextStep(saved) ? saved : undefined;
@@ -501,28 +519,37 @@ export function NewAgent() {
                   placeholder="0x…"
                   error={codeHash ? codeHashError(codeHash) : null}
                 />
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Input
-                    label="TEE URL (optional)"
-                    hint="If it runs in a Phala dstack TEE: every episode must then prove the code."
-                    value={teeUrl}
-                    onChange={setTeeUrl}
-                    placeholder="https://…"
-                    error={teeUrlError(teeUrl)}
-                  />
-                  <Input
-                    label="Compose hash"
-                    hint="Published for that deployment. Needed with a TEE URL."
-                    value={composeHash}
-                    onChange={setComposeHash}
-                    placeholder="0x…"
-                    error={composeHash || teeUrl ? composeHashError(composeHash, teeUrl) : null}
-                  />
-                </div>
+                {remoteMode === "chain" ? (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Input
+                      label="TEE URL (optional)"
+                      hint="If it runs in a Phala dstack TEE: every episode must then prove the code."
+                      value={teeUrl}
+                      onChange={setTeeUrl}
+                      placeholder="https://…"
+                      error={teeUrlError(teeUrl)}
+                    />
+                    <Input
+                      label="Compose hash"
+                      hint="Published for that deployment. Needed with a TEE URL."
+                      value={composeHash}
+                      onChange={setComposeHash}
+                      placeholder="0x…"
+                      error={composeHash || teeUrl ? composeHashError(composeHash, teeUrl) : null}
+                    />
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted">
+                    A TEE can bind only a chain-mode agent: in tool mode the tool calls come from
+                    the runner, outside the TEE, so it would prove nothing about how the agent acts.
+                  </p>
+                )}
                 <p className="text-xs text-muted">
                   Without a TEE the score's binding is declared, and cover is capped lower
-                  (underwriting policy, not the score). With one, the vault's agent key must be the
-                  TEE's own key for cover.
+                  (underwriting policy, not the score). With one (chain mode only), every episode
+                  must prove it, the vault's agent key must be the TEE's own key for cover, and the
+                  compose hash is what's bound: the compose file decides what runs in the TEE, so
+                  publish it for review.
                 </p>
               </div>
             ) : (
@@ -548,15 +575,20 @@ export function NewAgent() {
           <StepCard n={2} title={<Term term="mandate">Mandate</Term>}>
             <div className="flex flex-col gap-5 text-sm">
               <fieldset className="flex flex-col gap-2">
-                <legend className="mb-2 font-medium">Vault mode</legend>
+                <legend className="mb-2 font-medium">
+                  {onModule ? "Module mode" : "Vault mode"}
+                </legend>
                 <div className="grid gap-2 sm:grid-cols-2">
                   <Choice
                     name="mode"
                     checked={mode === "monitor"}
                     onChange={() => setMode("monitor")}
                     title="Monitor"
+                    disabled={onModule}
                   >
-                    Breaches go through and are recorded, so they can be claimed.
+                    {onModule
+                      ? "Not for a smart account: a module can hold cover only in Enforce mode."
+                      : "Breaches go through and are recorded, so they can be claimed."}
                   </Choice>
                   <Choice
                     name="mode"
@@ -564,8 +596,9 @@ export function NewAgent() {
                     onChange={() => setMode("enforce")}
                     title="Enforce"
                   >
-                    Breaches are blocked (and recorded). Scores higher, but there's nothing to
-                    claim.
+                    {onModule
+                      ? "Breaches are blocked (and recorded). The only mode a smart account's module can hold cover in."
+                      : "Breaches are blocked (and recorded). Scores higher, but there's nothing to claim."}
                   </Choice>
                 </div>
               </fieldset>
@@ -679,14 +712,35 @@ export function NewAgent() {
                       error={account ? addressError(account) : null}
                     />
                     <p className="text-xs text-muted">{MODULE_COVER_NOTE}</p>
+                    <AllowanceWarning
+                      account={isAddress(account.trim()) ? (account.trim() as Address) : undefined}
+                      targets={[deployment.router]}
+                      assets={[
+                        deployment.usdg,
+                        ...tokens.map(
+                          (t) =>
+                            ({
+                              tTSLA: deployment.tsla,
+                              tAMZN: deployment.amzn,
+                              tNVDA: deployment.nvda,
+                            })[t],
+                        ),
+                      ]}
+                    />
                   </div>
                 )}
               </fieldset>
               <fieldset>
                 <legend className="mb-2 font-medium">
-                  <Term term="agentKey">The agent's key</Term>, the only key that can act for the
-                  vault
+                  <Term term="agentKey">The agent's key</Term>, the only key that can act{" "}
+                  {onModule ? "through the module on your smart account" : "for the vault"}
                 </legend>
+                {onModule && (
+                  <p className="mb-2 text-xs text-muted">
+                    It must not be an owner, a validator or an ERC-1271 signer of the smart account:
+                    that would let the agent act as the account itself, around the module.
+                  </p>
+                )}
                 <div className="grid gap-2 sm:grid-cols-2">
                   <Choice
                     name="key"
@@ -694,7 +748,9 @@ export function NewAgent() {
                     onChange={() => setSelfAgent(true)}
                     title="My wallet"
                   >
-                    For testing: lets you simulate a breach from the vault page.
+                    {onModule
+                      ? "For testing: you act as the agent yourself, through the module. Not if your wallet owns the account."
+                      : "For testing: lets you simulate a breach from the vault page."}
                   </Choice>
                   <Choice
                     name="key"
@@ -787,9 +843,7 @@ export function NewAgent() {
             >
               {busy ? "Working…" : "Onboard the agent"}
             </Button>
-            <p className="mt-2 text-xs text-muted">
-              About eight wallet confirmations, then one signature.
-            </p>
+            <p className="mt-2 text-xs text-muted">{confirmationsLine}</p>
             {steps.length > 0 && (
               <ol className="mt-5 flex flex-col gap-2.5 border-t border-line pt-5 text-sm">
                 {steps.map((s) => (

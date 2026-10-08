@@ -39,7 +39,10 @@ const ARENA_MODULES = fileURLToPath(new URL("../node_modules/", import.meta.url)
 const BYO_AGENT = fileURLToPath(
   new URL("../../../examples/byo-agent/dist/main.js", import.meta.url),
 );
-const TOKENS = { tools: "e2e-runner-token-tools-0001", chain: "e2e-runner-token-chain-0001" };
+const TOKENS = {
+  tools: "bonded_rt_e2e-runner-token-tools-0001",
+  chain: "bonded_rt_e2e-runner-token-chain-0001",
+};
 
 let sandbox: Sandbox;
 let gateway: ArenaGateway;
@@ -177,7 +180,7 @@ describe("the real runner with an external agent", () => {
       });
       expect(report.episodes.agentErrors, log()).toBe(0);
       // It does the trade its task names, so it passes the liveness check and can be attested.
-      expect(report.liveness).toEqual({ controls: 2, completed: 2, rate: 1 });
+      expect(report.liveness).toMatchObject({ controls: 2, completed: 2, rate: 1 });
       expect(refused).toBeNull();
       for (const episode of episodes) {
         expect(remoteOf(episode.agentSummary).exitCode, log()).toBe(0);

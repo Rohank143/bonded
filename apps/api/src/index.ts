@@ -199,7 +199,13 @@ export function createApi(options: {
     );
     if (!r.rowCount) return c.json({ error: "score not found" }, 404);
     const { report, ...row } = r.rows[0];
-    return c.json({ ...row, ...ratingFacts(row.signed?.attestation?.teeMeasurement, report) });
+    return c.json({
+      ...row,
+      ...ratingFacts(row.signed?.attestation?.teeMeasurement, report),
+      // Every rating of the agent, failed ones included, next to the score they didn't replace
+      // (the first page; GET /self/agents/:id/ratings has the rest).
+      ...(await ratingHistory(`${chain.deployment.chainId}:${id}`)),
+    });
   });
   app.get("/agents/:id/tee", async (c) => {
     const id = uint.parse(c.req.param("id"));
@@ -229,6 +235,20 @@ export function createApi(options: {
     const record = await db.agentRecord(`${chain.deployment.chainId}:${input.agentId}`);
     const operatorRun =
       record?.enabled === true && (record.config as { kind?: string }).kind === REMOTE_KIND;
+    const agentKey = `${chain.deployment.chainId}:${input.agentId}`;
+    // After a stop the agent caused, its score no longer stands: no new cover until a complete
+    // rating posts. Rerolling a bad rating by crashing gains nothing.
+    if (operatorRun) {
+      const { superseded } = await db.agentStanding(agentKey);
+      if (superseded)
+        return c.json(
+          {
+            error: `this agent's score is superseded: its latest rating was stopped by the agent (${superseded.reason}); cover waits for a complete rating`,
+            ...(await ratingHistory(agentKey)),
+          },
+          409,
+        );
+    }
     const signed = await issueQuote(
       chain,
       { ...input, vault: input.vault as Hex },
@@ -248,8 +268,21 @@ export function createApi(options: {
       input.agentId,
       json(signed),
     ]);
-    return c.json(signed, 201);
+    return c.json({ ...signed, ...(operatorRun ? await ratingHistory(agentKey) : {}) }, 201);
   });
+  /** An agent's standing and its latest ratings, failed ones included, for scores and quotes. */
+  async function ratingHistory(agentKey: string) {
+    const [page, standing] = await Promise.all([
+      db.ratingAttempts(agentKey),
+      db.agentStanding(agentKey),
+    ]);
+    return {
+      attempts: page.items,
+      attemptsTotal: page.total,
+      superseded: standing.superseded,
+      cooldownUntil: standing.cooldownUntil,
+    };
+  }
   app.post("/arena/runs", async (c) => {
     const { agentId } = z.strictObject({ agentId: uint }).parse(await c.req.json());
     const id = `${chain.deployment.chainId}:${agentId}`;
@@ -274,7 +307,21 @@ export function createApi(options: {
               },
               202,
             );
-      return c.json({ ...row, ...(row.report ? ratingFacts(undefined, row.report) : {}) });
+      // How far it has got, and a rough estimate of the time left, from its published episodes.
+      const progress = await db.runProgress(id);
+      const elapsed =
+        progress.startedAt && progress.lastAt
+          ? progress.lastAt.getTime() - progress.startedAt.getTime()
+          : 0;
+      const etaSeconds =
+        row.status === "running" && progress.total && progress.done > 1
+          ? Math.round(((elapsed / (progress.done - 1)) * (progress.total - progress.done)) / 1000)
+          : null;
+      return c.json({
+        ...row,
+        ...(row.report ? ratingFacts(undefined, row.report) : {}),
+        progress: { done: progress.done, total: progress.total, etaSeconds },
+      });
     });
   // Class-level results only (docs/disclosures). Each entry posted on this API's chain is checked
   // against the registry: `verified` means its current score has the same report hash.

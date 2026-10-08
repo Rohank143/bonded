@@ -11,6 +11,20 @@ import { buildMandate } from "./mandate.js";
 
 export type { ModuleAccountType, ModuleInstallPlan };
 
+/**
+ * Approvals a module can't see: before installing (and while installed), list the account's
+ * allowances to the mandate's targets for tokens the mandate doesn't cover, and revoke them.
+ * See `checkUnprotectedAllowances` in @bonded/shared.
+ */
+export {
+  checkUnprotectedAllowances,
+  deploymentTokens,
+  unprotectedAllowancesWarning,
+  type AllowanceCheck,
+  type AllowanceFinding,
+  type TokenRef,
+} from "@bonded/shared";
+
 export interface InstallMandateModuleInput {
   /** MandateModuleFactory (`moduleFactory` in the deployment file). */
   moduleFactory: Address;

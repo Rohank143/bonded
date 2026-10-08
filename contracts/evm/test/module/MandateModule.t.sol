@@ -10,6 +10,7 @@ import {MandateModule} from "../../src/MandateModule.sol";
 import {MandateBase} from "../../src/MandateBase.sol";
 import {MockRouter} from "../mocks/MockRouter.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
+import {MockCollection} from "../mocks/MockApprovals.sol";
 import {MockTarget} from "../mocks/MockTargets.sol";
 import {ModuleTestBase, ITestAccount} from "./ModuleTestBase.sol";
 
@@ -429,6 +430,31 @@ abstract contract MandateModuleMonitorTests is ModuleTestBase {
         vm.prank(guardian);
         module.unfreeze();
         _mexec(module, address(weth), abi.encodeCall(IERC20.transfer, (account, 1e18)));
+        assertEq(
+            uint8(_lastModuleBreach(module).breachType),
+            uint8(BondedTypes.BreachType.UnauthorizedTarget)
+        );
+    }
+
+    /// @dev Revoking is allowed on any token, listed or not, so the agent can clean up approvals
+    ///      without being frozen. increaseAllowance is never a revocation.
+    function test_RevokingOnUnlistedTokensIsAllowed() public {
+        MockERC20 weth = new MockERC20("Wrapped Ether", "WETH", 18);
+        MockCollection collection = new MockCollection();
+        _mexec(module, address(weth), abi.encodeCall(IERC20.approve, (attacker, 0)));
+        _mexec(
+            module,
+            address(collection),
+            abi.encodeCall(MockCollection.setApprovalForAll, (attacker, false))
+        );
+        assertEq(module.breachCount(), 0);
+        assertFalse(module.frozen());
+
+        _mexec(
+            module,
+            address(collection),
+            abi.encodeCall(MockCollection.setApprovalForAll, (address(router), true))
+        );
         assertEq(
             uint8(_lastModuleBreach(module).breachType),
             uint8(BondedTypes.BreachType.UnauthorizedTarget)

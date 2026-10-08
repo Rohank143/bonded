@@ -3,10 +3,12 @@ import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useSignMessage } from "wagmi";
 import type { BindingLevel, RemoteMode } from "@bonded/shared";
-import { api, type SelfAgentRecord } from "../lib/api";
+import { api, type RatingAttempt, type SelfAgentRecord } from "../lib/api";
 import {
   BINDING_LABELS,
+  expectedLine,
   lapseReason,
+  progressLine,
   ratingFailure,
   runnerCommand,
   runnerDockerCommand,
@@ -30,12 +32,18 @@ export function ConnectAgent({
   record,
   scoreExpired,
   onRated,
+  readOnly = false,
+  registryOwner,
 }: {
   agentId: string;
   record: Registered;
   /** The agent has a score and it has expired. */
   scoreExpired: boolean;
   onRated?: () => void;
+  /** Status only: the viewer isn't the owner (no token, no rating). */
+  readOnly?: boolean;
+  /** The agent's owner in the registry now, to tell when it changed hands. */
+  registryOwner?: string;
 }) {
   const { signMessageAsync } = useSignMessage();
   const [token, setToken] = useState<{ value: string; gatewayUrl: string | null }>();
@@ -49,18 +57,21 @@ export function ConnectAgent({
   });
   const run = useRatingRun(runId);
   const running = Boolean(runId) && !["done", "failed"].includes(run.data?.status ?? "");
-  const progress = useQuery({
-    queryKey: ["run-episodes", runId],
-    queryFn: () => api.episodes({ runId: runId!, limit: 1 }),
-    enabled: running,
-    refetchInterval: 5_000,
-  });
 
   const mode: RemoteMode = record.mode ?? "tools";
   const view = runnerView(runner.data);
   const connected = runner.data?.runner?.connected === true;
   const waiting = record.nextRatingAt && new Date(record.nextRatingAt) > new Date();
   const lapse = lapseReason({ expired: scoreExpired, connected });
+  const standing = record.standing;
+  const cooling =
+    standing?.cooldownUntil && Date.parse(standing.cooldownUntil) > Date.now()
+      ? standing.cooldownUntil
+      : undefined;
+  // Registered by an earlier owner: the new owner rates under their own config.
+  const handsChanged = Boolean(
+    registryOwner && record.owner && registryOwner.toLowerCase() !== record.owner.toLowerCase(),
+  );
   const gatewayUrl = token?.gatewayUrl ?? runner.data?.gatewayUrl ?? null;
   const commandInput = token && {
     gatewayUrl: gatewayUrl ?? "<gateway URL>",
@@ -102,8 +113,12 @@ export function ConnectAgent({
   const caps = record.coverCaps;
   return (
     <Card
-      title="Connect your agent"
-      description="Your agent runs where it runs. A small runner next to it connects out to the Arena, and the Arena attacks the agent through it."
+      title={readOnly ? "Its runner" : "Connect your agent"}
+      description={
+        readOnly
+          ? "This agent runs on its operator's servers. A small runner next to it connects out to the Arena, and the Arena attacks the agent through it."
+          : "Your agent runs where it runs. A small runner next to it connects out to the Arena, and the Arena attacks the agent through it."
+      }
       actions={
         <Badge tone={view.tone} dot>
           Runner {view.label}
@@ -135,136 +150,198 @@ export function ConnectAgent({
           </dd>
         </dl>
 
-        <section className="flex flex-col gap-3">
-          <h3 className="font-semibold">1. Runner token</h3>
-          <p className="text-muted">
-            The token says which agent the runner is for. It is shown once; a new one replaces the
-            old, and a runner using the old one is disconnected.
-            {runner.data?.token &&
-              ` Current token made ${when(Math.floor(Date.parse(runner.data.token.createdAt) / 1000))}.`}
+        {standing?.superseded && (
+          <p
+            role="alert"
+            className="rounded-xl border border-breach/35 bg-breach-soft px-3.5 py-2.5"
+          >
+            Its score is superseded: the latest rating was stopped by the agent (
+            {standing.superseded.reason}). No new cover until a complete rating posts.
+            {cooling &&
+              ` The next rating can start ${when(Math.floor(Date.parse(cooling) / 1000))}; the wait doubles with each stop in a row, up to 48 hours.`}
           </p>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              loading={busy === "token"}
-              disabled={Boolean(busy)}
-              onClick={makeToken}
-            >
-              {busy === "token"
-                ? "Sign in your wallet…"
-                : runner.data?.token
-                  ? "Replace the token"
-                  : "Create a runner token"}
-            </Button>
-            {runner.data?.token && (
-              <Button
-                size="sm"
-                kind="secondary"
-                loading={busy === "revoke"}
-                disabled={Boolean(busy)}
-                onClick={revoke}
-              >
-                Revoke it
-              </Button>
-            )}
-          </div>
-        </section>
-
-        <section className="flex flex-col gap-3">
-          <h3 className="font-semibold">2. Start the runner where your agent runs</h3>
-          {commandInput ? (
-            <>
-              <p className="text-muted">
-                Copy it now: the token won't be shown again. Replace{" "}
-                <code className="font-mono text-xs">&lt;your agent command&gt;</code> with how you
-                start your agent; the runner starts it once per attack with the Arena's addresses in
-                its environment. For Docker, build your agent into an image from the runner's.
-              </p>
-              <CommandLine label="With Node" text={runnerCommand(commandInput)} />
-              <CommandLine label="With Docker" text={runnerDockerCommand(commandInput)} />
-            </>
-          ) : (
+        )}
+        {readOnly ? (
+          <section className="flex flex-col gap-2">
             <p className="text-muted">
-              Create a token to get the command. It looks like{" "}
-              <code className="font-mono text-xs">
-                BONDED_RUNNER_TOKEN=… npx @bonded/runner --gateway … -- &lt;your agent command&gt;
-              </code>
-              .
+              {connected
+                ? "Its runner is connected, so the Arena can rate it and renew its score."
+                : runner.data?.runner
+                  ? `Its runner is offline (last seen ${when(Math.floor(Date.parse(runner.data.runner.lastHeartbeatAt) / 1000))}).`
+                  : "Its runner hasn't connected yet."}{" "}
+              Only the agent's owner can make a runner token or ask for a rating: connect the
+              owner's wallet.
             </p>
-          )}
-          <p className="text-xs text-muted">{runner.data?.problem ?? view.hint}</p>
-          {runner.data?.runner && !connected && (
-            <p className="text-xs text-muted">
-              Last seen {when(Math.floor(Date.parse(runner.data.runner.lastHeartbeatAt) / 1000))}.
-            </p>
-          )}
-        </section>
-
-        <section className="flex flex-col gap-3">
-          <h3 className="font-semibold">3. Rate it</h3>
-          <p className="text-muted">
-            Every attack in the library runs five times against your agent, plus a held-out set made
-            for this rating alone, then the signed score is posted on chain. While the runner stays
-            connected, the score is renewed in its last 3 days.
-          </p>
-          {lapse && (
-            <p className="rounded-xl border border-warn/30 bg-warn-soft px-3.5 py-2.5">{lapse}</p>
-          )}
-          {runner.data?.lastSkip && (
-            <p className="text-xs text-muted">
-              Skipped {when(Math.floor(Date.parse(runner.data.lastSkip.at) / 1000))}:{" "}
-              {runner.data.lastSkip.reason}.
-            </p>
-          )}
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              disabled={Boolean(busy) || !connected || Boolean(waiting) || running}
-              loading={busy === "rate"}
-              onClick={rate}
-            >
-              {busy === "rate" ? "Sign in your wallet…" : "Rate my agent"}
-            </Button>
-            {!connected && <span className="text-xs text-muted">Start the runner first.</span>}
-            {waiting && (
-              <span className="text-xs text-muted">
-                One rating an hour per agent; next from{" "}
-                {when(Date.parse(record.nextRatingAt!) / 1000)}.
-              </span>
+            {lapse && (
+              <p className="rounded-xl border border-warn/30 bg-warn-soft px-3.5 py-2.5">{lapse}</p>
             )}
-          </div>
-          {runId && (
-            <p>
-              Rating{" "}
-              <Badge
-                tone={
-                  run.data?.status === "failed"
-                    ? "breach"
-                    : run.data?.status === "done"
-                      ? "safe"
-                      : "neutral"
-                }
-              >
-                {run.data?.status ?? "queued"}
-              </Badge>{" "}
-              {run.data?.status === "done" ? (
-                "The new score is above."
-              ) : run.data?.status === "failed" ? (
-                ratingFailure(run.data)
-              ) : (
+            {runner.data?.lastSkip && (
+              <p className="text-xs text-muted">
+                Skipped {when(Math.floor(Date.parse(runner.data.lastSkip.at) / 1000))}:{" "}
+                {runner.data.lastSkip.reason}.
+              </p>
+            )}
+          </section>
+        ) : (
+          <>
+            <section className="flex flex-col gap-3">
+              <h3 className="font-semibold">1. Runner token</h3>
+              <p className="text-muted">
+                The token says which agent the runner is for. It is shown once; a new one replaces
+                the old, and a runner using the old one is disconnected.
+                {runner.data?.token &&
+                  ` Current token made ${when(Math.floor(Date.parse(runner.data.token.createdAt) / 1000))}.`}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  loading={busy === "token"}
+                  disabled={Boolean(busy)}
+                  onClick={makeToken}
+                >
+                  {busy === "token"
+                    ? "Sign in your wallet…"
+                    : runner.data?.token
+                      ? "Replace the token"
+                      : "Create a runner token"}
+                </Button>
+                {runner.data?.token && (
+                  <Button
+                    size="sm"
+                    kind="secondary"
+                    loading={busy === "revoke"}
+                    disabled={Boolean(busy)}
+                    onClick={revoke}
+                  >
+                    Revoke it
+                  </Button>
+                )}
+              </div>
+            </section>
+
+            <section className="flex flex-col gap-3">
+              <h3 className="font-semibold">2. Start the runner where your agent runs</h3>
+              {commandInput ? (
                 <>
-                  {progress.data?.total
-                    ? `${progress.data.total} episodes so far. `
-                    : "Waiting for the first episode. "}
-                  Watch them live in the{" "}
-                  <Link to={`/arena?run=${runId}`} className={linkClass}>
-                    Arena
-                  </Link>
-                  .
+                  <p className="text-muted">
+                    Copy it now: the token won't be shown again. Replace{" "}
+                    <code className="font-mono text-xs">&lt;your agent command&gt;</code> with how
+                    you start your agent; the runner starts it once per attack with the Arena's
+                    addresses in its environment. For Docker, build your agent into an image from
+                    the runner's.
+                  </p>
+                  <CommandLine label="With Node" text={runnerCommand(commandInput)} />
+                  <CommandLine label="With Docker" text={runnerDockerCommand(commandInput)} />
                 </>
+              ) : (
+                <p className="text-muted">
+                  Create a token to get the command. It looks like{" "}
+                  <code className="font-mono text-xs">
+                    BONDED_RUNNER_TOKEN=… npx @bonded/runner --gateway … -- &lt;your agent
+                    command&gt;
+                  </code>
+                  .
+                </p>
               )}
-            </p>
-          )}
-        </section>
+              <p className="text-xs text-muted">{runner.data?.problem ?? view.hint}</p>
+              {runner.data?.runner && !connected && (
+                <p className="text-xs text-muted">
+                  Last seen{" "}
+                  {when(Math.floor(Date.parse(runner.data.runner.lastHeartbeatAt) / 1000))}.
+                </p>
+              )}
+            </section>
+
+            <section className="flex flex-col gap-3">
+              <h3 className="font-semibold">3. Rate it</h3>
+              <p className="text-muted">
+                Every published attack runs five times against your agent, plus a held-out set made
+                for this rating alone, then the signed score is posted on chain. The rating stops at
+                the first episode your agent fails (a crash, an error exit, a timeout) and has a
+                time limit; a stopped rating stays in the history below and doesn't change the
+                score. While the runner stays connected, the score is renewed in its last 3 days.
+              </p>
+              {lapse && (
+                <p className="rounded-xl border border-warn/30 bg-warn-soft px-3.5 py-2.5">
+                  {lapse}
+                </p>
+              )}
+              {runner.data?.lastSkip && (
+                <p className="text-xs text-muted">
+                  Skipped {when(Math.floor(Date.parse(runner.data.lastSkip.at) / 1000))}:{" "}
+                  {runner.data.lastSkip.reason}.
+                </p>
+              )}
+              {expectedLine(record.expectedRating) && (
+                <p className="text-xs text-muted">{expectedLine(record.expectedRating)}</p>
+              )}
+              {handsChanged && (
+                <p className="rounded-xl border border-warn/30 bg-warn-soft px-3.5 py-2.5">
+                  This agent changed hands since it was registered. Re-register it to rate under
+                  your own config.
+                </p>
+              )}
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  disabled={
+                    Boolean(busy) ||
+                    !connected ||
+                    Boolean(waiting) ||
+                    running ||
+                    Boolean(cooling) ||
+                    handsChanged
+                  }
+                  loading={busy === "rate"}
+                  onClick={rate}
+                >
+                  {busy === "rate" ? "Sign in your wallet…" : "Rate my agent"}
+                </Button>
+                {!connected && <span className="text-xs text-muted">Start the runner first.</span>}
+                {waiting && (
+                  <span className="text-xs text-muted">
+                    One rating an hour per agent; next from{" "}
+                    {when(Date.parse(record.nextRatingAt!) / 1000)}.
+                  </span>
+                )}
+              </div>
+              {runId && (
+                <p>
+                  Rating{" "}
+                  <Badge
+                    tone={
+                      run.data?.status === "failed"
+                        ? "breach"
+                        : run.data?.status === "done"
+                          ? "safe"
+                          : "neutral"
+                    }
+                  >
+                    {run.data?.status ?? "queued"}
+                  </Badge>{" "}
+                  {run.data?.status === "done" ? (
+                    "The new score is above."
+                  ) : run.data?.status === "failed" ? (
+                    ratingFailure(run.data)
+                  ) : (
+                    <>
+                      {progressLine(run.data?.progress)
+                        ? `${progressLine(run.data?.progress)}. `
+                        : "Waiting for the first episode. "}
+                      Watch them live in the{" "}
+                      <Link to={`/arena?run=${runId}`} className={linkClass}>
+                        Arena
+                      </Link>
+                      .
+                    </>
+                  )}
+                </p>
+              )}
+              {runner.data?.attempts && runner.data.attempts.length > 0 && (
+                <Attempts agentId={agentId} attempts={runner.data.attempts} />
+              )}
+            </section>
+          </>
+        )}
 
         {caps && (
           <p className="border-t border-line pt-4 text-xs text-muted">
@@ -317,5 +394,53 @@ export function BindingLine({ binding }: { binding: BindingLevel }) {
       <Badge tone={binding === "tee" ? "safe" : "warn"}>{b.label}</Badge>
       <span className="text-xs text-muted">{b.hint}</span>
     </span>
+  );
+}
+
+/** The agent's ratings, newest first: the stopped and failed ones too, so none is hidden. */
+function Attempts({ agentId, attempts }: { agentId: string; attempts: RatingAttempt[] }) {
+  const [older, setOlder] = useState<RatingAttempt[]>([]);
+  const [page, setPage] = useState(1);
+  const [more, setMore] = useState(attempts.length >= 10);
+  const loadOlder = async () => {
+    const next = await api.ratings(agentId, page + 1);
+    setOlder((list) => [...list, ...next.items]);
+    setPage(next.page);
+    setMore(next.page < next.pages);
+  };
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-xs font-semibold text-soft">Ratings</span>
+      <ul className="flex flex-col gap-1.5 text-xs">
+        {[...attempts, ...older].map((a) => (
+          <li key={a.runId} className="flex flex-col gap-0.5">
+            <span className="flex flex-wrap items-baseline gap-2">
+              <span className="text-muted">{when(Math.floor(Date.parse(a.createdAt) / 1000))}</span>
+              <Badge
+                tone={a.status === "done" ? "safe" : a.status === "failed" ? "breach" : "neutral"}
+              >
+                {a.status === "done" && a.score !== null ? `score ${a.score}` : a.status}
+              </Badge>
+              {a.agentCaused && <span className="text-breach">caused by the agent</span>}
+              {a.error && <span className="text-muted">{a.error}</span>}
+            </span>
+            {a.agentReport && (
+              <span className="pl-1 text-muted">
+                Reported by the runner: <span className="font-mono break-all">{a.agentReport}</span>
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+      {more && (
+        <button
+          type="button"
+          onClick={() => void loadOlder()}
+          className="self-start text-xs text-accent hover:underline"
+        >
+          Show older ratings
+        </button>
+      )}
+    </div>
   );
 }

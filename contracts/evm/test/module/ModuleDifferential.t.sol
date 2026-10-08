@@ -87,9 +87,17 @@ abstract contract ModuleDifferentialTests is ModuleTestBase {
     ///      because a smart account may hold other tokens. The vault keeps its rule (only the
     ///      spender or recipient is checked) so its behaviour and published scores don't change.
     ///      The random steps above only use listed tokens, so they compare like for like.
+    ///      Revoking stays allowed on any token in both.
     function test_UnlistedTokenCallsDifferByDesign() public {
         honeypot.mint(address(vault), 1e18);
         honeypot.mint(account, 1e18);
+        bytes memory revoke = abi.encodeCall(IERC20.approve, (attacker, 0));
+        vm.prank(agent);
+        vault.execute(address(honeypot), revoke);
+        vm.prank(agent);
+        module.execute(address(honeypot), revoke);
+        assertEq(vault.breachCount() + module.breachCount(), 0); // revoking: fine for both
+
         bytes memory approveRouter = abi.encodeCall(IERC20.approve, (address(router), 1e18));
         vm.prank(agent);
         vault.execute(address(honeypot), approveRouter);

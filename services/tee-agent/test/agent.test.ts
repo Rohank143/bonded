@@ -1,5 +1,5 @@
 import { connect, type AddressInfo } from "node:net";
-import { TeeEvidence, teeReportData } from "@bonded/shared";
+import { TeeEvidence, teeArenaReportData, teeReportData } from "@bonded/shared";
 import { bytesToHex } from "viem";
 import { afterEach, describe, expect, it } from "vitest";
 import { type TeeBackend, AgentIdentity, createTeeServer, MockBackend } from "../src/index.js";
@@ -74,6 +74,32 @@ describe("AgentIdentity", () => {
     expect(bytesToHex(backend.asked[0]!)).not.toBe(bytesToHex(backend.asked[1]!));
   });
 
+  it("derives a separate Arena key per rating and attests it under the Arena domain", async () => {
+    const backend = new RecordingBackend();
+    const identity = await AgentIdentity.create(backend, CODE);
+    const keyA = `0x${"aa".repeat(32)}`;
+    const keyB = `0x${"bb".repeat(32)}`;
+    const a = await identity.arenaAccount(keyA);
+    expect((await identity.arenaAccount(keyA.toUpperCase().replace("0X", "0x"))).address).toBe(
+      a.address,
+    );
+    expect((await identity.arenaAccount(keyB)).address).not.toBe(a.address);
+    // Never the production key.
+    expect(a.address).not.toBe(identity.evmAddress);
+    const evidence = await identity.attestArena(NONCE, keyA);
+    expect(TeeEvidence.parse(evidence)).toMatchObject({
+      purpose: "arena",
+      keyId: keyA,
+      evmAddress: a.address,
+      nonce: NONCE,
+    });
+    expect(evidence).not.toHaveProperty("solanaPublicKey");
+    expect(bytesToHex(backend.asked.at(-1)!)).toBe(
+      teeArenaReportData({ codeHash: CODE, evmAddress: a.address, keyId: keyA, nonce: NONCE }),
+    );
+    await expect(identity.arenaAccount("0x12")).rejects.toThrow(/32 bytes/);
+  });
+
   it("signs with its session key", async () => {
     const identity = await AgentIdentity.create(new MockBackend(), CODE);
     expect(await identity.signMessage("hi")).toMatch(/^0x[0-9a-f]+$/);
@@ -81,6 +107,20 @@ describe("AgentIdentity", () => {
 });
 
 describe("the HTTP server", () => {
+  it("serves an Arena key's evidence when asked, and refuses a bad purpose or key id", async () => {
+    const { base, identity } = await serve();
+    const key = `0x${"cd".repeat(32)}`;
+    const response = await fetch(`${base}/attestation?nonce=${NONCE}&purpose=arena&key=${key}`);
+    expect(response.status).toBe(200);
+    const evidence = TeeEvidence.parse(await response.json());
+    expect(evidence).toMatchObject({ purpose: "arena", keyId: key });
+    expect(evidence.evmAddress).toBe((await identity.arenaAccount(key)).address);
+    expect((await fetch(`${base}/attestation?nonce=${NONCE}&purpose=other`)).status).toBe(400);
+    expect((await fetch(`${base}/attestation?nonce=${NONCE}&purpose=arena&key=0x12`)).status).toBe(
+      400,
+    );
+  });
+
   it("serves evidence for a challenge", async () => {
     const { base, identity } = await serve();
     const response = await fetch(`${base}/attestation?nonce=${NONCE}`);

@@ -28,15 +28,25 @@ export interface RemoteAgentRequest {
   /** The operator's declared code hash: what the rating is about. */
   codeHash: Hex;
   /**
-   * A TEE-bound agent. The gateway asks the runner for evidence with a fresh nonce at the start of
-   * every episode and passes it to `verify`, which throws when it doesn't hold. In chain mode the
-   * episode's vault names `evmAddress`, the TEE's own key, as its agent.
+   * A TEE-bound agent (chain mode). The rating has an Arena key of its own: the TEE derives it
+   * from `keyId`, and `evmAddress` is its address, which the episode vaults name as their agent,
+   * so nothing the agent signs in the Arena (whose fork keeps the live chain's id) is valid for
+   * its production key. The gateway asks the runner for that key's evidence with a fresh nonce
+   * at the start of every episode and passes it to `verify`, which throws when it doesn't hold.
    */
   tee?: {
+    keyId: Hex;
     evmAddress: Hex;
     verify: (evidence: unknown, nonce: Hex) => Promise<VerifiedTee>;
   };
 }
+
+/**
+ * How long a remote agent has for one episode in a service rating (90 s by default,
+ * REMOTE_EPISODE_TIMEOUT_MS): an episode is one task with a handful of tool calls, and a rating
+ * has a few hundred of them, so the gateway's own 4-minute default would let one rating take hours.
+ */
+export const REMOTE_EPISODE_TIMEOUT_MS = 90_000;
 
 /** Builds the remote agent for one rating, in the rating's sandbox (the gateway's `RemoteAgent`). */
 export type RemoteAgentFactory = (request: RemoteAgentRequest, sandbox: Sandbox) => ArenaAgent;
@@ -57,10 +67,12 @@ export function gatewayAgents(
       runner: request.agentKey,
       mode: request.mode,
       name: `remote/agent-${request.agentId}`,
-      ...options,
+      episodeTimeoutMs: options.episodeTimeoutMs ?? REMOTE_EPISODE_TIMEOUT_MS,
+      runnerWaitMs: options.runnerWaitMs ?? 30_000,
       ...(request.tee
         ? {
             tee: {
+              keyId: request.tee.keyId,
               onEvidence: (evidence: unknown, { nonce }: { nonce: Hex }) =>
                 request.tee!.verify(evidence, nonce),
             },
@@ -76,6 +88,11 @@ export class RatingRefused extends Error {
     message: string,
     /** True when retrying can't help (the job fails at once instead of being retried). */
     readonly final: boolean,
+    /**
+     * The agent caused it (crash, timeout, too slow): its score is superseded and a cooldown
+     * starts. `agentReport` is what the agent or its runner said, kept apart from `message`.
+     */
+    readonly agent?: { caused: true; report?: string },
   ) {
     super(message);
     this.name = "RatingRefused";
@@ -114,6 +131,8 @@ export class TeeBinding {
       composeHash: string;
       verifyQuote?: QuoteVerifier;
       approvedOsImages?: readonly string[];
+      /** The rating's Arena key id: every episode must attest that key, and nothing else. */
+      arenaKeyId?: string;
     },
   ) {}
 
@@ -141,4 +160,36 @@ export class TeeBinding {
       return `TEE binding failed: ${episodes - this.verified} of ${episodes} episodes had no verified TEE evidence`;
     return undefined;
   }
+}
+
+/**
+ * Why a rating's Arena key can't be used, or undefined when it can. The TEE must derive a key of
+ * its own for the rating: code that answers with its production key would have the agent sign, in
+ * the Arena (whose fork keeps the live chain's id), transactions valid on the live chain.
+ */
+export function arenaKeyProblem(arenaKey: string, productionKey: string): string | undefined {
+  return arenaKey.toLowerCase() === productionKey.toLowerCase()
+    ? "TEE binding failed: the TEE answered the Arena key request with its production key, so what it signs in the Arena would be valid on the live chain"
+    : undefined;
+}
+
+/**
+ * Whether something the gateway reported means an agent used up its share of fork requests: an
+ * episode marked `budgetExhausted`, or an error by that name (`ForkBudgetExhaustedError`, or any
+ * error carrying `budgetExhausted`). That is the agent's doing, never an infrastructure failure.
+ */
+export function forkBudgetExhausted(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const v = value as {
+    name?: unknown;
+    budgetExhausted?: unknown;
+    remote?: { budgetExhausted?: unknown };
+    agentSummary?: { remote?: { budgetExhausted?: unknown } };
+  };
+  return (
+    v.budgetExhausted === true ||
+    v.remote?.budgetExhausted === true ||
+    v.agentSummary?.remote?.budgetExhausted === true ||
+    (typeof v.name === "string" && /ForkBudgetExhausted|BudgetExhausted/.test(v.name))
+  );
 }

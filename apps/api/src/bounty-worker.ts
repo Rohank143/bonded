@@ -1,3 +1,4 @@
+import { remotePolicyFromEnv, remoteQuota, type RemoteRatingPolicy } from "./remote-policy.js";
 import type { Database } from "@bonded/db";
 import {
   Sandbox,
@@ -56,8 +57,14 @@ export async function workBountyOne(
   chain: ServiceChain,
   rpcUrl: string,
   onError?: (error: unknown) => void,
+  /**
+   * The policy for operator-run agents' re-ratings on acceptance (their caps), the same one the
+   * rest of the service uses (default: as configured in the environment).
+   */
+  options: { remotePolicy?: RemoteRatingPolicy } = {},
 ): Promise<boolean> {
   const chainId = chain.deployment.chainId;
+  const remotePolicy = options.remotePolicy ?? remotePolicyFromEnv();
   const lock = await db.pool.connect();
   const locked = (await lock.query("SELECT pg_try_advisory_lock(7004,$1) AS locked", [chainId]))
     .rows[0].locked;
@@ -66,7 +73,7 @@ export async function workBountyOne(
     return false;
   }
   try {
-    return await workLocked(db, chain, rpcUrl, onError);
+    return await workLocked(db, chain, rpcUrl, remotePolicy, onError);
   } finally {
     await lock.query("SELECT pg_advisory_unlock(7004,$1)", [chainId]);
     lock.release();
@@ -77,6 +84,7 @@ async function workLocked(
   db: Database,
   chain: ServiceChain,
   rpcUrl: string,
+  remotePolicy: RemoteRatingPolicy,
   onError?: (error: unknown) => void,
 ): Promise<boolean> {
   const chainId = chain.deployment.chainId;
@@ -119,11 +127,15 @@ async function workLocked(
         reward: onChain.reward.toString(),
       };
       await check();
-      await db.finishBounty(job, {
-        status: accepted ? "accepted" : "rejected",
-        verdict,
-        txHash: await settledTransaction(chain, id, accepted),
-      });
+      await db.finishBounty(
+        job,
+        {
+          status: accepted ? "accepted" : "rejected",
+          verdict,
+          txHash: await settledTransaction(chain, id, accepted),
+        },
+        remoteQuota(remotePolicy, Date.now()),
+      );
       return true;
     }
     if (onChain.status !== REVEALED) throw new Error(`submission ${id} isn't revealed on chain`);
@@ -232,11 +244,12 @@ async function workLocked(
             [id, reasonHash(verdict.reason)],
             lifecycle,
           );
-    await db.finishBounty(job, {
-      status: verdict.decision === "accept" ? "accepted" : "rejected",
-      verdict,
-      txHash,
-    });
+    // Operator-run agents' re-ratings count against their caps like any other rating.
+    await db.finishBounty(
+      job,
+      { status: verdict.decision === "accept" ? "accepted" : "rejected", verdict, txHash },
+      remoteQuota(remotePolicy, Date.now()),
+    );
   } catch (error) {
     onError?.(error);
     await db

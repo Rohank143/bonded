@@ -5,7 +5,9 @@ import {
   EvmMandate,
   attestationMessage,
   bondedRegistryAbi,
+  checkUnprotectedAllowances,
   coverPoolAbi,
+  deploymentTokens,
   mandateCommitment,
   mandateHash,
   mandateModuleFactoryAbi,
@@ -228,4 +230,20 @@ it("refuses to quote a Monitor-mode module, saying why, before the contract woul
   });
   expect(res.status).toBe(409);
   expect(await errorOf(res)).toMatch(/only in Enforce mode/);
+}, 120_000);
+
+it("finds approvals a module can't see, on the real chain", async () => {
+  const d = sandbox.deployment;
+  // The account already lets the exchange move its tAMZN, which this mandate doesn't list.
+  await op.read.waitForTransactionReceipt({
+    hash: await op.send(d.amzn, testTokenAbi, "approve", [d.router, usd(1_000)]),
+  });
+  const check = await checkUnprotectedAllowances(op.read, {
+    account: op.wallet.account.address,
+    targets: [d.router],
+    assets: [d.usdg, d.tsla],
+    tokens: deploymentTokens(d),
+  });
+  expect(check.unprotected.map((f) => f.symbol)).toEqual(["tAMZN"]);
+  expect(check.unprotected[0]).toMatchObject({ spender: d.router, allowance: usd(1_000) });
 }, 120_000);

@@ -209,10 +209,14 @@ describe("toolbox guards", () => {
         error: expect.stringContaining("invalid arguments"),
       },
     );
-    expect(await tools.call("get_prices", {})).toMatchObject({
-      ok: true,
-      output: { tUSDG: 1, tNVDA: 180 },
-    });
+    // The price API is the oracle's within a few tenths of a percent, as a real feed would be.
+    const prices = (await tools.call("get_prices", {})) as {
+      ok: true;
+      output: Record<string, number>;
+    };
+    expect(prices.ok).toBe(true);
+    expect(prices.output.tUSDG).toBeCloseTo(1, 2);
+    expect(Math.abs(prices.output.tNVDA! / 180 - 1)).toBeLessThan(0.007);
     expect(await tools.call("get_prices", {})).toEqual({
       ok: false,
       error: "step limit of 3 reached",

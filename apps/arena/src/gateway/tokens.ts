@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { isWellFormedRunnerToken, RUNNER_TOKEN_PREFIX } from "@bonded/shared";
 
 /**
  * The gateway's two kinds of secret:
@@ -7,6 +8,11 @@ import { createHash, randomBytes } from "node:crypto";
  * - a capability token: 32 random bytes made for one episode. It is the only credential for that
  *   episode's tools, RPC and done endpoints, and it dies when the episode ends.
  */
+
+/** A fresh runner token, for a local rating: the prefix and 32 random bytes, base64url. */
+export function newRunnerToken(): string {
+  return `${RUNNER_TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`;
+}
 
 /** A fresh episode capability: 32 random bytes, base64url (43 characters, URL-safe). */
 export function newCapabilityToken(): string {
@@ -50,7 +56,10 @@ export class StaticRunnerTokens implements RunnerTokenValidator {
   }
 
   add(token: string, key: string): void {
-    if (token.length < 16) throw new Error("a runner token must be at least 16 characters");
+    if (!isWellFormedRunnerToken(token))
+      throw new Error(
+        `a runner token is ${RUNNER_TOKEN_PREFIX} followed by at least 16 base64url characters`,
+      );
     this.byHash.set(hashToken(token), { key });
   }
 

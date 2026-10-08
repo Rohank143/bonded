@@ -11,6 +11,7 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { WebSocket } from "ws";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
+  addressGroup,
   ANVIL_KEYS,
   ArenaGateway,
   ArenaToolbox,
@@ -29,23 +30,32 @@ import {
 } from "../src/index.js";
 import { eventually, type FakeRunner, fakeRunner, mcpToolbox } from "./fixtures/gateway-client.js";
 
-const RUNNER_TOKEN = "runner-token-for-tests-0001";
-const OTHER_TOKEN = "runner-token-for-tests-0002";
+const RUNNER_TOKEN = "bonded_rt_runner-token-for-tests-0001";
+const OTHER_TOKEN = "bonded_rt_runner-token-for-tests-0002";
 
 let sandbox: Sandbox;
 let gateway: ArenaGateway;
 let url: string;
-let tokens: StaticRunnerTokens;
+/** Counts token checks, to show they stay bounded whatever a runner sends. */
+class CountingTokens extends StaticRunnerTokens {
+  checks = 0;
+  override async validate(token: string) {
+    this.checks++;
+    return super.validate(token);
+  }
+}
+let tokens: CountingTokens;
 const presence: RunnerPresenceEvent[] = [];
 const cleanup: (() => Promise<void> | void)[] = [];
 
 beforeAll(async () => {
   sandbox = await Sandbox.start();
-  tokens = new StaticRunnerTokens({ [RUNNER_TOKEN]: "agent-1", [OTHER_TOKEN]: "agent-2" });
+  tokens = new CountingTokens({ [RUNNER_TOKEN]: "agent-1", [OTHER_TOKEN]: "agent-2" });
   gateway = new ArenaGateway({
     tokens,
     onRunnerPresence: (e) => presence.push(e),
-    limits: { bodyBytes: 4096, rpcBatch: 5, readyTimeoutMs: 300 },
+    // A one-second heartbeat, so the socket's timers can be tested quickly.
+    limits: { bodyBytes: 4096, rpcBatch: 5, readyTimeoutMs: 300, heartbeatMs: 1_000 },
   });
   url = await gateway.listen();
 });
@@ -366,7 +376,9 @@ describe("chain mode", () => {
     const operator = sandbox.address("operator");
     const read = sandbox.publicClient;
     const before = {
-      block: await read.getBlockNumber(),
+      // Uncached: viem reuses a block number read in the last polling interval, which can be from
+      // before the vault's setup transactions were mined.
+      block: await read.getBlockNumber({ cacheTime: 0 }),
       balance: await read.getBalance({ address: operator }),
       code: await read.getCode({ address: vault.address }),
       nonce: await read.getTransactionCount({ address: account.address }),
@@ -408,7 +420,18 @@ describe("chain mode", () => {
     // A simulation shows nothing a plain call can't: the same state, read the same way.
     expect(simulated.result?.[0]?.calls[1]?.returnData).toBe(plainCall.result);
 
-    expect(await read.getBlockNumber()).toBe(before.block);
+    // Nothing these calls did reached the chain: any block mined since (there should be none)
+    // holds no transaction from the operator or the agent key, or to the vault.
+    const now = await read.getBlockNumber({ cacheTime: 0 });
+    for (let n = before.block + 1n; n <= now; n++) {
+      const block = await read.getBlock({ blockNumber: n, includeTransactions: true });
+      for (const tx of block.transactions) {
+        expect([operator, account.address].map((x) => x.toLowerCase())).not.toContain(
+          tx.from.toLowerCase(),
+        );
+        expect(tx.to?.toLowerCase()).not.toBe(vault.address.toLowerCase());
+      }
+    }
     expect(await read.getBalance({ address: operator })).toBe(before.balance);
     expect(await read.getCode({ address: vault.address })).toBe(before.code);
     expect(await read.getTransactionCount({ address: account.address })).toBe(before.nonce);
@@ -419,6 +442,165 @@ describe("chain mode", () => {
         functionName: "frozen",
       }),
     ).toBe(false);
+  });
+
+  it("can't be made to amplify: answers, requests, gas and simulations are capped", async () => {
+    // The review's proof of concept: a batch of calls to code (set by a state override) that
+    // returns megabytes of memory made an 11 KB request return 387 MB.
+    const roomy = new ArenaGateway({ tokens, limits: { rpcBatch: 50 } });
+    await roomy.listen();
+    cleanup.push(() => roomy.close());
+    const { vault, toolbox, account } = await chainEpisode();
+    const episode = roomy.openEpisode({
+      episodeId: "amplify",
+      toolbox,
+      mode: "chain",
+      chain: {
+        upstream: sandbox.rpcUrl,
+        chainId: sandbox.chain.id,
+        vault: vault.address,
+        agent: account.address,
+      },
+    });
+    const target = "0x00000000000000000000000000000000000b0b00";
+    const returning = (bytes: number) => `0x62${bytes.toString(16).padStart(6, "0")}6000f3`; // PUSH3 bytes PUSH1 0 RETURN
+    const call = (id: number, bytes: number, gas?: string) => ({
+      jsonrpc: "2.0",
+      id,
+      method: "eth_call",
+      params: [
+        { to: target, data: "0x", ...(gas ? { gas } : {}) },
+        "latest",
+        { [target]: { code: returning(bytes) } },
+      ],
+    });
+    const fetchBytes = async (body: unknown) => {
+      const response = await fetch(episode.endpoints.rpc!, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const text = await response.text();
+      return { bytes: text.length, json: JSON.parse(text) as { error?: { code: number } }[] };
+    };
+    // 3.9 MB of memory needs ~29M gas: asking for 30M gets 10M, and the call runs out.
+    const big = await fetchBytes(
+      Array.from({ length: 50 }, (_, i) => call(i, 0x3b0000, "0x1c9c380")),
+    );
+    expect(big.bytes).toBeLessThan(64 * 1024);
+    // 2 MB fits in 10M gas, but no single answer may pass 1 MiB, and once one is refused for its
+    // size the rest of the request's budget is gone too.
+    const wide = await fetchBytes(
+      Array.from({ length: 50 }, (_, i) => call(i, 0x200000, "0x989680")),
+    );
+    expect(wide.bytes).toBeLessThan(64 * 1024);
+    expect(wide.json.every((r) => r.error?.code === -32005)).toBe(true);
+    // Answers under the cap add up to at most the request's budget (2 MiB).
+    const many = await fetchBytes(Array.from({ length: 50 }, (_, i) => call(i, 0x80000)));
+    expect(many.bytes).toBeLessThan(2.2 * 1024 * 1024);
+    expect(many.json.filter((r) => r.error?.code === -32005).length).toBeGreaterThan(40);
+    // Simulations are bounded too: a few blocks and calls.
+    const sim = (await (
+      await post(episode.endpoints.rpc!, {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "eth_simulateV1",
+        params: [{ blockStateCalls: Array.from({ length: 5 }, () => ({ calls: [] })) }, "latest"],
+      })
+    ).json()) as { error?: { message: string } };
+    expect(sim.error?.message).toMatch(/at most 4 blocks/);
+  });
+
+  it("budgets the calls one episode may make to the node", async () => {
+    const strict = new ArenaGateway({
+      tokens,
+      limits: { rpcCallsPerEpisode: 8, rpcCallsPerSecond: 1, rpcCallBurst: 5 },
+    });
+    await strict.listen();
+    cleanup.push(() => strict.close());
+    const { vault, toolbox, account } = await chainEpisode();
+    const episode = strict.openEpisode({
+      episodeId: "budget",
+      toolbox,
+      mode: "chain",
+      chain: {
+        upstream: sandbox.rpcUrl,
+        chainId: sandbox.chain.id,
+        vault: vault.address,
+        agent: account.address,
+      },
+    });
+    const codes: (number | "ok")[] = [];
+    for (let i = 0; i < 7; i++)
+      codes.push((await rpc(episode, "eth_blockNumber")).error?.code ?? "ok");
+    // A burst of five, then the rate holds it back.
+    expect(codes).toEqual(["ok", "ok", "ok", "ok", "ok", -32005, -32005]);
+  });
+
+  it("charges a simulation per call it simulates, and every call for the gas it may use", async () => {
+    const strict = new ArenaGateway({
+      tokens,
+      limits: {
+        rpcCallsPerEpisode: 10,
+        rpcCallBurst: 10,
+        rpcGasPerSecond: 1,
+        rpcGasBurst: 40_000_000,
+      },
+    });
+    await strict.listen();
+    cleanup.push(() => strict.close());
+    const { vault, toolbox, account } = await chainEpisode();
+    const episode = strict.openEpisode({
+      episodeId: "charged",
+      toolbox,
+      mode: "chain",
+      chain: {
+        upstream: sandbox.rpcUrl,
+        chainId: sandbox.chain.id,
+        vault: vault.address,
+        agent: account.address,
+      },
+    });
+    const breachCount = encodeFunctionData({ abi: mandateVaultAbi, functionName: "breachCount" });
+    const simulate = (calls: number) =>
+      rpc(episode, "eth_simulateV1", [
+        {
+          blockStateCalls: [
+            {
+              calls: Array.from({ length: calls }, () => ({
+                to: vault.address,
+                data: breachCount,
+                gas: "0x100000",
+              })),
+            },
+          ],
+        },
+        "latest",
+      ]);
+    // Eight simulated calls are eight of the ten calls.
+    expect((await simulate(8)).error).toBeUndefined();
+    expect((await simulate(8)).error?.code).toBe(-32005);
+
+    const gassy = strict.openEpisode({
+      episodeId: "gassy",
+      toolbox,
+      mode: "chain",
+      chain: {
+        upstream: sandbox.rpcUrl,
+        chainId: sandbox.chain.id,
+        vault: vault.address,
+        agent: account.address,
+      },
+    });
+    // Calls with no gas named get 5M each: the 40M burst covers eight, then the gas runs out.
+    const results = [];
+    for (let i = 0; i < 9; i++)
+      results.push(
+        (await rpc(gassy, "eth_call", [{ to: vault.address, data: breachCount }, "latest"])).error
+          ?.message ?? "ok",
+      );
+    expect(results.slice(0, 8).every((r) => r === "ok")).toBe(true);
+    expect(results[8]).toMatch(/too much gas/);
   });
 
   it("checks every request in a batch, in order, and caps the batch size", async () => {
@@ -543,6 +725,7 @@ describe("the runner socket", () => {
   it("refuses a missing or wrong token and other paths", async () => {
     expect(await connect({})).toBe(401);
     expect(await connect({ authorization: "Bearer not-a-real-token-at-all" })).toBe(401);
+    expect(await connect({ authorization: "Bearer bonded_rt_well-formed-but-unknown" })).toBe(401);
     expect(await connect({ authorization: RUNNER_TOKEN })).toBe(401);
     expect(await connect({ authorization: `Bearer ${RUNNER_TOKEN}` }, "/other")).toBe(404);
     expect(await connect({ authorization: `Bearer ${RUNNER_TOKEN}` })).toBe("open");
@@ -599,16 +782,138 @@ describe("the runner socket", () => {
     expect(presence.at(-1)).toMatchObject({ type: "disconnected", key: "agent-1" });
   });
 
-  it("disconnects a runner on its next heartbeat once its token is revoked", async () => {
-    const token = "a-token-that-will-be-revoked";
+  it("disconnects a revoked runner within one heartbeat, even one that never pings", async () => {
+    const token = "bonded_rt_a-token-that-will-be-revoked";
     tokens.add(token, "agent-3");
     const socket = await rawRunner(token);
     socket.send(hello());
     await eventually(() => gateway.runner("agent-3") !== undefined);
     tokens.revoke(token);
     const code = closeCode(socket);
-    socket.send(JSON.stringify({ type: "ping" }));
+    const revokedAt = Date.now();
+    // Other messages don't count as liveness, and don't delay the check.
+    const chatter = setInterval(
+      () => socket.send(JSON.stringify({ type: "episode_started", episodeId: "nothing" })),
+      100,
+    );
     expect(await code).toBe(RUNNER_CLOSE.revoked);
+    clearInterval(chatter);
+    expect(Date.now() - revokedAt).toBeLessThan(2_500);
+    expect(gateway.runner("agent-3")).toBeUndefined();
+  });
+
+  it("drops a runner that sends anything but pings, after three heartbeats", async () => {
+    const socket = await rawRunner();
+    socket.send(hello());
+    await eventually(() => gateway.runner("agent-1") !== undefined);
+    const chatter = setInterval(
+      () => socket.send(JSON.stringify({ type: "episode_started", episodeId: "nothing" })),
+      200,
+    );
+    expect(await closeCode(socket)).toBe(RUNNER_CLOSE.heartbeat);
+    clearInterval(chatter);
+  });
+
+  it("closes a socket that floods, with token checks and presence reports bounded", async () => {
+    presence.length = 0;
+    const socket = await rawRunner();
+    socket.send(hello());
+    await eventually(() => gateway.runner("agent-1") !== undefined);
+    const checksBefore = tokens.checks;
+    const code = closeCode(socket);
+    for (let i = 0; i < 20_000 && socket.readyState === WebSocket.OPEN; i++)
+      socket.send('{"type":"ping"}');
+    expect(await code).toBe(RUNNER_CLOSE.rateLimited);
+    await new Promise((resolve) => setTimeout(resolve, 1_200));
+    // At most one check per heartbeat interval, not one per ping.
+    expect(tokens.checks - checksBefore).toBeLessThanOrEqual(2);
+    expect(presence.filter((p) => p.type === "heartbeat").length).toBeLessThanOrEqual(1);
+  });
+
+  /** One upgrade attempt: the HTTP status it was refused with, or "open". */
+  const attempt = (target: string, token: string, headers: Record<string, string> = {}) =>
+    new Promise<number | "open">((resolve) => {
+      const socket = new WebSocket(`${target.replace(/^http/, "ws")}/runner/connect`, {
+        headers: { authorization: `Bearer ${token}`, ...headers },
+      });
+      socket.once("open", () => {
+        socket.close();
+        resolve("open");
+      });
+      socket.once("unexpected-response", (_, res) => resolve(res.statusCode ?? 0));
+      socket.once("error", () => {});
+    });
+  const guess = (n: number) => `bonded_rt_guessing-a-token-${String(n).padStart(6, "0")}`;
+
+  it("never checks a malformed token, and can't be starved by them", async () => {
+    // The review's finding: behind a proxy every client shares one address, so ~30 anonymous
+    // requests a minute locked every runner out.
+    const strict = new ArenaGateway({ tokens, limits: { malformedUpgradesPerMinute: 3 } });
+    const strictUrl = await strict.listen();
+    cleanup.push(() => strict.close());
+    const checksBefore = tokens.checks;
+    const codes = [];
+    for (let i = 0; i < 6; i++) codes.push(await attempt(strictUrl, "not-a-runner-token"));
+    expect(codes).toEqual([401, 401, 401, 429, 429, 429]);
+    expect(tokens.checks).toBe(checksBefore);
+    expect(await attempt(strictUrl, RUNNER_TOKEN)).toBe("open");
+  });
+
+  it("refuses an address after too many failed checks, keyed on the trusted proxy's client address", async () => {
+    const proxied = new ArenaGateway({ tokens, trustProxy: 1, limits: { upgradesPerMinute: 2 } });
+    const proxiedUrl = await proxied.listen();
+    cleanup.push(() => proxied.close());
+    const from = (ip: string, prefix = "") => ({ "x-forwarded-for": `${prefix}${ip}` });
+    const checksBefore = tokens.checks;
+    expect(await attempt(proxiedUrl, guess(1), from("203.0.113.7"))).toBe(401);
+    expect(await attempt(proxiedUrl, guess(2), from("203.0.113.7"))).toBe(401);
+    expect(await attempt(proxiedUrl, guess(3), from("203.0.113.7"))).toBe(429);
+    // A forged entry before the proxy's own doesn't change the address counted.
+    expect(await attempt(proxiedUrl, guess(4), from("203.0.113.7", "198.51.100.1, "))).toBe(429);
+    expect(tokens.checks - checksBefore).toBe(2);
+    // Another client behind the same proxy is unaffected.
+    expect(await attempt(proxiedUrl, RUNNER_TOKEN, from("198.51.100.20"))).toBe("open");
+  });
+
+  it("counts an IPv6 client by its /64", () => {
+    expect(addressGroup("2001:db8:1:2:3:4:5:6")).toBe("2001:db8:1:2::/64");
+    expect(addressGroup("2001:db8:1:2::abcd")).toBe("2001:db8:1:2::/64");
+    expect(addressGroup("2001:0db8::1")).toBe("2001:db8:0:0::/64");
+    expect(addressGroup("::ffff:203.0.113.9")).toBe("203.0.113.9");
+    expect(addressGroup("203.0.113.9")).toBe("203.0.113.9");
+  });
+
+  it("refuses a rotating IPv6 block and a global wave of failures, but not a known runner", async () => {
+    const strict = new ArenaGateway({
+      tokens,
+      trustProxy: 1,
+      limits: { upgradesPerMinute: 2, failedChecksPerMinute: 4 },
+    });
+    const strictUrl = await strict.listen();
+    cleanup.push(() => strict.close());
+    const from = (ip: string) => ({ "x-forwarded-for": ip });
+    // A runner that has connected before.
+    expect(await attempt(strictUrl, RUNNER_TOKEN, from("198.51.100.30"))).toBe("open");
+    // Fresh addresses in one /64 count as one client.
+    expect(await attempt(strictUrl, guess(10), from("2001:db8:7:7::1"))).toBe(401);
+    expect(await attempt(strictUrl, guess(11), from("2001:db8:7:7::2"))).toBe(401);
+    expect(await attempt(strictUrl, guess(12), from("2001:db8:7:7::3"))).toBe(429);
+    // Failures spread over many addresses still hit the global cap ...
+    expect(await attempt(strictUrl, guess(13), from("203.0.113.40"))).toBe(401);
+    expect(await attempt(strictUrl, guess(14), from("203.0.113.41"))).toBe(401);
+    expect(await attempt(strictUrl, guess(15), from("203.0.113.42"))).toBe(429);
+    // ... but a token that has passed a check keeps its own budget, from anywhere.
+    expect(await attempt(strictUrl, RUNNER_TOKEN, from("192.0.2.200"))).toBe("open");
+  });
+
+  it("gives each token its own reconnect budget", async () => {
+    const strict = new ArenaGateway({ tokens, limits: { upgradesPerToken: 2 } });
+    const strictUrl = await strict.listen();
+    cleanup.push(() => strict.close());
+    expect(await attempt(strictUrl, RUNNER_TOKEN)).toBe("open");
+    expect(await attempt(strictUrl, RUNNER_TOKEN)).toBe("open");
+    expect(await attempt(strictUrl, RUNNER_TOKEN)).toBe(429);
+    expect(await attempt(strictUrl, OTHER_TOKEN)).toBe("open");
   });
 });
 
@@ -616,7 +921,7 @@ describe("RemoteAgent", () => {
   const spec = () => loadAttackLibrary().find((s) => s.id === "A6-operator-impersonation-001")!;
 
   async function runner(options: Parameters<typeof fakeRunner>[0]): Promise<FakeRunner> {
-    const r = await fakeRunner(options);
+    const r = await fakeRunner({ pingMs: 250, ...options });
     cleanup.push(() => r.close());
     await eventually(
       () =>
@@ -748,6 +1053,7 @@ describe("RemoteAgent", () => {
       runner: "agent-1",
       mode: "tools",
       tee: {
+        keyId: `0x${"ab".repeat(32)}`,
         onEvidence: (e, context) => {
           evidence.push({ nonce: context.nonce, evidence: e });
           if ((e as { nonce?: string }).nonce !== context.nonce) throw new Error("stale nonce");
@@ -759,6 +1065,8 @@ describe("RemoteAgent", () => {
     // The first request waited for the gate (the test gateway's 300 ms), the second was served.
     expect(seen).toEqual([503, 200]);
     expect(evidence[0]?.nonce).toBe(fake.received[0]?.nonce);
+    // The runner is told which Arena key to have the TEE attest.
+    expect(fake.received[0]?.teeKeyId).toBe(`0x${"ab".repeat(32)}`);
     expect((ok.agentSummary as RemoteRunSummary).remote.teeEvidence).toEqual(evidence[0]?.evidence);
 
     const refusing = new RemoteAgent({

@@ -15,7 +15,7 @@ import {
   ServerToRunner,
 } from "@bonded/shared";
 import { WebSocket } from "ws";
-import { backoffDelay, Tail } from "./tail.js";
+import { backoffDelay, gatewayUrlProblem, Tail } from "./tail.js";
 
 /**
  * The Bonded runner: lets the Arena rate an agent that runs on its operator's own servers.
@@ -81,6 +81,8 @@ export class Runner {
 
   constructor(private readonly options: RunnerOptions) {
     if (options.command.length === 0) throw new Error("no agent command given");
+    const problem = gatewayUrlProblem(options.gateway);
+    if (problem) throw new Error(problem);
     this.log = options.log ?? (() => {});
   }
 
@@ -345,6 +347,11 @@ export class Runner {
     try {
       const url = new URL("attestation", `${this.options.teeUrl.replace(/\/+$/, "")}/`);
       url.searchParams.set("nonce", episode.nonce!);
+      // In chain mode the TEE attests the rating's Arena key, the one it signs episodes with.
+      if (episode.teeKeyId) {
+        url.searchParams.set("purpose", "arena");
+        url.searchParams.set("key", episode.teeKeyId);
+      }
       const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
       const text = await response.text();
       if (!response.ok) throw new Error(`the TEE answered ${response.status}`);

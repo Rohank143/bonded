@@ -22,7 +22,7 @@ Options:
 | `--gateway <url>`     | The Arena Gateway (or `BONDED_GATEWAY_URL`).                                                                                 |
 | `--token <token>`     | Your runner token (or `BONDED_RUNNER_TOKEN`).                                                                                |
 | `--mode tools\|chain` | `tools` (default): reads and trades are tool calls. `chain`: reads are tool calls, trades are transactions your agent signs. |
-| `--tee-url <url>`     | Your agent's TEE. The runner fetches `GET <url>/attestation?nonce=` for each episode and forwards the answer unchanged.      |
+| `--tee-url <url>` | Your agent's TEE. The runner fetches `GET <url>/attestation?nonce=` for each episode and forwards the answer unchanged. In chain mode it adds `&purpose=arena&key=<id>`: the TEE attests a key it derives for that rating, and your agent signs episode transactions with it (`BONDED_TEE_KEY_ID` names it), never its production key. |
 | `--quiet`             | Don't copy the agent's output to the terminal.                                                                               |
 
 The runner reconnects with backoff if the connection drops, and stops for good (exit code 2) if
@@ -47,6 +47,7 @@ Each episode starts your command once, with:
 | `BONDED_DONE_URL`    | `POST` `{ finalMessage? }` when finished (optional: exiting also ends the episode).                                                            |
 | `BONDED_RPC_URL`     | Chain mode: Ethereum JSON-RPC for the episode's chain.                                                                                         |
 | `BONDED_SESSION_KEY` | Chain mode (without a TEE): a fresh private key the episode's vault accepts as its agent.                                                      |
+| `BONDED_TEE_KEY_ID` | Chain mode with a TEE: the rating's Arena key id. Derive the signing key for it inside the TEE (Bonded's TEE agent: `AgentIdentity.arenaAccount`). |
 | `BONDED_VAULT`       | The episode's Mandate Vault.                                                                                                                   |
 | `BONDED_CHAIN_ID`    | The chain id.                                                                                                                                  |
 | `BONDED_CONTRACTS`   | JSON: `{ exchange, tokens: [{ symbol, address, decimals }] }`.                                                                                 |
@@ -84,6 +85,13 @@ Build the image from the repository root with `docker build -f apps/runner/Docke
 bonded-runner .`, then put your agent on top of it (see the comment at the top of the
 Dockerfile). Pass the token at run time with `-e BONDED_RUNNER_TOKEN=...`.
 
+## What a score means
+
+A rating attests how the code that was rated behaved under test. Without a TEE (a "declared"
+binding) nothing ties that to the code you run in production afterwards: the score describes the
+agent the runner launched during the rating. With TEE binding (`--tee-url`), the score is tied to
+the measured code, and the Arena keeps checking that the same measurement is running.
+
 ## What the agent can and can't tell
 
 The Arena aims to make an attacked episode look like any other, and the sandbox look like the
@@ -111,7 +119,11 @@ What remains detectable:
   is empty). Node error messages are the sandbox's.
 - The vault is fresh each episode: its on-chain history starts with this episode, though the
   transfer-history tool shows earlier deposits.
-- The world is simulated: its content is short and its items' order follows a pattern (planted
-  news, posts and alerts appear first, planted messages and transfers last), and some names use
-  placeholder domains such as `fund.example`.
+- The world is simulated, from pools of benign content that are public in the Bonded repository.
+  Each episode draws its own mix (counts, wording, senders, times, history, prices a little off
+  the oracle) and planted content is dated and ordered like the rest, so diffing against a fixed
+  baseline no longer works; but an agent that knows the pools can still notice text that isn't
+  in them. What that buys a cheater is limited: ratings compare how often the agent does its
+  task under attack with how often it does in controls, and a remote agent that stops working
+  when something was planted is refused.
 - Each write is mined at once.

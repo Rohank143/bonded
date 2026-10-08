@@ -1,6 +1,8 @@
-import { Database, json } from "@bonded/db";
+import { randomBytes } from "node:crypto";
+import { Database, json, type RatingLane } from "@bonded/db";
 import {
   Sandbox,
+  episodeOutcome,
   freshHeldOut,
   rateAgent,
   attestTeeAgent,
@@ -31,11 +33,18 @@ import { ratedAgent, sentinelCodeHash, type SentinelService } from "./sentinel.j
 import {
   GATEWAY_UNAVAILABLE,
   RatingRefused,
+  arenaKeyProblem,
+  forkBudgetExhausted,
   TeeBinding,
   remoteAgentFor,
   type RemoteAgentFactory,
 } from "./remote-agent.js";
 import { DbHeldOutLedger } from "./runners.js";
+import {
+  DEFAULT_REMOTE_POLICY,
+  remoteRatingPlan,
+  type RemoteRatingPolicy,
+} from "./remote-policy.js";
 
 const codeHash = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
 /**
@@ -91,16 +100,24 @@ const builtInConfig = z
  * operator's servers and is rated through the Arena Gateway by its runner. `codeHash` is what the
  * operator declares; with `tee`, every episode must prove it with TEE evidence.
  */
-const remoteConfig = z.strictObject({
-  kind: z.literal("remote"),
-  mandate: EvmMandate,
-  codeHash,
-  mode: z.enum(REMOTE_MODES),
-  tee: teeConfig.optional(),
-  repeats,
-  protection,
-  vault: guardAddress,
-});
+const remoteConfig = z
+  .strictObject({
+    kind: z.literal("remote"),
+    mandate: EvmMandate,
+    codeHash,
+    mode: z.enum(REMOTE_MODES),
+    tee: teeConfig.optional(),
+    repeats,
+    protection,
+    vault: guardAddress,
+  })
+  // In tool mode the agent's tool calls come from the runner, outside the TEE, so a measurement
+  // would bind nothing about how it behaves. Only chain mode, where the TEE's own key signs every
+  // write, can be TEE-bound (and then the compose file must be reviewed: it decides what runs).
+  .refine((c) => !(c.tee && c.mode === "tools"), {
+    message: "a TEE-bound agent must be rated in chain mode: in tool mode the TEE binds nothing",
+    path: ["tee"],
+  });
 
 // Operators provision these records, or owners register them signed (self-serve.ts); callers
 // cannot choose RPCs, commands or model URLs. A remote agent's code runs on its operator's side.
@@ -132,7 +149,29 @@ export interface WorkerOptions {
   heldOut?: { perClass?: number; llm?: { client: ChatClient; model: string; maxUsd: number } };
   /** Narrows the attack library a rating runs (tests and local checks only). */
   selectAttacks?: (attacks: AttackSpec[]) => AttackSpec[];
+  /**
+   * Which ratings this worker takes: "remote" (agents their operators run) or "builtin"
+   * (everything else), each under its own lock, so a slow remote agent can't hold up Bonded's own
+   * ratings. Without it, any rating (one worker for all).
+   */
+  lane?: RatingLane;
+  /**
+   * Wall-clock budget for one remote rating. By default it comes from the rating's size
+   * (`remoteRatingPlan`: 40 s an episode, at most 3 hours). Past it the rating stops: charged to
+   * the agent when the agent took most of the time, else retried as an infrastructure problem.
+   */
+  remoteBudgetMs?: number;
+  /** Sizes, caps and budgets for remote ratings (default `DEFAULT_REMOTE_POLICY`). */
+  remotePolicy?: RemoteRatingPolicy;
+  /**
+   * The agent's current registry owner. When it isn't the owner who registered the agent's
+   * config, a remote rating is refused: the new owner must register it again.
+   */
+  ownerOf?: (agentId: string) => Promise<string>;
 }
+
+/** Advisory lock keys: one per lane and chain. */
+const LANE_LOCK: Record<RatingLane | "all", number> = { all: 7004, builtin: 7004, remote: 7008 };
 
 /**
  * The code hash a rating attests. `codeHash` is always the agent's own code; with Sentinel in
@@ -154,7 +193,10 @@ export async function workOne(
 ) {
   const lock = await db.pool.connect();
   const locked = (
-    await lock.query("SELECT pg_try_advisory_lock(7004,$1) AS locked", [chain.deployment.chainId])
+    await lock.query("SELECT pg_try_advisory_lock($2,$1) AS locked", [
+      chain.deployment.chainId,
+      LANE_LOCK[options.lane ?? "all"],
+    ])
   ).rows[0].locked;
   if (!locked) {
     lock.release();
@@ -163,7 +205,10 @@ export async function workOne(
   try {
     return await runLocked(db, chain, rpcUrl, key, onError, sentinel, options);
   } finally {
-    await lock.query("SELECT pg_advisory_unlock(7004,$1)", [chain.deployment.chainId]);
+    await lock.query("SELECT pg_advisory_unlock($2,$1)", [
+      chain.deployment.chainId,
+      LANE_LOCK[options.lane ?? "all"],
+    ]);
     lock.release();
   }
 }
@@ -177,7 +222,7 @@ async function runLocked(
   sentinel?: SentinelService,
   options: WorkerOptions = {},
 ) {
-  const job = await db.takeJob(chain.deployment.chainId);
+  const job = await db.takeJob(chain.deployment.chainId, options.lane);
   if (!job) return false;
   let leaseError: unknown;
   const heartbeat = setInterval(() => {
@@ -192,7 +237,7 @@ async function runLocked(
   try {
     const row = (
       await db.pool.query(
-        "SELECT r.*,a.config,a.agent_id AS onchain_id FROM ratings r JOIN agents a ON a.id=r.agent_id WHERE r.id=$1",
+        "SELECT r.*,a.config,a.owner,a.agent_id AS onchain_id FROM ratings r JOIN agents a ON a.id=r.agent_id WHERE r.id=$1",
         [job.id],
       )
     ).rows[0];
@@ -207,6 +252,17 @@ async function runLocked(
       throw new Error("this agent is rated with Sentinel on, but SENTINEL_URL isn't set");
     // A remote agent is rated through its runner: with none connected, the rating can't start.
     // It is retried, in case the runner is only reconnecting.
+    // A config registered by an earlier owner isn't the new owner's to be rated under.
+    if (
+      config.kind === "remote" &&
+      options.ownerOf &&
+      (await options.ownerOf(String(row.onchain_id))).toLowerCase() !==
+        String(row.owner ?? "").toLowerCase()
+    )
+      throw new RatingRefused(
+        "the agent changed hands since it was registered; its owner must register it again",
+        true,
+      );
     if (config.kind === "remote" && !(await db.runnerIsConnected(row.agent_id)))
       throw new RatingRefused(
         "the agent's runner is not connected; start it and rate again",
@@ -237,17 +293,48 @@ async function runLocked(
           ? { published: true, title: spec.title }
           : { published: false };
       };
-      // A remote agent's TEE must prove itself again at every episode, as the same deployment.
-      const binding =
+      // A remote agent's TEE (chain mode only) signs in the Arena with a key of its own for this
+      // rating, never its production key: the fork keeps the live chain's id. Its address comes
+      // from the TEE's attestation for a fresh key id, and every episode must prove that same
+      // key, from the same deployment (same measurement).
+      const arena =
         config.kind === "remote" && tee && config.tee
-          ? new TeeBinding(tee, {
+          ? await (async () => {
+              const keyId = `0x${randomBytes(32).toString("hex")}` as Hex;
+              const verified = await attestTeeAgent({
+                url: config.tee!.url,
+                codeHash: config.codeHash as Hex,
+                composeHash: config.tee!.composeHash,
+                arenaKeyId: keyId,
+              });
+              const sameKey = arenaKeyProblem(verified.evmAddress, tee.evmAddress);
+              if (sameKey) throw new RatingRefused(sameKey, true, { caused: true });
+              if (verified.measurement.toLowerCase() !== tee.measurement.toLowerCase())
+                throw new RatingRefused(
+                  "TEE binding failed: the Arena key's evidence came from another deployment",
+                  false,
+                );
+              return { keyId, verified };
+            })()
+          : undefined;
+      const binding =
+        arena && config.tee
+          ? new TeeBinding(arena.verified, {
               codeHash: config.codeHash as Hex,
               composeHash: config.tee.composeHash,
+              arenaKeyId: arena.keyId,
             })
           : undefined;
       if (config.kind === "remote" && !options.remote)
         throw new RatingRefused(GATEWAY_UNAVAILABLE, true);
-      const attacks = options.selectAttacks?.(library.attacks) ?? library.attacks;
+      // A remote agent's operator sees every attack its agent reads. So it never gets the shared
+      // held-out set or accepted bounties (that would leak them, and they'd no longer be unseen
+      // by the next agent): only the published library, and a held-out set made for it alone.
+      const selected = options.selectAttacks?.(library.attacks) ?? library.attacks;
+      const attacks =
+        config.kind === "remote"
+          ? selected.filter((a) => !library.unpublished.has(a.id))
+          : selected;
       const sandbox = await Sandbox.start({ forkUrl: rpcUrl, forkDeployment: chain.deployment });
       try {
         const agent: ArenaAgent =
@@ -260,10 +347,11 @@ async function runLocked(
                   agentId: String(row.onchain_id),
                   mode: config.mode,
                   codeHash: config.codeHash as Hex,
-                  ...(binding && tee
+                  ...(binding && arena
                     ? {
                         tee: {
-                          evmAddress: tee.evmAddress,
+                          keyId: arena.keyId,
+                          evmAddress: arena.verified.evmAddress,
                           verify: (evidence: unknown, nonce: Hex) => binding.check(evidence, nonce),
                         },
                       }
@@ -286,14 +374,24 @@ async function runLocked(
               })
             : undefined;
         await check();
+        let remoteStop: RatingRefused | undefined;
+        const ratingStarted = Date.now();
+        let agentMs = 0;
+        const remoteBudget =
+          options.remoteBudgetMs ??
+          remoteRatingPlan(options.remotePolicy ?? DEFAULT_REMOTE_POLICY, {
+            publishedAttacks: attacks.length,
+            heldOut: fresh?.attacks.length ?? 0,
+            ...(config.repeats ? { repeats: config.repeats } : {}),
+          }).budgetMs;
         const result = await rateAgent(sandbox, {
           agent,
           ...(withSentinel && sentinel ? { sentinel: sentinel.info } : {}),
           attacks: [...attacks, ...(fresh?.attacks ?? [])],
-          unpublished: new Set([
-            ...library.unpublished,
-            ...(fresh?.attacks ?? []).map((a) => a.id),
-          ]),
+          unpublished:
+            config.kind === "remote"
+              ? new Set((fresh?.attacks ?? []).map((a) => a.id))
+              : library.unpublished,
           ...(fresh ? { heldOut: fresh.heldOut } : {}),
           codeHash: ratedCodeHash(config),
           ...(config.repeats ? { repeats: config.repeats } : {}),
@@ -301,6 +399,46 @@ async function runLocked(
           vault: { mandate: config.mandate as EvmMandateInput },
           onEpisode: async (episode, index, total) => {
             await check();
+            // A remote rating stops at the first episode its agent fails (crash, exit, timeout,
+            // runner gone) and at its time budget: the attempt is recorded and not retried, so an
+            // operator can neither hold the worker nor choose which run counts by crashing.
+            if (config.kind === "remote") {
+              const remoteEpisode = (episode.agentSummary as { remote?: { durationMs?: number } })
+                .remote;
+              agentMs += remoteEpisode?.durationMs ?? 0;
+              const elapsed = Date.now() - ratingStarted;
+              if (forkBudgetExhausted(episode))
+                remoteStop = new RatingRefused(
+                  `stopped: the agent used up its share of fork requests in episode ${index + 1} of ${total}`,
+                  true,
+                  { caused: true },
+                );
+              else if (episodeOutcome(episode) === "agent_error") {
+                const report = (episode.agentSummary.finalMessage ?? "").slice(0, 500);
+                remoteStop = new RatingRefused(
+                  `stopped: the agent failed in episode ${index + 1} of ${total}`,
+                  true,
+                  report ? { caused: true, report } : { caused: true },
+                );
+              } else if (elapsed > remoteBudget) {
+                const budget =
+                  remoteBudget >= 60_000
+                    ? `${Math.round(remoteBudget / 60_000)}-minute`
+                    : `${Math.ceil(remoteBudget / 1000)}-second`;
+                // Charged to the agent only if it was the agent that took the time.
+                remoteStop =
+                  agentMs > elapsed / 2
+                    ? new RatingRefused(
+                        `stopped: the rating ran past its ${budget} budget after ${index + 1} of ${total} episodes; the agent took ${Math.round((100 * agentMs) / elapsed)}% of the time`,
+                        true,
+                        { caused: true },
+                      )
+                    : new RatingRefused(
+                        `stopped: the rating ran past its ${budget} budget after ${index + 1} of ${total} episodes, not because of the agent; it will be retried`,
+                        false,
+                      );
+              }
+            }
             // Verdict only: planted text and traces can carry a private bounty payload.
             await db.publish("rating.episode", {
               runId: job.id,
@@ -309,6 +447,7 @@ async function runLocked(
               // A library attack's text is public in attacks/; held-out and bounty text never is.
               episode: publicEpisode(episode, publishedAs(episode.attackId)),
             });
+            if (remoteStop) throw remoteStop;
           },
         });
         // Every episode must have shown the same TEE deployment, or the measurement isn't earned.
@@ -316,7 +455,9 @@ async function runLocked(
         const unbound = binding?.verdict(result.report.episodes.total);
         if (unbound) throw new RatingRefused(unbound, false);
         if (result.report.stoppedEarly || result.report.episodes.agentErrors)
-          throw new Error("incomplete rating");
+          throw config.kind === "remote"
+            ? new RatingRefused("stopped: the agent failed an episode", true, { caused: true })
+            : new Error("incomplete rating");
         // A guard that couldn't answer refused the write to stay safe, but that's no evidence the
         // guard works: never attest a score that leaned on it.
         if (result.report.guardFailures)
@@ -335,7 +476,13 @@ async function runLocked(
               `${JSON.stringify(result.report, null, 2)}\n`,
             ]),
           );
-          throw new RatingRefused(`not attested: ${result.refused}`, true);
+          // For an operator-run agent this is the agent's doing (it didn't do its task), so it
+          // counts like a crash: the old score is superseded, and the cooldown starts.
+          throw new RatingRefused(
+            `not attested: ${result.refused}`,
+            true,
+            config.kind === "remote" ? { caused: true } : undefined,
+          );
         }
         const current = await chain.read.readContract({
           address: chain.deployment.registry,
@@ -424,11 +571,27 @@ async function runLocked(
         else await db.recordTeeRating({ agentId: agentKey }, c);
       });
     }
-    await db.finish(job);
+    // A complete rating posted: an operator-run agent's standing resets.
+    await db.finish(job, undefined, { remote: config.kind === "remote" });
   } catch (error) {
     onError?.(error);
     // A refusal's reason is safe to show the owner; anything else may carry an RPC URL or a key.
-    if (error instanceof RatingRefused) await db.finish(job, error.message, { final: error.final });
+    // The gateway's fork budget running out is the agent's doing, wherever it surfaces.
+    if (!(error instanceof RatingRefused) && forkBudgetExhausted(error))
+      await db.finish(job, "stopped: the agent used up its share of fork requests", {
+        final: true,
+        agentCaused: true,
+      });
+    else if (error instanceof RatingRefused)
+      await db.finish(job, error.message, {
+        final: error.final,
+        ...(error.agent
+          ? {
+              agentCaused: true,
+              ...(error.agent.report ? { agentReport: error.agent.report } : {}),
+            }
+          : {}),
+      });
     else await db.finish(job, "rating failed; retry scheduled");
   } finally {
     clearInterval(heartbeat);

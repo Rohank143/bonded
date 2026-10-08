@@ -35,7 +35,7 @@ it("counts no unpublished attack when the cap stops the rating before any run", 
 }, 300_000);
 
 it("counts only the unpublished attacks that ran when the cap stops it partway", async () => {
-  // $1 an episode with a $1.50 cap: the published attack and the first held-out one run.
+  // $1 an episode with a $1.50 cap: two of the three attacks run, in the rating's random order.
   const r = await rateAgent(sandbox, {
     agent: costly,
     attacks: [published!, heldA!, heldB!],
@@ -44,7 +44,10 @@ it("counts only the unpublished attacks that ran when the cap stops it partway",
     maxUsd: 1.5,
   });
   expect(r.report.episodes.attacks).toBe(2);
-  expect(r.report.unpublished).toEqual({ attacks: 1, episodes: 1 });
+  // Exactly the unpublished attacks among the two that ran, never the one that didn't.
+  const ran = r.episodes.map((e) => e.attackId!).filter((id) => unpublished.has(id));
+  expect(ran.length).toBeGreaterThanOrEqual(1);
+  expect(r.report.unpublished).toEqual({ attacks: ran.length, episodes: ran.length });
 }, 300_000);
 
 it("counts an unpublished attack once however many times it ran", async () => {

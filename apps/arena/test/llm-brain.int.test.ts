@@ -110,6 +110,8 @@ describe("the LLM brain over a real OpenAI-compatible endpoint", () => {
       ),
       controls: 0,
       maxUsd: 0.000001,
+      // The cap stops the rating after the first seed, so the order matters here.
+      shuffle: false,
     });
     expect(result.episodes).toHaveLength(1);
     expect(result.report.stoppedEarly).toMatch(/spending cap/);

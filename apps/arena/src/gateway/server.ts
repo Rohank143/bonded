@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { isIP } from "node:net";
 import type { Duplex } from "node:stream";
 import {
   AGENT_TOOLS,
@@ -8,6 +9,7 @@ import {
   type EpisodeEndpoints,
   type HelloMessage,
   isAgentToolName,
+  isWellFormedRunnerToken,
   parseRunnerMessage,
   RUNNER_CLOSE,
   RUNNER_CONNECT_PATH,
@@ -22,7 +24,7 @@ import {
 import { type WebSocket, WebSocketServer } from "ws";
 import type { ArenaToolbox } from "../toolbox.js";
 import { serveMcp } from "./mcp.js";
-import { handleRpc, type RpcBinding } from "./rpc.js";
+import { handleRpc, type RpcBinding, RpcBudget } from "./rpc.js";
 import {
   hashToken,
   newCapabilityToken,
@@ -57,14 +59,60 @@ export interface GatewayLimits {
   rpcBatch: number;
   /** Most requests one episode may have in flight at once. */
   concurrentPerEpisode: number;
+  /**
+   * HTTP requests one episode may make per second, with a burst: past that a request is refused
+   * before its body is read, so a client spinning on refusals costs the gateway almost nothing.
+   */
+  requestsPerSecond: number;
+  requestBurst: number;
   /** Per call to the sandbox node. */
   upstreamTimeoutMs: number;
-  /** Largest sandbox node response passed on. */
+  /** Largest single sandbox node answer passed on. */
   upstreamResponseBytes: number;
+  /** Largest total of answers for one RPC request, a batch included. */
+  rpcRequestResponseBytes: number;
+  /** Gas cap for eth_call, eth_estimateGas, eth_createAccessList and each simulated call. */
+  rpcCallGas: bigint;
+  /** The gas such a call gets when it names none. */
+  rpcDefaultCallGas: bigint;
+  /** Gas one episode's calls may use per second, with a burst (each charged the gas it may use). */
+  rpcGasPerSecond: number;
+  rpcGasBurst: number;
+  /** Blocks and calls one eth_simulateV1 may simulate. */
+  rpcSimulateBlocks: number;
+  rpcSimulateCalls: number;
+  /** Calls to the sandbox node one episode may make in all, and per second (with a burst). */
+  rpcCallsPerEpisode: number;
+  rpcCallsPerSecond: number;
+  rpcCallBurst: number;
   /** How long a request waits for a gated episode to open (a TEE-bound agent's evidence). */
   readyTimeoutMs: number;
   /** How long a new runner has to say hello. */
   helloTimeoutMs: number;
+  /**
+   * The runner heartbeat: a runner silent (no ping) for three of these is dropped, and every
+   * connected runner's token is checked again once per interval, whatever it sends.
+   */
+  heartbeatMs: number;
+  /** Messages a runner may send per second, on average, with this many in a burst. */
+  runnerMessagesPerSecond: number;
+  runnerMessageBurst: number;
+  /**
+   * Failed token checks one client address may cause per minute; past that, its upgrades are
+   * refused before any check. Only well-formed tokens are checked, so only they count.
+   */
+  upgradesPerMinute: number;
+  /** Upgrades one token (by hash) may make per minute: a valid runner reconnecting has its own. */
+  upgradesPerToken: number;
+  /** Upgrades with no or a malformed token, per minute, across all addresses (never checked). */
+  malformedUpgradesPerMinute: number;
+  /**
+   * Failed token checks per minute across all addresses: past it, tokens that haven't passed a
+   * check recently are refused before one (tokens that have keep their own budget).
+   */
+  failedChecksPerMinute: number;
+  /** Token checks for upgrades in flight at once, across all addresses. */
+  pendingUpgrades: number;
 }
 
 export const DEFAULT_GATEWAY_LIMITS: GatewayLimits = {
@@ -72,10 +120,30 @@ export const DEFAULT_GATEWAY_LIMITS: GatewayLimits = {
   rpcBodyBytes: 256 * 1024,
   rpcBatch: 50,
   concurrentPerEpisode: 8,
+  requestsPerSecond: 50,
+  requestBurst: 100,
   upstreamTimeoutMs: 15_000,
-  upstreamResponseBytes: 8 * 1024 * 1024,
+  upstreamResponseBytes: 1024 * 1024,
+  rpcRequestResponseBytes: 2 * 1024 * 1024,
+  rpcCallGas: 10_000_000n,
+  rpcDefaultCallGas: 5_000_000n,
+  rpcGasPerSecond: 100_000_000,
+  rpcGasBurst: 300_000_000,
+  rpcSimulateBlocks: 4,
+  rpcSimulateCalls: 16,
+  rpcCallsPerEpisode: 5_000,
+  rpcCallsPerSecond: 50,
+  rpcCallBurst: 200,
   readyTimeoutMs: 30_000,
   helloTimeoutMs: 10_000,
+  heartbeatMs: RUNNER_HEARTBEAT_MS,
+  runnerMessagesPerSecond: 20,
+  runnerMessageBurst: 100,
+  upgradesPerMinute: 30,
+  upgradesPerToken: 20,
+  malformedUpgradesPerMinute: 600,
+  failedChecksPerMinute: 300,
+  pendingUpgrades: 64,
 };
 
 /** A runner came, is still there, or left. The rating service records these as runner presence. */
@@ -98,6 +166,12 @@ export interface GatewayOptions {
    */
   publicUrl?: string;
   onRunnerPresence?: (event: RunnerPresenceEvent) => void;
+  /**
+   * Proxies in front of the gateway whose X-Forwarded-For entries are trusted (Railway: 1). The
+   * client address used for rate limits is then the entry that many places from the right; with 0
+   * (the default) it is the socket's peer, which behind a proxy is the proxy itself.
+   */
+  trustProxy?: number;
   /**
    * What chain-mode RPC answers to web3_clientVersion when the sandbox isn't a fork (a fork
    * answers with its live chain's own version). Default: the sandbox node's own answer.
@@ -199,6 +273,10 @@ export class GatewayEpisode {
   finished: DoneRequest | undefined;
   inFlight = 0;
   private closed = false;
+  private readonly ended = new AbortController();
+  private budget: RpcBudget | undefined;
+  private gas: RpcBudget | undefined;
+  private requests: RpcBudget | undefined;
   private finish!: (body: DoneRequest) => void;
   private openGate!: () => void;
   private readonly gate: Promise<void>;
@@ -245,11 +323,47 @@ export class GatewayEpisode {
     this.finish(body);
   }
 
-  /** Ends the episode at the gateway: the token stops working at once. */
+  /** Ends the episode at the gateway: the token stops working at once, and RPC forwarding stops. */
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    this.ended.abort();
     this.detach();
+  }
+
+  /** Aborted when the episode ends. */
+  get signal(): AbortSignal {
+    return this.ended.signal;
+  }
+
+  /** @internal The episode's HTTP request rate. */
+  requestBudget(limits: GatewayLimits): RpcBudget {
+    this.requests ??= new RpcBudget(
+      Number.POSITIVE_INFINITY,
+      limits.requestsPerSecond,
+      limits.requestBurst,
+    );
+    return this.requests;
+  }
+
+  /** @internal The episode's gas budget for calls, estimates and simulations. */
+  gasBudget(limits: GatewayLimits): RpcBudget {
+    this.gas ??= new RpcBudget(
+      Number.POSITIVE_INFINITY,
+      limits.rpcGasPerSecond,
+      limits.rpcGasBurst,
+    );
+    return this.gas;
+  }
+
+  /** @internal The episode's budget of calls to the sandbox node. */
+  rpcBudget(limits: GatewayLimits): RpcBudget {
+    this.budget ??= new RpcBudget(
+      limits.rpcCallsPerEpisode,
+      limits.rpcCallsPerSecond,
+      limits.rpcCallBurst,
+    );
+    return this.budget;
   }
 
   /** A tool call from MCP or HTTP: logged with its surface, then run by the toolbox. */
@@ -262,6 +376,11 @@ export class GatewayEpisode {
     this.reads.push({ tool: name, ...(surface ? { surface } : {}), ok: result.ok, at: Date.now() });
     return result;
   }
+}
+
+interface UpgradeWindow {
+  start: number;
+  counts: Map<string, number>;
 }
 
 class HttpError extends Error {
@@ -284,6 +403,12 @@ export class ArenaGateway {
   });
   private server: Server | undefined;
   private base: string | undefined;
+  private upgradesInFlight = 0;
+  private readonly malformed: UpgradeWindow = { start: 0, counts: new Map() };
+  private readonly failures: UpgradeWindow = { start: 0, counts: new Map() };
+  private readonly perToken: UpgradeWindow = { start: 0, counts: new Map() };
+  /** Token hashes that passed a check, with when (oldest first, bounded). */
+  private readonly validTokens = new Map<string, number>();
   private readonly log: (message: string) => void;
 
   constructor(private readonly options: GatewayOptions) {
@@ -407,6 +532,10 @@ export class ArenaGateway {
     if (!episode) throw new HttpError(404, "no such episode, or it is over");
     if (episode.inFlight >= this.limits.concurrentPerEpisode)
       throw new HttpError(429, "too many requests in flight for this episode");
+    if (!episode.requestBudget(this.limits).take()) {
+      req.resume();
+      throw new HttpError(429, "too many requests for this episode; slow down");
+    }
     episode.inFlight++;
     try {
       await episode.ready(this.limits.readyTimeoutMs).catch(() => {
@@ -454,11 +583,22 @@ export class ArenaGateway {
         });
       const response = await handleRpc(
         body,
-        { ...episode.spec.chain, toolbox: episode.spec.toolbox },
+        {
+          ...episode.spec.chain,
+          toolbox: episode.spec.toolbox,
+          budget: episode.rpcBudget(this.limits),
+          gas: episode.gasBudget(this.limits),
+          signal: episode.signal,
+        },
         {
           batch: this.limits.rpcBatch,
           timeoutMs: this.limits.upstreamTimeoutMs,
           responseBytes: this.limits.upstreamResponseBytes,
+          requestResponseBytes: this.limits.rpcRequestResponseBytes,
+          callGas: this.limits.rpcCallGas,
+          defaultCallGas: this.limits.rpcDefaultCallGas,
+          simulateBlocks: this.limits.rpcSimulateBlocks,
+          simulateCalls: this.limits.rpcSimulateCalls,
         },
       );
       return reply(res, 200, response);
@@ -477,17 +617,102 @@ export class ArenaGateway {
     const path = new URL(req.url ?? "/", "http://gateway").pathname;
     if (path !== RUNNER_CONNECT_PATH) return refuse(socket, 404, "Not Found");
     const token = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization ?? "")?.[1];
-    if (!token) return refuse(socket, 401, "Unauthorized");
+    // Anything that isn't shaped like a runner token is refused without a check, against one
+    // global budget, so anonymous traffic can't use up any address's or token's allowance.
+    if (!token || !isWellFormedRunnerToken(token))
+      return refuse(
+        socket,
+        this.windowed(this.malformed, "all", this.limits.malformedUpgradesPerMinute) ? 401 : 429,
+        "Unauthorized",
+      );
+    // Well-formed tokens. A token that has passed a check recently keeps only its own budget, so
+    // a legitimate runner can reconnect whatever others send. Any other token is refused before a
+    // check when its address (IPv6 by /64, so rotating addresses in one block doesn't help) or the
+    // whole gateway has seen too many failed checks. Checks in flight are capped overall.
+    const address = this.clientAddress(req);
+    const tokenHash = hashToken(token);
+    const known = this.recentlyValid(tokenHash);
+    if (!known) {
+      if (this.counted(this.failures, address) >= this.limits.upgradesPerMinute)
+        return refuse(socket, 429, "Too Many Requests");
+      if (this.counted(this.failures, "*") >= this.limits.failedChecksPerMinute)
+        return refuse(socket, 429, "Too Many Requests");
+    }
+    if (!this.windowed(this.perToken, tokenHash, this.limits.upgradesPerToken))
+      return refuse(socket, 429, "Too Many Requests");
+    if (this.upgradesInFlight >= this.limits.pendingUpgrades)
+      return refuse(socket, 503, "Service Unavailable");
     let identity: RunnerIdentity | null;
+    this.upgradesInFlight++;
     try {
       identity = await this.options.tokens.validate(token);
     } catch (error) {
       this.log(`runner token check failed: ${(error as Error)?.message ?? error}`);
       return refuse(socket, 503, "Service Unavailable");
+    } finally {
+      this.upgradesInFlight--;
     }
-    if (!identity) return refuse(socket, 401, "Unauthorized");
+    if (!identity) {
+      this.windowed(this.failures, address, Number.POSITIVE_INFINITY);
+      this.windowed(this.failures, "*", Number.POSITIVE_INFINITY);
+      this.validTokens.delete(tokenHash);
+      return refuse(socket, 401, "Unauthorized");
+    }
+    this.validTokens.delete(tokenHash);
+    this.validTokens.set(tokenHash, Date.now());
+    if (this.validTokens.size > 10_000) {
+      const oldest = this.validTokens.keys().next().value;
+      if (oldest !== undefined) this.validTokens.delete(oldest);
+    }
     const found = identity;
     this.wss.handleUpgrade(req, socket, head, (ws) => this.attach(ws, found, token));
+  }
+
+  /**
+   * Counts one event for `key` in a fixed one-minute window; false once the window holds `limit`
+   * (the event is then not counted).
+   */
+  private windowed(window: UpgradeWindow, key: string, limit: number): boolean {
+    const count = this.counted(window, key);
+    if (count >= limit) return false;
+    window.counts.set(key, count + 1);
+    return true;
+  }
+
+  /** How many events `key` has in the current window (starting a new window when it's over). */
+  private counted(window: UpgradeWindow, key: string): number {
+    const now = Date.now();
+    if (now - window.start > 60_000) {
+      window.start = now;
+      window.counts.clear();
+    }
+    return window.counts.get(key) ?? 0;
+  }
+
+  /** Whether this token passed a check in the last day (and hasn't failed one since). */
+  private recentlyValid(tokenHash: string): boolean {
+    const at = this.validTokens.get(tokenHash);
+    return at !== undefined && Date.now() - at < 24 * 3_600_000;
+  }
+
+  /**
+   * The client's address, for rate limits: the socket's peer, or the trusted proxies'
+   * X-Forwarded-For entry; an IPv6 address counts as its /64, the block one client controls.
+   */
+  private clientAddress(req: IncomingMessage): string {
+    return addressGroup(this.clientIp(req));
+  }
+
+  private clientIp(req: IncomingMessage): string {
+    const hops = this.options.trustProxy ?? 0;
+    const peer = req.socket.remoteAddress ?? "unknown";
+    if (hops <= 0) return peer;
+    const header = req.headers["x-forwarded-for"];
+    const list = (Array.isArray(header) ? header.join(",") : (header ?? ""))
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    return list[list.length - hops] ?? peer;
   }
 
   private attach(ws: WebSocket, identity: RunnerIdentity, token: string): void {
@@ -496,27 +721,68 @@ export class ArenaGateway {
     const presence = (event: Omit<RunnerPresenceEvent, "key" | "at">) =>
       this.options.onRunnerPresence?.({ ...event, key: identity.key, at: Date.now() });
 
+    const heartbeatMs = this.limits.heartbeatMs;
     const helloTimer = setTimeout(
       () => session.close(RUNNER_CLOSE.protocol, "no hello"),
       this.limits.helloTimeoutMs,
     );
+    // Once per heartbeat, whatever the runner sends: drop it if it hasn't pinged for three
+    // intervals, and check its token again (one check at a time), so a revoked token disconnects
+    // within one interval even if the runner never pings. Presence is reported from here too, at
+    // most once per interval, however often the runner pings.
+    let checking = false;
+    let pingedSinceReport = false;
     const heartbeat = setInterval(() => {
-      if (Date.now() - session.lastSeen > 3 * RUNNER_HEARTBEAT_MS)
+      if (Date.now() - session.lastSeen > 3 * heartbeatMs) {
         session.close(RUNNER_CLOSE.heartbeat, "no heartbeat");
-    }, RUNNER_HEARTBEAT_MS / 3);
+        return;
+      }
+      if (checking || !session.hello) return;
+      checking = true;
+      void this.options.tokens
+        .validate(token)
+        .then(
+          (still) => {
+            if (!still) session.close(RUNNER_CLOSE.revoked, "the runner token was revoked");
+            else if (pingedSinceReport) {
+              pingedSinceReport = false;
+              presence({ type: "heartbeat" });
+            }
+          },
+          () => {},
+        )
+        .finally(() => (checking = false));
+    }, heartbeatMs);
+
+    // A token bucket per socket: a runner needs a few messages a minute.
+    let allowance = this.limits.runnerMessageBurst;
+    let refilled = Date.now();
+    const withinRate = () => {
+      const now = Date.now();
+      allowance = Math.min(
+        this.limits.runnerMessageBurst,
+        allowance + ((now - refilled) / 1000) * this.limits.runnerMessagesPerSecond,
+      );
+      refilled = now;
+      if (allowance < 1) return false;
+      allowance -= 1;
+      return true;
+    };
 
     ws.on("message", (data, isBinary) => {
+      if (session.closed !== undefined) return;
+      if (!withinRate()) return session.close(RUNNER_CLOSE.rateLimited, "too many messages");
       const message = isBinary
         ? undefined
         : parseRunnerMessage(RunnerToServer, rawText(data as Buffer | Buffer[] | ArrayBuffer));
       if (!message) return session.close(RUNNER_CLOSE.protocol, "malformed message");
-      session.lastSeen = Date.now();
       if (!session.hello) {
         if (message.type !== "hello") return session.close(RUNNER_CLOSE.protocol, "hello first");
         if (message.protocol !== RUNNER_PROTOCOL_VERSION)
           return session.close(RUNNER_CLOSE.protocol, "unsupported protocol version");
         clearTimeout(helloTimer);
         session.hello = message;
+        session.lastSeen = Date.now();
         const previous = this.runners.get(identity.key);
         if (previous && previous !== session)
           previous.close(RUNNER_CLOSE.replaced, "another runner connected with this token");
@@ -527,15 +793,10 @@ export class ArenaGateway {
       }
       if (message.type === "hello") return;
       if (message.type === "ping") {
+        // Only a ping keeps a runner alive.
+        session.lastSeen = Date.now();
+        pingedSinceReport = true;
         session.send({ type: "pong", at: Date.now() });
-        // Re-check the token on every heartbeat, so revoking it disconnects the runner.
-        void this.options.tokens.validate(token).then(
-          (still) => {
-            if (!still) session.close(RUNNER_CLOSE.revoked, "the runner token was revoked");
-            else presence({ type: "heartbeat" });
-          },
-          () => {},
-        );
         return;
       }
       session.emit(message);
@@ -552,6 +813,25 @@ export class ArenaGateway {
     });
     ws.on("error", () => ws.terminate());
   }
+}
+
+/** An address for rate limits: IPv4 as is, IPv6 by its /64 (IPv4-mapped IPv6 as IPv4). */
+export function addressGroup(ip: string): string {
+  const bare = ip.replace(/^\[|\]$/g, "").replace(/%.*$/, "");
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(bare);
+  if (mapped) return mapped[1]!;
+  if (isIP(bare) !== 6) return bare;
+  // Expand :: to full groups, then keep the first four.
+  const [head, tail = ""] = bare.split("::");
+  const left = head ? head.split(":") : [];
+  const right = bare.includes("::") ? (tail ? tail.split(":") : []) : [];
+  const groups = bare.includes("::")
+    ? [...left, ...Array(8 - left.length - right.length).fill("0"), ...right]
+    : left;
+  return `${groups
+    .slice(0, 4)
+    .map((g) => g.toLowerCase().replace(/^0+(?=.)/, ""))
+    .join(":")}::/64`;
 }
 
 function reply(res: ServerResponse, status: number, body: unknown): void {
