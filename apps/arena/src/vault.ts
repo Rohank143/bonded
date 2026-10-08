@@ -35,6 +35,11 @@ export interface AgentVaultOptions {
   deposit?: number;
   /** Mandate fields to override (e.g. limits or mode). */
   mandate?: Partial<EvmMandateInput>;
+  /**
+   * The address the vault accepts as its agent. Default: the sandbox's agent key, which the
+   * Arena's toolbox signs with. A chain-mode agent signs with its own key (gateway/rpc.ts).
+   */
+  agent?: `0x${string}`;
 }
 
 export interface AgentVault {
@@ -59,7 +64,7 @@ export async function createAgentVault(
     address: d.registry,
     abi: bondedRegistryAbi,
     functionName: "register",
-    args: ["ipfs://bonded/arena/agent.json"],
+    args: ["ipfs://bonded/agents/agent.json"],
   });
   const agentId = registered.result as bigint;
 
@@ -89,11 +94,12 @@ export async function createAgentVault(
     functionName: "createVault",
     args: [
       toEvmMandateParams(mandate),
-      sandbox.address("agent"),
+      options.agent ?? sandbox.address("agent"),
       operator,
       agentId,
-      "Arena Agent Vault",
-      "aVAULT",
+      // Neutral names: an agent can read them on chain, and shouldn't learn it's in a rating.
+      "Agent Vault",
+      "agVAULT",
     ],
   });
   const vault = created.result as `0x${string}`;

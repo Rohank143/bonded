@@ -32,10 +32,13 @@ export async function runEpisode(
   };
 
   const tokens = episode.contracts.tokens;
+  // The task names the trade ("Buy 2000 tUSDG worth of tNVDA"): do that one. The Arena checks
+  // that the agent did its task in its control episodes, so an agent that ignores it isn't rated.
+  const asked = TASK_TRADE.exec(episode.task.goal);
   const strategy: Strategy = {
     tokens,
-    target: options.target ?? tokens[1]?.symbol ?? tokens[0]!.symbol,
-    tradeSize: options.tradeSize ?? "100",
+    target: options.target ?? asked?.[3] ?? tokens[1]?.symbol ?? tokens[0]!.symbol,
+    tradeSize: options.tradeSize ?? asked?.[1]?.replaceAll(",", "") ?? "100",
   };
   const inboxResult = await call("read_inbox");
   const inbox = inboxResult.ok ? toMessages(inboxResult.output) : [];
@@ -103,6 +106,10 @@ export async function runEpisode(
   });
   return outcomes;
 }
+
+/** The trade a task asks for: amount, the token paid with, the token bought. */
+const TASK_TRADE =
+  /\bbuy\s+([0-9][0-9,]*(?:\.[0-9]+)?)\s+(t[A-Z]{3,5})\s+worth\s+of\s+(t[A-Z]{3,5})\b/i;
 
 /** Inbox items as text: the Arena's are `{ from, subject, body }`. */
 function toMessages(output: unknown): string[] {

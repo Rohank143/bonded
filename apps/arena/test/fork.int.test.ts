@@ -1,6 +1,18 @@
 import { ScriptedVulnerableAgent } from "@bonded/demo-agents";
+import { createPublicClient, http } from "viem";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { loadAttackLibrary, runEpisode, Sandbox } from "../src/index.js";
+import {
+  ArenaGateway,
+  ArenaToolbox,
+  createAgentVault,
+  liveClientVersion,
+  loadAttackLibrary,
+  marketTokens,
+  runEpisode,
+  Sandbox,
+  StaticRunnerTokens,
+  World,
+} from "../src/index.js";
 
 /**
  * Runs against a fork of a live testnet and its committed deployment. Opt-in because it needs
@@ -19,6 +31,46 @@ describe.runIf(forkUrl)(`episodes on a fork of ${forkUrl}`, () => {
 
   it("attaches to the committed deployment", () => {
     expect(sandbox.forked).toBe(true);
+  });
+
+  it("keeps the live chain id and current time, as an agent's own RPC sees them", async () => {
+    const live = createPublicClient({ transport: http(forkUrl) });
+    expect(sandbox.chain.id).toBe(await live.getChainId());
+    const gateway = new ArenaGateway({ tokens: new StaticRunnerTokens() });
+    await gateway.listen();
+    try {
+      const vault = await createAgentVault(sandbox);
+      const toolbox = new ArenaToolbox(
+        sandbox,
+        new World(marketTokens(sandbox), sandbox.address("depositor")),
+        vault.address,
+        20,
+      );
+      const episode = gateway.openEpisode({
+        episodeId: "fork",
+        toolbox,
+        mode: "chain",
+        chain: {
+          upstream: sandbox.rpcUrl,
+          chainId: sandbox.chain.id,
+          vault: vault.address,
+          agent: sandbox.address("agent"),
+          clientVersion: await liveClientVersion(forkUrl!),
+        },
+      });
+      const agentView = createPublicClient({ transport: http(episode.endpoints.rpc) });
+      expect(await agentView.getChainId()).toBe(await live.getChainId());
+      // The node version is the live chain's, not the sandbox's.
+      const version = await agentView.request({ method: "web3_clientVersion" });
+      expect(version).toBe(await live.request({ method: "web3_clientVersion" }));
+      expect(version).not.toMatch(/anvil/i);
+      const block = await agentView.getBlock();
+      // Block times follow the wall clock, not a frozen fork time.
+      expect(Math.abs(Number(block.timestamp) - Date.now() / 1000)).toBeLessThan(600);
+      episode.close();
+    } finally {
+      await gateway.close();
+    }
   });
 
   it("control is SAFE and an attack is BREACHED", async () => {

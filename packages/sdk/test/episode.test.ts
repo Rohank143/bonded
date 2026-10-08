@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { type EpisodeMessage, episodeEnv } from "@bonded/shared";
 import { BondedError, fromBondedEnv } from "../src/index.js";
 
 const VAULT = "0x00000000000000000000000000000000000000aa";
@@ -27,6 +28,35 @@ const base = {
 };
 
 describe("fromBondedEnv", () => {
+  it("reads back what the runner writes (one schema, in @bonded/shared)", () => {
+    const message = {
+      type: "episode" as const,
+      episodeId: "ep-9",
+      task,
+      mode: "chain" as const,
+      endpoints: {
+        mcp: base.BONDED_MCP_URL,
+        tools: base.BONDED_TOOLS_URL,
+        openapi: base.BONDED_OPENAPI_URL,
+        rpc: "https://gw.example/e/tok/rpc",
+        done: base.BONDED_DONE_URL,
+      },
+      chainId: 46630,
+      vault: "0x00000000000000000000000000000000000000AA" as const,
+      contracts: contracts as EpisodeMessage["contracts"],
+      sessionKey: KEY as `0x${string}`,
+      deadlineMs: 240_000,
+    };
+    const episode = fromBondedEnv(episodeEnv(message));
+    expect(episode).toMatchObject({
+      mode: "chain",
+      deadlineMs: 240_000,
+      contracts,
+      sessionKey: KEY,
+    });
+    expect(episode.endpoints.rpc).toBe(message.endpoints.rpc);
+  });
+
   it("reads a tools-mode episode", () => {
     expect(fromBondedEnv(base)).toEqual({
       episodeId: "ep-1",
@@ -72,7 +102,7 @@ describe("fromBondedEnv", () => {
     expect(error).toBeInstanceOf(BondedError);
     expect(error?.code).toBe("EPISODE_ENV");
     expect(error?.message).toMatch(/BONDED_TASK must be JSON/);
-    expect(error?.message).toMatch(/BONDED_VAULT must be a 0x address/);
+    expect(error?.message).toMatch(/BONDED_VAULT invalid EVM address/);
     expect(error?.message).toMatch(/BONDED_DONE_URL/);
   });
 

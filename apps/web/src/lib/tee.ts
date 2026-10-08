@@ -7,7 +7,7 @@ export interface TeeView {
   /** The on-chain measurement. */
   measurement: `0x${string}` | null;
   /** The session keys from the report, shown only when the report is the one that was posted. */
-  keys: { evm: string; solana: string } | null;
+  keys: { evm: string; solana?: string } | null;
 }
 
 /**

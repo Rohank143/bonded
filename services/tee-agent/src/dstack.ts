@@ -4,6 +4,9 @@ import type { TeeBackend } from "./backend.js";
 /** Key derivation paths. Changing one changes the agent's address, so they are fixed here. */
 export const EVM_KEY_PATH = ["bonded/agent/v1", "evm"] as const;
 export const SOLANA_KEY_PATH = ["bonded/agent/v1", "solana"] as const;
+/** An Arena key's path: its own branch, with the rating's key id in it. */
+export const arenaKeyPath = (keyId: string) =>
+  [`bonded/agent/v1/arena/${keyId.replace(/^0x/, "").toLowerCase()}`, "evm"] as const;
 
 /**
  * dstack's guest agent, reached over its Unix socket inside the CVM (or the simulator's HTTP
@@ -16,6 +19,10 @@ export class DstackBackend implements TeeBackend {
 
   async evmKey(): Promise<Uint8Array> {
     return (await this.client.getKey(...EVM_KEY_PATH, "secp256k1")).key;
+  }
+
+  async arenaKey(keyId: string): Promise<Uint8Array> {
+    return (await this.client.getKey(...arenaKeyPath(keyId), "secp256k1")).key;
   }
 
   async solanaSeed(): Promise<Uint8Array> {

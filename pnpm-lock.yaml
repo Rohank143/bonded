@@ -96,6 +96,9 @@ importers:
       '@bonded/solana':
         specifier: workspace:*
         version: link:../../packages/solana
+      '@modelcontextprotocol/sdk':
+        specifier: 1.30.1
+        version: 1.30.1(@cfworker/json-schema@4.1.1)(zod@4.6.5)
       '@phala/dcap-qvl':
         specifier: 0.6.5
         version: 0.6.5
@@ -105,12 +108,25 @@ importers:
       viem:
         specifier: ^2.56.9
         version: 2.56.9(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.6.5)
+      ws:
+        specifier: 8.21.0
+        version: 8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
       zod:
         specifier: ^4.6.5
         version: 4.6.5
+    devDependencies:
+      '@bonded/example-byo-agent':
+        specifier: workspace:*
+        version: link:../../examples/byo-agent
+      '@bonded/runner':
+        specifier: workspace:*
+        version: link:../runner
+      '@types/ws':
+        specifier: 8.18.1
+        version: 8.18.1
 
   apps/demo-agents:
     dependencies:
@@ -195,6 +211,22 @@ importers:
       viem:
         specifier: ^2.56.9
         version: 2.56.9(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.6.5)
+
+  apps/runner:
+    dependencies:
+      '@bonded/shared':
+        specifier: workspace:^
+        version: link:../../packages/shared
+      ws:
+        specifier: 8.21.0
+        version: 8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+    devDependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: 1.30.1
+        version: 1.30.1(@cfworker/json-schema@4.1.1)(zod@4.6.5)
+      '@types/ws':
+        specifier: 8.18.1
+        version: 8.18.1
 
   apps/web:
     dependencies:
@@ -1641,8 +1673,8 @@ packages:
     resolution: {integrity: sha512-w8CVbdkDrVXFJbfBSlDfafDR6BAkpDmv1bC1UJVCoVny5tW2RKAdn9i68Xf7asYT4TnUhl/hN4zfUiKQq9II4g==}
     engines: {node: '>=16.0.0'}
 
-  '@modelcontextprotocol/sdk@1.32.0':
-    resolution: {integrity: sha512-8BviX/hK4Gd2eL1KdTwm0gfl4d3wdoErW0Jd00h6nomUAtk6IJk5vwQJc6kfWtJTzN5OEV/lgIiJKI8fiDGAlA==}
+  '@modelcontextprotocol/sdk@1.30.1':
+    resolution: {integrity: sha512-H2HxLvC3HDNybePJaLdSrU1hhUK5iQw+WvV1b01myFyI7sdVGe1u/IPTE5D9fGCiJDVtgMV/lmFkQXLmQyIFYA==}
     engines: {node: '>=18'}
     peerDependencies:
       '@cfworker/json-schema': ^4.1.1
@@ -3713,8 +3745,8 @@ packages:
   '@types/ws@7.4.7':
     resolution: {integrity: sha512-JQbbmxZTZehdc2iszGKs5oC3NFnjeay7mtAWrdt7qNtAVK0g19muApzAy4bm9byz79xa2ZnO/BOBC2R8RC5Lww==}
 
-  '@types/ws@8.18.2':
-    resolution: {integrity: sha512-67MQl+fpWKVTT1NYdnmo3U4sc/xPo/zQBncVnI74qmQa0z/b+1g6iYqNmGCPbxO+zz2aklb08a0oHfegiVd0/w==}
+  '@types/ws@8.18.1':
+    resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
 
   '@typescript-eslint/eslint-plugin@8.70.1':
     resolution: {integrity: sha512-nDNrUQ/4ruSNYbu749TRY7cfrzPtoLHEXSNBI8aaNY32LlZCajixqRf3FqcKC4p5Cam4VOHYx/t+i5+nKXvrqA==}
@@ -10654,7 +10686,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(zod@3.25.76)':
+  '@modelcontextprotocol/sdk@1.30.1(@cfworker/json-schema@4.1.1)(zod@3.25.76)':
     dependencies:
       '@hono/node-server': 1.19.17(hono@4.13.9)
       ajv: 8.20.0
@@ -10678,6 +10710,30 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
     optional: true
+
+  '@modelcontextprotocol/sdk@1.30.1(@cfworker/json-schema@4.1.1)(zod@4.6.5)':
+    dependencies:
+      '@hono/node-server': 1.19.17(hono@4.13.9)
+      ajv: 8.20.0
+      ajv-formats: 3.0.1(ajv@8.20.0)
+      content-type: 1.0.5
+      cors: 2.8.6
+      cross-spawn: 7.0.6
+      eventsource: 3.0.7
+      eventsource-parser: 3.1.1
+      express: 5.2.1
+      express-rate-limit: 8.7.0(express@5.2.1)
+      hono: 4.13.9
+      jose: 6.2.12
+      json-schema-typed: 8.0.2
+      pkce-challenge: 5.0.1
+      raw-body: 3.0.2
+      zod: 4.6.5
+      zod-to-json-schema: 3.25.2(zod@4.6.5)
+    optionalDependencies:
+      '@cfworker/json-schema': 4.1.1
+    transitivePeerDependencies:
+      - supports-color
 
   '@napi-rs/canvas-android-arm64@0.1.100':
     optional: true
@@ -10791,7 +10847,7 @@ snapshots:
       debug: 4.4.3
       openai: 5.23.2(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76)
     optionalDependencies:
-      '@modelcontextprotocol/sdk': 1.32.0(@cfworker/json-schema@4.1.1)(zod@3.25.76)
+      '@modelcontextprotocol/sdk': 1.30.1(@cfworker/json-schema@4.1.1)(zod@3.25.76)
       zod: 3.25.76
     transitivePeerDependencies:
       - '@cfworker/json-schema'
@@ -10804,7 +10860,7 @@ snapshots:
       debug: 4.4.3
       openai: 5.23.2(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@3.25.76)
     optionalDependencies:
-      '@modelcontextprotocol/sdk': 1.32.0(@cfworker/json-schema@4.1.1)(zod@3.25.76)
+      '@modelcontextprotocol/sdk': 1.30.1(@cfworker/json-schema@4.1.1)(zod@3.25.76)
       zod: 3.25.76
     transitivePeerDependencies:
       - '@cfworker/json-schema'
@@ -10839,7 +10895,7 @@ snapshots:
     dependencies:
       '@openai/agents-core': 0.0.7(@cfworker/json-schema@4.1.1)(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76)
       '@openai/zod': zod@3.25.76
-      '@types/ws': 8.18.2
+      '@types/ws': 8.18.1
       debug: 4.4.3
       ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
     transitivePeerDependencies:
@@ -10853,7 +10909,7 @@ snapshots:
     dependencies:
       '@openai/agents-core': 0.0.7(@cfworker/json-schema@4.1.1)(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@3.25.76)
       '@openai/zod': zod@3.25.76
-      '@types/ws': 8.18.2
+      '@types/ws': 8.18.1
       debug: 4.4.3
       ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
     transitivePeerDependencies:
@@ -12199,7 +12255,7 @@ snapshots:
 
   '@scure/bip32@1.7.0':
     dependencies:
-      '@noble/curves': 1.9.1
+      '@noble/curves': 1.9.7
       '@noble/hashes': 1.8.0
       '@scure/base': 1.2.6
 
@@ -14177,7 +14233,7 @@ snapshots:
     dependencies:
       '@types/node': 22.20.4
 
-  '@types/ws@8.18.2':
+  '@types/ws@8.18.1':
     dependencies:
       '@types/node': 22.20.4
 
@@ -16168,7 +16224,6 @@ snapshots:
     dependencies:
       mime-types: 3.0.2
       negotiator: 1.1.0
-    optional: true
 
   acorn-jsx@5.3.2(acorn@8.18.0):
     dependencies:
@@ -16210,7 +16265,6 @@ snapshots:
   ajv-formats@3.0.1(ajv@8.20.0):
     optionalDependencies:
       ajv: 8.20.0
-    optional: true
 
   ajv@6.15.0:
     dependencies:
@@ -16225,7 +16279,6 @@ snapshots:
       fast-uri: 3.1.8
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
-    optional: true
 
   am-i-vibing@0.5.0:
     dependencies:
@@ -16511,7 +16564,6 @@ snapshots:
       type-is: 2.1.0
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   boolbase@1.0.0: {}
 
@@ -16609,8 +16661,7 @@ snapshots:
     dependencies:
       node-gyp-build: 4.8.4
 
-  bytes@3.1.2:
-    optional: true
+  bytes@3.1.2: {}
 
   cacheable@2.5.0:
     dependencies:
@@ -16782,24 +16833,19 @@ snapshots:
     dependencies:
       simple-wcswidth: 1.1.2
 
-  content-disposition@1.1.0:
-    optional: true
+  content-disposition@1.1.0: {}
 
-  content-type@1.0.5:
-    optional: true
+  content-type@1.0.5: {}
 
-  content-type@2.1.0:
-    optional: true
+  content-type@2.1.0: {}
 
   cookie-es@1.2.3: {}
 
   cookie-es@3.1.1: {}
 
-  cookie-signature@1.2.2:
-    optional: true
+  cookie-signature@1.2.2: {}
 
-  cookie@0.7.2:
-    optional: true
+  cookie@0.7.2: {}
 
   cookie@2.0.1: {}
 
@@ -16812,7 +16858,6 @@ snapshots:
     dependencies:
       object-assign: 4.1.1
       vary: 1.1.2
-    optional: true
 
   cose-base@1.0.3:
     dependencies:
@@ -17181,8 +17226,7 @@ snapshots:
 
   delayed-stream@1.0.0: {}
 
-  depd@2.0.0:
-    optional: true
+  depd@2.0.0: {}
 
   dequal@2.0.3: {}
 
@@ -17285,8 +17329,7 @@ snapshots:
     dependencies:
       tweetnacl: 1.0.3
 
-  ee-first@1.1.1:
-    optional: true
+  ee-first@1.1.1: {}
 
   elkjs@0.9.3: {}
 
@@ -17320,8 +17363,7 @@ snapshots:
 
   encode-utf8@1.0.3: {}
 
-  encodeurl@2.0.0:
-    optional: true
+  encodeurl@2.0.0: {}
 
   end-of-stream@1.4.5:
     dependencies:
@@ -17436,8 +17478,7 @@ snapshots:
       '@esbuild/win32-ia32': 0.28.2
       '@esbuild/win32-x64': 0.28.2
 
-  escape-html@1.0.3:
-    optional: true
+  escape-html@1.0.3: {}
 
   escape-string-regexp@1.0.5: {}
 
@@ -17544,8 +17585,7 @@ snapshots:
 
   esutils@2.0.3: {}
 
-  etag@1.8.1:
-    optional: true
+  etag@1.8.1: {}
 
   eth-block-tracker@7.1.0:
     dependencies:
@@ -17706,13 +17746,11 @@ snapshots:
 
   events@3.3.0: {}
 
-  eventsource-parser@3.1.1:
-    optional: true
+  eventsource-parser@3.1.1: {}
 
   eventsource@3.0.7:
     dependencies:
       eventsource-parser: 3.1.1
-    optional: true
 
   evp_bytestokey@1.0.3:
     dependencies:
@@ -17728,7 +17766,6 @@ snapshots:
       ip-address: 10.7.3
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   express@5.2.1:
     dependencies:
@@ -17762,7 +17799,6 @@ snapshots:
       vary: 1.1.2
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   expressive-code@0.44.2:
     dependencies:
@@ -17806,8 +17842,7 @@ snapshots:
     dependencies:
       fast-string-truncated-width: 3.0.3
 
-  fast-uri@3.1.8:
-    optional: true
+  fast-uri@3.1.8: {}
 
   fast-wrap-ansi@0.2.2:
     dependencies:
@@ -17847,7 +17882,6 @@ snapshots:
       statuses: 2.0.2
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   find-proc@0.2.0: {}
 
@@ -17893,11 +17927,9 @@ snapshots:
       hasown: 2.0.4
       mime-types: 2.1.35
 
-  forwarded@0.2.0:
-    optional: true
+  forwarded@0.2.0: {}
 
-  fresh@2.0.0:
-    optional: true
+  fresh@2.0.0: {}
 
   fsevents@2.3.3:
     optional: true
@@ -18243,7 +18275,6 @@ snapshots:
       setprototypeof: 1.2.0
       statuses: 2.0.2
       toidentifier: 1.0.1
-    optional: true
 
   https-proxy-agent@5.0.1:
     dependencies:
@@ -18312,11 +18343,9 @@ snapshots:
 
   iobuffer@5.4.0: {}
 
-  ip-address@10.7.3:
-    optional: true
+  ip-address@10.7.3: {}
 
-  ipaddr.js@1.9.1:
-    optional: true
+  ipaddr.js@1.9.1: {}
 
   iron-webcrypto@1.2.1: {}
 
@@ -18368,8 +18397,7 @@ snapshots:
 
   is-potential-custom-element-name@1.0.1: {}
 
-  is-promise@4.0.0:
-    optional: true
+  is-promise@4.0.0: {}
 
   is-regex@1.2.1:
     dependencies:
@@ -18518,11 +18546,9 @@ snapshots:
 
   json-schema-traverse@0.4.1: {}
 
-  json-schema-traverse@1.0.0:
-    optional: true
+  json-schema-traverse@1.0.0: {}
 
-  json-schema-typed@8.0.2:
-    optional: true
+  json-schema-typed@8.0.2: {}
 
   json-schema@0.4.0: {}
 
@@ -18983,11 +19009,9 @@ snapshots:
     dependencies:
       '@babel/runtime': 7.29.7
 
-  media-typer@1.1.1:
-    optional: true
+  media-typer@1.1.1: {}
 
-  merge-descriptors@2.0.0:
-    optional: true
+  merge-descriptors@2.0.0: {}
 
   merkletreejs@0.3.11:
     dependencies:
@@ -19317,8 +19341,7 @@ snapshots:
 
   mime-db@1.52.0: {}
 
-  mime-db@1.54.0:
-    optional: true
+  mime-db@1.54.0: {}
 
   mime-types@2.1.35:
     dependencies:
@@ -19327,7 +19350,6 @@ snapshots:
   mime-types@3.0.2:
     dependencies:
       mime-db: 1.54.0
-    optional: true
 
   mimic-fn@2.1.0: {}
 
@@ -19368,7 +19390,6 @@ snapshots:
   negotiator@1.1.0:
     dependencies:
       content-type: 2.1.0
-    optional: true
 
   neo-async@2.6.2: {}
 
@@ -19409,11 +19430,9 @@ snapshots:
       once: 1.4.0
       readable-stream: 2.3.8
 
-  object-assign@4.1.1:
-    optional: true
+  object-assign@4.1.1: {}
 
-  object-inspect@1.13.4:
-    optional: true
+  object-inspect@1.13.4: {}
 
   obug@2.2.1: {}
 
@@ -19432,7 +19451,6 @@ snapshots:
   on-finished@2.4.1:
     dependencies:
       ee-first: 1.1.1
-    optional: true
 
   once@1.4.0:
     dependencies:
@@ -19762,8 +19780,7 @@ snapshots:
     dependencies:
       entities: 8.1.0
 
-  parseurl@1.3.3:
-    optional: true
+  parseurl@1.3.3: {}
 
   path-data-parser@0.1.0: {}
 
@@ -19776,8 +19793,7 @@ snapshots:
       lru-cache: 11.5.3
       minipass: 7.1.3
 
-  path-to-regexp@8.4.2:
-    optional: true
+  path-to-regexp@8.4.2: {}
 
   pbkdf2@3.1.7:
     dependencies:
@@ -19863,8 +19879,7 @@ snapshots:
       sonic-boom: 2.8.0
       thread-stream: 0.15.2
 
-  pkce-challenge@5.0.1:
-    optional: true
+  pkce-challenge@5.0.1: {}
 
   pngjs@5.0.0: {}
 
@@ -19993,7 +20008,6 @@ snapshots:
     dependencies:
       forwarded: 0.2.0
       ipaddr.js: 1.9.1
-    optional: true
 
   proxy-compare@2.6.0: {}
 
@@ -20038,7 +20052,6 @@ snapshots:
     dependencies:
       es-define-property: 1.0.1
       side-channel: 1.1.1
-    optional: true
 
   query-string@7.1.3:
     dependencies:
@@ -20071,8 +20084,7 @@ snapshots:
       randombytes: 2.1.0
       safe-buffer: 5.2.1
 
-  range-parser@1.3.0:
-    optional: true
+  range-parser@1.3.0: {}
 
   raw-body@3.0.2:
     dependencies:
@@ -20080,7 +20092,6 @@ snapshots:
       http-errors: 2.0.1
       iconv-lite: 0.7.3
       unpipe: 1.0.0
-    optional: true
 
   react-dom@19.3.0(react@19.3.0):
     dependencies:
@@ -20360,12 +20371,11 @@ snapshots:
       path-to-regexp: 8.4.2
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   rpc-websockets@10.0.1:
     dependencies:
       '@swc/helpers': 0.5.23
-      '@types/ws': 8.18.2
+      '@types/ws': 8.18.1
       buffer: 6.0.3
       eventemitter3: 5.0.4
       ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
@@ -20377,7 +20387,7 @@ snapshots:
     dependencies:
       '@swc/helpers': 0.5.23
       '@types/uuid': 10.0.0
-      '@types/ws': 8.18.2
+      '@types/ws': 8.18.1
       buffer: 6.0.3
       eventemitter3: 5.0.1
       uuid: 14.0.2
@@ -20462,7 +20472,6 @@ snapshots:
       statuses: 2.0.2
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   serve-static@2.2.1:
     dependencies:
@@ -20472,7 +20481,6 @@ snapshots:
       send: 1.2.1
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   set-blocking@2.0.0: {}
 
@@ -20485,8 +20493,7 @@ snapshots:
       gopd: 1.2.0
       has-property-descriptors: 1.0.2
 
-  setprototypeof@1.2.0:
-    optional: true
+  setprototypeof@1.2.0: {}
 
   sha.js@2.4.12:
     dependencies:
@@ -20548,7 +20555,6 @@ snapshots:
     dependencies:
       es-errors: 1.3.0
       object-inspect: 1.13.4
-    optional: true
 
   side-channel-map@1.0.1:
     dependencies:
@@ -20556,7 +20562,6 @@ snapshots:
       es-errors: 1.3.0
       get-intrinsic: 1.3.0
       object-inspect: 1.13.4
-    optional: true
 
   side-channel-weakmap@1.0.2:
     dependencies:
@@ -20565,7 +20570,6 @@ snapshots:
       get-intrinsic: 1.3.0
       object-inspect: 1.13.4
       side-channel-map: 1.0.1
-    optional: true
 
   side-channel@1.1.1:
     dependencies:
@@ -20574,7 +20578,6 @@ snapshots:
       side-channel-list: 1.0.1
       side-channel-map: 1.0.1
       side-channel-weakmap: 1.0.2
-    optional: true
 
   signal-exit@3.0.7: {}
 
@@ -20696,8 +20699,7 @@ snapshots:
       '@stablelib/base64': 1.0.1
       fast-sha256: 1.3.0
 
-  statuses@2.0.2:
-    optional: true
+  statuses@2.0.2: {}
 
   std-env@4.2.0: {}
 
@@ -20859,8 +20861,7 @@ snapshots:
 
   toformat@2.0.0: {}
 
-  toidentifier@1.0.1:
-    optional: true
+  toidentifier@1.0.1: {}
 
   toml@3.0.0: {}
 
@@ -20926,7 +20927,6 @@ snapshots:
       content-type: 2.1.0
       media-typer: 1.1.1
       mime-types: 3.0.2
-    optional: true
 
   typed-array-buffer@1.0.3:
     dependencies:
@@ -21042,8 +21042,7 @@ snapshots:
       unist-util-is: 6.0.1
       unist-util-visit-parents: 6.0.2
 
-  unpipe@1.0.0:
-    optional: true
+  unpipe@1.0.0: {}
 
   unstorage@1.17.5(idb-keyval@6.3.0):
     dependencies:
@@ -21136,8 +21135,7 @@ snapshots:
       '@types/react': 19.3.0
       react: 19.3.0
 
-  vary@1.1.2:
-    optional: true
+  vary@1.1.2: {}
 
   vaul@1.1.2(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
     dependencies:
@@ -22072,7 +22070,6 @@ snapshots:
   zod-to-json-schema@3.25.2(zod@4.6.5):
     dependencies:
       zod: 4.6.5
-    optional: true
 
   zod@3.22.4: {}
 

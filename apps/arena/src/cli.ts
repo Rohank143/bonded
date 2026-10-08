@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { parseArgs } from "node:util";
 import {
   AgentKitAgent,
@@ -17,15 +19,21 @@ import {
   SolanaAgentKitAgent,
 } from "@bonded/demo-agents";
 import {
+  AgentMode,
   type ArenaAgent,
   EVM_CHAINS,
   type EvmMandateInput,
+  isWellFormedRunnerToken,
+  llmConfigFromEnv,
+  OpenAICompatibleClient,
   parseSentinelQuestionSet,
 } from "@bonded/shared";
 import { loadAttackLibrary } from "./attacks.js";
 import { runControls } from "./controls.js";
 import { loadDotEnv, usesLanguageModel } from "./env.js";
 import { type EpisodeResult, runEpisode, saveEpisode } from "./episode.js";
+import { ArenaGateway, newRunnerToken, RemoteAgent, StaticRunnerTokens } from "./gateway/index.js";
+import { FileHeldOutLedger, freshHeldOut } from "./held-out-fresh.js";
 import { rateAgent } from "./rate.js";
 import { sentinelInfo } from "./sentinel-info.js";
 import { attestTeeAgent } from "./tee.js";
@@ -39,10 +47,12 @@ const USAGE = `Usage:
                                                        false-alarm test (no score)
 
 Agent:
-  --agent <vulnerable|hardened|partial|decision|agentkit|solana-agent-kit>
+  --agent <vulnerable|hardened|partial|decision|agentkit|solana-agent-kit|remote>
                            agent to test (default: vulnerable). agentkit and solana-agent-kit run
                            those frameworks' template agents with the Arena's tools (needs
-                           OPENROUTER_API_KEY; --model picks the model)
+                           OPENROUTER_API_KEY; --model picks the model). remote rates your own
+                           agent wherever it runs, through the Arena Gateway and @bonded/runner
+                           (see "Remote agents" below)
   --brain <scripted|llm>   scripted needs nothing; llm needs OPENROUTER_API_KEY (default: scripted)
   --model <id>             model for an llm brain or the decision agent, any OpenRouter model id
                            (LLM_BASE_URL switches to another OpenAI-compatible endpoint)
@@ -66,6 +76,24 @@ Attacks:
   --held-out <dir>         rate only: also run the unpublished attacks in this folder (YAML, from
                            pnpm heldout:generate); the report counts them as unpublished
   --list                   list the attack library and exit
+
+Remote agents (--agent remote, run or rate):
+  --mode <tools|chain>     tools (default): your agent calls tools over MCP or HTTP; chain: it reads
+                           with tools and signs its own vault transactions through an RPC endpoint
+  --runner-token <t>       the token your runner connects with (default: a fresh one, printed)
+  --gateway-port <n>       port for the local gateway (default: 8789)
+  --gateway-host <h>       address to listen on (default: 127.0.0.1)
+  --public-url <url>       the URL your runner and agent reach the gateway at, when it isn't
+                           http://<host>:<port> (e.g. behind a tunnel)
+  --runner-wait <s>        how long to wait for the runner to connect (default: 300)
+  --episode-timeout <s>    each episode's time limit (default: 240)
+  --name <name>            the agent's name in the report (default: remote/local)
+  --held-out-fresh <n>     rate only: variants per attack class made for this rating alone, never
+                           reused (default: 1; 0 for none). Used payloads are recorded in
+                           ~/.config/bonded/held-out-used.txt
+  --held-out-model <id>    draft those variants with this model (needs OPENROUTER_API_KEY);
+                           without it they are deterministic rewrites
+  --held-out-max-usd <n>   spending cap for --held-out-model (default: 0.25)
 
 Run:
   --max-usd <n>            rate and controls: stop starting episodes once model spend reaches this
@@ -101,6 +129,17 @@ async function main(): Promise<number> {
       traces: { type: "string", default: "traces" },
       out: { type: "string" },
       "held-out": { type: "string" },
+      mode: { type: "string", default: "tools" },
+      "runner-token": { type: "string" },
+      "gateway-port": { type: "string", default: "8789" },
+      "gateway-host": { type: "string", default: "127.0.0.1" },
+      "public-url": { type: "string" },
+      "runner-wait": { type: "string", default: "300" },
+      "episode-timeout": { type: "string", default: "240" },
+      name: { type: "string" },
+      "held-out-fresh": { type: "string", default: "1" },
+      "held-out-model": { type: "string" },
+      "held-out-max-usd": { type: "string", default: "0.25" },
       list: { type: "boolean", default: false },
       help: { type: "boolean", default: false },
     },
@@ -123,11 +162,16 @@ async function main(): Promise<number> {
     return 0;
   }
 
+  const remote = values.agent === "remote";
+  if (remote && command === "controls") throw new Error("--agent remote works with run and rate");
+  const mode = AgentMode.safeParse(values.mode);
+  if (!mode.success) throw new Error("--mode must be tools or chain");
   // Only runs that call a language model read .env (for its API key); local scripted runs
   // never do, as the README promises.
-  if (usesLanguageModel(values)) loadDotEnv();
-  // Build the agent first, so a missing API key fails before a sandbox is started.
-  const agent = buildAgent(values);
+  if (usesLanguageModel(values) || values["held-out-model"]) loadDotEnv();
+  // Build the agent first, so a missing API key fails before a sandbox is started. A remote
+  // agent needs the sandbox and the gateway, so it is built once they are up.
+  let agent: ArenaAgent = remote ? placeholderAgent : buildAgent(values);
   let vault: { mandate: Partial<EvmMandateInput> } | undefined = values.enforce
     ? { mandate: { mode: "enforce" } }
     : undefined;
@@ -140,7 +184,13 @@ async function main(): Promise<number> {
     vault = {
       mandate: { ...vault?.mandate, destinations: [sandbox.address("depositor")] },
     };
+  let gateway: ArenaGateway | undefined;
   try {
+    if (remote) {
+      const started = await startRemote(sandbox, values, mode.data);
+      gateway = started.gateway;
+      agent = started.agent;
+    }
     if (command === "controls") {
       const outDir = values.out ?? `ratings/controls-${agent.name.replaceAll("/", "_")}`;
       const result = await runControls(sandbox, {
@@ -167,6 +217,8 @@ async function main(): Promise<number> {
       const tee = values["tee-url"]
         ? await attestTeeAgent({
             url: values["tee-url"],
+            // A local CLI run may check a TEE simulator on this machine.
+            allowLoopback: true,
             codeHash: codeHash ?? required("--code-hash with --tee-url"),
             composeHash:
               hex32(values["tee-compose-hash"], "--tee-compose-hash") ??
@@ -174,6 +226,35 @@ async function main(): Promise<number> {
           })
         : undefined;
       if (tee) console.log(`TEE verified: measurement ${tee.measurement}`);
+      // A remote agent's operator sees every attack their agent reads, so each of its ratings
+      // also gets a held-out set made for it alone, never reused.
+      const perClass = remote ? positiveInt(values["held-out-fresh"], "--held-out-fresh", true) : 0;
+      const fresh =
+        perClass > 0
+          ? await freshHeldOut({
+              library: published,
+              perClass,
+              sandbox,
+              ledger: new FileHeldOutLedger(
+                join(homedir(), ".config", "bonded", "held-out-used.txt"),
+              ),
+              ...(values["held-out-model"]
+                ? {
+                    llm: {
+                      client: new OpenAICompatibleClient(llmConfigFromEnv()),
+                      model: values["held-out-model"],
+                      maxUsd: Number(values["held-out-max-usd"]),
+                    },
+                  }
+                : {}),
+            })
+          : undefined;
+      if (fresh) {
+        console.log(
+          `Held-out set for this rating: ${fresh.heldOut.attacks} attacks (${fresh.heldOut.source}), seed ${fresh.heldOut.seed}`,
+        );
+        for (const m of fresh.missing) console.log(`  no variant for ${m.class}: ${m.reason}`);
+      }
       const result = await rateAgent(sandbox, {
         agent,
         ...(codeHash ? { codeHash } : {}),
@@ -188,8 +269,9 @@ async function main(): Promise<number> {
               ),
             }
           : {}),
-        attacks: library,
-        unpublished: new Set(heldOut.map((a) => a.id)),
+        attacks: [...library, ...(fresh?.attacks ?? [])],
+        unpublished: new Set([...heldOut, ...(fresh?.attacks ?? [])].map((a) => a.id)),
+        ...(fresh ? { heldOut: fresh.heldOut } : {}),
         repeats: positiveInt(values.repeats, "--repeats"),
         controls: positiveInt(values.controls ?? "2", "--controls", true),
         ...(vault ? { vault } : {}),
@@ -209,6 +291,7 @@ async function main(): Promise<number> {
       console.log(
         `  attestation ${result.posted.posted ? "posted to the sandbox registry" : `signed, not posted: ${result.posted.reason}`}`,
       );
+      if (result.refused) console.log(`  not attested: ${result.refused}`);
       if (result.report.stoppedEarly) console.log(`  stopped early: ${result.report.stoppedEarly}`);
       if (result.report.guardFailures)
         console.log(
@@ -248,8 +331,88 @@ async function main(): Promise<number> {
     console.log(`\n${summarise(results)}`);
     return 0;
   } finally {
+    await gateway?.close();
     await sandbox.stop();
   }
+}
+
+/** Stands in until the remote agent is built; never run. */
+const placeholderAgent: ArenaAgent = {
+  name: "remote",
+  run: () => Promise.reject(new Error("the remote agent isn't connected")),
+};
+
+/**
+ * Starts a local Arena Gateway for a remote agent, prints the runner command, and waits for the
+ * runner to connect. The token is held in memory only; it works for this run alone.
+ */
+async function startRemote(
+  sandbox: Sandbox,
+  values: {
+    "runner-token"?: string;
+    "gateway-port"?: string;
+    "gateway-host"?: string;
+    "public-url"?: string;
+    "runner-wait"?: string;
+    "episode-timeout"?: string;
+    name?: string;
+  },
+  mode: AgentMode,
+): Promise<{ gateway: ArenaGateway; agent: RemoteAgent }> {
+  const given = values["runner-token"];
+  const token = given ?? newRunnerToken();
+  if (!isWellFormedRunnerToken(token))
+    throw new Error(
+      "--runner-token must be bonded_rt_ followed by at least 16 base64url characters",
+    );
+  const gateway = new ArenaGateway({
+    tokens: new StaticRunnerTokens({ [token]: "local" }),
+    ...(values["public-url"] ? { publicUrl: values["public-url"] } : {}),
+    onRunnerPresence: (e) => {
+      if (e.type === "connected") console.log(`Runner connected (${e.hello?.mode} mode)`);
+      if (e.type === "disconnected") console.log(`Runner disconnected (${e.reason})`);
+    },
+  });
+  const url = await gateway.listen({
+    port: positiveInt(values["gateway-port"], "--gateway-port"),
+    host: values["gateway-host"] ?? "127.0.0.1",
+  });
+  console.log(`\nArena Gateway listening at ${url}`);
+  console.log("Start your agent's runner in another terminal:\n");
+  const tokenShown = given ? "<your token>" : token;
+  console.log(
+    `  BONDED_RUNNER_TOKEN=${tokenShown} npx @bonded/runner --gateway ${url} ` +
+      `--mode ${mode} -- <your agent command>\n`,
+  );
+  console.log("or, from this repository (until @bonded/runner is published):\n");
+  console.log(
+    `  BONDED_RUNNER_TOKEN=${tokenShown} node apps/runner/dist/cli.js --gateway ${url} ` +
+      `--mode ${mode} -- <your agent command>\n`,
+  );
+  const waitMs = positiveInt(values["runner-wait"], "--runner-wait") * 1000;
+  const deadline = Date.now() + waitMs;
+  console.log(`Waiting up to ${waitMs / 1000} s for the runner...`);
+  while (!gateway.runner("local")) {
+    if (Date.now() > deadline) {
+      await gateway.close();
+      throw new Error("no runner connected in time");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  const runnerMode = gateway.runner("local")?.hello?.mode;
+  if (runnerMode !== mode) {
+    await gateway.close();
+    throw new Error(`the runner is in ${runnerMode} mode, but --mode is ${mode}`);
+  }
+  const agent = new RemoteAgent({
+    gateway,
+    sandbox,
+    runner: "local",
+    mode,
+    name: values.name ?? "remote/local",
+    episodeTimeoutMs: positiveInt(values["episode-timeout"], "--episode-timeout") * 1000,
+  });
+  return { gateway, agent };
 }
 
 function buildAgent(values: {

@@ -180,6 +180,9 @@ async function runLocked(
           throw new Error(
             `incomplete rating: a guard failed to answer ${result.report.guardFailures} times`,
           );
+        // An agent that doesn't do its task in the controls can't be breached either: never
+        // attest a score it got by doing nothing (rate.ts, LIVENESS_MIN_RATE).
+        if (result.refused) throw new Error(`not attested: ${result.refused}`);
         const current = await chain.read.readContract({
           address: chain.deployment.registry,
           abi: bondedRegistryAbi,

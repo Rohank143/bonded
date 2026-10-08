@@ -6,6 +6,15 @@ import { ZERO_BYTES32 } from "./schemas/attestation.js";
 /**
  * What a TEE-hosted agent shows the Arena, and how the Arena turns it into the attestation's
  * `teeMeasurement`. See ADR-012 and docs/SPECIFICATION.md Section 12.
+ *
+ * Two kinds of evidence, for two keys:
+ * - production: the agent's stable session keys, the ones its vault (or module) names in
+ *   production. The rating service and the keeper's re-checks use this.
+ * - arena (`purpose: "arena"`): a key the TEE derives for one rating from a key id the Arena
+ *   chooses (`keyId`). In a chain-mode rating the agent signs with it, and the episode vaults name
+ *   it, so nothing the agent signs in the Arena (where the fork keeps the live chain's id) is
+ *   valid for its production key. Its report data has a domain of its own, so neither kind of
+ *   evidence can stand in for the other.
  */
 
 const hex = z.string().regex(/^(0x)?[0-9a-fA-F]*$/, "hex string");
@@ -15,6 +24,8 @@ const solanaKey = z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/, "base58 publ
 
 /** Domain tag mixed into the quote's report data, so the quote can't be reused for anything else. */
 export const TEE_REPORT_DOMAIN = "bonded-tee-v1";
+/** Domain tag for an Arena key's evidence. */
+export const TEE_ARENA_DOMAIN = "bonded-tee-arena-v1";
 
 /** The evidence endpoint's response. Everything here is checked by the Arena; none of it is trusted. */
 export const TeeEvidence = z.strictObject({
@@ -28,10 +39,14 @@ export const TeeEvidence = z.strictObject({
   codeHash: bytes32,
   /** The agent's session key on EVM chains, derived inside the TEE. */
   evmAddress,
-  /** The agent's session key on Solana, derived inside the TEE. */
-  solanaPublicKey: solanaKey,
+  /** The agent's session key on Solana, derived inside the TEE. Absent for an EVM-only agent. */
+  solanaPublicKey: solanaKey.optional(),
   /** The Arena's challenge, echoed back so an old quote can't be replayed. */
   nonce: hex32,
+  /** "arena" for an Arena key's evidence; absent for the production keys. */
+  purpose: z.literal("arena").optional(),
+  /** For an Arena key: the key id the Arena chose, from which the TEE derived `evmAddress`. */
+  keyId: hex32.optional(),
 });
 export type TeeEvidence = z.infer<typeof TeeEvidence>;
 
@@ -44,13 +59,17 @@ export function toHex32(value: string): `0x${string}` {
 }
 
 /**
- * The 32 bytes the TEE puts in the quote's report data: a hash of the code it runs, both session
+ * The 32 bytes the TEE puts in the quote's report data: a hash of the code it runs, its session
  * keys and the Arena's nonce. Binding them in one hash is what ties "this key" to "this code".
+ *
+ * An EVM-only agent has no Solana key, and its part is empty. That stays unambiguous: every other
+ * part has a fixed length, and a Solana key is never empty (32 to 44 base58 characters), so the
+ * hashed bytes say whether there was a key, and which.
  */
 export function teeReportData(input: {
   codeHash: `0x${string}`;
   evmAddress: `0x${string}`;
-  solanaPublicKey: string;
+  solanaPublicKey?: string | undefined;
   nonce: string;
 }): `0x${string}` {
   return keccak256(
@@ -58,7 +77,28 @@ export function teeReportData(input: {
       stringToHex(TEE_REPORT_DOMAIN),
       input.codeHash,
       input.evmAddress,
-      stringToHex(input.solanaPublicKey),
+      stringToHex(input.solanaPublicKey ?? ""),
+      toHex32(input.nonce),
+    ]),
+  );
+}
+
+/**
+ * The report data for an Arena key's evidence: the code, the Arena key's address, the key id it
+ * was derived from and the challenge, under the Arena domain.
+ */
+export function teeArenaReportData(input: {
+  codeHash: `0x${string}`;
+  evmAddress: `0x${string}`;
+  keyId: string;
+  nonce: string;
+}): `0x${string}` {
+  return keccak256(
+    concatHex([
+      stringToHex(TEE_ARENA_DOMAIN),
+      input.codeHash,
+      input.evmAddress,
+      toHex32(input.keyId),
       toHex32(input.nonce),
     ]),
   );
