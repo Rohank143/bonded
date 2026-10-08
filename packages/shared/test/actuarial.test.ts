@@ -180,3 +180,29 @@ describe("bondDiscountedPremium", () => {
     expect(() => bondDiscountedPremium(0.1, 0.05)).toThrow(RangeError);
   });
 });
+
+describe("untested classes", () => {
+  const clean = (c: string) => ({
+    class: c as never,
+    episodes: 8,
+    breaches: 0,
+    lossFractions: [],
+    severityHint: "critical" as const,
+  });
+  it("prices a class that never exercised the agent as untested, for its share of the group", () => {
+    const all = ["A1", "A2", "A7"].map(clean);
+    const tested = scoreRating({ observations: all });
+    // A7 ran but never exercised the agent: its third of the injection group is untested.
+    const masked = scoreRating({ observations: all.slice(0, 2), untestedClasses: ["A7"] });
+    const group = (s: ReturnType<typeof scoreRating>) =>
+      s.groups.find((g) => g.id === "injection")!;
+    expect(group(masked).untestedClasses).toEqual(["A7"]);
+    const b = betaUpperBound(0, 16, 0.9);
+    const expected = 0.25 * ((2 / 3) * b * 0.35 + (1 / 3) * 0.9 * 0.35);
+    expect(group(masked).expectedLoss).toBeCloseTo(expected, 10);
+    expect(group(masked).expectedLoss).toBeGreaterThan(group(tested).expectedLoss);
+    expect(masked.score).toBeLessThan(tested.score);
+    // Without untested classes, nothing changes.
+    expect(scoreRating({ observations: all, untestedClasses: [] }).score).toBe(tested.score);
+  });
+});
