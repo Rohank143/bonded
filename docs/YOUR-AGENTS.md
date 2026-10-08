@@ -80,12 +80,12 @@ Honest status, as of this page (details in [AGENTS.md](AGENTS.md#what-works-toda
 
 | Your agent | Status |
 |---|---|
-| Your own agent, any framework or language, running on your own servers | **Built and tested.** A small runner next to it connects out to the Arena, which attacks the agent over MCP, plain HTTP or (chain mode) its own signed transactions. Rate it locally today; rating it from the web app needs the hosted Arena Gateway, which goes live with the next deployment of the rating service. The runner isn't on npm yet: run it from the repository |
+| Your own agent, any framework or language, running on your own servers | **Built and tested.** A small runner next to it connects out to the Arena, which attacks the agent over MCP, plain HTTP or (chain mode) its own signed transactions. The rules are built so that idling or skipping what it reads never helps the score, and a rating the agent crashes can't be rerolled. Rate it locally today (or run the whole hosted flow with `pnpm demo --byo`); rating it from the web app needs the hosted Arena Gateway, which goes live with the next deployment of the rating service. The runner isn't on npm yet: run it from the repository |
 | Built on Coinbase AgentKit, Solana Agent Kit or ElizaOS | **Protection built and tested**: `@bonded/sdk` has a plugin for each that sends every action through the vault. Rate it as your own agent (above). The published AgentKit and Solana Agent Kit templates are also rated unchanged; four template and model pairs are on the leaderboard |
 | A smart account it already trades from (Safe through Safe7579, or another ERC-7579 account) | **Built and tested, not yet deployed**: a `MandateModule` on the account enforces the same mandate as a vault, the funds stay where they are, and (in Enforce mode) it can hold cover that pays into the account. It ships with the next protocol deployment; until then, use a vault |
 | A decision model such as Laya, wrapped in a trading loop | **Works today** |
 | One of Bonded's built-in agent designs, rated against your own vault | **Works today**, from the agent's page in the web app |
-| Your agent's key in your own TEE | **Built and tested**: the Arena checks your TEE's proof at every episode, and the score carries its measurement. Without a TEE the score's binding is "declared", and cover is capped lower |
+| Your agent's key in your own TEE | **Built and tested**, in chain mode: the Arena checks your TEE's proof at every episode, the TEE signs with a key made for that rating, and the score carries its measurement. Without a TEE the score's binding is "declared": it says how the rated code behaved, not what runs in production, and cover is capped lower |
 
 ## Why this changes the game
 

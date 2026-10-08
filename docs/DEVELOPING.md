@@ -140,7 +140,9 @@ cd contracts/evm && forge test --match-path 'test/module/*'   # the module, diff
 
 The parity tests run Bonded's scripted vulnerable, hardened and partial agents through the gateway over MCP, over HTTP and in chain mode, and require the same verdict as in-process, episode by episode. The SDK's Solana tests need the programs built (`pnpm solana:build`) and `solana-test-validator`; without them they skip.
 
-To run the rating service's gateway locally, start the API in the `arena-worker` (or `all`) role with `GATEWAY_PORT` set; `GATEWAY_PUBLIC_URL` is the address runners and agents reach it at, and the API puts it in the runner command it shows owners.
+`pnpm demo --byo` runs the whole hosted flow on your machine: the gateway, a runner token made through the API, the real runner with `examples/byo-agent`, and a rating; and an Enforce-mode module on the ERC-7579 reference account, rated and insured.
+
+To run the rating service's gateway yourself, start the API in the `arena-worker` (or `all`) role with `GATEWAY_PORT` set; `GATEWAY_PUBLIC_URL` is the address runners and agents reach it at, and the API puts it in the runner command it shows owners.
 
 | Setting (rating service) | Default | What it does |
 |---|---|---|
@@ -149,7 +151,14 @@ To run the rating service's gateway locally, start the API in the `arena-worker`
 | `DECLARED_COVER_CAP_USD`, `TEE_COVER_CAP_USD` | 5000, 20000 | Underwriting policy's total cover cap for an operator-run agent, by binding |
 | `HELD_OUT_FRESH_PER_CLASS` | 1 | Held-out variants per attack class made for each remote rating (0 to 5) |
 | `HELD_OUT_MODEL`, `HELD_OUT_MAX_USD` | `deepseek/deepseek-v4.1-flash`, 0.25 | Model that drafts them when `OPENROUTER_API_KEY` or `LLM_API_KEY` is set (otherwise deterministic rewrites), and its cap per rating |
+| `GATEWAY_TRUST_PROXY` | 0 | How many proxies in front of the gateway to trust for `X-Forwarded-For` (Railway: 1). Per-address connection limits use the client address that many hops from the right |
+| `REMOTE_REPEATS` | 3 | Runs of each attack in a remote rating (built-in designs: 5) |
+| `REMOTE_EPISODE_TIMEOUT_MS` | 90000 | One remote episode's time limit |
+| `REMOTE_EPISODE_BUDGET_MS`, `REMOTE_RATING_MAX_MS` | 40000, 10800000 | A remote rating's time budget: this much per episode, never more than the ceiling (3 hours) |
+| `REMOTE_RATINGS_PER_AGENT_DAILY`, `REMOTE_RATINGS_PER_OWNER_DAILY`, `REMOTE_RATINGS_DAILY` | 2, 3, 20 | Remote ratings per agent, per owner and for the whole chain, per 24 hours. Renewals and re-ratings count |
 | `RENEW_CHECK_MS` | 600000 | How often the arena-worker looks for connected agents whose scores expire within 3 days |
+
+With the gateway on, the arena-worker runs two rating lanes, each with its own lock, so Bonded's own ratings never wait behind an operator's agent. The remote policy is read once (`remotePolicyFromEnv` in `apps/api/src/remote-policy.ts`) and used by the API, the worker, renewals and re-ratings alike.
 
 ## API, keeper and the Gate 1 loop
 
@@ -177,8 +186,8 @@ The hosted services run on Railway, from `.railway/railway.ts`; contracts deploy
 
 1. **Publish the packages to npm**, in dependency order: `@bonded/shared`, `@bonded/solana`, `@bonded/sdk`, `@bonded/runner` (`pnpm --filter <name> publish`, which turns `workspace:` ranges into versions). Until then `npx @bonded/runner` and `npm install @bonded/sdk` don't resolve, and builders run them from the repository.
 2. **Push the runner's image**: build `apps/runner/Dockerfile` from the repository root and push it to a public registry, so builders can put their agent `FROM` it instead of building it themselves.
-3. **Bring up the Arena Gateway on Railway.** The configuration gives the arena-worker a public domain on port 8080 (`GATEWAY_PORT`) and sets `GATEWAY_PUBLIC_URL` on the API and the arena-worker. Merge and let the new image deploy first (the database migrations for runner tokens run on start), then `railway config plan` (it must show nothing to destroy), then `railway config apply`. Check `GET /healthz` on the gateway's domain.
-4. **Redeploy the protocol on the testnets for smart-account modules.** The deployed CoverManager, ClaimsEngine and DisputeModule predate `MandateModule`, so module cover needs a fresh deployment, which adds `MandateModuleFactory` and points CoverManager at it. The new `<chainId>.json` files carry `moduleFactory`; the web app offers module protection on a chain once its deployment has one.
+3. **Bring up the Arena Gateway on Railway.** The configuration gives the arena-worker a public domain on port 8080 (`GATEWAY_PORT`), sets `GATEWAY_TRUST_PROXY=1` on it (Railway's edge is one proxy hop), and sets `GATEWAY_PUBLIC_URL` on the API and the arena-worker. Merge and let the new image deploy first (the database migrations for runner tokens run on start), then `railway config plan` (it must show nothing to destroy), then `railway config apply`. Check `GET /healthz` on the gateway's domain.
+4. **Redeploy the protocol on the testnets for smart-account modules.** The deployed CoverManager, ClaimsEngine and DisputeModule predate `MandateModule`, so module cover needs a full redeployment of the protocol (new addresses for every contract), which adds `MandateModuleFactory` and points CoverManager at it. Agents, vaults, bonds and cover on the old deployment stay where they are. The new `<chainId>.json` files carry `moduleFactory`; the web app offers module protection on a chain once its deployment has one.
 
 ## Synthetic Sentinel data
 

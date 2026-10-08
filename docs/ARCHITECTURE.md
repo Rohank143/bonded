@@ -126,8 +126,11 @@ flowchart LR
 
 - **One world, three surfaces.** The gateway serves the same tools, world simulator and toolbox an in-process agent gets, per episode, behind an unguessable capability URL: MCP over streamable HTTP, plain HTTP with an OpenAPI document, and in chain mode a JSON-RPC proxy to the sandbox that passes only standard reads and signed `execute` calls to the episode's vault.
 - **`RemoteAgent`** is just another `ArenaAgent`: it opens the episode, hands it to the agent's connected runner, and waits for it to finish, exit or run out of time. The judge, scoring and attestation don't change. Parity tests require the same verdicts through the gateway as in-process.
-- **Binding.** A TEE-bound agent's runner forwards fresh TEE evidence at every episode, verified like Bonded's own TEE agent; otherwise the score's binding is declared, and cover is capped lower.
-- **Per-rating held-out sets.** Each rating of an operator-run agent also runs attack variants made for it alone, never reused (the used payloads are kept in the database).
+- **Binding.** A TEE-bound agent (chain mode only) signs with a key its TEE derives for the rating, and its runner forwards fresh TEE evidence at every episode, verified like Bonded's own TEE agent. Otherwise the score's binding is declared: it attests how the rated code behaved, and cover is capped lower.
+- **What runs.** The published library (three runs each by default), a held-out set made for that rating alone (never reused; the used payloads are kept in the database), and six controls, in a random order. Bonded's shared held-out set and accepted bounties are never shown to an operator-run agent. Each rating draws its benign world from a grammar with a secret seed of its own.
+- **Stricter judging.** Only episodes that exercised the agent count as trials; classes never exercised are priced as untested; a rating whose agent works less than 80% of the time, in controls or under attack, is refused.
+- **Stops are final.** A rating stops at the first episode the agent fails, or when it runs past its time budget (40 s an episode, at most 3 hours) because of the agent. The score is then superseded (no new quotes) and a cooldown starts, doubling from 1 hour to at most 48. Ratings are capped per agent, per owner and per chain, renewals included, and need a staked bond.
+- **Bounded work.** The gateway caps request rates, sizes and EVM gas per episode, and the sandbox caps the agent's reads of the live chain (500 an episode, 20,000 a rating) apart from the rating's own setup.
 
 ## Off-chain services
 
@@ -136,10 +139,10 @@ Three off-chain services share one database:
 | Service | Does |
 |---|---|
 | `api` | REST and server-sent events: signed quotes (capped by binding for operator-run agents), rating jobs, scores with their binding, coverage and held-out set, reports, the leaderboard, bounty reveals, self-serve registration and runner tokens, and observed breach rates (`GET /stats/observed-rates`) |
-| `arena-worker` | Runs rating jobs and validates bounty submissions in a sandbox forked from the live chain, then posts scores and pays bounties with the attester key. Serves the Arena Gateway (when `GATEWAY_PORT` is set), records runner presence, and renews operator-run agents' scores while their runners are connected |
+| `arena-worker` | Runs rating jobs and validates bounty submissions in a sandbox forked from the live chain, then posts scores and pays bounties with the attester key. Serves the Arena Gateway (when `GATEWAY_PORT` is set), with operator-run agents' ratings in a lane of their own so Bonded's ratings never wait behind them; records runner presence, and renews operator-run agents' scores while their runners are connected |
 | `keeper` | Watches vaults and modules for breaches and files claims; accrues premiums; checks TEE agents, and queues a re-rating when an operator-run agent's TEE changes |
 
-Jobs use a Postgres `FOR UPDATE SKIP LOCKED` queue; every transaction that moves money records its intent and nonce before broadcasting, so a crash can't pay twice. For operator-run agents the database also keeps runner tokens (as hashes only), runner presence, ratings the live loop had to skip and why, the held-out payloads already used, and each breach's agent, type and time (for observed rates).
+Jobs use a Postgres `FOR UPDATE SKIP LOCKED` queue; every transaction that moves money records its intent and nonce before broadcasting, so a crash can't pay twice. For operator-run agents the database also keeps runner tokens (as hashes only), runner presence, ratings the live loop had to skip and why, each agent's standing (superseded score, failures in a row, cooldown) and every rating attempt with the agent's own report kept apart, the held-out payloads already used, and each breach's agent, type and time (for observed rates).
 
 ## Sentinel
 
