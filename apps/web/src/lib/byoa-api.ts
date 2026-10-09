@@ -21,8 +21,12 @@ export const CONNECTIONS: readonly Connection[] = ["url", "runner"];
 /** What a connection belongs to: a preview (no vault, no bond), or an agent on chain. */
 export type Subject = { kind: "preview"; id: string } | { kind: "agent"; agentId: string };
 
-/** How a request is authorised: a preview session, or the agent owner's wallet signature. */
-export type Auth = { session: string } | { sign: Signer };
+/**
+ * How a request is authorised: the wallet's session (one sign-in covers previews and the owner's
+ * agents), or for an agent on chain the owner's wallet signing each request. With both, the
+ * session is used where the API accepts one and the wallet signs the rest (runner tokens).
+ */
+export type Auth = { session: string; sign?: Signer } | { session?: string; sign: Signer };
 
 /** Where the code hash a rating records came from (the runner's `codeSource`, or the URL). */
 export type CodeSource =
@@ -33,11 +37,16 @@ export interface CodeHashInfo {
   source: CodeSource | string;
   /** E.g. the commit, the image digest or the URL's version string. */
   detail?: string | null;
+  /** Who says so: Bonded never verifies it, it is declared or reported. */
+  reportedBy?: "owner" | "runner" | "agent";
+  /** The API's own words for that, e.g. "reported by the runner". */
+  label?: string;
 }
 
 /** A registered Agent URL. Its secret is shown once, when it is registered, and never again. */
 export interface AgentUrlInfo {
   url: string;
+  verified?: boolean;
   verifiedAt: string | null;
   version: string | null;
 }
@@ -104,6 +113,7 @@ export interface CheckRecord {
   id: string;
   status: CheckSummary["status"];
   events: CheckEvent[];
+  result?: Omit<CheckResult, "type"> | null;
 }
 
 /** GET …/estimate: a rating's time and cost, extrapolated from the passing check. */
@@ -112,6 +122,10 @@ export interface CostEstimate {
   perEpisode: { toolCalls: number; seconds: number; costUsd?: number | null };
   total: { seconds: number; costUsd?: number | null };
   basis: string;
+  /** The agent reported its model usage at done; without it the estimate is time only. */
+  usageReported?: boolean;
+  /** The API's own sentence on how far to trust it. */
+  note?: string;
 }
 
 /** A rating's progress: counts and time only, never verdicts, until it finishes. */
@@ -128,6 +142,8 @@ export interface NotificationSettings {
   email: string | null;
   /** This deployment can send email (an email provider is configured). */
   emailAvailable: boolean;
+  /** This deployment can sign webhooks (its secret key is set). */
+  webhookAvailable?: boolean;
 }
 
 export type PreviewStatus =
@@ -160,10 +176,29 @@ export interface PreviewRecord {
   problem?: string | null;
   gatewayUrl: string | null;
   lastCheck: CheckSummary | null;
+  /** The passing check of exactly this connection (mode, credential, code), if any. */
+  passingCheck?: CheckSummary | null;
+  /** Bonded can reach the agent now. */
+  ready?: boolean;
+  /** The code hash the owner declared, if any (the rest is reported). */
+  declaredCodeHash?: string | null;
   /** Waiting to start: how many previews or official ratings are ahead of it. */
   queue?: { position: number } | null;
   /** Why it was refused or stopped, in a sentence. */
   reason?: string | null;
+  /** Its rating's status, and its score once it is over. */
+  rating?: { runId: string; status: string; score?: number; tier?: string } | null;
+  /** What "Make it official" fills in. */
+  upgrade?: {
+    mode: RemoteMode;
+    connection: Connection;
+    agentUrl: string | null;
+    codeHash: string | null;
+    reportedCode: { hash: string; source: string } | null;
+    previewId: string;
+  };
+  expectedRating?: { episodes: number; budgetSeconds: number };
+  label?: string;
 }
 
 /** GET /previews/allowance: whether this wallet can start a preview now, and if not, when. */
@@ -202,9 +237,9 @@ async function authorise(
   action: ByoaAction,
   fields: Record<string, string> = {},
 ): Promise<{ headers: Record<string, string>; signed: Record<string, unknown> }> {
-  if ("session" in auth)
-    return { headers: { Authorization: `Bearer ${auth.session}` }, signed: {} };
-  if (subject.kind !== "agent") throw new Error("a preview needs its session: sign in again");
+  if (auth.session) return { headers: { Authorization: `Bearer ${auth.session}` }, signed: {} };
+  if (subject.kind !== "agent" || !auth.sign)
+    throw new Error("Your sign-in has ended. Sign in again to carry on.");
   const timestamp = now();
   const signature = await auth.sign({
     message: byoaMessage({
@@ -219,7 +254,7 @@ async function authorise(
 }
 
 async function write<T>(
-  method: "POST" | "PUT",
+  method: "POST" | "PUT" | "DELETE",
   path: string,
   subject: Subject,
   auth: Auth,
@@ -236,6 +271,7 @@ async function write<T>(
 }
 
 const bearer = (session: string) => ({ headers: { Authorization: `Bearer ${session}` } });
+const maybeBearer = (session?: string) => (session ? bearer(session) : undefined);
 
 /**
  * Follow a server-sent event stream. Returns a function that closes it. Each `data:` line is
@@ -267,7 +303,12 @@ export function streamEvents<T>(
 
 export const byoaApi = {
   /** POST /previews/session: sign in with the wallet once; the session authorises its previews. */
-  signIn: async (sign: Signer, wallet: string): Promise<PreviewSession> => {
+  signIn: async (
+    sign: Signer,
+    wallet: string,
+    /** The same session either way; previews' and agents' pages each use their own path. */
+    path: "/previews/session" | "/self/session" = "/previews/session",
+  ): Promise<PreviewSession> => {
     const timestamp = now();
     const signature = await sign({
       message: byoaMessage({
@@ -277,7 +318,7 @@ export const byoaApi = {
         timestamp,
       }),
     });
-    return request<PreviewSession>("/previews/session", {
+    return request<PreviewSession>(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chainId: deployment.chainId, wallet, timestamp, signature }),
@@ -304,9 +345,22 @@ export const byoaApi = {
     subject: Subject,
     auth: Auth,
   ): Promise<{ token: string; gatewayUrl: string | null }> =>
-    subject.kind === "agent" && "sign" in auth
-      ? createRunnerToken(auth.sign, subject.agentId)
+    subject.kind === "agent"
+      ? auth.sign
+        ? createRunnerToken(auth.sign, subject.agentId)
+        : Promise.reject(new Error("Connect the agent owner's wallet to make a runner token."))
       : write("POST", `${subjectPath(subject)}/runner-token`, subject, auth, "runner-token"),
+  /** DELETE …/agent-url: stop using the Agent URL; a registered agent goes back to its runner. */
+  revokeAgentUrl: (subject: Subject, auth: Auth) =>
+    write<{ revoked: number }>(
+      "DELETE",
+      `${subjectPath(subject)}/agent-url`,
+      subject,
+      auth,
+      "agent-url",
+      {},
+      { url: "none" },
+    ),
   /**
    * POST …/agent-url: register the agent's HTTPS endpoint. Bonded sends it a signed challenge
    * and it must echo it within 10 s; refused (422) with the reason in a sentence otherwise.
@@ -333,7 +387,8 @@ export const byoaApi = {
     onError?: (error: Error) => void,
   ) => streamEvents<CheckEvent>(`/checks/${encodeURIComponent(checkId)}/events`, onEvent, onError),
   /** GET …/estimate: from the latest passing check; 409 without one. */
-  estimate: (subject: Subject) => request<CostEstimate>(`${subjectPath(subject)}/estimate`),
+  estimate: (subject: Subject, session?: string) =>
+    request<CostEstimate>(`${subjectPath(subject)}/estimate`, maybeBearer(session)),
   /**
    * POST /previews/:id/rate: start the preview rating. 202 with the run id (and its place in the
    * queue); 409 without a passing check; 429 past the limits, with `retryAt`.
@@ -358,8 +413,8 @@ export const byoaApi = {
       onError,
     ),
   /** GET …/notifications: where the result is sent, masked. */
-  notifications: (subject: Subject) =>
-    request<NotificationSettings>(`${subjectPath(subject)}/notifications`),
+  notifications: (subject: Subject, session?: string) =>
+    request<NotificationSettings>(`${subjectPath(subject)}/notifications`, maybeBearer(session)),
   /**
    * PUT …/notifications: set or clear the webhook and the email. A new webhook gets a signing
    * secret, shown once.
@@ -367,7 +422,8 @@ export const byoaApi = {
   saveNotifications: (
     subject: Subject,
     auth: Auth,
-    input: { webhookUrl: string | null; email: string | null },
+    /** Leave a field out to keep it; null clears it. */
+    input: { webhookUrl?: string | null; email?: string | null },
   ) =>
     write<NotificationSettings & { webhookSecret?: string | null }>(
       "PUT",

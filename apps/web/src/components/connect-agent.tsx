@@ -5,7 +5,8 @@ import type { BindingLevel, RemoteMode } from "@bonded/shared";
 import { api, type RatingAttempt, type SelfAgentRecord } from "../lib/api";
 import { BINDING_LABELS, expectedLine, lapseReason, runnerView } from "../lib/byoa";
 import { requestRating, revokeRunnerToken } from "../lib/self-serve";
-import type { Auth, Connection, Subject } from "../lib/byoa-api";
+import { byoaApi, type Auth, type Connection, type Subject } from "../lib/byoa-api";
+import { useOwnerSession } from "../lib/owner-session";
 import {
   codeSourceLabel,
   isConnected,
@@ -51,7 +52,10 @@ export function ConnectAndCheck({
   initialUrl,
   headingLevel = "h3",
   showBadge = true,
+  session,
 }: {
+  /** The owner's session: checks and the Agent URL then need no signature each time. */
+  session?: string;
   agentId: string;
   status: ConnectionStatus;
   refresh: () => unknown;
@@ -67,9 +71,25 @@ export function ConnectAndCheck({
   const [revoking, setRevoking] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const subject: Subject = { kind: "agent", agentId };
-  const auth: Auth = { sign: signMessageAsync };
+  const auth: Auth = session ? { session, sign: signMessageAsync } : { sign: signMessageAsync };
   // The check is for the connection chosen here: a check of the other one doesn't count.
   const current: ConnectionStatus = { ...status, connection };
+  // Back to the runner from an Agent URL: the URL has to be stopped first (registering a URL is
+  // what switches the other way).
+  const leavingUrl = connection === "runner" && status.connection === "url";
+  const [leaving, setLeaving] = useState(false);
+  const leaveUrl = async () => {
+    setLeaving(true);
+    setError(null);
+    try {
+      await byoaApi.revokeAgentUrl(subject, auth);
+      await refresh();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setLeaving(false);
+    }
+  };
   const H = headingLevel;
   const revoke = async () => {
     setRevoking(true);
@@ -93,11 +113,31 @@ export function ConnectAndCheck({
           onConnection={setConnection}
           name={`agent-${agentId}`}
         />
-        {connection !== status.connection && (status.agentUrl || status.hasToken) && (
+        {connection === "url" && status.connection === "runner" && status.hasToken && (
           <p className="text-xs text-muted">
-            It's connected {status.connection === "url" ? "by its URL" : "by its runner"} now.
-            Setting up the other way switches it, and needs a new connection check.
+            It's connected by its runner now. Verifying a URL below switches it to the URL, and
+            needs a new connection check.
           </p>
+        )}
+        {leavingUrl && (
+          <div className="flex flex-col gap-2 rounded-2xl border border-warn/30 bg-warn-soft p-4 text-sm">
+            <p>
+              Bonded reaches it at its URL now
+              {status.agentUrl ? (
+                <>
+                  {" "}
+                  (<span className="font-mono text-xs break-all">{status.agentUrl.url}</span>)
+                </>
+              ) : null}
+              . To use the runner instead, stop using the URL: its secret stops working, and the
+              agent needs a new connection check.
+            </p>
+            <div>
+              <Button size="sm" kind="secondary" loading={leaving} onClick={() => void leaveUrl()}>
+                {leaving && !session ? "Sign in your wallet…" : "Stop using the URL"}
+              </Button>
+            </div>
+          </div>
         )}
       </section>
       <section className="flex flex-col gap-3">
@@ -128,16 +168,45 @@ export function ConnectAndCheck({
           subject={subject}
           auth={auth}
           status={current}
-          ready={isConnected(current)}
+          ready={!leavingUrl && isConnected(current)}
           notReadyReason={
-            connection === "url"
-              ? "Verify its URL first."
-              : "Start the runner first: the check runs through it."
+            leavingUrl
+              ? "Stop using the URL first."
+              : connection === "url"
+                ? "Verify its URL first."
+                : "Start the runner first: the check runs through it."
           }
           onFinished={refresh}
         />
       </section>
     </>
+  );
+}
+
+/**
+ * Offer one sign-in for the owner's tools: with it, checks, the Agent URL, the estimate and
+ * notification settings need no further signature (a runner token and a rating still do).
+ */
+function SignInOnce({ owner }: { owner: ReturnType<typeof useOwnerSession> }) {
+  if (owner.session) return null;
+  return (
+    <div className="flex flex-col gap-2 rounded-2xl border border-line-strong p-4 text-sm">
+      <p className="text-muted">
+        Sign in once with your wallet (no gas) to run checks, set the Agent URL and see the estimate
+        without signing each step. It lasts 12 hours.
+      </p>
+      <div>
+        <Button
+          size="sm"
+          kind="secondary"
+          loading={owner.signingIn}
+          onClick={() => void owner.signIn()}
+        >
+          {owner.signingIn ? "Sign in your wallet…" : "Sign in"}
+        </Button>
+      </div>
+      <ErrorText error={owner.error} />
+    </div>
   );
 }
 
@@ -153,6 +222,7 @@ export function NewAgentConnection({
   initialConnection?: Connection;
   initialUrl?: string;
 }) {
+  const owner = useOwnerSession();
   const runner = useQuery({
     queryKey: ["runner", agentId],
     queryFn: () => api.runner(agentId),
@@ -163,10 +233,12 @@ export function NewAgentConnection({
     return <Unavailable error={runner.error} onRetry={() => void runner.refetch()} />;
   return (
     <div className="flex flex-col gap-5 text-sm">
+      <SignInOnce owner={owner} />
       <ConnectAndCheck
         agentId={agentId}
         status={statusFromRunner(runner.data, mode)}
         refresh={() => runner.refetch()}
+        {...(owner.session ? { session: owner.session.session } : {})}
         {...(initialConnection ? { initialConnection } : {})}
         {...(initialUrl ? { initialUrl } : {})}
       />
@@ -198,6 +270,7 @@ export function ConnectAgent({
   registryOwner?: string;
 }) {
   const { signMessageAsync } = useSignMessage();
+  const owner = useOwnerSession();
   // Everything the owner did here belongs to one agent: a rating or error that finished after
   // the page moved on to another agent is never shown for this one.
   const identity = `${deployment.chainId}:${agentId}`;
@@ -360,14 +433,18 @@ export function ConnectAgent({
             {runner.isPending ? (
               <Loading what="its connection" />
             ) : (
-              <ConnectAndCheck
-                key={identity}
-                agentId={agentId}
-                status={status}
-                refresh={() => runner.refetch()}
-                teeUrl={record.tee?.url ?? null}
-                showBadge={false}
-              />
+              <>
+                <SignInOnce owner={owner} />
+                <ConnectAndCheck
+                  key={identity}
+                  agentId={agentId}
+                  status={status}
+                  refresh={() => runner.refetch()}
+                  teeUrl={record.tee?.url ?? null}
+                  showBadge={false}
+                  {...(owner.session ? { session: owner.session.session } : {})}
+                />
+              </>
             )}
 
             <section className="flex flex-col gap-3">
@@ -393,7 +470,19 @@ export function ConnectAgent({
               {expectedLine(record.expectedRating) && (
                 <p className="text-xs text-muted">{expectedLine(record.expectedRating)}</p>
               )}
-              <Estimate subject={{ kind: "agent", agentId }} enabled={Boolean(checked)} />
+              {owner.session ? (
+                <Estimate
+                  subject={{ kind: "agent", agentId }}
+                  enabled={Boolean(checked)}
+                  session={owner.session.session}
+                />
+              ) : (
+                checked && (
+                  <p className="text-xs text-muted">
+                    Sign in above to see the time and cost estimate from its check.
+                  </p>
+                )
+              )}
               {handsChanged && (
                 <p className="rounded-xl border border-warn/30 bg-warn-soft px-3.5 py-2.5">
                   This agent changed hands since it was registered. Re-register it to rate under
@@ -435,10 +524,12 @@ export function ConnectAgent({
                   }}
                 />
               )}
-              <NotificationSettingsForm
-                subject={{ kind: "agent", agentId }}
-                auth={{ sign: signMessageAsync }}
-              />
+              {owner.session && (
+                <NotificationSettingsForm
+                  subject={{ kind: "agent", agentId }}
+                  auth={{ session: owner.session.session, sign: signMessageAsync }}
+                />
+              )}
               {runner.data?.attempts && runner.data.attempts.length > 0 && (
                 <Attempts key={identity} agentId={agentId} attempts={runner.data.attempts} />
               )}

@@ -4,9 +4,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import { ApiError, api, type RunnerRecord, type SelfAgentRecord } from "../lib/api";
 import { byoaApi } from "../lib/byoa-api";
+import { saveSession } from "../lib/connect";
+import { deployment } from "../config";
 import { ConnectAgent, NewAgentConnection } from "./connect-agent";
 
+const OWNER = "0x0000000000000000000000000000000000000001";
 vi.mock("wagmi", () => ({
+  useAccount: () => ({ address: "0x0000000000000000000000000000000000000001", isConnected: true }),
   useSignMessage: () => ({ signMessageAsync: async () => "0x5151" }),
 }));
 
@@ -68,7 +72,14 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  sessionStorage.clear();
 });
+const signedIn = () =>
+  saveSession(deployment.chainId, {
+    session: "bonded_ss_owner",
+    wallet: OWNER,
+    expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+  });
 
 describe("ConnectAgent", () => {
   it("makes a token by signing and shows the commands with it, once", async () => {
@@ -110,6 +121,7 @@ describe("ConnectAgent", () => {
       total: { seconds: 1120, costUsd: 0.56 },
       basis: "connection check chk-1",
     });
+    signedIn();
     const rate = vi.spyOn(api, "rateSelfAgent").mockResolvedValue({ runId: "run-1" });
     vi.spyOn(api, "run").mockResolvedValue({
       id: "run-1",
@@ -384,5 +396,59 @@ describe("ConnectAgent", () => {
       mountNew({ agentId: "21", mode: "tools" });
       expect(await screen.findByRole("button", { name: "Try again" })).toBeTruthy();
     });
+  });
+
+  it("offers one sign-in, and sends the session where the API takes it", async () => {
+    vi.spyOn(api, "runner").mockResolvedValue(
+      runnerRecord({ token: { id: "t", createdAt: "" }, runner: connected, lastCheck: passed }),
+    );
+    const signIn = vi.spyOn(byoaApi, "signIn").mockResolvedValue({
+      session: "bonded_ss_owner",
+      wallet: OWNER,
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    const start = vi.spyOn(byoaApi, "startCheck").mockResolvedValue({ checkId: "c2" });
+    vi.spyOn(byoaApi, "checkEvents").mockReturnValue(() => {});
+    show();
+    expect(await screen.findByText(/Sign in above to see the time and cost estimate/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    await waitFor(() =>
+      expect(signIn).toHaveBeenCalledWith(expect.any(Function), OWNER, "/self/session"),
+    );
+    await waitFor(() =>
+      expect(byoaApi.estimate).toHaveBeenCalledWith(expect.anything(), "bonded_ss_owner"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Run the check again" }));
+    await waitFor(() =>
+      expect(start).toHaveBeenCalledWith(
+        { kind: "agent", agentId: "12" },
+        expect.objectContaining({ session: "bonded_ss_owner" }),
+      ),
+    );
+  });
+
+  it("goes back to the runner from a URL by stopping the URL first", async () => {
+    vi.spyOn(api, "runner").mockResolvedValue(
+      runnerRecord({
+        connection: "url",
+        agentUrl: {
+          url: "https://agent.example/bonded",
+          verifiedAt: new Date().toISOString(),
+          version: null,
+        },
+      }),
+    );
+    const revoke = vi.spyOn(byoaApi, "revokeAgentUrl").mockResolvedValue({ revoked: 1 });
+    signedIn();
+    show();
+    fireEvent.click(await screen.findByRole("radio", { name: /It runs on my machine/ }));
+    expect(screen.getByText("Stop using the URL first.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Stop using the URL" }));
+    await waitFor(() =>
+      expect(revoke).toHaveBeenCalledWith(
+        { kind: "agent", agentId: "12" },
+        expect.objectContaining({ session: "bonded_ss_owner" }),
+      ),
+    );
   });
 });

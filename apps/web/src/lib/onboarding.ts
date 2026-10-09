@@ -78,6 +78,8 @@ export interface OnboardedAgent {
   remote?: RemoteAgentSpec;
   /** "module" when `vault` is a MandateModule on the owner's smart account. */
   protection?: Protection;
+  /** "Make it official": the preview this registration comes from, linked to it. */
+  previewId?: string;
 }
 
 const key = (chainId: number, agentId: string) => `bonded:onboarded:${chainId}:${agentId}`;

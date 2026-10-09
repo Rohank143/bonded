@@ -202,17 +202,17 @@ describe("estimate", () => {
 describe("code hash source", () => {
   it("names where it came from", () => {
     expect(codeSourceLabel({ value: "0x", source: "git", detail: "a1b2c3d" })).toBe(
-      "the git commit of your agent's folder (a1b2c3d)",
+      "the git commit of your agent's folder (a1b2c3d), reported by the runner",
     );
     expect(codeSourceLabel({ value: "0x", source: "git-dirty" })).toMatch(/uncommitted changes/);
     expect(codeSourceLabel({ value: "0x", source: "unpinned" })).toMatch(
       /not pinned to a version \(set a git commit or image digest\)/,
     );
     expect(codeSourceLabel({ value: "0x", source: "url", detail: "v3" })).toBe(
-      "the version your Agent URL reported (v3)",
+      "the version your agent reported (v3)",
     );
     expect(codeSourceLabel({ value: "0x", source: "url-version", detail: "v2" })).toBe(
-      "the version your Agent URL reported (v2)",
+      "the version your agent reported (v2)",
     );
     expect(codeSourceLabel({ value: "0x", source: "declared" })).toBe("you entered it");
   });

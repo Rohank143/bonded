@@ -11,10 +11,19 @@ import { SecretOnce } from "./copy";
 const STATUS_LABELS = { queued: "Waiting", running: "Running", done: "Done", failed: "Stopped" };
 
 /** What a rating will take, from the passing check, shown before it starts. */
-export function Estimate({ subject, enabled }: { subject: Subject; enabled: boolean }) {
+export function Estimate({
+  subject,
+  enabled,
+  session,
+}: {
+  subject: Subject;
+  enabled: boolean;
+  /** The owner's session: the API shows an estimate only to the owner. */
+  session?: string;
+}) {
   const estimate = useQuery({
-    queryKey: ["estimate", subject],
-    queryFn: () => byoaApi.estimate(subject),
+    queryKey: ["estimate", subject, session],
+    queryFn: () => byoaApi.estimate(subject, session),
     enabled,
     retry: false,
   });
@@ -171,8 +180,8 @@ export function RatingLive({
 /** A webhook and (if this deployment sends email) an address, told when a rating ends. */
 export function NotificationSettingsForm({ subject, auth }: { subject: Subject; auth: Auth }) {
   const current = useQuery({
-    queryKey: ["notifications", subject],
-    queryFn: () => byoaApi.notifications(subject),
+    queryKey: ["notifications", subject, auth.session],
+    queryFn: () => byoaApi.notifications(subject, auth.session),
     retry: false,
   });
   const [webhook, setWebhook] = useState("");
@@ -185,10 +194,17 @@ export function NotificationSettingsForm({ subject, auth }: { subject: Subject; 
     setBusy(true);
     setError(null);
     try {
-      const r = await byoaApi.saveNotifications(subject, auth, {
-        webhookUrl: clear ? null : webhook.trim() || (current.data?.webhook?.url ?? null),
-        email: clear ? null : email.trim() || (current.data?.email ?? null),
-      });
+      // Only what changed: the current values are shown masked, so they can't be sent back.
+      const r = await byoaApi.saveNotifications(
+        subject,
+        auth,
+        clear
+          ? { webhookUrl: null, email: null }
+          : {
+              ...(webhook.trim() ? { webhookUrl: webhook.trim() } : {}),
+              ...(email.trim() ? { email: email.trim() } : {}),
+            },
+      );
       setSaved({ secret: r.webhookSecret ?? null });
       setWebhook("");
       setEmail("");
@@ -200,6 +216,7 @@ export function NotificationSettingsForm({ subject, auth }: { subject: Subject; 
     }
   };
   const emailOn = current.data?.emailAvailable === true;
+  const hookOn = current.data?.webhookAvailable !== false;
   return (
     <details className="rounded-2xl border border-line-strong p-4 text-sm">
       <summary className="cursor-pointer font-semibold">
@@ -222,14 +239,18 @@ export function NotificationSettingsForm({ subject, auth }: { subject: Subject; 
         ) : (
           <p className="text-muted">Nothing set. It's optional: the result shows here too.</p>
         )}
-        <Input
-          label="Webhook URL"
-          hint="Bonded POSTs { type: 'rating_finished', … } here, signed like Agent URL calls."
-          value={webhook}
-          onChange={setWebhook}
-          placeholder={current.data?.webhook?.url ?? "https://…"}
-          error={webhookError(webhook)}
-        />
+        {hookOn ? (
+          <Input
+            label="Webhook URL"
+            hint="Bonded POSTs { type: 'rating_finished', … } here, signed like Agent URL calls."
+            value={webhook}
+            onChange={setWebhook}
+            placeholder={current.data?.webhook?.url ?? "https://…"}
+            error={webhookError(webhook)}
+          />
+        ) : (
+          <p className="text-xs text-muted">Webhooks aren't set up on this deployment.</p>
+        )}
         {emailOn ? (
           <Input
             label="Email"

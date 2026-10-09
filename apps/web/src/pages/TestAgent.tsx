@@ -416,7 +416,11 @@ export function TestAgent() {
                       : ""}
                     . Each episode gives your agent 90 seconds.
                   </p>
-                  <Estimate subject={subject} enabled={Boolean(status && passingCheck(status))} />
+                  <Estimate
+                    subject={subject}
+                    enabled={Boolean(status && passingCheck(status))}
+                    {...(session ? { session: session.session } : {})}
+                  />
                   {p.reason && FINISHED.includes(p.status) && !p.ratingId && (
                     <Callout tone="warn">{p.reason}</Callout>
                   )}

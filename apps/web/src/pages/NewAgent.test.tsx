@@ -112,9 +112,7 @@ describe("Onboarding your own agent", () => {
     );
     expect((screen.getByLabelText("Code hash") as HTMLInputElement).value).toBe("");
     expect(
-      screen.getByText(
-        /In your preview it came from the version your Agent URL reported \(v1.4.2\)/,
-      ),
+      screen.getByText(/In your preview it came from the version your agent reported \(v1.4.2\)/),
     ).toBeTruthy();
   });
 });

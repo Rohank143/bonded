@@ -79,7 +79,7 @@ describe("ConnectionCheck", () => {
     // A pass can still carry advice, and says where the code hash came from.
     expect(verdict.textContent).toMatch(/Worth fixing: It read 2 of 9 surfaces/);
     expect(verdict.textContent).toMatch(
-      /Code hash from the git commit of your agent's folder \(3f9c2e1\)/,
+      /Code hash from the git commit of your agent's folder \(3f9c2e1\), reported by the runner/,
     );
     await waitFor(() => expect(onFinished).toHaveBeenCalledTimes(1));
     expect(live.close).toHaveBeenCalled();

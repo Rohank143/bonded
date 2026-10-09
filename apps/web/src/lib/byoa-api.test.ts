@@ -113,7 +113,7 @@ describe("byoaApi", () => {
     mockFetch();
     await expect(
       byoaApi.startCheck({ kind: "preview", id: "p" }, { sign: async () => "0x" }),
-    ).rejects.toThrow(/sign in again/);
+    ).rejects.toThrow(/Sign in again/);
   });
 
   it("keeps the API's refusal details, e.g. when to try again", async () => {

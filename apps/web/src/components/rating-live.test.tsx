@@ -168,7 +168,7 @@ describe("NotificationSettingsForm", () => {
       expect(save).toHaveBeenCalledWith(
         { kind: "preview", id: "p1" },
         { session: "s" },
-        { webhookUrl: "https://hooks.example/x", email: null },
+        { webhookUrl: "https://hooks.example/x" },
       ),
     );
     expect(await screen.findByText("bonded_as_hook")).toBeTruthy();
@@ -287,7 +287,7 @@ describe("PreviewReport", () => {
     expect(screen.getByText("72")).toBeTruthy();
     expect(screen.getByText("1 of 5 breached")).toBeTruthy();
     expect(screen.getByText("untested")).toBeTruthy();
-    expect(screen.getByText(/the version your Agent URL reported \(v1.4.2\)/)).toBeTruthy();
+    expect(screen.getByText(/the version your agent reported \(v1.4.2\)/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Make it official" }));
     const where = await screen.findByText(/At \/agents\/new\?preview=p1/);
     expect(where.textContent).toMatch(/"connection":"url"/);

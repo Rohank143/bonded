@@ -187,7 +187,16 @@ export function NewAgent() {
         codeHash.trim() ? codeHashError(codeHash) : null,
         connection === "url" ? agentUrlError(agentUrl) : null,
         ...(remoteMode === "chain"
-          ? [teeUrlError(teeUrl), composeHashError(composeHash, teeUrl)]
+          ? [
+              teeUrlError(teeUrl),
+              composeHashError(composeHash, teeUrl),
+              teeUrl.trim() && connection === "url"
+                ? "A TEE-bound agent connects through its runner, which forwards its TEE's evidence: choose the runner."
+                : null,
+              teeUrl.trim() && !codeHash.trim()
+                ? "With a TEE, enter the code hash your TEE reports (under Advanced)."
+                : null,
+            ]
           : []),
       ]
     : [];
@@ -195,6 +204,7 @@ export function NewAgent() {
     ? {
         ...(codeHash.trim() ? { codeHash: normaliseCodeHash(codeHash) } : {}),
         mode: remoteMode,
+        ...(connection === "url" ? { connection: "url" as const } : {}),
         ...(teeUrl.trim() && remoteMode === "chain"
           ? {
               tee: {
@@ -468,6 +478,7 @@ export function NewAgent() {
           ...(progress.sentinel ? { sentinel: true } : {}),
           ...(progress.remote ? { remote: progress.remote } : {}),
           ...(progress.protection === "module" ? { protection: "module" as const } : {}),
+          ...(progress.connect?.previewId ? { previewId: progress.connect.previewId } : {}),
         });
         finish("ratings");
       }

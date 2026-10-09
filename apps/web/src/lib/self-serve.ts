@@ -38,6 +38,8 @@ export async function registerForRatings(sign: Signer, agentId: string, agent: O
       mandate: agent.mandate,
       ...(remote.codeHash ? { codeHash: remote.codeHash } : {}),
       mode: remote.mode,
+      ...(remote.connection === "url" ? { connection: "url" as const } : {}),
+      ...(agent.previewId ? { previewId: agent.previewId } : {}),
       ...(remote.tee ? { tee: remote.tee } : {}),
       ...protection,
       timestamp,

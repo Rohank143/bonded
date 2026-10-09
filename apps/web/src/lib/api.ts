@@ -499,6 +499,8 @@ export const api = {
     protection?: "vault" | "module";
     codeHash?: string;
     mode?: RemoteMode;
+    connection?: "runner" | "url";
+    previewId?: string;
     tee?: { url: string; composeHash: string };
     timestamp: number;
     signature: string;

@@ -26,6 +26,13 @@ export interface ConnectionStatus {
   problem: string | null;
   agentUrl: AgentUrlInfo | null;
   lastCheck: CheckSummary | null;
+  /**
+   * The API's own passing check of exactly this connection, when it says (previews do); when
+   * undefined, the last check stands in for it.
+   */
+  passing?: CheckSummary | null;
+  /** The API's word on whether Bonded can reach the agent now, when it gives one. */
+  ready?: boolean;
   codeHash: CodeHashInfo | null;
   gatewayUrl: string | null;
 }
@@ -59,6 +66,8 @@ export function statusFromPreview(p: PreviewRecord): ConnectionStatus {
     problem: p.problem ?? null,
     agentUrl: p.agentUrl,
     lastCheck: p.lastCheck,
+    ...(p.passingCheck !== undefined ? { passing: p.passingCheck } : {}),
+    ...(p.ready !== undefined ? { ready: p.ready } : {}),
     codeHash: p.codeHash,
     gatewayUrl: p.gatewayUrl,
   };
@@ -66,6 +75,7 @@ export function statusFromPreview(p: PreviewRecord): ConnectionStatus {
 
 /** Bonded can reach the agent through its chosen connection right now. */
 export function isConnected(s: ConnectionStatus, connection = s.connection): boolean {
+  if (s.ready !== undefined && connection === s.connection) return s.ready;
   return connection === "url"
     ? Boolean(s.agentUrl?.verifiedAt)
     : s.runner?.connected === true && !s.problem;
@@ -73,10 +83,10 @@ export function isConnected(s: ConnectionStatus, connection = s.connection): boo
 
 /** A check that passed, for the current connection, and hasn't expired: a rating may start. */
 export function passingCheck(
-  s: Pick<ConnectionStatus, "lastCheck" | "connection">,
+  s: Pick<ConnectionStatus, "lastCheck" | "connection" | "passing">,
   nowMs = Date.now(),
 ): CheckSummary | undefined {
-  const c = s.lastCheck;
+  const c = s.passing !== undefined ? s.passing : s.lastCheck;
   if (!c || c.status !== "passed" || c.connection !== s.connection) return undefined;
   const expires = c.expiresAt ? Date.parse(c.expiresAt) : Date.parse(c.createdAt) + 86_400_000;
   return expires > nowMs ? c : undefined;
@@ -197,33 +207,40 @@ export function estimateLines(e: CostEstimate): { time: string; cost: string } {
   const cost =
     e.total.costUsd != null
       ? `Your model costs about $${e.total.costUsd.toFixed(2)} in all ($${(e.perEpisode.costUsd ?? e.total.costUsd / e.episodes).toFixed(3)} an episode). Bonded doesn't pay or limit it.`
-      : "Your agent didn't report its usage at done, so there's no cost estimate: send usage with done to get one. Bonded doesn't pay or limit your model calls.";
+      : `${e.note ?? "Your agent didn't report its usage at done, so there's no cost estimate: send usage with done to get one."} Bonded doesn't pay or limit your model calls.`;
   return { time, cost };
 }
 
 /** Where the code hash came from, in words. */
 export function codeSourceLabel(info: CodeHashInfo): string {
   const detail = info.detail ? ` (${info.detail})` : "";
+  const byRunner = ", reported by the runner";
   switch (info.source) {
     case "declared":
       return "you entered it";
     case "flag":
-      return "the runner's --code-hash flag";
+      return `the runner's --code-hash flag${byRunner}`;
     case "env":
-      return "BONDED_CODE_HASH on the runner";
+      return `BONDED_CODE_HASH on the runner${byRunner}`;
     case "image":
-      return `the Docker image digest${detail}`;
+      return `the Docker image digest${detail}${byRunner}`;
     case "git":
-      return `the git commit of your agent's folder${detail}`;
+      return `the git commit of your agent's folder${detail}${byRunner}`;
     case "git-dirty":
-      return `the git commit of your agent's folder${detail}, with uncommitted changes`;
+      return `the git commit of your agent's folder${detail}, with uncommitted changes${byRunner}`;
     case "unpinned":
-      return "your agent's command and entry file: not pinned to a version (set a git commit or image digest)";
+      return `your agent's command and entry file, not pinned to a version (set a git commit or image digest)${byRunner}`;
     case "url":
     case "url-version":
-      return `the version your Agent URL reported${detail}`;
+      return info.detail
+        ? `the version your agent reported (${info.detail})`
+        : "the version your agent reported";
     default:
-      return String(info.source);
+      // A source this page doesn't know yet: say who reported it, never that it's verified.
+      return (
+        info.label ??
+        `${String(info.source)}${info.reportedBy === "agent" ? ", reported by your agent" : byRunner}`
+      );
   }
 }
 
