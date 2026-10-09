@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { RUNNER_FRESH_MS, remoteCooldownMs, type Database } from "@bonded/db";
 import { postgres } from "./postgres.js";
@@ -67,10 +67,7 @@ describe("migrations on a database that main already migrated", () => {
     // list: on main that put 0001 to 0019 at versions 1 to 19, the same numbers.
     const old = await postgres({ migrate: false });
     try {
-      const dir = join(
-        dirname(createRequire(import.meta.url).resolve("@bonded/db")),
-        "../migrations",
-      );
+      const dir = fileURLToPath(new URL("../../../packages/db/migrations/", import.meta.url));
       const files = (await readdir(dir)).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
       expect(files.map((f) => Number(f.slice(0, 4)))).toEqual(
         Array.from({ length: 21 }, (_, i) => i + 1),
