@@ -1,8 +1,8 @@
-import type { RemoteMode } from "@bonded/shared";
+import type { RemoteMode } from "@bondedhq/shared";
 import type { Connection } from "./byoa-api";
 
 /**
- * Copy-paste code that connects an agent to an episode's tools, per framework, as `@bonded/sdk`
+ * Copy-paste code that connects an agent to an episode's tools, per framework, as `@bondedhq/sdk`
  * documents it (its README and examples/frameworks). Under the runner each helper reads the
  * episode from BONDED_* when called with no argument; behind an Agent URL the handler hands it the
  * episode Bonded POSTed, and the helper takes that instead. Placeholders such as `llm`, `model`,
@@ -16,7 +16,7 @@ export interface Snippet {
   install?: string;
   code: string;
   note?: string;
-  /** What the snippet imports from @bonded/sdk, so a test can check each one exists. */
+  /** What the snippet imports from @bondedhq/sdk, so a test can check each one exists. */
   imports: { from: string; names: string[] }[];
 }
 
@@ -30,42 +30,42 @@ function runnerSnippets(): Snippet[] {
       id: "langchain",
       label: "LangChain",
       language: "ts",
-      install: "npm i @bonded/sdk @langchain/core @langchain/langgraph",
-      code: `import { isBondedEpisode } from "@bonded/sdk";
-import { bondedLangChainTools } from "@bonded/sdk/langchain";
+      install: "npm i @bondedhq/sdk @langchain/core @langchain/langgraph",
+      code: `import { isBondedEpisode } from "@bondedhq/sdk";
+import { bondedLangChainTools } from "@bondedhq/sdk/langchain";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 
 const tools = isBondedEpisode() ? await bondedLangChainTools() : productionTools;
 const agent = createReactAgent({ llm, tools });
 await agent.invoke({ messages: [{ role: "user", content: task }] });`,
       imports: [
-        { from: "@bonded/sdk", names: ["isBondedEpisode"] },
-        { from: "@bonded/sdk/langchain", names: ["bondedLangChainTools"] },
+        { from: "@bondedhq/sdk", names: ["isBondedEpisode"] },
+        { from: "@bondedhq/sdk/langchain", names: ["bondedLangChainTools"] },
       ],
     },
     {
       id: "ai-sdk",
       label: "Vercel AI SDK",
       language: "ts",
-      install: "npm i @bonded/sdk ai",
-      code: `import { isBondedEpisode } from "@bonded/sdk";
-import { bondedAiSdkTools } from "@bonded/sdk/ai-sdk";
+      install: "npm i @bondedhq/sdk ai",
+      code: `import { isBondedEpisode } from "@bondedhq/sdk";
+import { bondedAiSdkTools } from "@bondedhq/sdk/ai-sdk";
 import { generateText, stepCountIs } from "ai";
 
 const tools = isBondedEpisode() ? await bondedAiSdkTools() : productionTools;
 await generateText({ model, tools, stopWhen: stepCountIs(10), prompt: task });`,
       imports: [
-        { from: "@bonded/sdk", names: ["isBondedEpisode"] },
-        { from: "@bonded/sdk/ai-sdk", names: ["bondedAiSdkTools"] },
+        { from: "@bondedhq/sdk", names: ["isBondedEpisode"] },
+        { from: "@bondedhq/sdk/ai-sdk", names: ["bondedAiSdkTools"] },
       ],
     },
     {
       id: "eliza",
       label: "ElizaOS",
       language: "ts",
-      install: "npm i @bonded/sdk @elizaos/core",
-      code: `import { isBondedEpisode } from "@bonded/sdk";
-import { bondedEpisodePlugin } from "@bonded/sdk/eliza";
+      install: "npm i @bondedhq/sdk @elizaos/core",
+      code: `import { isBondedEpisode } from "@bondedhq/sdk";
+import { bondedEpisodePlugin } from "@bondedhq/sdk/eliza";
 
 export const character = {
   name: "Trader",
@@ -73,17 +73,17 @@ export const character = {
 };`,
       note: "Already using bondedPlugin({ vault })? No change needed: it switches to the episode's tools by itself during an episode.",
       imports: [
-        { from: "@bonded/sdk", names: ["isBondedEpisode"] },
-        { from: "@bonded/sdk/eliza", names: ["bondedEpisodePlugin"] },
+        { from: "@bondedhq/sdk", names: ["isBondedEpisode"] },
+        { from: "@bondedhq/sdk/eliza", names: ["bondedEpisodePlugin"] },
       ],
     },
     {
       id: "agentkit",
       label: "AgentKit",
       language: "ts",
-      install: "npm i @bonded/sdk @coinbase/agentkit",
-      code: `import { isBondedEpisode } from "@bonded/sdk";
-import { bondedEpisodeActionProvider } from "@bonded/sdk/agentkit";
+      install: "npm i @bondedhq/sdk @coinbase/agentkit",
+      code: `import { isBondedEpisode } from "@bondedhq/sdk";
+import { bondedEpisodeActionProvider } from "@bondedhq/sdk/agentkit";
 import { AgentKit } from "@coinbase/agentkit";
 
 const kit = await AgentKit.from({
@@ -91,8 +91,8 @@ const kit = await AgentKit.from({
   actionProviders: isBondedEpisode() ? [await bondedEpisodeActionProvider()] : productionProviders,
 });`,
       imports: [
-        { from: "@bonded/sdk", names: ["isBondedEpisode"] },
-        { from: "@bonded/sdk/agentkit", names: ["bondedEpisodeActionProvider"] },
+        { from: "@bondedhq/sdk", names: ["isBondedEpisode"] },
+        { from: "@bondedhq/sdk/agentkit", names: ["bondedEpisodeActionProvider"] },
       ],
     },
   ];
@@ -109,50 +109,50 @@ function urlSnippets(): Snippet[] {
       id: "langchain",
       label: "LangChain",
       language: "ts",
-      install: "npm i @bonded/sdk @langchain/core @langchain/langgraph",
-      code: `import { bondedLangChainTools } from "@bonded/sdk/langchain";
+      install: "npm i @bondedhq/sdk @langchain/core @langchain/langgraph",
+      code: `import { bondedLangChainTools } from "@bondedhq/sdk/langchain";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 
 ${lead}const tools = await bondedLangChainTools(episode);
 const agent = createReactAgent({ llm, tools });
 await agent.invoke({ messages: [{ role: "user", content: episode.task.goal }] });`,
-      imports: [{ from: "@bonded/sdk/langchain", names: ["bondedLangChainTools"] }],
+      imports: [{ from: "@bondedhq/sdk/langchain", names: ["bondedLangChainTools"] }],
     },
     {
       id: "ai-sdk",
       label: "Vercel AI SDK",
       language: "ts",
-      install: "npm i @bonded/sdk ai",
-      code: `import { bondedAiSdkTools } from "@bonded/sdk/ai-sdk";
+      install: "npm i @bondedhq/sdk ai",
+      code: `import { bondedAiSdkTools } from "@bondedhq/sdk/ai-sdk";
 import { generateText, stepCountIs } from "ai";
 
 ${lead}const tools = await bondedAiSdkTools(episode);
 await generateText({ model, tools, stopWhen: stepCountIs(10), prompt: episode.task.goal });`,
-      imports: [{ from: "@bonded/sdk/ai-sdk", names: ["bondedAiSdkTools"] }],
+      imports: [{ from: "@bondedhq/sdk/ai-sdk", names: ["bondedAiSdkTools"] }],
     },
     {
       id: "eliza",
       label: "ElizaOS",
       language: "ts",
-      install: "npm i @bonded/sdk @elizaos/core",
-      code: `import { bondedEpisodePlugin } from "@bonded/sdk/eliza";
+      install: "npm i @bondedhq/sdk @elizaos/core",
+      code: `import { bondedEpisodePlugin } from "@bondedhq/sdk/eliza";
 
 ${lead}const plugins = [bondedEpisodePlugin({ episode })];`,
-      imports: [{ from: "@bonded/sdk/eliza", names: ["bondedEpisodePlugin"] }],
+      imports: [{ from: "@bondedhq/sdk/eliza", names: ["bondedEpisodePlugin"] }],
     },
     {
       id: "agentkit",
       label: "AgentKit",
       language: "ts",
-      install: "npm i @bonded/sdk @coinbase/agentkit",
-      code: `import { bondedEpisodeActionProvider } from "@bonded/sdk/agentkit";
+      install: "npm i @bondedhq/sdk @coinbase/agentkit",
+      code: `import { bondedEpisodeActionProvider } from "@bondedhq/sdk/agentkit";
 import { AgentKit } from "@coinbase/agentkit";
 
 ${lead}const kit = await AgentKit.from({
   walletProvider,
   actionProviders: [await bondedEpisodeActionProvider(episode)],
 });`,
-      imports: [{ from: "@bonded/sdk/agentkit", names: ["bondedEpisodeActionProvider"] }],
+      imports: [{ from: "@bondedhq/sdk/agentkit", names: ["bondedEpisodeActionProvider"] }],
     },
   ];
 }
@@ -172,8 +172,8 @@ export function snippets(
         id: "mcp",
         label: "Any MCP agent",
         language: "sh",
-        install: "npm i @bonded/sdk",
-        code: `npx @bonded/runner --gateway ${gatewayUrl ?? "https://<gateway>"} -- sh -c 'bonded-mcp-config > .mcp.json && my-agent --mcp-config .mcp.json'`,
+        install: "npm i @bondedhq/sdk",
+        code: `npx @bondedhq/runner --gateway ${gatewayUrl ?? "https://<gateway>"} -- sh -c 'bonded-mcp-config > .mcp.json && my-agent --mcp-config .mcp.json'`,
         note: "For agents that read an mcpServers config. The URL is new for every episode, so the config is written each time; add --style stdio for stdio-only clients. Keep the runner token in BONDED_RUNNER_TOKEN, as in the command above.",
         imports: [],
       },
@@ -201,10 +201,10 @@ call("swap", {"tokenIn": "tUSDG", "tokenOut": "tTSLA", "amountIn": "100"})  # th
       id: "handler",
       label: "Agent URL handler",
       language: "ts",
-      install: "npm i @bonded/sdk ai",
+      install: "npm i @bondedhq/sdk ai",
       code: `// app/api/bonded/route.ts (Next.js)
-import { createBondedHandler } from "@bonded/sdk/agent-url";
-import { bondedAiSdkTools } from "@bonded/sdk/ai-sdk";
+import { createBondedHandler } from "@bondedhq/sdk/agent-url";
+import { bondedAiSdkTools } from "@bondedhq/sdk/ai-sdk";
 import { generateText, stepCountIs } from "ai";
 
 export const POST = createBondedHandler({
@@ -221,10 +221,10 @@ export const POST = createBondedHandler({
     };
   },
 });`,
-      note: 'It checks the signature, answers the ownership check, replies at once and posts done with what onEpisode returns. Other hosts: Express app.post("/bonded", toNodeHandler(handler)), mounted before express.json() (it needs the raw body); Hono app.post("/bonded", (c) => handler(c.req.raw)); Cloudflare export default { fetch: (req, env, ctx) => handler(req, ctx) }. toNodeHandler comes from @bonded/sdk/agent-url too.',
+      note: 'It checks the signature, answers the ownership check, replies at once and posts done with what onEpisode returns. Other hosts: Express app.post("/bonded", toNodeHandler(handler)), mounted before express.json() (it needs the raw body); Hono app.post("/bonded", (c) => handler(c.req.raw)); Cloudflare export default { fetch: (req, env, ctx) => handler(req, ctx) }. toNodeHandler comes from @bondedhq/sdk/agent-url too.',
       imports: [
-        { from: "@bonded/sdk/agent-url", names: ["createBondedHandler", "toNodeHandler"] },
-        { from: "@bonded/sdk/ai-sdk", names: ["bondedAiSdkTools"] },
+        { from: "@bondedhq/sdk/agent-url", names: ["createBondedHandler", "toNodeHandler"] },
+        { from: "@bondedhq/sdk/ai-sdk", names: ["bondedAiSdkTools"] },
       ],
     },
     ...urlSnippets().map(chain),

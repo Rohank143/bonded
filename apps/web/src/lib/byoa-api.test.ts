@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { selfServeMessage } from "@bonded/shared";
+import { selfServeMessage } from "@bondedhq/shared";
 import { apiUrl, deployment } from "../config";
 import { ApiError } from "./api";
 import { byoaApi, streamEvents, subjectPath } from "./byoa-api";
@@ -298,11 +298,11 @@ describe("snippets", () => {
   it("puts the real gateway in the MCP runner line, and an install line above each package", () => {
     const mcp = snippets("runner", "tools", "https://gw.example").find((s) => s.id === "mcp")!;
     expect(mcp.code).toMatch(
-      /^npx @bonded\/runner --gateway https:\/\/gw.example -- sh -c 'bonded-mcp-config/,
+      /^npx @bondedhq\/runner --gateway https:\/\/gw.example -- sh -c 'bonded-mcp-config/,
     );
     expect(snippets("runner", "tools").find((s) => s.id === "mcp")!.code).toMatch(/<gateway>/);
     expect(snippets("runner", "tools").find((s) => s.id === "eliza")!.install).toBe(
-      "npm i @bonded/sdk @elizaos/core",
+      "npm i @bondedhq/sdk @elizaos/core",
     );
     // Every package a snippet imports is in its install line.
     for (const c of ["url", "runner"] as const)
@@ -314,10 +314,10 @@ describe("snippets", () => {
     expect(snippets("runner", "chain").find((s) => s.id === "eliza")!.note).toMatch(/session key/);
     expect(snippets("runner", "tools").find((s) => s.id === "langchain")!.note).toBeUndefined();
   });
-  it("declares every @bonded/sdk import its code makes", () => {
+  it("declares every @bondedhq/sdk import its code makes", () => {
     for (const c of ["url", "runner"] as const)
       for (const s of snippets(c, "tools"))
-        for (const m of s.code.matchAll(/import \{([^}]+)\} from "(@bonded\/sdk[^"]*)"/g)) {
+        for (const m of s.code.matchAll(/import \{([^}]+)\} from "(@bondedhq\/sdk[^"]*)"/g)) {
           const declared = s.imports.find((i) => i.from === m[2]);
           for (const name of m[1]!.split(",").map((n) => n.trim()))
             expect(declared?.names, `${s.label}: ${name} from ${m[2]}`).toContain(name);

@@ -1,4 +1,4 @@
-import type { RemoteMode } from "@bonded/shared";
+import type { RemoteMode } from "@bondedhq/shared";
 import { apiUrl, deployment } from "../config";
 import { request, type RunnerRecord } from "./api";
 import { byoaMessage, type ByoaAction } from "./byoa-messages";

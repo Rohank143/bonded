@@ -166,7 +166,7 @@ describe("Test your agent", () => {
     );
     expect(
       await screen.findByText(
-        "BONDED_RUNNER_TOKEN=bonded_rt_preview npx @bonded/runner --gateway https://gw.example --mode chain -- <your agent command>",
+        "BONDED_RUNNER_TOKEN=bonded_rt_preview npx @bondedhq/runner --gateway https://gw.example --mode chain -- <your agent command>",
       ),
     ).toBeTruthy();
     expect(

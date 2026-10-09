@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { RemoteMode } from "@bonded/shared";
+import type { RemoteMode } from "@bondedhq/shared";
 import { runnerCommand, runnerDockerCommand, runnerView } from "../lib/byoa";
 import { byoaApi, type Auth, type Connection, type Subject } from "../lib/byoa-api";
 import {
