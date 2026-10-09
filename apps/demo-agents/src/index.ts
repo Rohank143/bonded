@@ -1,4 +1,4 @@
-import type { ArenaAgent } from "@bonded/shared";
+import type { ArenaAgent } from "@bondedhq/shared";
 import { type ActionGuard, PolicyGuard } from "./hardened/guard.js";
 import { LlmHardenedAgent } from "./hardened/llm.js";
 import { ScriptedHardenedAgent } from "./hardened/scripted.js";

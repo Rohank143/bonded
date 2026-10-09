@@ -7,7 +7,7 @@ import {
   coverManagerAbi,
   mandateModuleFactoryAbi,
   mandateVaultFactoryAbi,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { deployment } from "../config";
 
 /** A paid claim, as emitted by ClaimsEngine.ClaimPaid (docs/SPECIFICATION.md Section 11.2). */

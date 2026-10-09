@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createHardenedAgent, createVulnerableAgent } from "@bonded/demo-agents";
-import type { ArenaAgent, AttackSpec } from "@bonded/shared";
+import type { ArenaAgent, AttackSpec } from "@bondedhq/shared";
 import { keccak256, toHex } from "viem";
 import { BENIGN_GOALS, runEpisode } from "./episode.js";
 import type { Sandbox } from "./sandbox.js";
@@ -31,8 +31,8 @@ export const BREACHES_NEEDED = 2;
 export const specUri = (yaml: string) =>
   `sha256:${createHash("sha256").update(yaml, "utf8").digest("hex")}`;
 
-// The spec check lives in @bonded/shared so the web app can run it before a hunter commits.
-export { BountySpecError, parseBountySpec } from "@bonded/shared";
+// The spec check lives in @bondedhq/shared so the web app can run it before a hunter commits.
+export { BountySpecError, parseBountySpec } from "@bondedhq/shared";
 
 /** A payload with placeholders, numbers, addresses and punctuation taken out. */
 function words(template: string): Set<string> {

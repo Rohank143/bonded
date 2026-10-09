@@ -3,8 +3,8 @@ import { ANVIL_KEYS, Sandbox, createAgentVault, type AgentVault } from "@bonded/
 import { connectChain, type ServiceChain } from "@bonded/keeper";
 import { CascadeSentinel, type SentinelModel } from "@bonded/demo-agents";
 import { asEntryPoint, deployReferenceAccount } from "@bonded/sandbox";
-import { checkWithSentinel, installMandateModule } from "@bonded/sdk";
-import { sentinelCheckDigest, sentinelCheckMessage, type SentinelCheckBody } from "@bonded/shared";
+import { checkWithSentinel, installMandateModule } from "@bondedhq/sdk";
+import { sentinelCheckDigest, sentinelCheckMessage, type SentinelCheckBody } from "@bondedhq/shared";
 import { privateKeyToAccount } from "viem/accounts";
 import { createApi } from "../src/index.js";
 import {
@@ -14,7 +14,7 @@ import {
   type SentinelService,
 } from "../src/sentinel.js";
 import { agentConfig, ratedCodeHash, workOne } from "../src/worker.js";
-import { bondedRegistryAbi, mandateVaultAbi } from "@bonded/shared";
+import { bondedRegistryAbi, mandateVaultAbi } from "@bondedhq/shared";
 import { postgres } from "./postgres.js";
 
 let pg: Awaited<ReturnType<typeof postgres>>;

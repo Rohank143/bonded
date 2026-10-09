@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
-import { llmConfigFromEnv, OpenAICompatibleClient } from "@bonded/shared";
+import { llmConfigFromEnv, OpenAICompatibleClient } from "@bondedhq/shared";
 import { loadDotEnv } from "./env.js";
 import { generateLlmContrast } from "./llm-contrast.js";
 

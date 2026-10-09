@@ -1,7 +1,7 @@
 import { Fragment } from "react";
 import { Link, useParams } from "react-router";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { ATTACK_CLASSES, AttackSurface, type BreachType } from "@bonded/shared";
+import { ATTACK_CLASSES, AttackSurface, type BreachType } from "@bondedhq/shared";
 import { ApiError, api, type AttackStats, type AttackSummary, type ClassRecord } from "../lib/api";
 import { useListParams } from "../lib/pages";
 import {

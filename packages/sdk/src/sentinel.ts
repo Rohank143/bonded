@@ -4,7 +4,7 @@ import {
   type SentinelInput,
   sentinelCheckDigest,
   sentinelCheckMessage,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import type { Address, Hex, SignableMessage } from "viem";
 import { z } from "zod";
 import { BondedError, SentinelError, type SentinelVerdict } from "./errors.js";

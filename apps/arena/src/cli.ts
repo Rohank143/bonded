@@ -27,7 +27,7 @@ import {
   llmConfigFromEnv,
   OpenAICompatibleClient,
   parseSentinelQuestionSet,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { loadAttackLibrary } from "./attacks.js";
 import { runControls } from "./controls.js";
 import { loadDotEnv, usesLanguageModel } from "./env.js";
@@ -53,7 +53,7 @@ Agent:
                            agent to test (default: vulnerable). agentkit and solana-agent-kit run
                            those frameworks' template agents with the Arena's tools (needs
                            OPENROUTER_API_KEY; --model picks the model). remote rates your own
-                           agent wherever it runs, through the Arena Gateway and @bonded/runner
+                           agent wherever it runs, through the Arena Gateway and @bondedhq/runner
                            (see "Remote agents" below)
   --brain <scripted|llm>   scripted needs nothing; llm needs OPENROUTER_API_KEY (default: scripted)
   --model <id>             model for an llm brain or the decision agent, any OpenRouter model id
@@ -413,10 +413,10 @@ async function startRemote(
   console.log("Start your agent's runner in another terminal:\n");
   const tokenShown = given ? "<your token>" : token;
   console.log(
-    `  BONDED_RUNNER_TOKEN=${tokenShown} npx @bonded/runner --gateway ${url} ` +
+    `  BONDED_RUNNER_TOKEN=${tokenShown} npx @bondedhq/runner --gateway ${url} ` +
       `--mode ${mode} -- <your agent command>\n`,
   );
-  console.log("or, from this repository (until @bonded/runner is published):\n");
+  console.log("or, from this repository (until @bondedhq/runner is published):\n");
   console.log(
     `  BONDED_RUNNER_TOKEN=${tokenShown} node apps/runner/dist/cli.js --gateway ${url} ` +
       `--mode ${mode} -- <your agent command>\n`,

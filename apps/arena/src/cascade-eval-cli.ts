@@ -9,7 +9,7 @@ import {
   sentinelCascadePolicySchema,
   sentinelCascadePolicyHash,
   type SentinelCascadePolicy,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { loadDotEnv } from "./env.js";
 import { readSeedRows } from "./synthetic.js";
 import {

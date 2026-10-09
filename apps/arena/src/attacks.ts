@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
-import { AttackSpec } from "@bonded/shared";
+import { AttackSpec } from "@bondedhq/shared";
 import { getAddress } from "viem";
 import { parse } from "yaml";
 
@@ -27,8 +27,8 @@ export function loadAttackLibrary(dir: string = ATTACKS_DIR): AttackSpec[] {
   return specs.sort((a, b) => a.id.localeCompare(b.id));
 }
 
-// The placeholder list lives in @bonded/shared, so a bounty spec is checked against it.
-export { ATTACK_PLACEHOLDERS } from "@bonded/shared";
+// The placeholder list lives in @bondedhq/shared, so a bounty spec is checked against it.
+export { ATTACK_PLACEHOLDERS } from "@bondedhq/shared";
 
 /** An address that looks like `address` at a glance: same first and last four hex digits. */
 export function lookalikeOf(address: `0x${string}`): `0x${string}` {

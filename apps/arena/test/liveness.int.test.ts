@@ -3,7 +3,7 @@ import {
   ScriptedHardenedAgent,
   ScriptedVulnerableAgent,
 } from "@bonded/demo-agents";
-import type { AgentRunSummary, AgentTask, AgentToolbox, ArenaAgent } from "@bonded/shared";
+import type { AgentRunSummary, AgentTask, AgentToolbox, ArenaAgent } from "@bondedhq/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { fakeRunner } from "./fixtures/gateway-client.js";
 import {

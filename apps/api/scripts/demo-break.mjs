@@ -32,7 +32,7 @@ import {
   parseEvmDeployment,
   quoteMessage,
   testTokenAbi,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { createPublicClient, formatUnits, getAbiItem, http } from "viem";
 import { coverageProblem, quoteApiUrl } from "../dist/demo-checks.js";
 

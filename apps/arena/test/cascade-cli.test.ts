@@ -9,7 +9,7 @@ import {
   SENTINEL_HELD_OUT_CLASSES,
   sentinelCascadePolicySchema,
   verifySentinelCascadeEvidence,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 
 /** Exercise the complete frozen-evaluation workflow with local fixtures, never paid services. */
 it("scores, calibrates, freezes and evaluates; rejects changed test data and repeat outputs", async () => {

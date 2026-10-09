@@ -10,7 +10,7 @@ import {
   type EpisodeMessage,
   RUNNER_KILL_GRACE_MS,
   type RunnerToServer,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import type { SelfSigningAgent } from "../episode.js";
 import type { Sandbox } from "../sandbox.js";

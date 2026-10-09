@@ -2,7 +2,7 @@
 import { writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { LayaSentinel } from "@bonded/demo-agents";
-import { parseSentinelQuestionSet } from "@bonded/shared";
+import { parseSentinelQuestionSet } from "@bondedhq/shared";
 import { type ConsistencyCase, distinctCases, evaluateConsistency } from "./consistency.js";
 import { loadDotEnv } from "./env.js";
 import { buildStressSuite } from "./stress.js";

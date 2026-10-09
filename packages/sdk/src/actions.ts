@@ -1,4 +1,4 @@
-import { demoRouterAbi } from "@bonded/shared";
+import { demoRouterAbi } from "@bondedhq/shared";
 import {
   type Address,
   encodeFunctionData,

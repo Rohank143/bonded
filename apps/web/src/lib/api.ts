@@ -1,5 +1,5 @@
-import type { BindingLevel, RemoteMode, SelfServeAgentKind, SelfServeKind } from "@bonded/shared";
-import type { AttackSpec } from "@bonded/shared";
+import type { BindingLevel, RemoteMode, SelfServeAgentKind, SelfServeKind } from "@bondedhq/shared";
+import type { AttackSpec } from "@bondedhq/shared";
 import { apiUrl } from "../config";
 import type { EpisodeCard, EpisodeCounts, Outcome } from "./events";
 

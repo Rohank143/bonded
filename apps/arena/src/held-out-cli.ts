@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { llmConfigFromEnv, OpenAICompatibleClient } from "@bonded/shared";
+import { llmConfigFromEnv, OpenAICompatibleClient } from "@bondedhq/shared";
 import { stringify } from "yaml";
 import { loadAttackLibrary } from "./attacks.js";
 import { loadDotEnv } from "./env.js";

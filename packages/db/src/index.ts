@@ -199,7 +199,7 @@ const OUTCOME_SQL: Record<EpisodeOutcome, string> = {
 
 /**
  * A runner counts as connected while its last heartbeat is this recent: three of the runner's
- * 15-second heartbeats (RUNNER_HEARTBEAT_MS in @bonded/shared).
+ * 15-second heartbeats (RUNNER_HEARTBEAT_MS in @bondedhq/shared).
  */
 export const RUNNER_FRESH_MS = 45_000;
 
@@ -831,7 +831,7 @@ export class Database {
     return r.rows.map((row) => row.id as string);
   }
   /**
-   * What observed breach rates are estimated from (`estimateObservedRates` in @bonded/shared):
+   * What observed breach rates are estimated from (`estimateObservedRates` in @bondedhq/shared):
    * every posted score's validity and per-group results, and every production breach on the chain.
    */
   async observedRateInputs(chainId: number): Promise<{

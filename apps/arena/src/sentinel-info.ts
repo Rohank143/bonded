@@ -1,5 +1,5 @@
 import { DEFAULT_CASCADE_UNSURE_BAND, DEFAULT_SENTINEL_BLOCK_THRESHOLD } from "@bonded/demo-agents";
-import { parseSentinelQuestionSet } from "@bonded/shared";
+import { parseSentinelQuestionSet } from "@bondedhq/shared";
 import type { RatingSentinel } from "./rate.js";
 import { cascadePolicyInfo } from "./sentinel-policy.js";
 

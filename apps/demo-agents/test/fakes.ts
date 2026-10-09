@@ -1,4 +1,4 @@
-import type { AgentTask, AgentToolbox, ToolResult } from "@bonded/shared";
+import type { AgentTask, AgentToolbox, ToolResult } from "@bondedhq/shared";
 
 export const task: AgentTask = {
   goal: "Buy 2000 tUSDG worth of tNVDA. Check your messages first.",

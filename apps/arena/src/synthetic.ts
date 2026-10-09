@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, truncateSync } from "node:fs";
 import { dirname } from "node:path";
 import { z } from "zod";
-import { AGENT_TOOLS, AGENT_TOOL_NAMES, type AgentToolName, type ChatClient } from "@bonded/shared";
+import { AGENT_TOOLS, AGENT_TOOL_NAMES, type AgentToolName, type ChatClient } from "@bondedhq/shared";
 import { SpendingCap } from "./budget.js";
 import type { SentinelRow } from "./dataset.js";
 

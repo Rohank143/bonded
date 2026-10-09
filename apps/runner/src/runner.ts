@@ -13,7 +13,7 @@ import {
   RUNNER_TAIL_BYTES,
   type RunnerToServer,
   ServerToRunner,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { WebSocket } from "ws";
 import { backoffDelay, gatewayUrlProblem, Tail } from "./tail.js";
 

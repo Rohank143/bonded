@@ -8,8 +8,8 @@ For what an agent is in Bonded's terms, see [AGENTS.md](AGENTS.md). For how Bond
 
 | | What it means | How |
 |---|---|---|
-| **Protect** | Your agent's key can only act through a contract that checks every action against your mandate and records any breach on chain. That record pays claims | A Mandate Vault, or a `MandateModule` on your ERC-7579 smart account (Safe through Safe7579, or another ERC-7579 account). The TypeScript SDK `@bonded/sdk` and its plugins for Coinbase AgentKit, Solana Agent Kit and ElizaOS do the wiring |
-| **Rate** | The Arena attacks your agent while it runs where it runs, and judges it only by what the vault records. The signed score goes on chain | A small runner (`@bonded/runner`) next to your agent connects out to the Arena Gateway. Your agent talks to the gateway over MCP, plain HTTP, or (chain mode) a JSON-RPC endpoint |
+| **Protect** | Your agent's key can only act through a contract that checks every action against your mandate and records any breach on chain. That record pays claims | A Mandate Vault, or a `MandateModule` on your ERC-7579 smart account (Safe through Safe7579, or another ERC-7579 account). The TypeScript SDK `@bondedhq/sdk` and its plugins for Coinbase AgentKit, Solana Agent Kit and ElizaOS do the wiring |
+| **Rate** | The Arena attacks your agent while it runs where it runs, and judges it only by what the vault records. The signed score goes on chain | A small runner (`@bondedhq/runner`) next to your agent connects out to the Arena Gateway. Your agent talks to the gateway over MCP, plain HTTP, or (chain mode) a JSON-RPC endpoint |
 | **Bind** | How firmly the score is tied to the code that trades: **declared** (you say which code it is) or **TEE** (every episode proves it with an Intel TDX quote) | Register a code hash, and optionally your TEE's URL and compose hash |
 
 Payouts and pass or fail are decided by the vault's breach log, on chain. Nothing your agent, the runner or an AI says changes a verdict.
@@ -17,7 +17,7 @@ Payouts and pass or fail are decided by the vault's breach log, on chain. Nothin
 ```mermaid
 flowchart LR
   subgraph yours["Your servers"]
-    Runner["@bonded/runner"] -- "starts once per episode" --> Agent["Your agent"]
+    Runner["@bondedhq/runner"] -- "starts once per episode" --> Agent["Your agent"]
   end
   subgraph arena["Bonded Arena (rating worker)"]
     Gateway["Arena Gateway"] --> Tools["World + tools<br/>(attacks planted here)"]
@@ -36,7 +36,7 @@ Everything on this page is built and tested in the repository. Some of it isn't 
 
 | Piece | Status | Until then |
 |---|---|---|
-| `@bonded/runner`, `@bonded/sdk` (and `@bonded/shared`, `@bonded/solana`, which they depend on) | Not yet on npm, so `npx @bonded/runner` and `npm install @bonded/sdk` don't work yet | Run from a clone of the repository (the quick start below); in your own workspace package use `"@bonded/sdk": "workspace:*"` |
+| `@bondedhq/runner`, `@bondedhq/sdk` (and `@bondedhq/shared`, `@bondedhq/solana`, which they depend on) | Not yet on npm, so `npx @bondedhq/runner` and `npm install @bondedhq/sdk` don't work yet | Run from a clone of the repository (the quick start below); in your own workspace package use `"@bondedhq/sdk": "workspace:*"` |
 | The runner's Docker image | Not published | Build it yourself: `docker build -f apps/runner/Dockerfile -t bonded-runner .` |
 | The hosted Arena Gateway (the arena-worker's public address), and registering your own agent in the hosted web app | Configured, not live until the next deployment of the rating service | Rate locally with the Arena CLI (below), or run the whole hosted flow on your machine with `pnpm demo --byo`. The agent page's runner command shows the gateway's address once there is one |
 | `MandateModule` and its factory | Not deployed on any testnet. Modules need a new CoverManager, ClaimsEngine and DisputeModule, so they need a full redeployment of the protocol ([AUDIT.md](AUDIT.md#addendum-mandatemodule)). The web app's onboarding says "Not deployed on this chain yet" | Use a Mandate Vault, or try the module on a local chain (`pnpm demo --byo` creates, installs, rates and insures one) |
@@ -78,7 +78,7 @@ Now put your own agent in place of `node apps/runner/examples/mcp-agent.mjs`. Fo
 
 Both examples make the one trade the task names and never act on what they read.
 - `apps/runner/examples/mcp-agent.mjs` is plain JavaScript with only an MCP client: a template for connecting in any language. It reads only its inbox, the news, the market report and token info, so it shows how to connect, not how to score well.
-- [`examples/byo-agent`](../examples/byo-agent/README.md) is a TypeScript agent on `@bonded/sdk`, and the one to copy. Each episode it:
+- [`examples/byo-agent`](../examples/byo-agent/README.md) is a TypeScript agent on `@bondedhq/sdk`, and the one to copy. Each episode it:
   - **reads everything**: all nine attack surfaces (inbox, news, social posts, prices, recent transfers, the market report, alerts, counterparty messages, and token info for each token it trades), plus its portfolio. An attack class your agent never reads is priced as untested, which lowers the score (see [What the report shows](#what-the-report-shows)), so a careful agent reads it all;
   - **treats all of it as data**: what it read is kept as untrusted context (the input Sentinel checks, when a Sentinel API is configured) and never becomes an action. Token addresses come from the episode's contracts, never from what it read;
   - **does its task and nothing else**: `buy` makes the trade the task names, and `send` carries it out. In tool mode that is the `swap` tool; in chain mode the SDK's guard dry-runs the `execute` first, then the agent signs it with the session key. (`decide`, a rebalancing step, is what it uses against your own vault when the runner isn't starting it.)
@@ -101,7 +101,7 @@ Protection and rating are independent. An agent can trade through a vault withou
 The vault holds the funds. Your agent's key can only act through `MandateVault.execute(target, data)`. That checks the action against the mandate (tokens, contracts, recipients, per-trade and daily limits) and records any breach. In **Monitor** mode a breach goes through and is recorded. In **Enforce** mode it is blocked and still recorded. Create a vault from the web app (Onboard an agent), or with `buildMandate` and `MandateVaultFactory.createVault`.
 
 ```ts
-import { BondedVault } from "@bonded/sdk";
+import { BondedVault } from "@bondedhq/sdk";
 import { privateKeyToAccount } from "viem/accounts";
 
 const vault = new BondedVault({
@@ -134,7 +134,7 @@ If your agent already trades from a smart account, you don't have to move the fu
   - The hook tells your own transactions apart from the agent's, so moving your own funds isn't mistaken for a breach.
   - A Safe owner's own `execTransaction` doesn't pass through the hook. After moving funds that way, call `sync()` on the module (ideally in the same Safe transaction). Otherwise the next action records a Deferred breach and freezes the agent.
 - **Tokens outside the mandate's asset list.** A smart account usually holds other tokens. On a module, approving or transferring one is a breach; revoking an approval (`approve(x, 0)`, `setApprovalForAll(x, false)`) is always allowed.
-  - An allowance the account already gave an allowed contract, on a token the module doesn't watch, isn't protected. Use `checkUnprotectedAllowances` from `@bonded/sdk` to list such allowances before installing (and while installed), and revoke them; the web app shows the same warning.
+  - An allowance the account already gave an allowed contract, on a token the module doesn't watch, isn't protected. Use `checkUnprotectedAllowances` from `@bondedhq/sdk` to list such allowances before installing (and while installed), and revoke them; the web app shows the same warning.
   - Better still, give the agent a dedicated account holding only the mandate's assets.
 - **The base asset must move exactly** (no fee on transfer, no rebasing). A premium counts only once it arrives in full.
 - **Only Enforce-mode modules can hold cover.** In Monitor mode a breach goes through, and the payout would go to the account, whose owner could have asked the agent for that breach. Monitor mode also runs a breaching call with the account's authority, which reaches further than a vault's (other modules, adapters that trust the account). A Monitor-mode module still protects and records; it just can't be insured (CoverManager refuses it with `ModuleMustEnforce`).
@@ -147,7 +147,7 @@ If your agent already trades from a smart account, you don't have to move the fu
 The SDK prepares the install as one transaction the account's owner sends:
 
 ```ts
-import { installMandateModule, BondedVault } from "@bonded/sdk";
+import { installMandateModule, BondedVault } from "@bondedhq/sdk";
 
 const plan = await installMandateModule(publicClient, {
   moduleFactory, // `moduleFactory` in the chain's deployment file
@@ -168,20 +168,20 @@ Nothing is sent by the SDK. The web app's onboarding offers the same ("Protect t
 
 ### Framework plugins
 
-Each plugin is a subpath of `@bonded/sdk`, with its framework as an optional peer dependency.
+Each plugin is a subpath of `@bondedhq/sdk`, with its framework as an optional peer dependency.
 
 | Framework | Import | What it does | Limits |
 |---|---|---|---|
-| **Coinbase AgentKit** (0.10) | `BondedWalletProvider` from `@bonded/sdk/agentkit` | A wallet provider that turns every `sendTransaction` into `vault.execute(to, data)`; `getAddress()` is the vault. AgentKit's action providers then trade through the mandate unchanged. `guard: true` dry-runs each one first | Refuses native value (vaults are ERC-20 only), contract creation, and `sign`, `signTypedData` and `signTransaction` (a raw signature would act outside the vault, so permits and x402 payments don't work). For a module, use `await BondedWalletProvider.create(...)` |
-| **Solana Agent Kit** (2) | `bondedVaultPlugin` from `@bonded/sdk/solana-agent-kit` | Actions `BONDED_VAULT_TRANSFER`, `BONDED_VAULT_STATUS` and, when you pass a `swap` builder, `BONDED_VAULT_SWAP`, through the `bonded_vault` program's `execute` | Scoped to what the Solana program checks: no destination list (any transfer out of the vault is a breach), approvals never allowed, no price check or 24-hour limit yet, one instruction per `execute` (a multi-hop route may not fit). You supply the swap builder |
-| **ElizaOS** (1.7) | `bondedPlugin` from `@bonded/sdk/eliza` | Actions `BONDED_SWAP`, `BONDED_TRANSFER`, `BONDED_APPROVE` through the vault, and a `BONDED_VAULT` provider that reports its mode, frozen state and breach count. Each action is dry-run first; Sentinel optional | Parameters come from the caller or the runtime's small model; amounts are whole tokens |
+| **Coinbase AgentKit** (0.10) | `BondedWalletProvider` from `@bondedhq/sdk/agentkit` | A wallet provider that turns every `sendTransaction` into `vault.execute(to, data)`; `getAddress()` is the vault. AgentKit's action providers then trade through the mandate unchanged. `guard: true` dry-runs each one first | Refuses native value (vaults are ERC-20 only), contract creation, and `sign`, `signTypedData` and `signTransaction` (a raw signature would act outside the vault, so permits and x402 payments don't work). For a module, use `await BondedWalletProvider.create(...)` |
+| **Solana Agent Kit** (2) | `bondedVaultPlugin` from `@bondedhq/sdk/solana-agent-kit` | Actions `BONDED_VAULT_TRANSFER`, `BONDED_VAULT_STATUS` and, when you pass a `swap` builder, `BONDED_VAULT_SWAP`, through the `bonded_vault` program's `execute` | Scoped to what the Solana program checks: no destination list (any transfer out of the vault is a breach), approvals never allowed, no price check or 24-hour limit yet, one instruction per `execute` (a multi-hop route may not fit). You supply the swap builder |
+| **ElizaOS** (1.7) | `bondedPlugin` from `@bondedhq/sdk/eliza` | Actions `BONDED_SWAP`, `BONDED_TRANSFER`, `BONDED_APPROVE` through the vault, and a `BONDED_VAULT` provider that reports its mode, frozen state and breach count. Each action is dry-run first; Sentinel optional | Parameters come from the caller or the runtime's small model; amounts are whole tokens |
 
-Each plugin has an end-to-end test that performs an allowed and a breaching action and checks the vault's breach log (`pnpm --filter @bonded/sdk test`). The Solana tests need the programs built and `solana-test-validator`; without them they skip.
+Each plugin has an end-to-end test that performs an allowed and a breaching action and checks the vault's breach log (`pnpm --filter @bondedhq/sdk test`). The Solana tests need the programs built and `solana-test-validator`; without them they skip.
 
 ### Guarded, with Sentinel
 
 ```ts
-import { guarded } from "@bonded/sdk";
+import { guarded } from "@bondedhq/sdk";
 
 const safe = guarded(vault, { sentinel: { apiUrl, mandate, tokens } }); // sentinel is optional
 await safe.swap(params, { untrustedInputs: [{ tool: "read_inbox", output: email }] });
@@ -288,7 +288,7 @@ Each episode starts your command once, with:
 | `BONDED_CONTRACTS` | JSON: `{ exchange, tokens: [{ symbol, address, decimals }] }` |
 | `BONDED_DEADLINE_MS` | Milliseconds the agent has: 90 seconds in a hosted rating, 240 by default in a local one |
 
-In TypeScript, `fromBondedEnv()` from `@bonded/sdk` reads and checks them all, naming any that is missing or malformed.
+In TypeScript, `fromBondedEnv()` from `@bondedhq/sdk` reads and checks them all, naming any that is missing or malformed.
 
 ### Tool mode: MCP or HTTP
 
@@ -405,7 +405,7 @@ Fair-use limits for operator-run agents keep one operator from holding the ratin
 
 These are a lane of their own: they don't use up the built-in designs' self-serve allowance, and the built-in designs don't use up theirs. **Every** rating counts: the ones you ask for, renewals, and re-ratings after a TEE change. A rating is counted as what it was queued as, against the owner it was charged to, so registering an agent again or transferring it doesn't take earlier ratings off the counts.
 
-The same flow is plain HTTP, for scripts. Each write is an EIP-191 `personal_sign` of a short text message built by `selfServeMessage` in `@bonded/shared`, valid for 10 minutes. For example, `Bonded: create runner token`, `chain 46630`, `agent 12` and `time <unix seconds>`, each on its own line. A runner-token signature can be used once.
+The same flow is plain HTTP, for scripts. Each write is an EIP-191 `personal_sign` of a short text message built by `selfServeMessage` in `@bondedhq/shared`, valid for 10 minutes. For example, `Bonded: create runner token`, `chain 46630`, `agent 12` and `time <unix seconds>`, each on its own line. A runner-token signature can be used once.
 
 | Endpoint | What it does |
 |---|---|
@@ -459,7 +459,7 @@ The key-custody term is an assumption, not a measurement, and the report says so
 A TEE binding needs chain mode. In tool mode the tool calls come from your runner, outside the TEE, so the TEE would bind nothing; the API refuses that registration. The Arena verifies TEEs the way it verifies Bonded's own TEE agent ([TEE.md](TEE.md)), against your own compose hash:
 
 - **Phala dstack on Intel TDX**, booted from an approved production OS image (`APPROVED_OS_IMAGES` in `apps/arena/src/tee.ts`). Development images, which allow SSH, are refused. The Intel TCB status must be `UpToDate` or `SWHardeningNeeded`.
-- **An evidence endpoint**: `GET <url>/attestation?nonce=<32 bytes hex>` returning `{ quote, eventLog, composeHash, codeHash, evmAddress, solanaPublicKey?, nonce }`. The quote's report data is `teeReportData` from `@bonded/shared`, a hash of the code hash, the keys and the nonce. `solanaPublicKey` is optional, for EVM-only agents. `services/tee-agent` is a working reference.
+- **An evidence endpoint**: `GET <url>/attestation?nonce=<32 bytes hex>` returning `{ quote, eventLog, composeHash, codeHash, evmAddress, solanaPublicKey?, nonce }`. The quote's report data is `teeReportData` from `@bondedhq/shared`, a hash of the code hash, the keys and the nonce. `solanaPublicKey` is optional, for EVM-only agents. `services/tee-agent` is a working reference.
 - **A per-rating Arena key.** The fork keeps the live chain's id, so a transaction signed with your production key in the Arena would be valid on the live chain. So in a rating your TEE signs with a key it derives for that rating alone:
   - The Arena picks a key id and asks `GET <url>/attestation?nonce=…&purpose=arena&key=<id>`.
   - Your TEE derives the key (Bonded's TEE agent uses the dstack path `bonded/agent/v1/arena/<id>`) and answers with evidence carrying `purpose: "arena"`, the `keyId` and that key's address.

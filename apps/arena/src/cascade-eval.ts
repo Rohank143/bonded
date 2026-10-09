@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { canonicalHash, sentinelState, type SentinelCascadePolicy } from "@bonded/shared";
+import { canonicalHash, sentinelState, type SentinelCascadePolicy } from "@bondedhq/shared";
 import { CascadeSentinel, type SentinelAssessment, type SentinelModel } from "@bonded/demo-agents";
 import type { SentinelRow } from "./dataset.js";
 import { binaryMetrics, heldOutCases, percentile } from "./sentinel-eval.js";

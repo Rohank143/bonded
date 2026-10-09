@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, expect, it } from "vitest";
-import { sentinelCascadePolicyHash, sentinelCascadePolicySchema } from "@bonded/shared";
+import { sentinelCascadePolicyHash, sentinelCascadePolicySchema } from "@bondedhq/shared";
 import { sentinelFromEnv, sentinelCodeHash } from "../src/sentinel.js";
 import { ratedCodeHash } from "../src/worker.js";
 

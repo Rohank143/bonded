@@ -6,7 +6,7 @@ import {
   deploymentTokens,
   mandateModuleAbi,
   unprotectedAllowancesWarning,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import type { Address } from "viem";
 import { deployment } from "../config";
 import { MODULE_COVER_NOTE } from "../lib/module";

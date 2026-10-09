@@ -10,7 +10,7 @@ import {
   OpenAICompatibleClient,
   sentinelCascadePolicySchema,
   sentinelCascadePolicyHash,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import type { RatingSentinel } from "./rate.js";
 
 /** Candidate policies can be tested here before passing evidence is available for production. */
