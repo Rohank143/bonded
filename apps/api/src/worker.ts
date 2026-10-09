@@ -35,6 +35,7 @@ import {
   GATEWAY_UNAVAILABLE,
   RatingRefused,
   arenaKeyProblem,
+  bondedUrlFailure,
   forkBudgetExhausted,
   ratingFailure,
   TeeBinding,
@@ -319,7 +320,8 @@ async function runLocked(
         "the agent changed hands since it was registered; its owner must register it again",
         true,
       );
-    const connection = config.kind === "remote" ? (config.connection ?? "runner") : undefined;
+    const connection =
+      config.kind === "remote" ? await db.connectionOf(row.agent_id, config) : undefined;
     if (connection === "runner" && !(await db.runnerIsConnected(row.agent_id)))
       throw new RatingRefused(
         "the agent's runner is not connected; start it and rate again",
@@ -497,6 +499,15 @@ async function runLocked(
             ...(config.kind === "remote" ? { exercise: "exposed" as const } : {}),
             ...(tee ? { tee } : {}),
             vault: { mandate: config.mandate as EvmMandateInput },
+            // A remote rating's total shows at once, before its first episode.
+            onProgress: async (p) => {
+              if (config.kind === "remote" && p.done === 0)
+                await db.setRatingProgress(job, {
+                  done: 0,
+                  total: p.total,
+                  startedAt: new Date(ratingStarted),
+                });
+            },
             onEpisode: async (episode, index, total) => {
               await check();
               // A remote rating stops at the first episode its agent fails (crash, exit, timeout,
@@ -513,6 +524,12 @@ async function runLocked(
                     `stopped: the agent used up its share of fork requests in ${budgetSpentIn}`,
                     true,
                     { caused: true },
+                  );
+                } else if (bondedUrlFailure(episode)) {
+                  // Bonded couldn't call the agent's URL: not the agent's doing; retried.
+                  remoteStop = new RatingRefused(
+                    `stopped: Bonded couldn't reach the agent's URL in episode ${index + 1} of ${total}, not because of the agent; it will be retried`,
+                    false,
                   );
                 } else if (episodeOutcome(episode) === "agent_error") {
                   const report = (episode.agentSummary.finalMessage ?? "").slice(0, 500);

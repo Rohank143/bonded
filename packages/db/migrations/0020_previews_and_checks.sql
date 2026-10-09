@@ -117,3 +117,10 @@ CREATE TABLE connection_check_events (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX connection_check_events_check ON connection_check_events(check_id, id);
+
+-- Signatures already used for a registered agent's Agent URL, check and notification requests
+-- (each is signed by the agent's owner): a captured one can't be replayed.
+CREATE TABLE used_signatures (
+  hash text PRIMARY KEY,
+  created_at timestamptz NOT NULL DEFAULT now()
+);

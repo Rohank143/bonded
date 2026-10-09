@@ -6,13 +6,7 @@ import { connectChain, type ServiceChain } from "@bonded/keeper";
 import { selfServeMessage } from "@bonded/shared";
 import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { createApi } from "../src/index.js";
-import {
-  SecretBox,
-  agentUrlContext,
-  secretBoxFromEnv,
-  signedHeaders,
-  verifySignature,
-} from "../src/secrets.js";
+import { SecretBox, agentUrlContext, secretBoxFromEnv, verifySignature } from "../src/secrets.js";
 import {
   Notifier,
   ResendEmail,
@@ -21,7 +15,8 @@ import {
   type EmailSender,
   type RatingNotification,
 } from "../src/notifications.js";
-import { safePost } from "../src/safe-post.js";
+import { safeRequest } from "@bonded/arena";
+import { signAgentUrlRequest } from "@bonded/shared";
 import { workOne } from "../src/worker.js";
 import {
   DbRunnerAuth,
@@ -66,10 +61,9 @@ describe("secrets at rest", () => {
     expect(() => secretBoxFromEnv({ AGENT_URL_SECRET_KEY: "short" })).toThrow(/must be 32 bytes/);
     expect(() => secretBoxFromEnv({ AGENT_URL_SECRET_KEY: "short" })).not.toThrow(/short/);
   });
-  it("sign calls as v1=HMAC-SHA256(secret, timestamp.body), checked within five minutes", () => {
-    const headers = signedHeaders("s3cret", '{"a":1}', 1000);
+  it("check webhook calls signed as v1=HMAC-SHA256(secret, timestamp.body) by @bonded/shared", async () => {
+    const headers = await signAgentUrlRequest("s3cret", '{"a":1}', 1_000_000);
     expect(headers["bonded-timestamp"]).toBe("1000");
-    expect(headers["bonded-signature"]).toMatch(/^v1=[0-9a-f]{64}$/);
     const check = (body: string, nowSeconds: number, secret = "s3cret") =>
       verifySignature(
         secret,
@@ -132,18 +126,18 @@ describe("the email sender", () => {
   });
 });
 
-describe("safe POST", () => {
+describe("webhook POSTs (the Arena's safeRequest)", () => {
   it("refuses plain http, private addresses and redirects", async () => {
     const opts = { timeoutMs: 2000, maxBytes: 1024 };
-    await expect(safePost(new URL("http://example.com/x"), "{}", {}, opts)).rejects.toThrow(
-      /https/,
-    );
-    await expect(safePost(new URL("https://10.0.0.1/x"), "{}", {}, opts)).rejects.toThrow(
-      /private or internal/,
-    );
-    await expect(safePost(new URL("https://127.0.0.1/x"), "{}", {}, opts)).rejects.toThrow(
-      /private or internal/,
-    );
+    await expect(
+      safeRequest(new URL("http://example.com/x"), { ...opts, method: "POST", body: "{}" }),
+    ).rejects.toThrow(/https/);
+    await expect(
+      safeRequest(new URL("https://10.0.0.1/x"), { ...opts, method: "POST", body: "{}" }),
+    ).rejects.toThrow(/private or internal/);
+    await expect(
+      safeRequest(new URL("https://127.0.0.1/x"), { ...opts, method: "POST", body: "{}" }),
+    ).rejects.toThrow(/private or internal/);
     const server = createServer((_req, res) => {
       res.writeHead(302, { Location: "http://10.0.0.1/" });
       res.end();
@@ -151,7 +145,12 @@ describe("safe POST", () => {
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
     const port = (server.address() as { port: number }).port;
     await expect(
-      safePost(new URL(`http://127.0.0.1:${port}/`), "{}", {}, { ...opts, allowLoopback: true }),
+      safeRequest(new URL(`http://127.0.0.1:${port}/`), {
+        ...opts,
+        method: "POST",
+        body: "{}",
+        allowLoopback: true,
+      }),
     ).rejects.toThrow(/redirects/);
     server.close();
   });
@@ -267,28 +266,29 @@ describe("notifications", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
-    expect(body.webhookSecretOnce).toMatch(/^bonded_ws_/);
+    expect(body.webhookSecret).toMatch(/^bonded_ws_/);
+    // Shown masked: the origin of the webhook, the first letter of the address.
     expect(body).toMatchObject({
-      webhookSecret: true,
-      email: "me@example.com",
-      emailEnabled: true,
+      webhook: { url: `http://127.0.0.1:${port}/…` },
+      email: "m***@example.com",
+      emailAvailable: true,
     });
     const shown = await (
       await app.request("/self/notifications", { headers: { Authorization: `Bearer ${session}` } })
     ).text();
-    expect(shown).not.toContain(body.webhookSecretOnce as string);
+    expect(shown).not.toContain(body.webhookSecret as string);
     // The same URL again keeps its secret; rotating gives a new one.
     expect(
       (
         (await (
           await save(session, { webhookUrl: `http://127.0.0.1:${port}/hook` })
         ).json()) as Record<string, unknown>
-      ).webhookSecretOnce,
+      ).webhookSecret,
     ).toBeUndefined();
     const rotated = (await (
       await save(session, {}, app, "/self/notifications/webhook-secret")
     ).json()) as Record<string, unknown>;
-    expect(rotated.webhookSecretOnce).not.toBe(body.webhookSecretOnce);
+    expect(rotated.webhookSecret).not.toBe(body.webhookSecret);
     // Bad and unsafe input.
     expect((await save(session, { email: "not-an-email" })).status).toBe(400);
     const strict = makeApi({ allowLoopbackUrls: false, webOrigins: ["https://bonded.example"] });
@@ -306,15 +306,16 @@ describe("notifications", () => {
       string,
       unknown
     >;
-    expect(removed).toMatchObject({ webhookUrl: null, webhookSecret: false });
+    expect(removed).toMatchObject({ webhook: null });
+    expect((await pg.db.notificationSettings(who.address))?.webhookSecretCiphertext).toBeNull();
   });
 
   it("are sent signed, once per rating and outcome, and never throw", async () => {
     const who = privateKeyToAccount(generatePrivateKey());
     const session = await sessionFor(who);
-    const { webhookSecretOnce: secret } = (await (
+    const { webhookSecret: secret } = (await (
       await save(session, { webhookUrl: `http://127.0.0.1:${port}/hook`, email: "me@example.com" })
-    ).json()) as { webhookSecretOnce: string };
+    ).json()) as { webhookSecret: string };
     const logs: string[] = [];
     const notifier = new Notifier(pg.db, {
       secrets,

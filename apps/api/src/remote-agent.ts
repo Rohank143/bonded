@@ -10,7 +10,7 @@ import {
 } from "@bonded/arena";
 import type { ArenaAgent, RemoteMode } from "@bonded/shared";
 import type { Hex } from "viem";
-import { AGENT_URL_UNAVAILABLE, type AgentConnection } from "./connections.js";
+import type { AgentConnection } from "./connections.js";
 
 /**
  * Bring your own agent (docs/BRING-YOUR-OWN-AGENT.md): the rating worker's side of a remote agent.
@@ -60,7 +60,7 @@ export type RemoteAgentFactory = (request: RemoteAgentRequest, sandbox: Sandbox)
 
 /**
  * The Arena Gateway's `RemoteAgent` for a rating: the agent's runner is the one its token maps to
- * (the agent's key); a TEE-bound agent's evidence goes to `verify` at every episode, and in chain
+ * (the agent's key), or its Agent URL, called with the agent secret; a TEE-bound agent's evidence goes to `verify` at every episode, and in chain
  * mode its vault names the TEE's attested key, so no key is sent.
  */
 export function gatewayAgents(
@@ -68,12 +68,14 @@ export function gatewayAgents(
   options: { episodeTimeoutMs?: number; runnerWaitMs?: number } = {},
 ): RemoteAgentFactory {
   return (request, sandbox) => {
-    // Seam: Agent URL mode is the gateway's transport; until this build has it, refuse plainly.
-    if (request.connection?.kind === "url") throw new RatingRefused(AGENT_URL_UNAVAILABLE, true);
+    // An Agent URL can't carry a TEE's evidence: that comes through the runner.
+    if (request.connection?.kind === "url" && request.tee)
+      throw new RatingRefused("a TEE-bound agent is rated through its runner", true);
+    // No `onEvent` here: per-episode activity would show the operator which episodes are attacks.
     return new RemoteAgent({
       gateway,
       sandbox,
-      runner: request.agentKey,
+      transport: request.connection ?? { kind: "runner", key: request.agentKey },
       mode: request.mode,
       name: `remote/agent-${request.agentId}`,
       episodeTimeoutMs: options.episodeTimeoutMs ?? REMOTE_EPISODE_TIMEOUT_MS,
@@ -230,4 +232,22 @@ export function ratingFailure(error: unknown, budgetSpentIn?: string): RatingFai
     };
   if (error instanceof RatingRefused) return { reason: error.message, final: error.final };
   return { reason: "rating failed; retry scheduled" };
+}
+
+/**
+ * Whether an episode failed because Bonded couldn't call the agent's URL (its own per-host rate
+ * limit, or the URL transport being unavailable): not the agent's doing, so never charged to it.
+ * A URL that answered non-2xx, or didn't answer in 10 s, is the agent's (that's "url failed").
+ */
+export function bondedUrlFailure(value: unknown): boolean {
+  const e = value as {
+    agentSummary?: {
+      finalMessage?: unknown;
+      remote?: { urlUnavailable?: unknown; urlCaused?: unknown };
+    };
+  } | null;
+  const remote = e?.agentSummary?.remote;
+  if (remote?.urlUnavailable === true || remote?.urlCaused === "bonded") return true;
+  const said = e?.agentSummary?.finalMessage;
+  return typeof said === "string" && said.startsWith("the agent's URL wasn't called");
 }

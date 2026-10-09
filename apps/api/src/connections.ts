@@ -1,6 +1,12 @@
-import type { ArenaGateway } from "@bonded/arena";
-import type { AgentMode } from "@bonded/shared";
-import { keccak256, stringToBytes, type Hex } from "viem";
+import {
+  runConnectionCheck,
+  verifyAgentUrl,
+  type AgentUrlClient,
+  type ArenaGateway,
+} from "@bonded/arena";
+import { agentUrlCodeHash, type AgentMode } from "@bonded/shared";
+import type { ConnectionCheckRecord, RatedCode } from "@bonded/db";
+import type { Hex } from "viem";
 
 /**
  * How the rating service reaches an operator's agent (bring your own agent, round 2), and the
@@ -31,7 +37,10 @@ export type ConnectionCheckEvent =
 export interface ConnectionCheckResult {
   passed: boolean;
   problems: string[];
-  taskCompleted: boolean;
+  /** Advisory: what works but costs score or makes estimates rougher (doesn't fail a check). */
+  warnings?: string[];
+  /** Null when the episode never ran. */
+  taskCompleted: boolean | null;
   toolsCalled: number;
   surfacesRead: string[];
   /** Model usage the agent reported at /done, as it reported it (never trusted for limits). */
@@ -60,29 +69,55 @@ export type ConnectionCheckRunner = (
 export type AgentUrlVerification = { ok: true; version?: string } | { ok: false; problem: string };
 export type AgentUrlVerifier = (url: string, secret: string) => Promise<AgentUrlVerification>;
 
-/** Why a service can't use Agent URL mode yet (the gateway's transport isn't in this build). */
-export const AGENT_URL_UNAVAILABLE =
-  "Agent URL mode isn't available on this rating service yet; connect with the runner instead";
 /** Why a worker can't run connection checks (no gateway, or no check support in it). */
 export const CHECKS_UNAVAILABLE =
   "Connection checks aren't available on this rating service yet: the Arena Gateway isn't running here";
 
 /**
- * Seam: verify an Agent URL with the gateway's `verifyAgentUrl` (a signed `verify` challenge the
- * agent must echo within 10 s). Until the gateway has it, every verification fails plainly.
+ * Verify an Agent URL with the gateway's `verifyAgentUrl`: a signed `verify` challenge the agent
+ * must echo within 10 s, through `client` (its per-host rate limit and refused hosts are shared
+ * with everything else that calls agent URLs from this process).
  */
-export function gatewayUrlVerifier(): AgentUrlVerifier {
-  return async () => ({ ok: false, problem: AGENT_URL_UNAVAILABLE });
+export function gatewayUrlVerifier(client: AgentUrlClient): AgentUrlVerifier {
+  return async (url, secret) => {
+    const answer = await verifyAgentUrl(url, secret, { client });
+    return answer.ok
+      ? { ok: true, ...(answer.version !== undefined ? { version: answer.version } : {}) }
+      : { ok: false, problem: answer.problem };
+  };
 }
 
 /**
- * Seam: the gateway's `runConnectionCheck` (one benign episode, no attack, never scored, with
- * live events). Undefined while the gateway can't run checks: the check worker then fails each
- * check with CHECKS_UNAVAILABLE.
+ * The gateway's `runConnectionCheck`: one benign episode on a fresh local chain, no attack,
+ * never scored, its events streamed as they happen. Only checks get these per-episode events:
+ * a rating never streams them (they would show which episodes are attacks).
  */
-export function gatewayCheckRunner(gateway: ArenaGateway): ConnectionCheckRunner | undefined {
-  void gateway;
-  return undefined;
+export function gatewayCheckRunner(gateway: ArenaGateway): ConnectionCheckRunner {
+  return async (request) => {
+    const result = await runConnectionCheck({
+      gateway,
+      transport: request.connection,
+      mode: request.mode,
+      episodeTimeoutMs: Math.min(request.timeoutMs, 90_000),
+      onEvent: (event) => request.onEvent(event as ConnectionCheckEvent),
+    });
+    return {
+      passed: result.passed,
+      problems: result.problems,
+      warnings: result.warnings,
+      taskCompleted: result.taskCompleted,
+      toolsCalled: result.toolsCalled,
+      surfacesRead: [...result.surfacesRead],
+      ...(result.usage ? { usage: result.usage } : {}),
+      ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
+      ...(result.code
+        ? {
+            codeHash: result.code.hash,
+            codeSource: result.code.source === "url" ? "url-version" : result.code.source,
+          }
+        : {}),
+    };
+  };
 }
 
 /**
@@ -102,9 +137,53 @@ export function reportedCode(hello: unknown): { codeHash: string; codeSource: st
 
 /** The code hash of an Agent URL that reported `version`: keccak256("url:" + version). */
 export function urlCodeHash(version: string): Hex {
-  return keccak256(stringToBytes(`url:${version}`));
+  return agentUrlCodeHash(version);
 }
 
 /** Why a rating can't be queued without a check. */
 export const NEEDS_CHECK =
   "run a connection check first: a rating needs a passing check of this exact connection (the same runner token or Agent URL, mode and code) in the last 24 hours";
+
+/** How long a passing check lets a rating be queued. */
+const CHECK_VALID_MS = 86_400_000;
+
+/** A code hash, where it came from, and (for an Agent URL) the version it was made from. */
+export function codeInfo(code: RatedCode | undefined, version?: string | null) {
+  return code
+    ? {
+        value: code.hash.toLowerCase(),
+        source: code.source,
+        detail: code.source === "url-version" ? (version ?? null) : null,
+        // Who says so: never verified by Bonded, only declared or reported.
+        reportedBy:
+          code.source === "declared"
+            ? ("owner" as const)
+            : code.source === "url-version"
+              ? ("agent" as const)
+              : ("runner" as const),
+        label:
+          code.source === "declared"
+            ? "declared by the owner"
+            : code.source === "url-version"
+              ? "reported by the agent"
+              : "reported by the runner",
+      }
+    : null;
+}
+
+/** A check as the web app lists it: queued counts as running. */
+export function checkSummary(k: ConnectionCheckRecord) {
+  const result = (k.result ?? null) as Partial<ConnectionCheckResult> | null;
+  return {
+    id: k.id,
+    status: k.status === "queued" ? ("running" as const) : k.status,
+    createdAt: k.createdAt.toISOString(),
+    connection: k.connection,
+    expiresAt:
+      k.status === "passed" && k.finishedAt
+        ? new Date(k.finishedAt.getTime() + CHECK_VALID_MS).toISOString()
+        : null,
+    problems: result?.problems ?? [],
+    warnings: result?.warnings ?? [],
+  };
+}

@@ -3,7 +3,8 @@ import { streamSSE } from "hono/streaming";
 
 /** What one poll of a stream found: events to send, and whether the stream is over. */
 export interface PollResult {
-  events: { id?: string; event: string; data: unknown }[];
+  /** No `event` name: a plain message, which EventSource.onmessage receives. */
+  events: { id?: string; event?: string; data: unknown }[];
   done: boolean;
 }
 
@@ -42,7 +43,7 @@ export class PollStreams {
               if (abort.signal.aborted) break;
               await stream.writeSSE({
                 ...(e.id ? { id: e.id } : {}),
-                event: e.event,
+                ...(e.event ? { event: e.event } : {}),
                 data: JSON.stringify(e.data),
               });
             }

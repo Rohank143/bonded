@@ -259,10 +259,16 @@ const RUNNER_CONNECTED = `EXISTS (SELECT 1 FROM runner_presence p JOIN runner_to
     AND p.last_heartbeat_at > now() - make_interval(secs => ${RUNNER_FRESH_MS / 1000}))`;
 
 /**
+ * SQL: whether agent `a` is reached by its Agent URL: registered so, or it has a live Agent URL
+ * (registering one switches a runner agent to URL mode; revoking it switches it back).
+ */
+const URL_CONNECTION = `(a.config->>'connection'='url' OR EXISTS (SELECT 1 FROM agent_urls u0
+  WHERE u0.owner_key=a.id AND u0.revoked_at IS NULL))`;
+/**
  * SQL: whether agent `a` can be reached for a rating now: its Agent URL is set and verified (Agent
  * URL mode), or its runner is connected.
  */
-const CONNECTION_READY = `(CASE WHEN a.config->>'connection'='url'
+const CONNECTION_READY = `(CASE WHEN ${URL_CONNECTION}
   THEN EXISTS (SELECT 1 FROM agent_urls u WHERE u.owner_key=a.id AND u.revoked_at IS NULL AND u.verified_at IS NOT NULL)
   ELSE ${RUNNER_CONNECTED} END)`;
 
@@ -1303,7 +1309,7 @@ export class Database {
         ? undefined
         : typeof config.codeHash === "string"
           ? { hash: config.codeHash, source: "declared" }
-          : await this.reportedCodeIn(c, agentId, config.connection === "url" ? "url" : "runner"));
+          : await this.reportedCodeIn(c, agentId, await this.connectionOfIn(c, agentId, config)));
     await c.query(
       `INSERT INTO ratings(id,agent_id,created_at,kind,charged_owner,config,code_hash,code_source)
        VALUES($1,$2,coalesce($3,now()),$4,$5,$6,$7,$8)`,
@@ -1864,6 +1870,96 @@ export class Database {
   // Bring your own agent, round 2 (migrations 0020 and 0021): sessions, previews, Agent URLs,
   // connection checks and notification settings.
 
+  /**
+   * How an operator-run agent is reached: by its Agent URL when registered so or when it has a
+   * live one (registering a URL switches it; revoking switches it back), else by its runner.
+   */
+  async connectionOf(key: string, config: unknown): Promise<ConnectionKind> {
+    return this.connectionOfIn(this.pool, key, config);
+  }
+  private async connectionOfIn(
+    c: Connection | pg.Pool,
+    key: string,
+    config: unknown,
+  ): Promise<ConnectionKind> {
+    if ((config as { connection?: unknown } | null)?.connection === "url") return "url";
+    const live = await c.query(
+      "SELECT 1 FROM agent_urls WHERE owner_key=$1 AND revoked_at IS NULL",
+      [key],
+    );
+    return live.rowCount ? "url" : "runner";
+  }
+  /** Record a signature as used; false when it already was (a replay). */
+  async useSignature(hash: string): Promise<boolean> {
+    const r = await this.pool.query(
+      "INSERT INTO used_signatures(hash) VALUES($1) ON CONFLICT DO NOTHING",
+      [hash],
+    );
+    return (r.rowCount ?? 0) > 0;
+  }
+  /**
+   * Whether `owner` may queue a preview rating now, by the same counts `enqueuePreviewRating`
+   * applies, and how many remote ratings and previews are waiting or running on the chain.
+   */
+  async previewAllowance(
+    owner: string,
+    chainId: number,
+    quota: PreviewQuota,
+  ): Promise<{ refusal?: PreviewRefusal; queued: number }> {
+    const since = new Date(quota.nowMs - 86_400_000);
+    const counts = (
+      await this.pool.query(
+        `SELECT count(*) FILTER (WHERE r.charged_owner=$2)::int AS wallet,
+           min(r.created_at) FILTER (WHERE r.charged_owner=$2) AS wallet_first,
+           count(*)::int AS lane, min(r.created_at) AS lane_first
+         FROM ratings r JOIN previews v ON v.id=r.preview_id
+         WHERE v.chain_id=$1 AND r.kind='preview' AND r.created_at>=$3`,
+        [chainId, owner.toLowerCase(), since],
+      )
+    ).rows[0];
+    const queued = await this.remoteQueue(chainId);
+    if (counts.wallet >= quota.perWalletDaily)
+      return {
+        refusal: {
+          refused: "wallet-daily",
+          nextAt: new Date(
+            ((counts.wallet_first as Date | null)?.getTime() ?? quota.nowMs) + 86_400_000,
+          ),
+        },
+        queued,
+      };
+    if (counts.lane >= quota.daily)
+      return {
+        refusal: {
+          refused: "daily",
+          nextAt: new Date(
+            ((counts.lane_first as Date | null)?.getTime() ?? quota.nowMs) + 86_400_000,
+          ),
+        },
+        queued,
+      };
+    return { queued };
+  }
+  /**
+   * Remote ratings and previews waiting or running on the chain; with `runId`, those ahead of it
+   * (official ratings always go first, then previews by when they were queued).
+   */
+  async remoteQueue(chainId: number, runId?: string): Promise<number> {
+    const r = await this.pool.query(
+      `WITH lane AS (
+         SELECT j.id, r.kind, j.available_at, j.status FROM jobs j JOIN ratings r ON r.id=j.id
+         LEFT JOIN agents a ON a.id=r.agent_id LEFT JOIN previews v ON v.id=r.preview_id
+         WHERE coalesce(a.chain_id, v.chain_id)=$1 AND (r.kind='remote' OR r.kind='preview')
+           AND j.status IN ('queued','running') AND j.attempts<3
+       ), me AS (SELECT * FROM lane WHERE id=$2::uuid)
+       SELECT count(*)::int AS n FROM lane l
+       WHERE $2::uuid IS NULL OR (l.id<>$2::uuid AND (l.status='running'
+         OR (SELECT kind FROM me)='preview' AND (l.kind='remote' OR l.available_at < (SELECT available_at FROM me))
+         OR (SELECT kind FROM me)='remote' AND l.kind='remote' AND l.available_at < (SELECT available_at FROM me)))`,
+      [chainId, runId ?? null],
+    );
+    return r.rows[0].n as number;
+  }
   /** Lock an agent's or a preview's row for the rest of the caller's transaction. */
   private async lockSubject(c: Connection, key: string) {
     if (key.startsWith(PREVIEW_PREFIX))
@@ -1897,7 +1993,7 @@ export class Database {
           [key],
         )
       ).rows[0];
-      return u?.code_hash ? { hash: u.code_hash, source: "url" } : undefined;
+      return u?.code_hash ? { hash: u.code_hash, source: "url-version" } : undefined;
     }
     const p = (
       await c.query(
@@ -1919,7 +2015,7 @@ export class Database {
       return {
         credentialId: u?.id ?? null,
         ready: Boolean(u?.verifiedAt),
-        code: u?.verifiedAt && u.codeHash ? { hash: u.codeHash, source: "url" } : undefined,
+        code: u?.verifiedAt && u.codeHash ? { hash: u.codeHash, source: "url-version" } : undefined,
       };
     }
     const token = (

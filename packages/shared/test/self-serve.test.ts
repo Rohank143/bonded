@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { REMOTE_MODES, selfServeMessage, SELF_SERVE_KINDS } from "../src/index.js";
+import { REMOTE_MODES, byoaMessage, selfServeMessage, SELF_SERVE_KINDS } from "../src/index.js";
 
 describe("selfServeMessage", () => {
   it("states everything the signature authorises, one field a line", () => {
@@ -91,13 +91,14 @@ describe("selfServeMessage", () => {
       mandateHash: "0xab",
       timestamp: 8,
     };
+    // No declared code: the line is left out.
     const auto = selfServeMessage({ ...base, remote: { mode: "tools" } });
-    expect(auto).toContain("design remote\nmandate 0xab\ncode auto\nmode tools\ntime 8");
+    expect(auto).toContain("design remote\nmandate 0xab\nmode tools\ntime 8");
     expect(selfServeMessage({ ...base, remote: { mode: "tools", connection: "runner" } })).toBe(
       auto,
     );
     expect(selfServeMessage({ ...base, remote: { mode: "chain", connection: "url" } })).toContain(
-      "code auto\nmode chain\nconnection url\ntime 8",
+      "mandate 0xab\nmode chain\nconnection url\ntime 8",
     );
   });
   it("signs a sign-in for a wallet, with no agent", () => {
@@ -109,7 +110,28 @@ describe("selfServeMessage", () => {
         timestamp: 3,
       }),
     ).toBe(
-      "Bonded: sign in\nchain 46630\nwallet 0xabcdef0000000000000000000000000000000001\ntime 3",
+      "Bonded: start preview\nchain 46630\nwallet 0xabcdef0000000000000000000000000000000001\ntime 3",
+    );
+    expect(
+      byoaMessage({
+        action: "agent-url",
+        chainId: 1,
+        agentId: "7",
+        fields: { url: "https://A.example/x" },
+        timestamp: 4,
+      }),
+    ).toBe("Bonded: register agent url\nchain 1\nagent 7\nurl https://A.example/x\ntime 4");
+    expect(
+      byoaMessage({
+        action: "notifications",
+        chainId: 1,
+        agentId: "7",
+        fields: { webhook: "none", email: "a@b.c" },
+        timestamp: 4,
+      }),
+    ).toBe("Bonded: set notifications\nchain 1\nagent 7\nwebhook none\nemail a@b.c\ntime 4");
+    expect(byoaMessage({ action: "check", chainId: 1, agentId: "7", timestamp: 4 })).toBe(
+      "Bonded: start connection check\nchain 1\nagent 7\ntime 4",
     );
   });
 });

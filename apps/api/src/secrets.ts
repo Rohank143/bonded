@@ -14,8 +14,8 @@ import {
  * so a ciphertext copied to another row doesn't decrypt. They are never logged or returned again.
  */
 
-/** Prefix of an agent secret (Agent URL mode), so one is recognisable in a config or a log. */
-export const AGENT_SECRET_PREFIX = "bonded_as_";
+/** Prefix of an agent secret (Agent URL mode): @bonded/shared's. */
+export { AGENT_SECRET_PREFIX } from "@bonded/shared";
 /** Prefix of a webhook signing secret. */
 export const WEBHOOK_SECRET_PREFIX = "bonded_ws_";
 
@@ -95,19 +95,10 @@ export const agentUrlContext = (id: string) => `agent-url:${id}`;
 export const webhookContext = (owner: string) => `webhook:${owner.toLowerCase()}`;
 
 /**
- * Headers for a signed call (Agent URL calls and webhooks alike): `bonded-timestamp` (unix
- * seconds) and `bonded-signature: v1=<hex HMAC-SHA256(secret, "<timestamp>.<raw body>")>`.
+ * Checks a signed webhook call's headers: `bonded-timestamp` and `bonded-signature:
+ * v1=<hex HMAC-SHA256(secret, "<timestamp>.<raw body>")>`, as `signAgentUrlRequest` in
+ * @bonded/shared makes them (for tests and receivers written in TypeScript).
  */
-export function signedHeaders(
-  secret: string,
-  body: string,
-  nowSeconds = Math.floor(Date.now() / 1000),
-): Record<string, string> {
-  const mac = createHmac("sha256", secret).update(`${nowSeconds}.${body}`).digest("hex");
-  return { "bonded-timestamp": String(nowSeconds), "bonded-signature": `v1=${mac}` };
-}
-
-/** Checks a signed call's headers (for tests and receivers written in TypeScript). */
 export function verifySignature(
   secret: string,
   body: string,
@@ -118,7 +109,8 @@ export function verifySignature(
   if (!Number.isInteger(ts)) return false;
   const now = options.nowSeconds ?? Math.floor(Date.now() / 1000);
   if (Math.abs(now - ts) > (options.toleranceSeconds ?? 300)) return false;
-  const expected = Buffer.from(signedHeaders(secret, body, ts)["bonded-signature"] ?? "");
+  const mac = createHmac("sha256", secret).update(`${ts}.${body}`).digest("hex");
+  const expected = Buffer.from(`v1=${mac}`);
   const got = Buffer.from(headers.signature ?? "");
   return got.length === expected.length && timingSafeEqual(got, expected);
 }

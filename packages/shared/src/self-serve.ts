@@ -113,18 +113,18 @@ const TITLES: Record<SelfServeRequest["action"], string> = {
   rate: "rate agent",
   "runner-token": "create runner token",
   "revoke-runner-token": "revoke runner token",
-  "sign-in": "sign in",
+  "sign-in": "start preview",
 };
 
 /** The exact text the owner signs. Addresses and hashes are lowercased so case can't differ. */
 export function selfServeMessage(request: SelfServeRequest): string {
   if (request.action === "sign-in")
-    return [
-      `Bonded: ${TITLES[request.action]}`,
-      `chain ${request.chainId}`,
-      `wallet ${request.wallet.toLowerCase()}`,
-      `time ${request.timestamp}`,
-    ].join("\n");
+    return byoaMessage({
+      action: "sign-in",
+      chainId: request.chainId,
+      wallet: request.wallet,
+      timestamp: request.timestamp,
+    });
   const lines = [
     `Bonded: ${TITLES[request.action]}`,
     `chain ${request.chainId}`,
@@ -140,8 +140,10 @@ export function selfServeMessage(request: SelfServeRequest): string {
     if (request.protection === "module") lines.push("protection module");
     if (request.kind === REMOTE_KIND) {
       const { codeHash, mode, connection, tee } = request.remote;
-      // "code auto": the runner's or the Agent URL's reported hash is used and recorded.
-      lines.push(`code ${codeHash ? codeHash.toLowerCase() : "auto"}`, `mode ${mode}`);
+      // Only when declared, so a registration signed with a code hash reads as it always has;
+      // without one, the runner's or the Agent URL's reported hash is used and recorded.
+      if (codeHash) lines.push(`code ${codeHash.toLowerCase()}`);
+      lines.push(`mode ${mode}`);
       // Only for Agent URL mode, so a runner registration reads as it always has.
       if (connection === "url") lines.push("connection url");
       // The TEE's URL is signed exactly as sent; only its compose hash is lowercased.
@@ -151,5 +153,39 @@ export function selfServeMessage(request: SelfServeRequest): string {
     else if (request.sentinel) lines.push("sentinel on");
   }
   lines.push(`time ${request.timestamp}`);
+  return lines.join("\n");
+}
+
+/**
+ * Bring your own agent, round 2: what a wallet signs for the preview, Agent URL, check and
+ * notification calls, in the same format as `selfServeMessage` (a title, the chain, the agent or
+ * the wallet, any fields as "<name> <value>" in order, then the time). A preview's calls are made
+ * with the session that "start preview" opens; a registered agent's are each signed by its owner.
+ */
+export type ByoaAction = "sign-in" | "runner-token" | "agent-url" | "check" | "notifications";
+
+const BYOA_TITLES: Record<ByoaAction, string> = {
+  "sign-in": "start preview",
+  // The existing action: the same text `selfServeMessage` makes for it.
+  "runner-token": "create runner token",
+  "agent-url": "register agent url",
+  check: "start connection check",
+  notifications: "set notifications",
+};
+
+/** The exact text signed for a round-2 call. URLs and other fields are signed exactly as sent. */
+export function byoaMessage(input: {
+  action: ByoaAction;
+  chainId: number;
+  agentId?: string;
+  wallet?: string;
+  fields?: Record<string, string>;
+  timestamp: number;
+}): string {
+  const lines = [`Bonded: ${BYOA_TITLES[input.action]}`, `chain ${input.chainId}`];
+  if (input.agentId !== undefined) lines.push(`agent ${input.agentId}`);
+  if (input.wallet !== undefined) lines.push(`wallet ${input.wallet.toLowerCase()}`);
+  for (const [name, value] of Object.entries(input.fields ?? {})) lines.push(`${name} ${value}`);
+  lines.push(`time ${input.timestamp}`);
   return lines.join("\n");
 }

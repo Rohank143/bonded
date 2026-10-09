@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { ANVIL_KEYS, Sandbox, createAgentVault, type AgentVault } from "@bonded/arena";
 import { connectChain, type ServiceChain } from "@bonded/keeper";
 import {
+  byoaMessage,
   mandateHash,
   operatorBondAbi,
   selfServeMessage,
@@ -19,7 +20,6 @@ import { ratedAgent } from "../src/sentinel.js";
 import { DEFAULT_REMOTE_POLICY, type RemoteRatingPolicy } from "../src/remote-policy.js";
 import { SecretBox } from "../src/secrets.js";
 import {
-  AGENT_URL_UNAVAILABLE,
   CHECKS_UNAVAILABLE,
   NEEDS_CHECK,
   urlCodeHash,
@@ -72,6 +72,8 @@ function api(
         checksPerWalletHourly: 1000,
         checksHourly: 1000,
         previewCreatesPerWalletDaily: 1000,
+        urlVerifiesPerWalletHourly: 1000,
+        urlVerifiesHourly: 1000,
         ...policy,
       },
     },
@@ -160,7 +162,7 @@ async function newPreview(
 ) {
   const res = await send("POST", "/previews", input, session, a);
   expect(res.status, JSON.stringify(await res.clone().json())).toBe(201);
-  return (await bodyOf(res)).preview as { id: string; status: string; connection: string };
+  return (await bodyOf(res)) as unknown as { id: string; status: string; connection: string };
 }
 /** Connect a runner for `token` as the gateway would, reporting `codeHash` in its hello. */
 async function connect(token: string, mode: "tools" | "chain" = "tools", codeHash?: string) {
@@ -197,16 +199,18 @@ const passing: ConnectionCheckRunner = async ({ onEvent }) => {
     durationMs: 4000,
   };
 };
-/** Read a whole SSE response (it ends by itself) into its events. */
+/**
+ * Read a whole SSE response (it ends by itself) into its messages: plain `message` events, as
+ * EventSource.onmessage gets them (named heartbeats are left out). `event` is the data's `type`.
+ */
 async function sse(res: Response) {
   const text = await res.text();
   return text
     .split("\n\n")
-    .filter((block) => block.includes("event:") && !block.includes("event: heartbeat"))
+    .filter((block) => block.includes("data:") && !block.includes("event:"))
     .map((block) => {
-      const event = /event: (.*)/.exec(block)?.[1];
-      const data = /data: (.*)/.exec(block)?.[1];
-      return { event, data: data ? JSON.parse(data) : undefined };
+      const data = JSON.parse(/data: (.*)/.exec(block)![1]!) as Record<string, unknown>;
+      return { event: data.type as string | undefined, data };
     });
 }
 /** A preview on a connected runner (reporting `code`) with a passing check, ready to rate. */
@@ -217,7 +221,7 @@ async function readyPreview(session: string, code = hash(0xabc), a = app) {
   );
   await connect(made.token as string, "tools", code);
   const check = await bodyOf(await send("POST", `/previews/${preview.id}/checks`, {}, session, a));
-  expect(check.status).toBe("queued");
+  expect(check.queued).toBe(true);
   expect(await workCheckOne(pg.db, chainId, { runCheck: passing })).toBe(true);
   return { preview, token: made.token as string, checkId: check.checkId as string };
 }
@@ -307,17 +311,19 @@ describe("previews", () => {
     const res = await send("POST", "/previews", { mode: "tools" }, session);
     expect(res.status).toBe(201);
     const body = await bodyOf(res);
-    const preview = body.preview as Record<string, unknown>;
+    const preview = body;
     expect(preview).toMatchObject({
       status: "created",
       connection: "runner",
       codeHash: null,
-      codeSource: "auto",
+      declaredCodeHash: null,
+      hasRunnerToken: false,
+      lastCheck: null,
       label: "Preview: not on chain, not insurable",
       attested: false,
       insurable: false,
     });
-    expect(body.expectedRating).toMatchObject({ maxEpisodes: expect.any(Number) });
+    expect(body.expectedRating).toMatchObject({ episodes: expect.any(Number) });
     const list = await bodyOf(await get("/previews", session));
     expect((list.items as { id: string }[]).some((p) => p.id === preview.id)).toBe(true);
     // Another wallet can't see it, or act on it: it is "not found" to them.
@@ -370,10 +376,16 @@ describe("previews", () => {
     await connect(token as string, "tools", hash(0x99));
     const page = await bodyOf(await get(`/previews/${preview.id}`, session));
     expect(JSON.stringify(page)).not.toContain(token as string);
-    expect(page.runner).toMatchObject({
-      runner: { connected: true, codeHash: hash(0x99), codeSource: "git" },
-    });
+    expect(page.runner).toMatchObject({ connected: true, codeHash: hash(0x99), codeSource: "git" });
+    expect(page.hasRunnerToken).toBe(true);
     expect(page.code).toEqual({ hash: hash(0x99), source: "git" });
+    expect(page.codeHash).toEqual({
+      value: hash(0x99),
+      source: "git",
+      detail: null,
+      reportedBy: "runner",
+      label: "reported by the runner",
+    });
     expect(page.upgrade).toMatchObject({
       kind: "remote",
       mode: "tools",
@@ -406,6 +418,10 @@ describe("connection checks", () => {
     // The live stream gives the result and ends.
     const events = await sse(await get(check.eventsUrl as string));
     expect(events.at(-1)).toMatchObject({ event: "result", data: { passed: false } });
+    // The polling fallback has the same events.
+    expect((await bodyOf(await get(`/checks/${check.checkId}`))).events).toEqual([
+      expect.objectContaining({ type: "result", passed: false }),
+    ]);
     // Runner token made, but no runner connected.
     await send("POST", `/previews/${preview.id}/runner-token`, {}, session);
     const again = await bodyOf(await send("POST", `/previews/${preview.id}/checks`, {}, session));
@@ -422,7 +438,12 @@ describe("connection checks", () => {
     );
     await connect(token as string, "tools", hash(0x77));
     const check = await bodyOf(await send("POST", `/previews/${preview.id}/checks`, {}, session));
-    expect(check).toMatchObject({ status: "queued", codeHash: hash(0x77), codeSource: "git" });
+    expect(check).toMatchObject({
+      status: "running",
+      queued: true,
+      codeHash: hash(0x77),
+      codeSource: "git",
+    });
     // One at a time per agent.
     const busy = await send("POST", `/previews/${preview.id}/checks`, {}, session);
     expect(busy.status).toBe(409);
@@ -438,8 +459,14 @@ describe("connection checks", () => {
     const stored = await bodyOf(await get(`/checks/${check.checkId}`));
     expect(stored.status).toBe("passed");
     const page = await bodyOf(await get(`/previews/${preview.id}`, session));
-    expect((page.preview as { status: string }).status).toBe("ready");
-    expect(page.passingCheck).toMatchObject({ checkId: check.checkId });
+    expect(page.status).toBe("ready");
+    expect(page.passingCheck).toMatchObject({ id: check.checkId });
+    expect(page.lastCheck).toMatchObject({
+      id: check.checkId,
+      status: "passed",
+      connection: "runner",
+      expiresAt: expect.any(String),
+    });
     // An unknown check id is just not found.
     expect((await get(`/checks/${crypto.randomUUID()}`)).status).toBe(404);
     expect((await get("/checks/not-a-uuid/events")).status).toBe(404);
@@ -549,7 +576,8 @@ describe("queuing a preview rating", () => {
       code_source: "git",
     });
     // Its owner's alone: not on the public feed, not served by the public run endpoint.
-    expect((await app.request(`/arena/runs/${runId}`)).status).toBe(404);
+    // The run endpoint serves it by its run id (given only to its owner) for the web's report.
+    expect((await bodyOf(await app.request(`/arena/runs/${runId}`))).preview).toBe(true);
     const published = await pg.db.pool.query("SELECT 1 FROM events WHERE payload->>'runId'=$1", [
       runId,
     ]);
@@ -664,8 +692,9 @@ describe("the preview worker", () => {
     });
     // Progress: counts and an ETA, and the end.
     const progress = await sse(await get(`/ratings/${runId}/progress`));
-    expect(progress[0]).toMatchObject({ event: "progress", data: { done: 7, total: 7 } });
-    expect(progress.at(-1)).toMatchObject({ event: "end" });
+    expect(progress).toHaveLength(1);
+    expect(progress[0]!.data).toMatchObject({ done: 7, total: 7, etaSeconds: null });
+    expect(["done", "failed"]).toContain(progress[0]!.data.status);
   }, 240_000);
 
   it("fails at once, saying why, on a worker without the gateway", async () => {
@@ -674,8 +703,8 @@ describe("the preview worker", () => {
     await send("POST", `/previews/${preview.id}/rate`, {}, session);
     await workPreviewOne(pg.db, chain, sandbox.rpcUrl, {});
     const page = await bodyOf(await get(`/previews/${preview.id}`, session));
-    expect(page.preview).toMatchObject({ status: "failed" });
-    expect((page.preview as { error: string }).error).toMatch(/gateway not available/);
+    expect(page).toMatchObject({ status: "failed" });
+    expect(page.reason).toMatch(/gateway not available/);
   }, 120_000);
 });
 
@@ -706,6 +735,20 @@ describe("Agent URLs", () => {
       const secret = body.secret as string;
       expect(secret).toMatch(/^bonded_as_/);
       expect(made.headers.get("cache-control")).toBe("no-store");
+      // Registered and challenged in one call: the URL answered.
+      expect(body).toMatchObject({
+        url: "https://agent.example/bonded",
+        verified: true,
+        verifiedAt: expect.any(String),
+        version: "v1.2.3",
+        codeHash: {
+          value: urlCodeHash("v1.2.3"),
+          source: "url-version",
+          detail: "v1.2.3",
+          reportedBy: "agent",
+          label: "reported by the agent",
+        },
+      });
       // Not in the clear in the database, and never in any later response.
       const row = (
         await pg.db.pool.query("SELECT * FROM agent_urls WHERE id=$1", [body.agentUrlId])
@@ -734,7 +777,7 @@ describe("Agent URLs", () => {
         verified: true,
         version: "v1.2.3",
       });
-      expect(page.code).toEqual({ hash: urlCodeHash("v1.2.3"), source: "url" });
+      expect(page.code).toEqual({ hash: urlCodeHash("v1.2.3"), source: "url-version" });
       // Its checks reach the agent by URL, with the secret, never the runner.
       let reached: unknown;
       const check = await bodyOf(await send("POST", `/previews/${preview.id}/checks`, {}, session));
@@ -749,7 +792,7 @@ describe("Agent URLs", () => {
       expect((await bodyOf(await get(`/checks/${check.checkId}`))).status).toBe("passed");
       const events = await (await get(`/checks/${check.checkId}/events`)).text();
       expect(events).not.toContain(secret);
-      // Rotating: a new secret, the old URL row revoked, verification needed again.
+      // Rotating: a new secret, the old URL row revoked; the check was of the old one.
       const rotated = await bodyOf(
         await send(
           "POST",
@@ -761,7 +804,7 @@ describe("Agent URLs", () => {
       expect(rotated.secret).not.toBe(secret);
       expect(
         (await bodyOf(await get(`/previews/${preview.id}/agent-url`, session))).agentUrl,
-      ).toMatchObject({ verified: false });
+      ).toMatchObject({ verified: true, agentUrlId: rotated.agentUrlId });
       expect((await send("POST", `/previews/${preview.id}/rate`, {}, session)).status).toBe(409);
       // Revoking.
       expect(
@@ -818,57 +861,53 @@ describe("Agent URLs", () => {
     ).toBe(409);
   });
 
-  it("say why verification failed, and limit verifications of one host", async () => {
+  it("say why verification failed (422, nothing stored), and limit verifications of one host", async () => {
     const failing = api(
       {},
       { verifyAgentUrl: async () => ({ ok: false, problem: "Your URL answered 404" }) },
     );
     const session = await sessionFor(owner, failing);
     const preview = await newPreview(session, { mode: "tools", connection: "url" }, failing);
-    await send(
-      "POST",
-      `/previews/${preview.id}/agent-url`,
-      { url: "https://busy.example/a" },
-      session,
-      failing,
-    );
-    const res = await send(
-      "POST",
-      `/previews/${preview.id}/agent-url/verify`,
-      {},
-      session,
-      failing,
-    );
-    expect(res.status).toBe(409);
-    expect(await bodyOf(res)).toEqual({ verified: false, problem: "Your URL answered 404" });
-    for (let i = 1; i < 10; i++)
-      await send("POST", `/previews/${preview.id}/agent-url/verify`, {}, session, failing);
-    const limited = await send(
-      "POST",
-      `/previews/${preview.id}/agent-url/verify`,
-      {},
-      session,
-      failing,
-    );
+    const register = () =>
+      send(
+        "POST",
+        `/previews/${preview.id}/agent-url`,
+        { url: "https://busy.example/a" },
+        session,
+        failing,
+      );
+    const res = await register();
+    expect(res.status).toBe(422);
+    expect((await bodyOf(res)).error).toBe("Your URL answered 404");
+    expect(await pg.db.agentUrl(`preview:${preview.id}`)).toBeUndefined();
+    for (let i = 1; i < 10; i++) await register();
+    const limited = await register();
     expect(limited.status).toBe(429);
+    expect((await bodyOf(limited)).retryAt).toEqual(expect.any(String));
   });
 
-  it("refuse plainly on a worker without the gateway's URL transport", async () => {
+  it("reach the agent through the gateway's URL transport in a rating, never with a TEE", async () => {
     const { gatewayAgents } = await import("../src/remote-agent.js");
     const factory = gatewayAgents({} as never);
+    const request = {
+      agentKey: "preview:x",
+      chainId,
+      agentId: "preview:x",
+      mode: "tools" as const,
+      codeHash: hash(1),
+      connection: { kind: "url" as const, url: "https://a.example", secret: "s" },
+    };
+    const agent = factory(request, sandbox) as unknown as { transport: unknown };
+    expect(agent.transport).toEqual(request.connection);
     expect(() =>
       factory(
         {
-          agentKey: "preview:x",
-          chainId,
-          agentId: "preview:x",
-          mode: "tools",
-          codeHash: hash(1),
-          connection: { kind: "url", url: "https://a.example", secret: "s" },
+          ...request,
+          tee: { keyId: hash(2), evmAddress: owner.address, verify: async () => ({}) as never },
         },
         sandbox,
       ),
-    ).toThrow(AGENT_URL_UNAVAILABLE);
+    ).toThrow(/through its runner/);
   });
 });
 
@@ -952,7 +991,7 @@ describe("registered agents", () => {
     const theirs = await sessionFor(stranger);
     expect((await send("POST", `/self/agents/${agentId}/checks`, {}, theirs)).status).toBe(403);
     const check = await bodyOf(await send("POST", `/self/agents/${agentId}/checks`, {}, session));
-    expect(check).toMatchObject({ status: "queued", codeHash: hash(0xbeef) });
+    expect(check).toMatchObject({ queued: true, codeHash: hash(0xbeef) });
     await workCheckOne(pg.db, chainId, { runCheck: passing });
     const queued = await rate();
     expect(queued.status, JSON.stringify(await queued.clone().json())).toBe(202);
@@ -1028,7 +1067,7 @@ describe("registered agents", () => {
       await send("POST", `/previews/${preview.id}/runner-token`, {}, session),
     );
     await connect(token as string, "tools", hash(3));
-    expect((await get(`/previews/${preview.id}/estimate`, session)).status).toBe(404);
+    expect((await get(`/previews/${preview.id}/estimate`, session)).status).toBe(409);
     await send("POST", `/previews/${preview.id}/checks`, {}, session);
     await workCheckOne(pg.db, chainId, {
       runCheck: async (r) => {
@@ -1056,5 +1095,179 @@ describe("request limits", () => {
     expect((await send("POST", "/previews", { mode: "tools" }, session, limited)).status).toBe(201);
     const third = await send("POST", "/previews", { mode: "tools" }, session, limited);
     expect(third.status).toBe(429);
+  });
+});
+
+describe("round 2, as the web app calls it", () => {
+  it("says whether a wallet may start a preview, and when it can again", async () => {
+    const capped = api({ previewPerWalletDaily: 1 });
+    const wallet = privateKeyToAccount(generatePrivateKey());
+    const before = await bodyOf(
+      await get(`/previews/allowance?wallet=${wallet.address}`, undefined, capped),
+    );
+    expect(before).toMatchObject({
+      allowed: true,
+      reason: null,
+      retryAt: null,
+      plan: { episodes: expect.any(Number) },
+    });
+    expect(before.queued).toEqual(expect.any(Number));
+    const session = await sessionFor(wallet, capped);
+    const { preview } = await readyPreview(session, hash(0x7001), capped);
+    const queued = await send("POST", `/previews/${preview.id}/rate`, {}, session, capped);
+    expect(queued.status).toBe(202);
+    const { runId, queue } = await bodyOf(queued);
+    expect(queue).toMatchObject({ position: expect.any(Number) });
+    const after = await bodyOf(
+      await get(`/previews/allowance?wallet=${wallet.address}`, undefined, capped),
+    );
+    expect(after).toMatchObject({ allowed: false, retryAt: expect.any(String) });
+    expect(after.reason).toMatch(/at most 1 preview rating a day/);
+    expect((await get("/previews/allowance?wallet=nope", undefined, capped)).status).toBe(400);
+    await pg.db.pool.query("UPDATE jobs SET status='failed' WHERE id=$1", [runId]);
+  });
+
+  it("signs a registered agent's Agent URL, check and notifications with byoaMessage, each signature once", async () => {
+    const agentId = mine.agentId.toString();
+    // The agent from the tests above is registered for its runner; registering a URL switches it.
+    const signedBody = async (
+      action: "agent-url" | "check" | "notifications",
+      body: Record<string, unknown>,
+      fields: Record<string, string> = {},
+      who = owner,
+    ) => {
+      tick();
+      const timestamp = now();
+      const signature = await who.signMessage({
+        message: byoaMessage({ action, chainId, agentId, fields, timestamp }),
+      });
+      return { ...body, timestamp, signature };
+    };
+    const url = "https://signed.example/agent";
+    const req = await signedBody("agent-url", { url }, { url });
+    const made = await send("POST", `/self/agents/${agentId}/agent-url`, req);
+    expect(made.status, JSON.stringify(await made.clone().json())).toBe(201);
+    expect((await bodyOf(made)).secret).toMatch(/^bonded_as_/);
+    // The same signature again: refused, nothing rotated.
+    const replay = await send("POST", `/self/agents/${agentId}/agent-url`, req);
+    expect(replay.status).toBe(409);
+    // Signed for another URL than sent; signed by someone else.
+    expect(
+      (
+        await send(
+          "POST",
+          `/self/agents/${agentId}/agent-url`,
+          await signedBody("agent-url", { url: "https://other.example/x" }, { url }),
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await send(
+          "POST",
+          `/self/agents/${agentId}/agent-url`,
+          await signedBody("agent-url", { url }, { url }, stranger),
+        )
+      ).status,
+    ).toBe(403);
+    const runner = await bodyOf(await app.request(`/self/agents/${agentId}/runner`));
+    expect(runner).toMatchObject({
+      connection: "url",
+      agentUrl: { url, version: "v1.2.3", verifiedAt: expect.any(String) },
+      codeHash: { source: "url-version", reportedBy: "agent" },
+    });
+    expect(JSON.stringify(runner)).not.toContain("bonded_as_");
+    const check = await send(
+      "POST",
+      `/self/agents/${agentId}/checks`,
+      await signedBody("check", {}),
+    );
+    expect(check.status).toBe(201);
+    expect((await bodyOf(check)).checkId).toEqual(expect.any(String));
+    await workCheckOne(pg.db, chainId, { secrets, runCheck: passing });
+    expect(
+      (await bodyOf(await app.request(`/self/agents/${agentId}/runner`))).lastCheck,
+    ).toMatchObject({
+      status: "passed",
+      connection: "url",
+    });
+    // Notifications: PUT signed, GET masked.
+    const put = await app.request(`/self/agents/${agentId}/notifications`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(
+        await signedBody(
+          "notifications",
+          { webhookUrl: "https://hooks.example/t/secret-path", email: null },
+          { webhook: "https://hooks.example/t/secret-path", email: "none" },
+        ),
+      ),
+    });
+    expect(put.status, JSON.stringify(await put.clone().json())).toBe(200);
+    expect((await bodyOf(put)).webhookSecret).toMatch(/^bonded_ws_/);
+    const shown = await bodyOf(await app.request(`/self/agents/${agentId}/notifications`));
+    expect(shown).toEqual({
+      webhook: { url: "https://hooks.example/…" },
+      email: null,
+      emailAvailable: false,
+      webhookAvailable: true,
+    });
+    // Revoking the URL puts the agent back on its runner.
+    const session = await sessionFor();
+    await send("DELETE", `/self/agents/${agentId}/agent-url`, undefined, session);
+    expect((await bodyOf(await app.request(`/self/agents/${agentId}/runner`))).connection).toBe(
+      "runner",
+    );
+  });
+
+  it("caps Agent URL registrations per wallet and in all, so a spammer across wallets is stopped", async () => {
+    const capped = api({ urlVerifiesPerWalletHourly: 2, urlVerifiesHourly: 3 });
+    const register = async (who: PrivateKeyAccount) => {
+      const s = await sessionFor(who, capped);
+      const p = await newPreview(s, { mode: "tools", connection: "url" }, capped);
+      return send(
+        "POST",
+        `/previews/${p.id}/agent-url`,
+        { url: `https://spam${Math.random()}.example/a` },
+        s,
+        capped,
+      );
+    };
+    const a = privateKeyToAccount(generatePrivateKey());
+    const b = privateKeyToAccount(generatePrivateKey());
+    expect((await register(a)).status).toBe(201);
+    expect((await register(a)).status).toBe(201);
+    const third = await register(a);
+    expect(third.status).toBe(429);
+    expect((await bodyOf(third)).retryAt).toEqual(expect.any(String));
+    expect((await register(b)).status).toBe(201);
+    // Three in all this hour: a fourth wallet is refused too.
+    expect((await register(privateKeyToAccount(generatePrivateKey()))).status).toBe(429);
+  });
+
+  it("compares code hashes in any case, and never charges the agent for a URL Bonded couldn't call", async () => {
+    const wallet = privateKeyToAccount(generatePrivateKey());
+    const session = await sessionFor(wallet);
+    const declared = `0x${"AB".repeat(32)}`;
+    const p = await newPreview(session, { mode: "tools", codeHash: declared });
+    const { token } = await bodyOf(
+      await send("POST", `/previews/${p.id}/runner-token`, {}, session),
+    );
+    await connect(token as string);
+    await send("POST", `/previews/${p.id}/checks`, {}, session);
+    await workCheckOne(pg.db, chainId, { runCheck: passing });
+    const queued = await send("POST", `/previews/${p.id}/rate`, {}, session);
+    expect(queued.status).toBe(202);
+    await pg.db.pool.query("UPDATE jobs SET status='failed' WHERE id=$1", [
+      (await bodyOf(queued)).runId,
+    ]);
+    const { bondedUrlFailure } = await import("../src/remote-agent.js");
+    expect(
+      bondedUrlFailure({ agentSummary: { finalMessage: "the agent's URL wasn't called: busy" } }),
+    ).toBe(true);
+    expect(
+      bondedUrlFailure({ agentSummary: { finalMessage: "the agent's URL failed: 500" } }),
+    ).toBe(false);
+    expect(bondedUrlFailure({ agentSummary: { remote: { urlCaused: "bonded" } } })).toBe(true);
   });
 });

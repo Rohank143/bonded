@@ -219,7 +219,11 @@ describe("gatewayAgents", () => {
     const gateway = {} as ArenaGateway;
     const agent = gatewayAgents(gateway)({ ...request, mode: "tools" }, {} as Sandbox);
     expect(agent.name).toBe("remote/agent-12");
-    expect(optionsOf(agent)).toMatchObject({ gateway, runner: "46630:12", mode: "tools" });
+    expect(optionsOf(agent)).toMatchObject({
+      gateway,
+      transport: { kind: "runner", key: "46630:12" },
+      mode: "tools",
+    });
     expect(optionsOf(agent).tee).toBeUndefined();
   });
 

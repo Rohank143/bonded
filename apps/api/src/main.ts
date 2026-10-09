@@ -84,6 +84,25 @@ const remotePolicy = remotePolicyFromEnv();
 const secrets = secretBoxFromEnv();
 // Notification email, only when RESEND_API_KEY and EMAIL_FROM are both set.
 const email = emailFromEnv();
+/**
+ * Hosts an Agent URL or webhook may never be (beyond BONDED_OWN_HOSTS in @bonded/arena): any in
+ * BONDED_OWN_HOSTS (comma-separated), this service's own Railway domain, and the web origins.
+ */
+const ownHosts = [
+  ...(process.env.BONDED_OWN_HOSTS ?? "").split(","),
+  process.env.RAILWAY_PUBLIC_DOMAIN ?? "",
+  (process.env.GATEWAY_PUBLIC_URL ?? "").replace(/^https?:\/\//, "").split("/")[0] ?? "",
+  ...(process.env.WEB_ORIGINS ?? "").split(",").map(
+    (origin) =>
+      origin
+        .trim()
+        .replace(/^https?:\/\//, "")
+        .replace(/^\*\./, "")
+        .split("/")[0] ?? "",
+  ),
+]
+  .map((d) => d.trim().toLowerCase())
+  .filter((d) => d && !d.includes("*") && !d.startsWith("localhost"));
 const db = new Database(required("DATABASE_URL"));
 await db.migrate();
 if (role === "migrate") {
@@ -157,12 +176,7 @@ if (role === "migrate") {
       ...(email ? { email } : {}),
       // Bonded's own hosts, which an Agent URL or webhook may not point at (the web origins and
       // the gateway are added from their own settings).
-      ownDomains: [
-        ...(process.env.BONDED_OWN_DOMAINS ?? "").split(","),
-        process.env.RAILWAY_PUBLIC_DOMAIN ?? "",
-      ]
-        .map((d) => d.trim().toLowerCase())
-        .filter(Boolean),
+      ownDomains: ownHosts,
     });
     server = serve({
       fetch: api.fetch,
@@ -257,6 +271,8 @@ if (role === "migrate") {
         ),
         ...(publicUrl ? { publicUrl } : {}),
         onRunnerPresence: presence.onEvent,
+        // Agent URL mode: never call Bonded's own hosts.
+        agentUrl: { refusedHosts: ownHosts },
         // Proxies in front of the gateway whose X-Forwarded-For it trusts for per-address limits:
         // 1 behind Railway's edge, 0 (the socket's address) anywhere else.
         trustProxy: z.coerce

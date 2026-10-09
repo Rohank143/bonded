@@ -37,7 +37,7 @@ import {
 import { RateLimiter, clientAddress } from "./rate-limit.js";
 import { Refused, handle } from "./refused.js";
 import { SECRET_KEY_MISSING } from "./secrets.js";
-import { NEEDS_CHECK } from "./connections.js";
+import { NEEDS_CHECK, checkSummary, codeInfo } from "./connections.js";
 import {
   DEFAULT_REMOTE_POLICY,
   remoteQuota,
@@ -320,7 +320,7 @@ export function selfServeRoutes(
         connection?: "runner" | "url";
         tee?: { url: string; composeHash: string };
       };
-      const connection = config.connection ?? "runner";
+      const connection = await db.connectionOf(rowId(agentId), config);
       const current =
         config.kind === REMOTE_KIND
           ? await db.currentConnection(rowId(agentId), connection)
@@ -524,7 +524,7 @@ export function selfServeRoutes(
           connection?: "runner" | "url";
           codeHash?: string;
         };
-        const connection = config.connection ?? "runner";
+        const connection = await db.connectionOf(rowId(agentId), config);
         const current = await db.currentConnection(rowId(agentId), connection);
         if (!current.ready)
           throw new Refused(
@@ -649,8 +649,29 @@ export function selfServeRoutes(
         return c.json({ error: "this agent isn't registered as your own agent" }, 404);
       const status = await db.runnerStatus(rowId(agentId));
       const mode = (record.config as { mode: AgentMode }).mode;
+      // How it is reached (runner or Agent URL, never the secret), its code and its last check.
+      const connection = await db.connectionOf(rowId(agentId), record.config);
+      const [current, url, checks] = await Promise.all([
+        db.currentConnection(rowId(agentId), connection),
+        db.agentUrl(rowId(agentId)),
+        db.checksOf(rowId(agentId), 1),
+      ]);
+      const declared = (record.config as { codeHash?: string }).codeHash;
       return c.json({
         ...status,
+        connection,
+        agentUrl: url
+          ? {
+              url: url.url,
+              verifiedAt: url.verifiedAt?.toISOString() ?? null,
+              version: url.version,
+            }
+          : null,
+        lastCheck: checks[0] ? checkSummary(checks[0]) : null,
+        codeHash: codeInfo(
+          declared ? { hash: declared, source: "declared" } : current.code,
+          url?.version,
+        ),
         // Every rating of the agent, failed ones included, so a stopped attempt is visible.
         attempts: (await db.ratingAttempts(rowId(agentId))).items,
         // Why a runner that is there doesn't count, e.g. it was started in the other mode.

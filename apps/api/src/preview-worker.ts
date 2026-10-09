@@ -6,6 +6,7 @@ import type { Hex } from "viem";
 import { ratingLibrary } from "./library.js";
 import {
   RatingRefused,
+  bondedUrlFailure,
   forkBudgetExhausted,
   ratingFailure,
   remoteAgentFor,
@@ -170,6 +171,15 @@ async function runPreview(
         controls: REMOTE_CONTROLS,
         exercise: "exposed",
         attackLiveness: "refuse",
+        // Before the first episode: the total, so progress shows 0 of N at once.
+        onProgress: async (p) => {
+          if (p.done === 0)
+            await db.setRatingProgress(job, {
+              done: 0,
+              total: p.total,
+              startedAt: new Date(started),
+            });
+        },
         onEpisode: async (episode, index, total) => {
           await check();
           await db.setRatingProgress(job, { done: index + 1, total, startedAt: new Date(started) });
@@ -185,6 +195,11 @@ async function runPreview(
               { caused: true },
             );
           }
+          if (bondedUrlFailure(episode))
+            throw new RatingRefused(
+              `stopped: Bonded couldn't reach the agent's URL in episode ${index + 1} of ${total}, not because of the agent; it will be retried`,
+              false,
+            );
           if (episodeOutcome(episode) === "agent_error") {
             const report = (episode.agentSummary.finalMessage ?? "").slice(0, 500);
             throw new RatingRefused(

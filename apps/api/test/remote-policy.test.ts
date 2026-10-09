@@ -30,6 +30,8 @@ describe("remotePolicyFromEnv", () => {
       PREVIEW_RATING_MAX_MS: "600000",
       CHECKS_PER_WALLET_HOURLY: "4",
       CHECKS_HOURLY: "12",
+      AGENT_URL_VERIFIES_PER_WALLET_HOURLY: "3",
+      AGENT_URL_VERIFIES_HOURLY: "30",
     });
     expect(policy).toEqual({
       repeats: 2,
@@ -46,6 +48,8 @@ describe("remotePolicyFromEnv", () => {
       previewBudgetCeilingMs: 600_000,
       checksPerWalletHourly: 4,
       checksHourly: 12,
+      urlVerifiesPerWalletHourly: 3,
+      urlVerifiesHourly: 30,
     });
     expect(remoteQuota(policy, 5)).toEqual({
       nowMs: 5,

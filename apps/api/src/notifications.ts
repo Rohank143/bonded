@@ -8,12 +8,12 @@ import {
   SECRET_KEY_MISSING,
   WEBHOOK_SECRET_PREFIX,
   newSecret,
-  signedHeaders,
   webhookContext,
   type SecretBox,
 } from "./secrets.js";
-import { outboundUrlProblem } from "./previews.js";
-import { safePost } from "./safe-post.js";
+import { outboundUrlProblem } from "./outbound.js";
+import { safeRequest } from "@bonded/arena";
+import { signAgentUrlRequest } from "@bonded/shared";
 
 /**
  * Notifications (bring your own agent, round 2): when a preview or a rating of an owner's agent
@@ -83,23 +83,99 @@ const email = z
   .string()
   .max(254)
   .regex(/^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/);
-const settingsInput = z.strictObject({
+/** Settings to save. A field left out is kept; null removes it. */
+export const notificationInput = z.strictObject({
   /** Set (a new URL gets a new secret, shown once) or remove (null) the webhook. */
   webhookUrl: z.string().min(1).max(2048).nullable().optional(),
   email: email.nullable().optional(),
 });
+export type NotificationInput = z.infer<typeof notificationInput>;
 
+export interface NotificationOptions {
+  secrets?: SecretBox | undefined;
+  email?: EmailSender | undefined;
+  ownDomains: readonly string[];
+  allowLoopbackUrls?: boolean | undefined;
+}
+
+/** "m***@example.com": enough to recognise, not to harvest. */
+export const maskEmail = (value: string) => {
+  const [user = "", domain = ""] = value.split("@");
+  return `${user.slice(0, 1)}***@${domain}`;
+};
+/** The webhook's origin, with any path hidden (it may carry a token). */
+export const maskUrl = (value: string) => {
+  try {
+    const url = new URL(value);
+    return url.pathname === "/" && !url.search ? url.origin : `${url.origin}/…`;
+  } catch {
+    return "…";
+  }
+};
+
+/** An owner's settings as anyone may see them: masked, and never the webhook secret. */
+export async function notificationView(db: Database, owner: string, options: NotificationOptions) {
+  const s = await db.notificationSettings(owner);
+  return {
+    webhook: s?.webhookUrl ? { url: maskUrl(s.webhookUrl) } : null,
+    email: s?.email ? maskEmail(s.email) : null,
+    emailAvailable: Boolean(options.email),
+    webhookAvailable: Boolean(options.secrets),
+  };
+}
+
+/**
+ * Save an owner's settings. A new webhook URL gets a new signing secret, returned once
+ * (`webhookSecret`); the same URL again keeps its secret.
+ */
+export async function saveNotifications(
+  db: Database,
+  owner: string,
+  input: NotificationInput,
+  options: NotificationOptions,
+) {
+  const patch: Parameters<Database["saveNotificationSettings"]>[1] = {};
+  let secret: string | undefined;
+  if (input.webhookUrl !== undefined) {
+    if (input.webhookUrl === null) {
+      patch.webhookUrl = null;
+      patch.webhookSecretCiphertext = null;
+    } else {
+      if (!options.secrets) throw new Refused(409, SECRET_KEY_MISSING);
+      const problem = outboundUrlProblem(
+        input.webhookUrl,
+        options.ownDomains,
+        options.allowLoopbackUrls,
+      );
+      if (problem) throw new Refused(400, problem);
+      const current = await db.notificationSettings(owner);
+      patch.webhookUrl = input.webhookUrl;
+      if (current?.webhookUrl !== input.webhookUrl || !current.webhookSecretCiphertext) {
+        secret = newSecret(WEBHOOK_SECRET_PREFIX);
+        patch.webhookSecretCiphertext = options.secrets.encrypt(secret, webhookContext(owner));
+      }
+    }
+  }
+  if (input.email !== undefined) {
+    if (input.email !== null && !options.email)
+      throw new Refused(409, "email notifications aren't set up on this service");
+    patch.email = input.email;
+  }
+  await db.saveNotificationSettings(owner, patch);
+  return {
+    ...(await notificationView(db, owner, options)),
+    ...(secret ? { webhookSecret: secret } : {}),
+  };
+}
+
+/** The signed-in owner's notification settings (sessions.ts). */
 export function notificationRoutes(
   app: Hono,
-  options: {
+  options: NotificationOptions & {
     db: Database;
     wallet: SessionWallet;
     writes: RateLimiter;
     reads: RateLimiter;
-    secrets?: SecretBox;
-    email?: EmailSender;
-    ownDomains: readonly string[];
-    allowLoopbackUrls?: boolean;
   },
 ) {
   const { db } = options;
@@ -107,65 +183,22 @@ export function notificationRoutes(
     if (!limiter.allow(clientAddress(c.req.raw.headers)))
       throw new Refused(429, "too many requests; try again in a few minutes");
   };
-  const view = async (owner: string) => {
-    const s = await db.notificationSettings(owner);
-    return {
-      webhookUrl: s?.webhookUrl ?? null,
-      // Whether a secret exists, never the secret.
-      webhookSecret: Boolean(s?.webhookSecretCiphertext),
-      email: s?.email ?? null,
-      emailEnabled: Boolean(options.email),
-      webhookEnabled: Boolean(options.secrets),
-    };
-  };
-
   app.get(
     "/self/notifications",
     handle(async (c) => {
       limited(c, options.reads);
-      return c.json(await view(await options.wallet(c)));
+      return c.json(await notificationView(db, await options.wallet(c), options));
     }),
   );
-
-  /** Save settings. A new webhook URL gets a new signing secret, returned once. */
-  app.post(
-    "/self/notifications",
-    handle(async (c) => {
-      limited(c, options.writes);
-      const owner = await options.wallet(c);
-      const input = settingsInput.parse(await c.req.json());
-      const patch: Parameters<Database["saveNotificationSettings"]>[1] = {};
-      let secret: string | undefined;
-      if (input.webhookUrl !== undefined) {
-        if (input.webhookUrl === null) {
-          patch.webhookUrl = null;
-          patch.webhookSecretCiphertext = null;
-        } else {
-          if (!options.secrets) throw new Refused(409, SECRET_KEY_MISSING);
-          const problem = outboundUrlProblem(
-            input.webhookUrl,
-            options.ownDomains,
-            options.allowLoopbackUrls,
-          );
-          if (problem) throw new Refused(400, problem);
-          const current = await db.notificationSettings(owner);
-          patch.webhookUrl = input.webhookUrl;
-          if (current?.webhookUrl !== input.webhookUrl || !current.webhookSecretCiphertext) {
-            secret = newSecret(WEBHOOK_SECRET_PREFIX);
-            patch.webhookSecretCiphertext = options.secrets.encrypt(secret, webhookContext(owner));
-          }
-        }
-      }
-      if (input.email !== undefined) {
-        if (input.email !== null && !options.email)
-          throw new Refused(409, "email notifications aren't set up on this service");
-        patch.email = input.email;
-      }
-      await db.saveNotificationSettings(owner, patch);
-      c.header("Cache-Control", "no-store");
-      return c.json({ ...(await view(owner)), ...(secret ? { webhookSecretOnce: secret } : {}) });
-    }),
-  );
+  const save = handle(async (c) => {
+    limited(c, options.writes);
+    const owner = await options.wallet(c);
+    const input = notificationInput.parse(await c.req.json());
+    c.header("Cache-Control", "no-store");
+    return c.json(await saveNotifications(db, owner, input, options));
+  });
+  app.post("/self/notifications", save);
+  app.put("/self/notifications", save);
 
   /** A new webhook signing secret, returned once; the old one stops working. */
   app.post(
@@ -181,7 +214,7 @@ export function notificationRoutes(
         webhookSecretCiphertext: options.secrets.encrypt(secret, webhookContext(owner)),
       });
       c.header("Cache-Control", "no-store");
-      return c.json({ ...(await view(owner)), webhookSecretOnce: secret });
+      return c.json({ ...(await notificationView(db, owner, options)), webhookSecret: secret });
     }),
   );
 }
@@ -202,7 +235,7 @@ export class Notifier {
       /** Webhooks to plain http on this machine (tests only). */
       allowLoopback?: boolean;
       log?: (line: string) => void;
-      post?: typeof safePost;
+      post?: typeof safeRequest;
     } = {},
   ) {}
 
@@ -234,9 +267,15 @@ export class Notifier {
         webhookContext(owner),
       );
       const body = JSON.stringify(n);
-      const post = this.options.post ?? safePost;
+      const post = this.options.post ?? safeRequest;
       jobs.push(
-        post(new URL(settings.webhookUrl), body, signedHeaders(secret, body), {
+        post(new URL(settings.webhookUrl), {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            ...(await signAgentUrlRequest(secret, body)),
+          },
+          body,
           timeoutMs: 10_000,
           maxBytes: 64 * 1024,
           ...(this.options.allowLoopback ? { allowLoopback: true } : {}),

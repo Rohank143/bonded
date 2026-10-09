@@ -39,6 +39,10 @@ export interface RemoteRatingPolicy {
   checksPerWalletHourly: number;
   /** Connection checks on the chain per hour, all wallets together (default 30). */
   checksHourly: number;
+  /** Agent URL registrations and verifications (each calls out) per wallet per hour (default 10). */
+  urlVerifiesPerWalletHourly: number;
+  /** Agent URL registrations and verifications per hour, all wallets together (default 100). */
+  urlVerifiesHourly: number;
 }
 
 export const DEFAULT_REMOTE_POLICY: RemoteRatingPolicy = {
@@ -59,6 +63,8 @@ export const DEFAULT_REMOTE_POLICY: RemoteRatingPolicy = {
   previewBudgetCeilingMs: 45 * 60_000,
   checksPerWalletHourly: 10,
   checksHourly: 30,
+  urlVerifiesPerWalletHourly: 10,
+  urlVerifiesHourly: 100,
 };
 
 /**
@@ -66,7 +72,8 @@ export const DEFAULT_REMOTE_POLICY: RemoteRatingPolicy = {
  * REMOTE_RATINGS_PER_OWNER_DAILY, REMOTE_RATINGS_PER_AGENT_DAILY, REMOTE_RATINGS_DAILY,
  * REMOTE_EPISODE_BUDGET_MS, REMOTE_RATING_MAX_MS, REMOTE_RATING_INTERVAL_MS,
  * HELD_OUT_FRESH_PER_CLASS, PREVIEW_PER_WALLET_DAILY, PREVIEW_DAILY, PREVIEW_CREATES_PER_WALLET_DAILY,
- * PREVIEW_RATING_MAX_MS, CHECKS_PER_WALLET_HOURLY and CHECKS_HOURLY set in the environment. Every path that
+ * PREVIEW_RATING_MAX_MS, CHECKS_PER_WALLET_HOURLY, CHECKS_HOURLY,
+ * AGENT_URL_VERIFIES_PER_WALLET_HOURLY and AGENT_URL_VERIFIES_HOURLY set in the environment. Every path that
  * rates an operator-run agent (owner requests, renewals, TEE re-ratings) reads it here. Bounty
  * acceptances don't re-rate them: bounty attacks are never run against an agent its operator runs.
  */
@@ -99,6 +106,11 @@ export function remotePolicyFromEnv(
     previewBudgetCeilingMs: int("PREVIEW_RATING_MAX_MS", d.previewBudgetCeilingMs, 60_000),
     checksPerWalletHourly: int("CHECKS_PER_WALLET_HOURLY", d.checksPerWalletHourly),
     checksHourly: int("CHECKS_HOURLY", d.checksHourly),
+    urlVerifiesPerWalletHourly: int(
+      "AGENT_URL_VERIFIES_PER_WALLET_HOURLY",
+      d.urlVerifiesPerWalletHourly,
+    ),
+    urlVerifiesHourly: int("AGENT_URL_VERIFIES_HOURLY", d.urlVerifiesHourly),
   };
 }
 

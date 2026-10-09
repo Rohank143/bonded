@@ -82,7 +82,10 @@ function storedResult(r: ConnectionCheckResult): ConnectionCheckResult {
     problems: (Array.isArray(r.problems) ? r.problems : [])
       .slice(0, 20)
       .map((p) => String(p).slice(0, 500)),
-    taskCompleted: r.taskCompleted === true,
+    ...(Array.isArray(r.warnings)
+      ? { warnings: r.warnings.slice(0, 20).map((w) => String(w).slice(0, 500)) }
+      : {}),
+    taskCompleted: r.taskCompleted === null ? null : r.taskCompleted === true,
     toolsCalled: Math.max(0, Math.trunc(Number(r.toolsCalled) || 0)),
     surfacesRead: (Array.isArray(r.surfacesRead) ? r.surfacesRead : [])
       .slice(0, 20)

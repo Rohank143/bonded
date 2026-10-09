@@ -22,6 +22,7 @@ import {
   type BindingLevel,
 } from "@bonded/shared";
 import {
+  AgentUrlClient,
   readLeaderboard,
   BountySpecError,
   loadAttackLibrary,
@@ -159,7 +160,7 @@ export function createApi(options: {
     "*",
     cors({
       origin: (origin) => (originAllowed(origin, origins) ? origin : null),
-      allowMethods: ["GET", "POST", "DELETE"],
+      allowMethods: ["GET", "POST", "PUT", "DELETE"],
       allowHeaders: ["Content-Type", "Authorization", "Last-Event-ID"],
       maxAge: 600,
     }),
@@ -185,9 +186,11 @@ export function createApi(options: {
   // Previews, Agent URLs, checks and notification settings are made with an owner session
   // (sessions.ts), opened by a wallet signature.
   const PUBLIC_POST =
-    /^\/(bounties\/\d{1,78}\/reveal|self\/agents(\/\d{1,78}\/(rate|runner-token|agent-url|agent-url\/verify|checks))?|quotes|sentinel\/check|self\/session|self\/notifications(\/webhook-secret)?|previews(\/[0-9a-f-]{36}\/(stop|runner-token|agent-url|agent-url\/verify|checks|rate))?)$/;
+    /^\/(bounties\/\d{1,78}\/reveal|self\/agents(\/\d{1,78}\/(rate|runner-token|agent-url|agent-url\/verify|checks))?|quotes|sentinel\/check|self\/session|self\/notifications(\/webhook-secret)?|previews(\/session|\/[0-9a-f-]{36}\/(stop|runner-token|agent-url|agent-url\/verify|checks|rate|notifications))?|self\/agents\/\d{1,78}\/notifications)$/;
+  const PUBLIC_PUT =
+    /^\/(self\/notifications|previews\/[0-9a-f-]{36}\/notifications|self\/agents\/\d{1,78}\/notifications)$/;
   const PUBLIC_DELETE =
-    /^\/(self\/agents\/\d{1,78}\/(runner-token|agent-url)|self\/session|previews\/[0-9a-f-]{36}\/(runner-token|agent-url))$/;
+    /^\/(self\/agents\/\d{1,78}\/(runner-token|agent-url)|self\/session|previews\/session|previews\/[0-9a-f-]{36}\/(runner-token|agent-url))$/;
   const hasToken = (header: string | undefined) => {
     const token = Buffer.from(header ?? "");
     const expected = Buffer.from(`Bearer ${options.apiToken}`);
@@ -199,7 +202,9 @@ export function createApi(options: {
         ? PUBLIC_POST.test(c.req.path)
         : c.req.method === "DELETE"
           ? PUBLIC_DELETE.test(c.req.path)
-          : true;
+          : c.req.method === "PUT"
+            ? PUBLIC_PUT.test(c.req.path)
+            : true;
     if (!open && !hasToken(c.req.header("Authorization")))
       return c.json({ error: "unauthorized" }, 401);
     await next();
@@ -334,10 +339,11 @@ export function createApi(options: {
   for (const path of ["/arena/runs/:id", "/arena/runs/:id/report"])
     app.get(path, async (c) => {
       const id = z.uuid().parse(c.req.param("id"));
-      // A preview's rating is its owner's (GET /previews/:id): never served here.
+      // A preview's rating too, by its run id: given only to its owner, never on the public feed.
       const r = await db.pool.query(
         `SELECT id,status,report,report_json,error,created_at,code_hash AS "codeHash",
-           code_source AS "codeSource" FROM ratings WHERE id=$1 AND preview_id IS NULL`,
+           code_source AS "codeSource", (preview_id IS NOT NULL) AS preview
+         FROM ratings WHERE id=$1`,
         [id],
       );
       if (!r.rowCount) return c.json({ error: "run not found" }, 404);
@@ -577,10 +583,20 @@ export function createApi(options: {
     writes,
     reads,
     ...(options.secrets ? { secrets: options.secrets } : {}),
-    verifyAgentUrl: options.verifyAgentUrl ?? gatewayUrlVerifier(),
+    // The API's own Agent URL client (the gateway has its own): it refuses Bonded's hosts and
+    // rate-limits calls per URL host.
+    verifyAgentUrl:
+      options.verifyAgentUrl ??
+      gatewayUrlVerifier(
+        new AgentUrlClient({
+          refusedHosts: ownDomains,
+          ...(options.allowLoopbackUrls ? { allowLoopback: true } : {}),
+        }),
+      ),
     ownDomains,
     ...(options.gatewayUrl ? { gatewayUrl: options.gatewayUrl } : {}),
     ...(options.allowLoopbackUrls ? { allowLoopbackUrls: true } : {}),
+    ...(options.email ? { email: options.email } : {}),
     streams,
   });
   notificationRoutes(app, {
