@@ -66,6 +66,13 @@ describe("RatingLive", () => {
     expect(screen.getByText("Setting up")).toBeTruthy();
   });
 
+  it("takes the freshest status it is told, e.g. the preview's stream saying it's starting", async () => {
+    vi.spyOn(api, "run").mockResolvedValue(running({ status: "queued" }));
+    vi.spyOn(byoaApi, "ratingProgress").mockReturnValue(() => {});
+    wrap(<RatingLive runId="run-1" label="Your preview" session="s" statusHint="starting" />);
+    expect(await screen.findByText(/Setting up the sandbox/)).toBeTruthy();
+  });
+
   it("says where it waits in line before it starts", async () => {
     vi.spyOn(api, "run").mockResolvedValue(running({ status: "queued" }));
     vi.spyOn(byoaApi, "ratingProgress").mockReturnValue(() => {});

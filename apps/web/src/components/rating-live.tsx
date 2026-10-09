@@ -93,7 +93,10 @@ export function RatingLive({
   doneText = "Finished.",
   onFinished,
   session,
+  statusHint,
 }: {
+  /** A fresher status from elsewhere (the preview's own stream), while the run is read less often. */
+  statusHint?: string;
   /** The owner's session: a preview's run and every live stream are shown only to its owner. */
   session?: string;
   runId: string;
@@ -109,7 +112,11 @@ export function RatingLive({
   const runStatus = run.data?.status;
   const finished = runStatus === "done" || runStatus === "failed";
   // The live stream says first when it moves on (queued, starting, running).
-  const status = finished ? runStatus : (live?.status ?? runStatus);
+  const order = ["queued", "starting", "running"];
+  const fresher = [live?.status, statusHint, runStatus]
+    .filter((s): s is string => Boolean(s))
+    .sort((a, b) => order.indexOf(b) - order.indexOf(a))[0];
+  const status = finished ? runStatus : fresher;
   const { permission, ask, notify } = useBrowserNotification();
   const told = useRef(false);
   useEffect(() => {

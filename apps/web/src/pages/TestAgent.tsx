@@ -502,6 +502,7 @@ export function TestAgent() {
                 <div className="flex flex-col gap-4">
                   <RatingLive
                     session={session?.session}
+                    statusHint={p.status}
                     runId={p.ratingId}
                     label="Your preview"
                     queueText={p.queue ? queueLine(p.queue.position) : null}
