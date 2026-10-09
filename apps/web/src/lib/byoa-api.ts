@@ -390,7 +390,7 @@ export const byoaApi = {
     }),
   /**
    * POST …/agent-url/verify: Bonded challenges the saved URL, signed with its secret, and the
-   * agent must echo it within 10 s (after it was given the secret, or after a redeploy). 422
+   * agent must answer with the challenge and its proof within 10 s (after it was given the secret, or after a redeploy). 422
    * with the reason otherwise.
    */
   reverifyAgentUrl: (subject: Subject, auth: Auth, url: string) =>

@@ -157,7 +157,7 @@ export function problemAdvice(problem: string, connection: Connection): string |
   if (p.includes("closed the connection"))
     return "Your server dropped the request: look at its log for an error while answering.";
   if (p.includes("not with json") || p.includes("to the check; it must be 200"))
-    return 'Answer the verify request with 200 and JSON: { "challenge": <the challenge you were sent>, "version": "…" }.';
+    return 'Answer the verify request with 200 and JSON { "challenge", "proof", "version"? }, where proof is the hex HMAC-SHA256 of "verify." + the challenge, keyed with your agent secret. createBondedHandler (@bonded/sdk/agent-url) or answerAgentUrlVerify does it for you; the guide shows how.';
   if (p.includes("public internet"))
     return "Bonded can only call a public address. For an agent on your machine, use the runner instead.";
   if (p.includes("answered 401") || p.includes("agent secret"))

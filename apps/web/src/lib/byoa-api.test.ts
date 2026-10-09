@@ -304,6 +304,11 @@ describe("snippets", () => {
     expect(snippets("runner", "tools").find((s) => s.id === "eliza")!.install).toBe(
       "npm i @bonded/sdk @elizaos/core",
     );
+    // Every package a snippet imports is in its install line.
+    for (const c of ["url", "runner"] as const)
+      for (const s of snippets(c, "tools"))
+        for (const m of s.code.matchAll(/from "((?:@[^/"]+\/)?[^/"]+)[^"]*"/g))
+          if (s.install) expect(s.install.split(" "), `${s.label}: ${m[1]}`).toContain(m[1]);
   });
   it("says chain mode signs its own trades", () => {
     expect(snippets("runner", "chain").find((s) => s.id === "eliza")!.note).toMatch(/session key/);

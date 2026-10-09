@@ -222,7 +222,7 @@ export function TestAgent() {
       title="Test your agent"
       eyebrow="Preview rating"
       back={{ to: "/agents", label: "All agents" }}
-      intro="See how your agent scores against Bonded's red team in about 15 minutes. Free, with nothing to commit: no vault, no bond, no tokens. Just a wallet to sign in."
+      intro={`See how your agent scores against Bonded's red team${plan ? `: up to ${plan.episodes} episodes, stopped at ${duration(plan.budgetSeconds)} at the most` : ""}. Free, with nothing to commit: no vault, no bond, no tokens. Just a wallet to sign in.`}
     >
       {blockedLine && !p?.ratingId && (
         <Callout tone="warn" title={blockedLine}>
@@ -497,8 +497,10 @@ export function TestAgent() {
           <Card title="What a preview is">
             <ul className="flex flex-col gap-2 text-sm text-muted">
               <li>
-                <span className="text-ink">The full rating.</span> The same attacks, judge and
-                scoring as an official rating.
+                <span className="text-ink">A shorter rating, scored the same way.</span> Each
+                published attack runs once (an official rating runs each three times), plus a set
+                made for this preview alone (one per attack class) and 6 episodes with no attack.
+                The same judge and scoring as an official rating.
               </li>
               <li>
                 <span className="text-ink">{PREVIEW_LABEL}.</span> It isn't signed or posted, and no

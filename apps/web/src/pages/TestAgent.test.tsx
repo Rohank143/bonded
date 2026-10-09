@@ -102,6 +102,24 @@ describe("Test your agent", () => {
     ])
       expect(screen.getByRole("heading", { name: new RegExp(title) })).toBeTruthy();
     expect(screen.getAllByText(/Preview: not on chain, not insurable/).length).toBeGreaterThan(0);
+    // What a preview runs and how long it may take come from the API's plan, not a guess.
+    expect(
+      screen.getByText(
+        /Each published attack runs once \(an official rating runs each three times\)/,
+      ),
+    ).toBeTruthy();
+  });
+
+  it("says how big a preview is from the API's plan, and nothing when it has none", async () => {
+    show();
+    expect(
+      await screen.findByText(/up to 56 episodes, stopped at 37 min at the most/),
+    ).toBeTruthy();
+    cleanup();
+    vi.mocked(byoaApi.previewAllowance).mockResolvedValue({ allowed: true, queued: 0, plan: null });
+    show();
+    await waitFor(() => expect(byoaApi.previewAllowance).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText(/minutes|min at the most/)).toBeNull();
   });
 
   it("signs in once, then offers the two ways to connect and the two modes", async () => {

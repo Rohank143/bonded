@@ -234,7 +234,8 @@ export function ConnectRunner({
 
 /**
  * Agent URL, in two steps: save the address (Bonded makes the agent's secret, shown once), give
- * the agent the secret, then verify: Bonded sends a signed challenge the agent must echo.
+ * the agent the secret, then verify: Bonded sends a signed challenge, and the agent answers with
+ * it and a proof made with the secret.
  */
 export function ConnectUrl({
   subject,
@@ -395,7 +396,10 @@ export function ConnectUrl({
           <p className="text-xs text-soft">
             Bonded sends{" "}
             <code className="font-mono">{'{ "type": "verify", "challenge": "…" }'}</code>, signed
-            with the secret; your agent answers 200 with the same challenge within 10 seconds.
+            with the secret; within 10 seconds your agent answers 200 with the challenge and its{" "}
+            <code className="font-mono">proof</code> (HMAC-SHA256 of{" "}
+            <code className="font-mono">"verify." + challenge</code>, keyed with the secret). The
+            handler below does both.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" loading={busy === "verify"} onClick={() => void verify()}>
@@ -411,6 +415,11 @@ export function ConnectUrl({
         <div role="alert" className="rounded-2xl border border-breach/35 bg-breach-soft p-4">
           <p className="font-semibold">{failure}</p>
           {advice && <p className="mt-1 text-soft">{advice}</p>}
+          <p className="mt-1 text-xs">
+            <a className={linkClass} href={DOCS_BYOA}>
+              The guide: Agent URL mode
+            </a>
+          </p>
         </div>
       ) : (
         <ErrorText error={error} />
