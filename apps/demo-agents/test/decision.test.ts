@@ -50,6 +50,36 @@ describe("parseDecision", () => {
 });
 
 describe("LlmDecisionModel", () => {
+  it("turns hidden reasoning off so the short JSON answer is not crowded out", async () => {
+    const requests: ChatRequest[] = [];
+    const client: ChatClient = {
+      async complete(r) {
+        requests.push(r);
+        return {
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content: JSON.stringify({
+                  answer: r.messages[1]!.content?.includes("How does") ? "within_mandate" : "no",
+                  confidence: 0.9,
+                }),
+              },
+              finish_reason: "stop",
+            },
+          ],
+        };
+      },
+    };
+    await new DecisionModelSentinel(new LlmDecisionModel({ client, model: "m" })).assess({
+      mandate: "m",
+      proposedAction: { tool: "swap", args: {} },
+      untrustedInputs: [],
+    });
+    expect(requests.length).toBeGreaterThan(0);
+    for (const r of requests) expect(r.reasoning).toEqual({ enabled: false });
+  });
+
   it("isolates concurrent check usage and keeps missing cost unknown", async () => {
     const client: ChatClient = {
       async complete(r) {
