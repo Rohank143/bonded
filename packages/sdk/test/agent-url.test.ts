@@ -10,6 +10,8 @@ import {
 } from "../src/agent-url.js";
 import type { BondedEpisode } from "../src/index.js";
 
+/** A verify challenge as the gateway sends it (16 to 128 characters). */
+const CHALLENGE = "challenge-0123456789abcdef";
 const errorOf = async (r: Response) => ((await r.json()) as { error: string }).error;
 const SECRET = "bonded_as_test-secret-not-real-0001";
 const NOW = 1_800_000_000_000; // ms
@@ -77,7 +79,7 @@ function setup(overrides: Partial<BondedHandlerOptions> = {}) {
 
 describe("signatures", () => {
   it("accept Bonded's signature and refuse others", async () => {
-    const body = '{"type":"verify","challenge":"abc"}';
+    const body = '{"type":"verify","challenge":"challenge-0123456789"}';
     const h = await signBondedRequest(SECRET, body, seconds);
     expect(h["bonded-signature"]).toMatch(/^v1=[0-9a-f]{64}$/);
     const check = (patch: Partial<Parameters<typeof verifyBondedSignature>[0]>) =>
@@ -90,22 +92,33 @@ describe("signatures", () => {
         ...patch,
       });
     expect(await check({})).toEqual({ ok: true, timestamp: seconds });
-    expect(await check({ body: body + " " })).toEqual({ ok: false, reason: "mismatch" });
-    expect(await check({ secret: "bonded_as_other" })).toEqual({ ok: false, reason: "mismatch" });
-    expect(await check({ timestamp: String(seconds + 1) })).toEqual({
-      ok: false,
-      reason: "mismatch",
-    });
-    expect(await check({ now: seconds + 301 })).toEqual({ ok: false, reason: "stale" });
-    expect(await check({ now: seconds - 301 })).toEqual({ ok: false, reason: "stale" });
+    const mismatch = { ok: false, reason: "the signature doesn't match" };
+    const stale = { ok: false, reason: "the timestamp is too old or in the future" };
+    expect(await check({ body: body + " " })).toEqual(mismatch);
+    expect(await check({ secret: "bonded_as_other" })).toEqual(mismatch);
+    expect(await check({ timestamp: String(seconds + 1) })).toEqual(mismatch);
+    expect(await check({ now: seconds + 301 })).toEqual(stale);
+    expect(await check({ now: seconds - 301 })).toEqual(stale);
     expect(await check({ now: seconds + 300 })).toMatchObject({ ok: true });
-    expect(await check({ signature: undefined })).toEqual({ ok: false, reason: "missing" });
-    expect(await check({ signature: "v1=zz" })).toEqual({ ok: false, reason: "malformed" });
-    expect(await check({ signature: "v0=" + "a".repeat(64) })).toEqual({
+    expect(await check({ signature: undefined })).toEqual({
       ok: false,
-      reason: "malformed",
+      reason: "the call is not signed",
     });
-    expect(await check({ timestamp: "12.5" })).toEqual({ ok: false, reason: "malformed" });
+    expect(await check({ signature: "v1=zz" })).toEqual({ ok: false, reason: "no v1 signature" });
+    expect(await check({ signature: "v0=" + "a".repeat(64) })).toMatchObject({ ok: false });
+    expect(await check({ timestamp: "12.5" })).toMatchObject({ ok: false });
+    // Several secrets while rotating: any one may match.
+    expect(await check({ secret: ["bonded_as_old", SECRET] })).toMatchObject({ ok: true });
+    // Signature-only: a body that isn't a Bonded message still has a valid signature.
+    const other = "not json";
+    const otherHeaders = await signBondedRequest(SECRET, other, seconds);
+    expect(
+      await check({
+        body: other,
+        timestamp: otherHeaders["bonded-timestamp"],
+        signature: otherHeaders["bonded-signature"],
+      }),
+    ).toEqual({ ok: true, timestamp: seconds });
     // Any one of several signatures may match (secret rotation).
     expect(
       await check({ signature: `v1=${"0".repeat(64)}, ${h["bonded-signature"]}` }),
@@ -116,15 +129,13 @@ describe("signatures", () => {
 describe("createBondedHandler", () => {
   it("answers a verify challenge with the agent's version", async () => {
     const { handler } = setup({ version: "v1.2.3" });
-    const res = await handler(await signed({ type: "verify", challenge: "c-123" }));
+    const res = await handler(await signed({ type: "verify", challenge: CHALLENGE }));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ challenge: "c-123", version: "v1.2.3" });
+    expect(await res.json()).toEqual({ challenge: CHALLENGE, version: "v1.2.3" });
     const noVersion = setup().handler;
     expect(
-      await (await noVersion(await signed({ type: "verify", challenge: "x" }))).json(),
-    ).toEqual({
-      challenge: "x",
-    });
+      await (await noVersion(await signed({ type: "verify", challenge: CHALLENGE }))).json(),
+    ).toEqual({ challenge: CHALLENGE });
   });
 
   it("refuses bad, stale, missing and replayed signatures before reading the message", async () => {
@@ -135,7 +146,7 @@ describe("createBondedHandler", () => {
     expect(await bad.json()).toEqual({ error: "the signature doesn't match" });
     const stale = await handler(await signed(episodeMessage(), { timestamp: seconds - 600 }));
     expect(stale.status).toBe(401);
-    expect(await errorOf(stale)).toMatch(/too far/);
+    expect(await errorOf(stale)).toMatch(/too old or in the future/);
     const unsigned = await handler(
       new Request("https://agent.example/", {
         method: "POST",
@@ -149,7 +160,7 @@ describe("createBondedHandler", () => {
     expect((await handler(request)).status).toBe(202);
     const again = await handler(replay);
     expect(again.status).toBe(401);
-    expect(await errorOf(again)).toMatch(/replayed/);
+    expect(await errorOf(again)).toMatch(/replay/);
     expect(ran).toBe(1);
   });
 
@@ -259,7 +270,7 @@ describe("createBondedHandler", () => {
       await signed({ type: "episode", episodeId: "x" }, { timestamp: seconds + 3 }),
     );
     expect(invalid.status).toBe(400);
-    expect(await errorOf(invalid)).toMatch(/not a valid episode/);
+    expect(await errorOf(invalid)).toMatch(/not a Bonded message/);
     const unknown = await handler(await signed({ type: "party" }, { timestamp: seconds + 4 }));
     expect(unknown.status).toBe(400);
     const noChallenge = await handler(await signed({ type: "verify" }, { timestamp: seconds + 5 }));
@@ -300,9 +311,9 @@ describe("toNodeHandler", () => {
   it("serves the handler from a Node http server, reading the raw body", async () => {
     const handler = createBondedHandler({ secret: SECRET, version: "abc", onEpisode: () => {} });
     const url = await listen(toNodeHandler(handler));
-    const res = await post(url, { type: "verify", challenge: "node" });
+    const res = await post(url, { type: "verify", challenge: `node-${CHALLENGE}` });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ challenge: "node", version: "abc" });
+    expect(await res.json()).toEqual({ challenge: `node-${CHALLENGE}`, version: "abc" });
     const bad = await fetch(url, {
       method: "POST",
       body: "{}",
@@ -325,9 +336,9 @@ describe("toNodeHandler", () => {
         void node(req, res);
       });
     });
-    expect((await post(url, { type: "verify", challenge: "raw" })).status).toBe(200);
+    expect((await post(url, { type: "verify", challenge: `raw-${CHALLENGE}` })).status).toBe(200);
     parse = "json";
-    const parsed = await post(url, { type: "verify", challenge: "json" });
+    const parsed = await post(url, { type: "verify", challenge: `json-${CHALLENGE}` });
     expect(parsed.status).toBe(500);
     expect(await errorOf(parsed)).toMatch(/before express.json/);
   });

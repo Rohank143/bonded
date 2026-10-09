@@ -26,6 +26,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./agent-url": {
+      "types": "./dist/agent-url.d.ts",
+      "import": "./dist/agent-url.js"
     }
   },
   "files": [

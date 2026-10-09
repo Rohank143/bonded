@@ -342,9 +342,10 @@ What the handler does with each request:
 
 1. **Checks the signature** before reading the message: `bonded-timestamp` (unix seconds) must be
    within 300 seconds of the server's clock, and `bonded-signature`
-   (`v1=<hex HMAC-SHA256(secret, "<timestamp>.<raw body>")>`) must match, compared in constant time.
-   A request it has accepted before (same timestamp and signature) is refused as a replay.
-   Failures answer `401`; nothing runs.
+   (`v1=<hex HMAC-SHA256(secret, "<timestamp>.<raw body>")>`, up to four while a secret rotates)
+   must match, compared in constant time. `secret` may be a list while you rotate it. A signature
+   it has accepted before is refused as a replay. Failures answer `401`, and a body that isn't one
+   of Bonded's messages `400`; nothing runs.
 2. `{ type: "verify", challenge }`: answers `200 { challenge, version }`.
 3. `{ type: "episode", ... }`: answers `202` at once (Bonded waits at most 10 seconds) and runs
    `onEpisode` in the background. When it resolves, the handler posts `/done` with the
@@ -353,11 +354,13 @@ What the handler does with each request:
 4. `{ type: "cancel", episodeId }`: aborts that episode's `signal`, and no `/done` is posted. The
    signal is also aborted when the episode's deadline passes.
 
-Limits: 1 MiB bodies (`maxBodyBytes`), 8 episodes at once (`maxConcurrent`; Bonded sends one at a
+Limits: 256 KiB bodies (`maxBodyBytes`, the most Bonded sends), 8 episodes at once (`maxConcurrent`; Bonded sends one at a
 time per agent), and the same episode delivered twice runs once. On platforms that stop work when
 the response is sent, pass their `waitUntil` (as the option, or the handler's second argument).
 `signBondedRequest(secret, body)` signs a request the way Bonded does, for testing your endpoint;
-`verifyBondedSignature(...)` is the check on its own. A Python endpoint with no dependencies is in
+`verifyBondedSignature(...)` is the signature check on its own. Both use the scheme Bonded's
+gateway signs with, from `@bonded/shared/agent-url` (a small entry point without the contract ABIs,
+for edge bundles). A Python endpoint with no dependencies is in
 [`examples/python-agent-url`](../../examples/python-agent-url/README.md).
 
 ## Coinbase AgentKit

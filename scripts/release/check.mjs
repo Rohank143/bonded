@@ -21,6 +21,7 @@ import * as sdk from "@bonded/sdk";
 import * as mcp from "@bonded/sdk/mcp";
 import * as agentUrl from "@bonded/sdk/agent-url";
 import * as shared from "@bonded/shared";
+import * as sharedAgentUrl from "@bonded/shared/agent-url";
 import * as solana from "@bonded/solana";
 
 for (const name of ["BondedVault", "buildMandate", "fromBondedEnv", "isBondedEpisode", "episodeVault", "guarded"])
@@ -28,15 +29,17 @@ for (const name of ["BondedVault", "buildMandate", "fromBondedEnv", "isBondedEpi
 for (const name of ["connectEpisodeTools", "mcpConfig", "finishEpisode", "isBondedEpisode"])
   assert.equal(typeof mcp[name], "function", "@bonded/sdk/mcp exports " + name);
 assert.equal(typeof shared.parseEpisodeEnv, "function");
+assert.equal(typeof sharedAgentUrl.verifyAgentUrlRequest, "function");
 assert.ok(solana.PROGRAM_IDS.vault, "@bonded/solana loads its IDLs");
 
 // The Agent URL handler answers a challenge it can verify, and refuses one it can't.
 const secret = "bonded_as_release-check";
 const handler = agentUrl.createBondedHandler({ secret, version: "check", onEpisode() {} });
-const body = JSON.stringify({ type: "verify", challenge: "c" });
+const challenge = "release-check-challenge-0001";
+const body = JSON.stringify({ type: "verify", challenge });
 const signed = await agentUrl.signBondedRequest(secret, body);
 const ok = await handler(new Request("http://x/", { method: "POST", headers: signed, body }));
-assert.deepEqual(await ok.json(), { challenge: "c", version: "check" });
+assert.deepEqual(await ok.json(), { challenge, version: "check" });
 const bad = await handler(new Request("http://x/", { method: "POST", headers: { ...signed, "bonded-signature": "v1=" + "0".repeat(64) }, body }));
 assert.equal(bad.status, 401);
 

@@ -1,14 +1,14 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { EpisodeMessage } from "@bonded/shared";
+import {
+  AGENT_URL_MAX_BODY_BYTES,
+  AGENT_URL_TOLERANCE_SECONDS,
+  AgentUrlReplayGuard,
+  type AgentUrlMessage,
+  verifyAgentUrlRequest,
+} from "@bonded/shared/agent-url";
 import type { BondedEpisode } from "./episode.js";
 import { finishEpisode } from "./done.js";
 import type { EpisodeUsage } from "./mcp.js";
-import {
-  SIGNATURE_HEADER,
-  SIGNATURE_TOLERANCE_SECONDS,
-  TIMESTAMP_HEADER,
-  verifyBondedSignature,
-} from "./signature.js";
 
 export {
   SIGNATURE_HEADER,
@@ -49,8 +49,11 @@ export interface EpisodeContext {
 }
 
 export interface BondedHandlerOptions {
-  /** The agent secret Bonded showed you when you registered the URL (`bonded_as_...`). */
-  secret: string;
+  /**
+   * The agent secret Bonded showed you when you registered the URL (`bonded_as_...`), or several
+   * while you rotate it (any one may match).
+   */
+  secret: string | string[];
   /** Runs one episode. Resolve when the agent is finished; the handler then posts `/done`. */
   onEpisode(
     episode: BondedEpisode,
@@ -70,7 +73,7 @@ export interface BondedHandlerOptions {
   waitUntil?: (work: Promise<unknown>) => void;
   /** How far a request's timestamp may be from this server's clock. Default 300 seconds. */
   toleranceSeconds?: number;
-  /** Largest request body accepted. Default 1 MiB. */
+  /** Largest request body accepted. Default 256 KiB (the most Bonded sends). */
   maxBodyBytes?: number;
   /** Most episodes run at once (Bonded sends one at a time per agent). Default 8. */
   maxConcurrent?: number;
@@ -85,9 +88,6 @@ export type BondedHandler = (
   request: Request,
   context?: { waitUntil?: (work: Promise<unknown>) => void },
 ) => Promise<Response>;
-
-const MAX_BODY_BYTES = 1024 * 1024;
-const REPLAY_CACHE_LIMIT = 10_000;
 
 /**
  * An Agent URL endpoint for your agent.
@@ -106,26 +106,19 @@ const REPLAY_CACHE_LIMIT = 10_000;
  * ```
  */
 export function createBondedHandler(options: BondedHandlerOptions): BondedHandler {
-  if (!options.secret) throw new Error("createBondedHandler needs the agent secret");
+  if (!options.secret || (Array.isArray(options.secret) && options.secret.length === 0))
+    throw new Error("createBondedHandler needs the agent secret");
   const now = options.now ?? Date.now;
-  const tolerance = options.toleranceSeconds ?? SIGNATURE_TOLERANCE_SECONDS;
-  const maxBody = options.maxBodyBytes ?? MAX_BODY_BYTES;
+  const tolerance = options.toleranceSeconds ?? AGENT_URL_TOLERANCE_SECONDS;
+  const maxBody = options.maxBodyBytes ?? AGENT_URL_MAX_BODY_BYTES;
   const maxConcurrent = options.maxConcurrent ?? 8;
   const onError =
     options.onError ??
     ((error: unknown, episode: BondedEpisode) =>
       console.error(`Bonded episode ${episode.episodeId} failed:`, error));
-  /** Accepted (timestamp, signature) pairs, until they fall out of the window. */
-  const seen = new Map<string, number>();
+  /** Signatures already accepted, until they fall out of the window: replays are refused. */
+  const replay = new AgentUrlReplayGuard(tolerance);
   const running = new Map<string, AbortController>();
-
-  const rememberOnce = (key: string, timestamp: number, nowSeconds: number): boolean => {
-    if (seen.size >= REPLAY_CACHE_LIMIT)
-      for (const [k, expires] of seen) if (expires < nowSeconds) seen.delete(k);
-    if (seen.has(key) || seen.size >= REPLAY_CACHE_LIMIT) return false;
-    seen.set(key, timestamp + tolerance);
-    return true;
-  };
 
   const run = async (episode: BondedEpisode, controller: AbortController) => {
     const deadline = setTimeout(
@@ -174,80 +167,48 @@ export function createBondedHandler(options: BondedHandlerOptions): BondedHandle
     const body = await readCapped(request, maxBody);
     if (body === undefined) return json(413, { error: `the body is over ${maxBody} bytes` });
 
-    const nowSeconds = Math.floor(now() / 1000);
-    const signature = request.headers.get(SIGNATURE_HEADER);
-    const check = await verifyBondedSignature({
+    const check = await verifyAgentUrlRequest({
       secret: options.secret,
       body,
-      timestamp: request.headers.get(TIMESTAMP_HEADER),
-      signature,
-      now: nowSeconds,
+      headers: request.headers,
+      nowMs: now(),
       toleranceSeconds: tolerance,
+      replay,
     });
-    if (!check.ok)
-      return json(401, {
-        error: {
-          missing: "missing bonded-timestamp or bonded-signature",
-          malformed: "malformed bonded-timestamp or bonded-signature",
-          stale: "the timestamp is too far from this server's clock",
-          mismatch: "the signature doesn't match",
-        }[check.reason],
+    if (!check.ok) return json(check.status, { error: check.reason });
+    const message = check.message;
+
+    if (message.type === "verify")
+      return json(200, {
+        challenge: message.challenge,
+        ...(options.version ? { version: options.version } : {}),
       });
-    if (!rememberOnce(`${check.timestamp}.${signature}`, check.timestamp, nowSeconds))
-      return json(401, { error: "this request was already received (replayed)" });
 
-    let message: unknown;
-    try {
-      message = JSON.parse(body);
-    } catch {
-      return json(400, { error: "the body isn't JSON" });
-    }
-    const type = (message as { type?: unknown } | null)?.type;
-
-    if (type === "verify") {
-      const challenge = (message as { challenge?: unknown }).challenge;
-      if (typeof challenge !== "string" || challenge.length === 0 || challenge.length > 1_024)
-        return json(400, { error: "verify needs a challenge string" });
-      return json(200, { challenge, ...(options.version ? { version: options.version } : {}) });
-    }
-
-    if (type === "cancel") {
-      const episodeId = (message as { episodeId?: unknown }).episodeId;
-      if (typeof episodeId !== "string") return json(400, { error: "cancel needs an episodeId" });
-      const controller = running.get(episodeId);
+    if (message.type === "cancel") {
+      const controller = running.get(message.episodeId);
       controller?.abort(new Error("Bonded cancelled the episode"));
       return json(200, { ok: true, cancelled: controller !== undefined });
     }
 
-    if (type === "episode") {
-      const parsed = EpisodeMessage.safeParse(message);
-      if (!parsed.success)
-        return json(400, {
-          error: `not a valid episode: ${parsed.error.issues
-            .slice(0, 5)
-            .map((i) => `${i.path.join(".")} ${i.message}`)
-            .join("; ")}`,
-        });
-      const episode = toEpisode(parsed.data);
-      if (running.has(episode.episodeId))
-        return json(200, { ok: true, episodeId: episode.episodeId, alreadyRunning: true });
-      if (running.size >= maxConcurrent)
-        return json(429, { error: `already running ${running.size} episodes` });
-      const controller = new AbortController();
-      running.set(episode.episodeId, controller);
-      const work = run(episode, controller);
-      // Called as a method: Cloudflare's ctx.waitUntil needs its `this`.
-      if (context?.waitUntil) context.waitUntil(work);
-      else options.waitUntil?.(work);
-      return json(202, { ok: true, episodeId: episode.episodeId });
-    }
-
-    return json(400, { error: "unknown message type" });
+    const episode = toEpisode(message);
+    if (running.has(episode.episodeId))
+      return json(200, { ok: true, episodeId: episode.episodeId, alreadyRunning: true });
+    if (running.size >= maxConcurrent)
+      return json(429, { error: `already running ${running.size} episodes` });
+    const controller = new AbortController();
+    running.set(episode.episodeId, controller);
+    const work = run(episode, controller);
+    // Called as a method: Cloudflare's ctx.waitUntil needs its `this`.
+    if (context?.waitUntil) context.waitUntil(work);
+    else options.waitUntil?.(work);
+    return json(202, { ok: true, episodeId: episode.episodeId });
   };
 }
 
 /** The episode as the agent sees it (the same shape `fromBondedEnv` returns). */
-function toEpisode(message: EpisodeMessage): BondedEpisode {
+function toEpisode(message: Extract<AgentUrlMessage, { type: "episode" }>): BondedEpisode {
+  // The runner protocol's message, minus `type`, `nonce` and `teeKeyId` (TEE-bound agents use
+  // the runner).
   return {
     episodeId: message.episodeId,
     task: message.task,

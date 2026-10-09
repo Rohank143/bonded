@@ -44,7 +44,11 @@ export const TASK = {
 
 export async function startArena(): Promise<TestArena> {
   const sandbox = await Sandbox.start();
-  const gateway = new ArenaGateway({ tokens: new StaticRunnerTokens({}) });
+  const gateway = new ArenaGateway({
+    tokens: new StaticRunnerTokens({}),
+    // The Agent URL tests' agents are servers on this machine.
+    agentUrl: { allowLoopback: true, limits: { callsPerMinute: 10_000, callBurst: 1_000 } },
+  });
   await gateway.listen();
   const opened: GatewayEpisode[] = [];
   const tokens = marketTokens(sandbox).map(({ symbol, address, decimals }) => ({
