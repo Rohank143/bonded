@@ -58,6 +58,21 @@ describe("RatingLive", () => {
     expect(await screen.findByText("This tab will notify you when it finishes.")).toBeTruthy();
   });
 
+  it("says it is setting up the sandbox while the rating starts", async () => {
+    vi.spyOn(api, "run").mockResolvedValue(running({ status: "starting" }));
+    vi.spyOn(byoaApi, "ratingProgress").mockReturnValue(() => {});
+    wrap(<RatingLive runId="run-1" label="Your preview" session="s" />);
+    expect(await screen.findByText(/Setting up the sandbox/)).toBeTruthy();
+    expect(screen.getByText("Setting up")).toBeTruthy();
+  });
+
+  it("takes the freshest status it is told, e.g. the preview's stream saying it's starting", async () => {
+    vi.spyOn(api, "run").mockResolvedValue(running({ status: "queued" }));
+    vi.spyOn(byoaApi, "ratingProgress").mockReturnValue(() => {});
+    wrap(<RatingLive runId="run-1" label="Your preview" session="s" statusHint="starting" />);
+    expect(await screen.findByText(/Setting up the sandbox/)).toBeTruthy();
+  });
+
   it("says where it waits in line before it starts", async () => {
     vi.spyOn(api, "run").mockResolvedValue(running({ status: "queued" }));
     vi.spyOn(byoaApi, "ratingProgress").mockReturnValue(() => {});
@@ -267,7 +282,7 @@ describe("PreviewReport", () => {
       status: "done",
       ratingId: "run-1",
       agentUrl: verifiedUrl,
-      codeHash: { value: `0x${"a".repeat(64)}`, source: "url-version", detail: "v1.4.2" },
+      codeHash: { value: `0x${"a".repeat(64)}`, source: "url", detail: "v1.4.2" },
     });
     const client = new QueryClient();
     render(

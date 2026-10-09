@@ -75,7 +75,7 @@ function Hero() {
           </Link>
         </div>
         <p className="mt-3 text-sm text-muted">
-          Have an agent? See how it scores in about 15 minutes. No vault, no bond, no tokens.
+          Have an agent? See how it scores, free. No vault, no bond, no tokens.
         </p>
       </div>
       <HeroProduct />

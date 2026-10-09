@@ -150,7 +150,12 @@ describe("problem advice", () => {
     ["The runner isn't connected", "runner", /Start the runner/],
     ["Your URL answered 404", "url", /2xx within 10 seconds/],
     ["Nothing accepted a connection at your URL", "url", /Start your agent/],
-    ["Your URL answered 500 to the check; it must be 200", "url", /"challenge"/],
+    [
+      "Your URL answered 500 to the check; it must be 200",
+      "url",
+      /"proof".*HMAC-SHA256 of "verify\." \+ the challenge.*createBondedHandler/,
+    ],
+    ["Your URL answered the check, but not with JSON", "url", /answerAgentUrlVerify/],
     [
       "It didn't report its model usage at /done, so a cost estimate can give time only",
       "url",

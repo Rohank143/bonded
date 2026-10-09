@@ -234,7 +234,8 @@ export function ConnectRunner({
 
 /**
  * Agent URL, in two steps: save the address (Bonded makes the agent's secret, shown once), give
- * the agent the secret, then verify: Bonded sends a signed challenge the agent must echo.
+ * the agent the secret, then verify: Bonded sends a signed challenge, and the agent answers with
+ * it and a proof made with the secret.
  */
 export function ConnectUrl({
   subject,
@@ -253,7 +254,7 @@ export function ConnectUrl({
   const [touched, setTouched] = useState(false);
   const saved = status.agentUrl;
   const [editing, setEditing] = useState(!saved);
-  const [busy, setBusy] = useState<"save" | "verify">();
+  const [busy, setBusy] = useState<"save" | "verify" | "secret">();
   const [error, setError] = useState<unknown>(null);
   // The secret, from this page's own save: it is never shown again.
   const [secret, setSecret] = useState<string>();
@@ -293,9 +294,29 @@ export function ConnectUrl({
       setBusy(undefined);
     }
   };
+  // A new secret for the saved URL: the old one stops working at once, so it needs verifying (and
+  // checking) again.
+  const renew = async () => {
+    const target = saved?.url ?? url.trim();
+    setBusy("secret");
+    setError(null);
+    try {
+      const r = await byoaApi.newAgentUrlSecret(subject, auth, target);
+      setSecret(r.secret);
+      setVerified(undefined);
+      setRenewed(true);
+      await onChanged();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(undefined);
+    }
+  };
+  const [renewed, setRenewed] = useState(false);
   const failure = error instanceof ApiError && error.status < 500 ? error.message : undefined;
   const advice = failure ? problemAdvice(failure, "url") : undefined;
-  const isVerified = Boolean(verified) || Boolean(saved?.verifiedAt);
+  // After a new secret the URL must be verified again, whatever the record said before.
+  const isVerified = Boolean(verified) || (!renewed && Boolean(saved?.verifiedAt));
   const codeHash = verified?.codeHash ?? status.codeHash;
   const version = verified?.version ?? saved?.version ?? null;
   const shownUrl = saved?.url ?? (secret ? url.trim() : undefined);
@@ -367,6 +388,7 @@ export function ConnectUrl({
               Change the URL
             </Button>
           </div>
+          <NewSecret busy={busy === "secret"} signing={signing} onConfirm={() => void renew()} />
         </div>
       ) : (
         <div className="flex flex-col gap-3 rounded-2xl border border-warn/30 bg-warn-soft p-4">
@@ -388,14 +410,17 @@ export function ConnectUrl({
             </>
           ) : (
             <p className="text-xs text-soft">
-              Your agent needs the secret you were shown when you saved this URL. Lost it? Change
-              the URL (or save the same one again) to get a new one.
+              Your agent needs the secret you were shown when you saved this URL. It isn't shown
+              again; if you no longer have it, get a new one below.
             </p>
           )}
           <p className="text-xs text-soft">
             Bonded sends{" "}
             <code className="font-mono">{'{ "type": "verify", "challenge": "…" }'}</code>, signed
-            with the secret; your agent answers 200 with the same challenge within 10 seconds.
+            with the secret; within 10 seconds your agent answers 200 with the challenge and its{" "}
+            <code className="font-mono">proof</code> (HMAC-SHA256 of{" "}
+            <code className="font-mono">"verify." + challenge</code>, keyed with the secret). The
+            handler below does both.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" loading={busy === "verify"} onClick={() => void verify()}>
@@ -405,17 +430,65 @@ export function ConnectUrl({
               Change the URL
             </Button>
           </div>
+          {!secret && (
+            <NewSecret busy={busy === "secret"} signing={signing} onConfirm={() => void renew()} />
+          )}
         </div>
       )}
       {failure ? (
         <div role="alert" className="rounded-2xl border border-breach/35 bg-breach-soft p-4">
           <p className="font-semibold">{failure}</p>
           {advice && <p className="mt-1 text-soft">{advice}</p>}
+          <p className="mt-1 text-xs">
+            <a className={linkClass} href={DOCS_BYOA}>
+              The guide: Agent URL mode
+            </a>
+          </p>
         </div>
       ) : (
         <ErrorText error={error} />
       )}
       <Snippets connection="url" mode={status.mode} />
+    </div>
+  );
+}
+
+/** "Get a new secret", with what it costs said first: the old one stops at once. */
+function NewSecret({
+  busy,
+  signing,
+  onConfirm,
+}: {
+  busy: boolean;
+  signing: boolean;
+  onConfirm: () => void;
+}) {
+  const [asking, setAsking] = useState(false);
+  if (!asking)
+    return (
+      <div>
+        <button type="button" className={`${linkClass} text-xs`} onClick={() => setAsking(true)}>
+          Lost the secret? Get a new one
+        </button>
+      </div>
+    );
+  return (
+    <div
+      role="alert"
+      className="flex flex-col gap-2 rounded-xl border border-breach/35 bg-breach-soft p-3 text-xs"
+    >
+      <p>
+        The current secret stops working at once: until your agent has the new one, it can't answer
+        Bonded. Then verify the URL and run a connection check again.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" kind="danger" loading={busy} onClick={onConfirm}>
+          {busy && signing ? "Sign in your wallet…" : "Make a new secret"}
+        </Button>
+        <Button size="sm" kind="ghost" onClick={() => setAsking(false)}>
+          Keep the current one
+        </Button>
+      </div>
     </div>
   );
 }

@@ -30,7 +30,7 @@ function runnerSnippets(): Snippet[] {
       id: "langchain",
       label: "LangChain",
       language: "ts",
-      install: "npm i @bonded/sdk @langchain/core",
+      install: "npm i @bonded/sdk @langchain/core @langchain/langgraph",
       code: `import { isBondedEpisode } from "@bonded/sdk";
 import { bondedLangChainTools } from "@bonded/sdk/langchain";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
@@ -109,7 +109,7 @@ function urlSnippets(): Snippet[] {
       id: "langchain",
       label: "LangChain",
       language: "ts",
-      install: "npm i @bonded/sdk @langchain/core",
+      install: "npm i @bonded/sdk @langchain/core @langchain/langgraph",
       code: `import { bondedLangChainTools } from "@bonded/sdk/langchain";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 
@@ -235,7 +235,7 @@ export const POST = createBondedHandler({
       code: `# A whole Agent URL endpoint, standard library only:
 # examples/python-agent-url/agent.py in the Bonded repository.
 BONDED_AGENT_SECRET=bonded_as_... PORT=8080 python3 agent.py`,
-      note: "It checks bonded-signature (HMAC-SHA256 of the timestamp, a dot and the raw body), answers verify with your challenge, and replies 202 to an episode before working in the background.",
+      note: 'It checks bonded-signature (HMAC-SHA256 of the timestamp, a dot and the raw body), answers verify with the challenge and its proof (HMAC-SHA256 of "verify." + the challenge, keyed with your secret), and replies 202 to an episode before working in the background.',
       imports: [],
     },
   ];

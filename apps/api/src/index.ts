@@ -188,7 +188,7 @@ export function createApi(options: {
   // Previews, Agent URLs, checks and notification settings are made with an owner session
   // (sessions.ts), opened by a wallet signature.
   const PUBLIC_POST =
-    /^\/(bounties\/\d{1,78}\/reveal|self\/agents(\/\d{1,78}\/(rate|runner-token|agent-url|agent-url\/verify|checks))?|quotes|sentinel\/check|self\/session|self\/notifications(\/webhook-secret)?|previews(\/session|\/[0-9a-f-]{36}\/(stop|runner-token|agent-url|agent-url\/verify|checks|rate|notifications))?|self\/agents\/\d{1,78}\/notifications|streams\/token)$/;
+    /^\/(bounties\/\d{1,78}\/reveal|self\/agents(\/\d{1,78}\/(rate|runner-token|agent-url|agent-url\/verify|agent-url\/secret|checks))?|quotes|sentinel\/check|self\/session|self\/notifications(\/webhook-secret)?|previews(\/session|\/[0-9a-f-]{36}\/(stop|runner-token|agent-url|agent-url\/verify|agent-url\/secret|checks|rate|notifications))?|self\/agents\/\d{1,78}\/notifications|streams\/token)$/;
   const PUBLIC_PUT =
     /^\/(self\/notifications|previews\/[0-9a-f-]{36}\/notifications|self\/agents\/\d{1,78}\/notifications)$/;
   const PUBLIC_DELETE =
@@ -390,8 +390,8 @@ export function createApi(options: {
       // How far it has got, and a rough estimate of the time left, from its published episodes.
       const progress = await db.runProgress(id);
       const elapsed =
-        progress.startedAt && progress.lastAt
-          ? progress.lastAt.getTime() - progress.startedAt.getTime()
+        progress.episodesStartedAt && progress.lastAt
+          ? progress.lastAt.getTime() - progress.episodesStartedAt.getTime()
           : 0;
       const etaSeconds =
         row.status === "running" && progress.total && progress.done > 1

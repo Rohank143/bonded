@@ -54,6 +54,7 @@ const PREVIEW_STATUS: Record<PreviewRecord["status"], string> = {
   checking: "Checking",
   ready: "Ready",
   queued: "Waiting",
+  starting: "Setting up",
   running: "Running",
   done: "Done",
   failed: "Failed",
@@ -108,21 +109,55 @@ export function TestAgent() {
     queryFn: () => byoaApi.listPreviews(session!.session),
     enabled: Boolean(session),
   });
+  // The preview's live stream: its status, queue place and progress as they change. While it is
+  // open, the record is read again only when the status moves on; if it drops, polling takes over.
+  const [streaming, setStreaming] = useState(false);
   const preview = useQuery({
     queryKey: ["preview", previewId, session?.session],
     queryFn: () => byoaApi.preview(session!.session, previewId!),
     enabled: Boolean(session && previewId),
     retry: (n, e) => !(e instanceof ApiError && e.status < 500) && n < 2,
-    // Fast while waiting for a runner or a URL, slower once it's rating.
-    // Also in a background tab: the steps move on when the runner connects or the rating ends.
+    // Also in a background tab, so the page moves on (and can notify) while you're elsewhere.
     refetchIntervalInBackground: true,
     refetchInterval: (q) =>
       q.state.data && FINISHED.includes(q.state.data.status)
         ? false
-        : q.state.data?.ratingId
-          ? 15_000
-          : 4_000,
+        : // Before a rating the stream doesn't carry the runner's or URL's state: poll for it.
+          !q.state.data?.ratingId
+          ? 4_000
+          : streaming
+            ? false
+            : 15_000,
   });
+  const previewKey = ["preview", previewId, session?.session];
+  const over = preview.data ? FINISHED.includes(preview.data.status) : false;
+  useEffect(() => {
+    if (!session || !previewId || over) return;
+    let last = "";
+    setStreaming(true);
+    const stop = byoaApi.previewEvents(
+      session.session,
+      previewId,
+      (e) => {
+        queryClient.setQueryData<PreviewRecord>(previewKey, (old) =>
+          old
+            ? { ...old, status: e.status, ratingId: e.ratingId, reason: e.reason, queue: e.queue }
+            : old,
+        );
+        const moved = `${e.status}:${e.ratingId}`;
+        if (moved !== last) {
+          last = moved;
+          void preview.refetch();
+        }
+      },
+      () => setStreaming(false),
+    );
+    return () => {
+      stop();
+      setStreaming(false);
+    };
+    // One stream per preview and session; the record's own updates don't restart it.
+  }, [session?.session, previewId, over]);
   const run = useRatingRun(preview.data?.ratingId ?? undefined, 5000, session?.session);
   // The list beside the steps follows the open preview's status.
   const openStatus = preview.data?.status;
@@ -222,7 +257,7 @@ export function TestAgent() {
       title="Test your agent"
       eyebrow="Preview rating"
       back={{ to: "/agents", label: "All agents" }}
-      intro="See how your agent scores against Bonded's red team in about 15 minutes. Free, with nothing to commit: no vault, no bond, no tokens. Just a wallet to sign in."
+      intro={`See how your agent scores against Bonded's red team${plan ? `: up to ${plan.episodes} episodes, stopped at ${duration(plan.budgetSeconds)} at the most` : ""}. Free, with nothing to commit: no vault, no bond, no tokens. Just a wallet to sign in.`}
     >
       {blockedLine && !p?.ratingId && (
         <Callout tone="warn" title={blockedLine}>
@@ -467,6 +502,7 @@ export function TestAgent() {
                 <div className="flex flex-col gap-4">
                   <RatingLive
                     session={session?.session}
+                    statusHint={p.status}
                     runId={p.ratingId}
                     label="Your preview"
                     queueText={p.queue ? queueLine(p.queue.position) : null}
@@ -497,8 +533,10 @@ export function TestAgent() {
           <Card title="What a preview is">
             <ul className="flex flex-col gap-2 text-sm text-muted">
               <li>
-                <span className="text-ink">The full rating.</span> The same attacks, judge and
-                scoring as an official rating.
+                <span className="text-ink">A shorter rating, scored the same way.</span> Each
+                published attack runs once (an official rating runs each three times), plus a set
+                made for this preview alone (one per attack class) and 6 episodes with no attack.
+                The same judge and scoring as an official rating.
               </li>
               <li>
                 <span className="text-ink">{PREVIEW_LABEL}.</span> It isn't signed or posted, and no

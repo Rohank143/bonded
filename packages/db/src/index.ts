@@ -280,8 +280,11 @@ export type RatingLane = "builtin" | "remote";
 export interface RunProgress {
   done: number;
   total: number | null;
+  /** When the worker began (setting up), or the first episode for older ratings. */
   startedAt: Date | null;
   lastAt: Date | null;
+  /** When its episodes began, after setting up: what an ETA is measured from. */
+  episodesStartedAt: Date | null;
 }
 
 /** One rating of an agent, as its history shows it. */
@@ -1136,13 +1139,21 @@ export class Database {
     // Ratings of agents their operators run (and previews) keep their counts on the rating: their
     // episodes are published only once the rating is over.
     const own = (await this.pool.query("SELECT progress FROM ratings WHERE id=$1", [runId])).rows[0]
-      ?.progress as { done: number; total: number; startedAt: string; lastAt?: string } | null;
-    if (own)
+      ?.progress as {
+      done: number;
+      total: number | null;
+      startedAt: string;
+      lastAt?: string;
+      counted?: boolean;
+      episodesStartedAt?: string;
+    } | null;
+    if (own?.counted)
       return {
         done: own.done,
         total: own.total,
         startedAt: new Date(own.startedAt),
         lastAt: own.lastAt ? new Date(own.lastAt) : null,
+        episodesStartedAt: own.episodesStartedAt ? new Date(own.episodesStartedAt) : null,
       };
     const r = await this.pool.query(
       `SELECT count(*)::int AS done, max((payload->>'total')::int) AS total,
@@ -1151,7 +1162,14 @@ export class Database {
       [runId],
     );
     const row = r.rows[0];
-    return { done: row.done, total: row.total, startedAt: row.started, lastAt: row.last };
+    // Episodes published as they run (Bonded's own designs); set-up time from the rating itself.
+    return {
+      done: row.done,
+      total: row.total,
+      startedAt: own?.startedAt ? new Date(own.startedAt) : row.started,
+      lastAt: row.last,
+      episodesStartedAt: row.started,
+    };
   }
   /**
    * An agent's ratings, newest first, one numbered page at a time: every attempt, failed and
@@ -2011,7 +2029,7 @@ export class Database {
           [key],
         )
       ).rows[0];
-      return u?.code_hash ? { hash: u.code_hash, source: "url-version" } : undefined;
+      return u?.code_hash ? { hash: u.code_hash, source: "url" } : undefined;
     }
     const p = (
       await c.query(
@@ -2039,7 +2057,7 @@ export class Database {
       return {
         credentialId: u?.id ?? null,
         ready: Boolean(u?.verifiedAt),
-        code: u?.verifiedAt && u.codeHash ? { hash: u.codeHash, source: "url-version" } : undefined,
+        code: u?.verifiedAt && u.codeHash ? { hash: u.codeHash, source: "url" } : undefined,
       };
     }
     const token = (
@@ -2364,7 +2382,7 @@ export class Database {
       );
       if (r.rows[0])
         await c.query(
-          "UPDATE previews SET status='running',updated_at=now() WHERE id=(SELECT preview_id FROM ratings WHERE id=$1)",
+          "UPDATE previews SET status='starting',updated_at=now() WHERE id=(SELECT preview_id FROM ratings WHERE id=$1)",
           [r.rows[0].id],
         );
       return r.rows[0];
@@ -2406,13 +2424,45 @@ export class Database {
       return status;
     });
   }
+  /**
+   * A rating's worker has taken it and is setting up (the sandbox, the held-out set): status
+   * "starting", and its progress starts the clock. Its preview, if it has one, too.
+   */
+  async markStarting(job: { id: string; token: string }, startedAt = new Date()) {
+    await this.withLease(job, async (c) => {
+      const r = await c.query(
+        "UPDATE ratings SET status='starting',progress=$2 WHERE id=$1 RETURNING preview_id",
+        [job.id, json({ done: 0, total: null, startedAt: startedAt.toISOString() })],
+      );
+      if (r.rows[0]?.preview_id)
+        await c.query("UPDATE previews SET status='starting',updated_at=now() WHERE id=$1", [
+          r.rows[0].preview_id,
+        ]);
+    });
+  }
+  /** Set up: its episodes are running. */
+  async markRunning(job: { id: string; token: string }) {
+    await this.withLease(job, async (c) => {
+      const r = await c.query(
+        "UPDATE ratings SET status='running' WHERE id=$1 RETURNING preview_id",
+        [job.id],
+      );
+      if (r.rows[0]?.preview_id)
+        await c.query("UPDATE previews SET status='running',updated_at=now() WHERE id=$1", [
+          r.rows[0].preview_id,
+        ]);
+    });
+  }
   /** Record a running rating's progress (counts only) under its lease. */
   async setRatingProgress(
     job: { id: string; token: string },
-    progress: { done: number; total: number; startedAt: Date },
+    progress: { done: number; total: number | null; startedAt: Date },
   ) {
     await this.pool.query(
-      `UPDATE ratings r SET progress=$3 FROM jobs j
+      // The set-up start (markStarting) is kept; the episodes' start is recorded beside it.
+      `UPDATE ratings r SET progress=jsonb_build_object('startedAt',
+           coalesce(r.progress->>'startedAt', $3::jsonb->>'episodesStartedAt')) || $3::jsonb
+       FROM jobs j
        WHERE r.id=$1 AND j.id=r.id AND j.token=$2 AND j.status='running' AND j.lease_until>now()`,
       [
         job.id,
@@ -2420,8 +2470,9 @@ export class Database {
         json({
           done: progress.done,
           total: progress.total,
-          startedAt: progress.startedAt.toISOString(),
+          episodesStartedAt: progress.startedAt.toISOString(),
           lastAt: new Date().toISOString(),
+          counted: true,
         }),
       ],
     );
@@ -2607,15 +2658,6 @@ export class Database {
         config.codeHash?.toLowerCase() ?? null,
         withinMs / 1000,
       ],
-    );
-    return r.rows[0] ? checkRow(r.rows[0]) : undefined;
-  }
-  /** The latest passing check of an agent or preview, whatever its connection. */
-  async latestPassingCheck(subject: string): Promise<ConnectionCheckRecord | undefined> {
-    const r = await this.pool.query(
-      `SELECT * FROM connection_checks WHERE subject=$1 AND status='passed'
-       ORDER BY finished_at DESC LIMIT 1`,
-      [subject],
     );
     return r.rows[0] ? checkRow(r.rows[0]) : undefined;
   }

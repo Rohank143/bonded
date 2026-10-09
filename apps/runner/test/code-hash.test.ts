@@ -19,7 +19,8 @@ function tempDir(): string {
 const HASH = `0x${"Ab".repeat(32)}`;
 const noGit = () => undefined;
 
-describe("the runner's code hash", () => {
+// Real git calls and file reads: slow on a loaded machine, never asserted to be fast.
+describe("the runner's code hash", { timeout: 60_000 }, () => {
   it("takes --code-hash first, then BONDED_CODE_HASH, as given", () => {
     const env = { BONDED_CODE_HASH: `0x${"cd".repeat(32)}`, BONDED_IMAGE_DIGEST: "sha256:1" };
     expect(codeIdentity({ command: ["node", "a.js"], flag: HASH, env, git: noGit })).toMatchObject({

@@ -260,7 +260,7 @@ export interface RunRecord extends RatingFacts {
   /** Episodes published so far, of how many, and a rough estimate of the seconds left. */
   progress?: { done: number; total: number | null; etaSeconds: number | null };
   id: string;
-  status: "queued" | "running" | "done" | "failed";
+  status: "queued" | "starting" | "running" | "done" | "failed";
   error: string | null;
   created_at: string;
   report: Report | null;
@@ -422,7 +422,7 @@ export interface RunnerRecord {
 /** One rating of an agent, as its history shows it. */
 export interface RatingAttempt {
   runId: string;
-  status: "queued" | "running" | "done" | "failed";
+  status: "queued" | "starting" | "running" | "done" | "failed";
   /** The system's own reason. */
   error: string | null;
   /** It stopped because of the agent. */

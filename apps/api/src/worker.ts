@@ -365,9 +365,8 @@ async function runLocked(
           true,
         );
     }
-    await db.withLease(job, (c) =>
-      c.query("UPDATE ratings SET status='running' WHERE id=$1", [job.id]),
-    );
+    // Setting up (TEE checks, the sandbox, the held-out set): "starting", then "running".
+    await db.markStarting(job);
     let signed = row.attestation as SignedAttestation | null;
     if (!signed) {
       // A TEE that doesn't verify fails the job. It never falls back to an unmeasured rating.
@@ -482,6 +481,7 @@ async function runLocked(
             heldOut: fresh?.attacks.length ?? 0,
             ...(config.repeats ? { repeats: config.repeats } : {}),
           }).budgetMs;
+        await db.markRunning(job);
         const result = await rateAgent(sandbox, {
           agent,
           ...(withSentinel && sentinel ? { sentinel: sentinel.info } : {}),
