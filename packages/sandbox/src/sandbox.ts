@@ -72,6 +72,20 @@ export interface SandboxOptions {
 type ArenaWallet = WalletClient<Transport, Chain, Account>;
 
 /**
+ * anvil's command line for a sandbox. `--max-persisted-states 0` keeps old chain states out of
+ * ~/.foundry/anvil/tmp: by default anvil moves them there and never deletes the folder, even on a
+ * clean exit, so every rating left hundreds of megabytes to gigabytes behind. Recent states stay
+ * in memory, which covers the few blocks back the rating sandbox forks from.
+ */
+export function anvilArgs(port: number, fork: boolean): string[] {
+  const args = ["--port", String(port), "--silent", "--max-persisted-states", "0"];
+  // A chain id unique to this sandbox (its port is unique while it runs), so sandboxes
+  // started at the same time write separate deployment files instead of racing on one.
+  if (!fork) args.push("--chain-id", String(313_370_000 + port));
+  return args;
+}
+
+/**
  * An isolated chain for Arena episodes: a local anvil node, either fresh (with the protocol
  * deployed by the same scripts as production) or forking a live testnet. Nothing here can
  * touch a real network: anvil keeps every transaction local.
@@ -107,13 +121,8 @@ export class Sandbox {
     const port = options.port ?? (await freePort());
     const rpcUrl = `http://127.0.0.1:${port}`;
 
-    const args = ["--port", String(port), "--silent"];
+    const args = anvilArgs(port, Boolean(options.forkUrl));
     let proxy: ForkProxy | undefined;
-    if (!options.forkUrl) {
-      // A chain id unique to this sandbox (its port is unique while it runs), so sandboxes
-      // started at the same time write separate deployment files instead of racing on one.
-      args.push("--chain-id", String(313_370_000 + port));
-    }
     if (options.forkUrl) {
       // Fork a few blocks behind the tip: some public RPCs load-balance across nodes that lag,
       // and a node that hasn't seen the tip yet can't serve state for it.

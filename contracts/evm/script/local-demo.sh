@@ -12,7 +12,8 @@ if cast chain-id --rpc-url $RPC >/dev/null 2>&1; then
   exit 1
 fi
 
-anvil --silent --port 8545 &
+# --max-persisted-states 0: keep old chain states out of ~/.foundry/anvil/tmp (see anvilArgs).
+anvil --silent --port 8545 --max-persisted-states 0 &
 ANVIL_PID=$!
 trap 'kill $ANVIL_PID 2>/dev/null && wait $ANVIL_PID 2>/dev/null || true' EXIT
 
