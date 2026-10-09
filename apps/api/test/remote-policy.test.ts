@@ -6,6 +6,7 @@ import {
   remotePolicyFromEnv,
   remoteQuota,
   remoteRatingPlan,
+  previewRatingPlan,
 } from "../src/remote-policy.js";
 
 describe("remotePolicyFromEnv", () => {
@@ -23,6 +24,12 @@ describe("remotePolicyFromEnv", () => {
       REMOTE_RATING_MAX_MS: "3600000",
       REMOTE_RATING_INTERVAL_MS: "600000",
       HELD_OUT_FRESH_PER_CLASS: "2",
+      PREVIEW_PER_WALLET_DAILY: "3",
+      PREVIEW_DAILY: "9",
+      PREVIEW_CREATES_PER_WALLET_DAILY: "6",
+      PREVIEW_RATING_MAX_MS: "600000",
+      CHECKS_PER_WALLET_HOURLY: "4",
+      CHECKS_HOURLY: "12",
     });
     expect(policy).toEqual({
       repeats: 2,
@@ -33,6 +40,12 @@ describe("remotePolicyFromEnv", () => {
       budgetCeilingMs: 3_600_000,
       perAgentMs: 600_000,
       heldOutPerClass: 2,
+      previewPerWalletDaily: 3,
+      previewDaily: 9,
+      previewCreatesPerWalletDaily: 6,
+      previewBudgetCeilingMs: 600_000,
+      checksPerWalletHourly: 4,
+      checksHourly: 12,
     });
     expect(remoteQuota(policy, 5)).toEqual({
       nowMs: 5,
@@ -44,6 +57,31 @@ describe("remotePolicyFromEnv", () => {
       episodes: 126,
       budgetMs: 3_600_000,
     });
+    // A preview: the library once, the held-out set, 6 controls; 30 s an episode here, capped.
+    expect(previewRatingPlan(policy, { publishedAttacks: 10, heldOut: 4 })).toEqual({
+      episodes: 20,
+      budgetMs: 600_000,
+    });
+  });
+
+  it("sizes a default preview as the spec says: 40 s an episode, at most 45 minutes", () => {
+    expect(previewRatingPlan(DEFAULT_REMOTE_POLICY, { publishedAttacks: 70, heldOut: 10 })).toEqual(
+      {
+        episodes: 86,
+        budgetMs: 45 * 60_000,
+      },
+    );
+    expect(previewRatingPlan(DEFAULT_REMOTE_POLICY, { publishedAttacks: 4, heldOut: 0 })).toEqual({
+      episodes: 10,
+      budgetMs: 400_000,
+    });
+    expect(DEFAULT_REMOTE_POLICY).toMatchObject({
+      previewPerWalletDaily: 1,
+      previewDaily: 20,
+      checksPerWalletHourly: 10,
+    });
+    // Turning previews off is allowed: 0 a day.
+    expect(remotePolicyFromEnv({ PREVIEW_DAILY: "0" }).previewDaily).toBe(0);
   });
 
   it("refuses a setting that isn't a positive whole number", () => {

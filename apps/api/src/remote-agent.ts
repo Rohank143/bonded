@@ -10,6 +10,7 @@ import {
 } from "@bonded/arena";
 import type { ArenaAgent, RemoteMode } from "@bonded/shared";
 import type { Hex } from "viem";
+import { AGENT_URL_UNAVAILABLE, type AgentConnection } from "./connections.js";
 
 /**
  * Bring your own agent (docs/BRING-YOUR-OWN-AGENT.md): the rating worker's side of a remote agent.
@@ -26,8 +27,13 @@ export interface RemoteAgentRequest {
   /** The on-chain agent id. */
   agentId: string;
   mode: RemoteMode;
-  /** The operator's declared code hash: what the rating is about. */
+  /** The code hash the rating is about: declared, or what the runner or URL reported. */
   codeHash: Hex;
+  /**
+   * How to reach the agent: its runner (by `agentKey`, the default) or its Agent URL, with the
+   * secret that signs each call. The secret never leaves the worker except in that signature.
+   */
+  connection?: AgentConnection;
   /**
    * A TEE-bound agent (chain mode). The rating has an Arena key of its own: the TEE derives it
    * from `keyId`, and `evmAddress` is its address, which the episode vaults name as their agent,
@@ -61,8 +67,10 @@ export function gatewayAgents(
   gateway: ArenaGateway,
   options: { episodeTimeoutMs?: number; runnerWaitMs?: number } = {},
 ): RemoteAgentFactory {
-  return (request, sandbox) =>
-    new RemoteAgent({
+  return (request, sandbox) => {
+    // Seam: Agent URL mode is the gateway's transport; until this build has it, refuse plainly.
+    if (request.connection?.kind === "url") throw new RatingRefused(AGENT_URL_UNAVAILABLE, true);
+    return new RemoteAgent({
       gateway,
       sandbox,
       runner: request.agentKey,
@@ -81,6 +89,7 @@ export function gatewayAgents(
           }
         : {}),
     });
+  };
 }
 
 /** A rating that can't run, and whether trying again could help. Its message is stored as is. */

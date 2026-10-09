@@ -81,4 +81,35 @@ describe("selfServeMessage", () => {
     );
     expect(selfServeMessage({ ...base, protection: "vault" })).toBe(selfServeMessage(base));
   });
+  it("says when the code hash is left to the runner and when the agent is reached by URL", () => {
+    const base = {
+      action: "register" as const,
+      chainId: 46630,
+      agentId: "14",
+      vault: "0x0000000000000000000000000000000000000003",
+      kind: "remote" as const,
+      mandateHash: "0xab",
+      timestamp: 8,
+    };
+    const auto = selfServeMessage({ ...base, remote: { mode: "tools" } });
+    expect(auto).toContain("design remote\nmandate 0xab\ncode auto\nmode tools\ntime 8");
+    expect(selfServeMessage({ ...base, remote: { mode: "tools", connection: "runner" } })).toBe(
+      auto,
+    );
+    expect(selfServeMessage({ ...base, remote: { mode: "chain", connection: "url" } })).toContain(
+      "code auto\nmode chain\nconnection url\ntime 8",
+    );
+  });
+  it("signs a sign-in for a wallet, with no agent", () => {
+    expect(
+      selfServeMessage({
+        action: "sign-in",
+        chainId: 46630,
+        wallet: "0xAbCdEf0000000000000000000000000000000001",
+        timestamp: 3,
+      }),
+    ).toBe(
+      "Bonded: sign in\nchain 46630\nwallet 0xabcdef0000000000000000000000000000000001\ntime 3",
+    );
+  });
 });

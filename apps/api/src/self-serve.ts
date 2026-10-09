@@ -1,6 +1,6 @@
 import type { Context, Hono } from "hono";
 import { z } from "zod";
-import type { Database } from "@bonded/db";
+import type { Database, RatedCode } from "@bonded/db";
 import {
   bondedRegistryAbi,
   EvmMandate,
@@ -11,6 +11,7 @@ import {
   mandateModuleAbi,
   mandateModuleFactoryAbi,
   PROTECTIONS,
+  REMOTE_CONNECTIONS,
   REMOTE_KIND,
   REMOTE_MODES,
   SELF_SERVE_KINDS,
@@ -34,6 +35,9 @@ import {
   type Hex,
 } from "viem";
 import { RateLimiter, clientAddress } from "./rate-limit.js";
+import { Refused, handle } from "./refused.js";
+import { SECRET_KEY_MISSING } from "./secrets.js";
+import { NEEDS_CHECK } from "./connections.js";
 import {
   DEFAULT_REMOTE_POLICY,
   remoteQuota,
@@ -112,26 +116,24 @@ const registerInput = z.union([
     vault: address,
     kind: z.literal(REMOTE_KIND),
     mandate: EvmMandate,
-    codeHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/),
+    /** Optional (Advanced): without it, the runner's or URL's reported hash is used. */
+    codeHash: z
+      .string()
+      .regex(/^0x[0-9a-fA-F]{64}$/)
+      .optional(),
     mode: z.enum(REMOTE_MODES),
+    /** How Bonded reaches the agent: the runner (default) or its Agent URL. */
+    connection: z.enum(REMOTE_CONNECTIONS).optional(),
     tee: teeConfig.optional(),
     protection: z.enum(PROTECTIONS).optional(),
+    /** "Make it official": the preview this registration comes from, linked to it. Not signed. */
+    previewId: z.uuid().optional(),
     timestamp: z.number().int().positive(),
     signature,
   }),
 ]);
 /** A signed request with nothing else in it: rate, create or revoke a runner token. */
 const signedInput = z.strictObject({ timestamp: z.number().int().positive(), signature });
-
-/** A self-serve request the API refuses, with the status and the reason to show the user. */
-class Refused extends Error {
-  constructor(
-    readonly status: 400 | 403 | 404 | 409 | 429,
-    message: string,
-  ) {
-    super(message);
-  }
-}
 
 export function selfServeRoutes(
   app: Hono,
@@ -143,6 +145,8 @@ export function selfServeRoutes(
     gatewayUrl?: string;
     /** Underwriting policy's cover caps by binding, shown with a remote agent's registration. */
     coverCaps?: Readonly<Record<BindingLevel, number>>;
+    /** Whether Agent URL mode can be used here (AGENT_URL_SECRET_KEY is set). */
+    agentUrls?: boolean;
   },
 ) {
   const { db, chain } = options;
@@ -296,14 +300,6 @@ export function selfServeRoutes(
       })
     ).toLowerCase();
 
-  const handle = (fn: (c: Context) => Promise<Response>) => async (c: Context) => {
-    try {
-      return await fn(c);
-    } catch (e) {
-      if (e instanceof Refused) return c.json({ error: e.message }, e.status);
-      throw e;
-    }
-  };
   const limit = (c: Context) => {
     if (!requests.allow(clientAddress(c.req.raw.headers)))
       throw new Refused(429, "too many requests; try again in a few minutes");
@@ -321,8 +317,16 @@ export function selfServeRoutes(
         sentinel?: boolean;
         codeHash?: string;
         mode?: string;
+        connection?: "runner" | "url";
         tee?: { url: string; composeHash: string };
       };
+      const connection = config.connection ?? "runner";
+      const current =
+        config.kind === REMOTE_KIND
+          ? await db.currentConnection(rowId(agentId), connection)
+          : undefined;
+      const fromPreview =
+        config.kind === REMOTE_KIND ? await db.previewUpgradedTo(rowId(agentId)) : undefined;
       const last = record.last_rating_at?.getTime();
       return c.json({
         registered: true,
@@ -335,9 +339,19 @@ export function selfServeRoutes(
         // The owner's own agent: what was declared, so the page can show it.
         ...(config.kind === REMOTE_KIND
           ? {
-              codeHash: config.codeHash,
+              // Declared, or null: then each rating records what the runner or URL reports.
+              codeHash: config.codeHash ?? null,
+              codeSource: config.codeHash ? "declared" : "auto",
+              reportedCode: current?.code ?? null,
               mode: config.mode,
+              connection,
+              // Ready to be reached: runner connected, or Agent URL verified (never the URL here).
+              connectionReady: current?.ready ?? false,
               tee: config.tee ?? null,
+              // The preview it was made official from, whose report stays linked.
+              preview: fromPreview
+                ? { previewId: fromPreview.id, ratingId: fromPreview.ratingId }
+                : null,
               // Underwriting policy, not score: the most cover it can hold, by binding.
               coverCaps: options.coverCaps ?? UNDERWRITING_COVER_CAP_USD,
               // The most a rating will be, before the owner asks for one.
@@ -376,6 +390,17 @@ export function selfServeRoutes(
           400,
           "a TEE-bound agent must be rated in chain mode: in tool mode its tool calls come from the runner, outside the TEE, so the TEE would bind nothing",
         );
+      if (
+        input.kind === REMOTE_KIND &&
+        input.tee &&
+        (!input.codeHash || input.connection === "url")
+      )
+        throw new Refused(
+          400,
+          "a TEE-bound agent needs a declared code hash (the one its TEE reports) and the runner, which forwards its evidence",
+        );
+      if (input.kind === REMOTE_KIND && input.connection === "url" && !options.agentUrls)
+        throw new Refused(409, SECRET_KEY_MISSING);
       const hash = mandateHash(input.mandate);
       const module = input.protection === "module";
       const base = {
@@ -393,8 +418,9 @@ export function selfServeRoutes(
               ...base,
               kind: REMOTE_KIND,
               remote: {
-                codeHash: input.codeHash,
+                ...(input.codeHash ? { codeHash: input.codeHash } : {}),
                 mode: input.mode,
+                ...(input.connection === "url" ? { connection: "url" as const } : {}),
                 ...(input.tee ? { tee: input.tee } : {}),
               },
             }
@@ -413,8 +439,9 @@ export function selfServeRoutes(
           ? {
               kind: REMOTE_KIND,
               mandate: input.mandate,
-              codeHash: input.codeHash,
+              ...(input.codeHash ? { codeHash: input.codeHash } : {}),
               mode: input.mode,
+              ...(input.connection === "url" ? { connection: "url" } : {}),
               ...(input.tee ? { tee: input.tee } : {}),
               repeats: limits.remote.repeats,
               ...(module ? { protection: "module" } : {}),
@@ -437,14 +464,27 @@ export function selfServeRoutes(
       // token: the gateway drops a connected runner at its next heartbeat, and the owner makes
       // a new token. No token outlives the registration it was made for.
       const before = previous?.config as { kind?: string } | undefined;
-      if (before?.kind === REMOTE_KIND) await db.revokeAllRunnerTokens(rowId(input.agentId));
+      if (before?.kind === REMOTE_KIND) {
+        await db.revokeAllRunnerTokens(rowId(input.agentId));
+        await db.revokeAgentUrls(rowId(input.agentId));
+      }
+      // "Make it official": link the preview it came from (the signer's own only).
+      if (input.kind === REMOTE_KIND && input.previewId)
+        await db.linkPreviewUpgrade(input.previewId, who, rowId(input.agentId));
       return c.json(
         {
           registered: true,
           agentId: input.agentId,
           kind: input.kind,
           sentinel: input.kind !== REMOTE_KIND && input.sentinel === true,
-          ...(input.kind === REMOTE_KIND ? { mode: input.mode, tee: Boolean(input.tee) } : {}),
+          ...(input.kind === REMOTE_KIND
+            ? {
+                mode: input.mode,
+                connection: input.connection ?? "runner",
+                codeSource: input.codeHash ? "declared" : "auto",
+                tee: Boolean(input.tee),
+              }
+            : {}),
         },
         201,
       );
@@ -475,9 +515,40 @@ export function selfServeRoutes(
         const problem = await remoteRatingProblem(chain, agentId, record.owner);
         if (problem) throw new Refused(409, problem);
       }
-      // The owner's own agent is rated through its runner, so one must be connected now.
-      if (remote && !(await db.runnerIsConnected(rowId(agentId))))
-        throw new Refused(409, "no runner is connected for this agent; start it, then rate");
+      // The owner's own agent is rated through its runner (or its Agent URL), so it must be
+      // reachable now, and a passing connection check of exactly this connection must exist.
+      let code: RatedCode | undefined;
+      if (remote) {
+        const config = record.config as {
+          mode: string;
+          connection?: "runner" | "url";
+          codeHash?: string;
+        };
+        const connection = config.connection ?? "runner";
+        const current = await db.currentConnection(rowId(agentId), connection);
+        if (!current.ready)
+          throw new Refused(
+            409,
+            connection === "url"
+              ? "the agent's URL isn't verified; verify it, then rate"
+              : "no runner is connected for this agent; start it, then rate",
+          );
+        code = config.codeHash ? { hash: config.codeHash, source: "declared" } : current.code;
+        if (!code)
+          throw new Refused(
+            409,
+            connection === "url"
+              ? "the Agent URL reported no version, so there is no code hash: report a version when you answer the verify challenge, or register a code hash"
+              : "the runner reported no code hash: update @bonded/runner, or register a code hash",
+          );
+        const passing = await db.passingCheck(rowId(agentId), {
+          mode: config.mode,
+          connection,
+          credentialId: current.credentialId,
+          codeHash: code.hash,
+        });
+        if (!passing) throw new Refused(409, NEEDS_CHECK);
+      }
       // One rating per agent per interval (an hour by default): an operator-run agent's comes
       // from its policy.
       const perAgentMs = remote ? limits.remote.perAgentMs : limits.perAgentMs;
@@ -486,6 +557,7 @@ export function selfServeRoutes(
         perAgentMs,
         dailyCap: limits.dailyRatings,
         ...(remote ? { remote: remoteQuota(limits.remote, now()) } : {}),
+        ...(code ? { code } : {}),
       });
       if ("refused" in queued)
         throw new Refused(
@@ -516,6 +588,8 @@ export function selfServeRoutes(
     if (!record?.enabled) throw new Refused(404, "register the agent for ratings first");
     if ((record.config as { kind?: string }).kind !== REMOTE_KIND)
       throw new Refused(409, "runner tokens are for agents registered as your own agent");
+    if ((record.config as { connection?: string }).connection === "url")
+      throw new Refused(409, "this agent is reached by its Agent URL; it has no runner");
     if ((await ownerOf(agentId)) !== who)
       throw new Refused(403, "only the agent's owner can manage its runner token");
     return { agentId, who, timestamp: input.timestamp };
@@ -615,17 +689,25 @@ export function perInterval(ms: number): string {
 
 /** The published library, read once: the base of every remote rating's size. */
 let published: { attacks: number; classes: number } | undefined;
+/** The published library's size: its attacks and attack classes. */
+export function publishedLibrary(): { attacks: number; classes: number } {
+  published ??= (() => {
+    const library = loadAttackLibrary();
+    return { attacks: library.length, classes: new Set(library.map((a) => a.class)).size };
+  })();
+  return published;
+}
 /**
  * The most a remote rating will be, and its time budget, before it is asked for
  * (remote-policy.ts). Its held-out set is at most `heldOutPerClass` variants for each attack class
  * the library has seeds for; a variant that can't be made is left out, so a rating can be smaller.
  * The rating's progress counts its real size once the set is made.
  */
-function expectedRating(repeats: number, policy: RemoteRatingPolicy = DEFAULT_REMOTE_POLICY) {
-  published ??= (() => {
-    const library = loadAttackLibrary();
-    return { attacks: library.length, classes: new Set(library.map((a) => a.class)).size };
-  })();
+export function expectedRating(
+  repeats: number,
+  policy: RemoteRatingPolicy = DEFAULT_REMOTE_POLICY,
+) {
+  const published = publishedLibrary();
   const plan = remoteRatingPlan(policy, {
     publishedAttacks: published.attacks,
     heldOut: published.classes * policy.heldOutPerClass,

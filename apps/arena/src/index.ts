@@ -164,3 +164,4 @@ export {
   SeededRandom,
 } from "./held-out-fresh.js";
 export * from "./gateway/index.js";
+export { publicAddress, safeGet, type SafeFetchOptions, UnsafeUrlError } from "./safe-fetch.js";
