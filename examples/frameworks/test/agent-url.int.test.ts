@@ -9,7 +9,8 @@ import {
   verifyAgentUrl,
 } from "@bonded/arena";
 import { signBondedRequest } from "@bonded/sdk/agent-url";
-import { agentUrlCodeHash } from "@bonded/shared/agent-url";
+import { agentUrlCodeHash, agentUrlVerifyProof } from "@bonded/shared/agent-url";
+import { createServer } from "node:http";
 import { MockLanguageModelV4 } from "ai/test";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { agentUrlServer } from "../src/agent-url.js";
@@ -86,7 +87,11 @@ describe("a TypeScript agent on createBondedHandler", () => {
         await post(url, { type: "verify", challenge: "challenge-from-a-test-0001" }),
       ).toMatchObject({
         status: 200,
-        body: { challenge: "challenge-from-a-test-0001", version: "2026.10.1" },
+        body: {
+          challenge: "challenge-from-a-test-0001",
+          proof: await agentUrlVerifyProof(SECRET, "challenge-from-a-test-0001"),
+          version: "2026.10.1",
+        },
       });
       const { episode, toolbox, gatewayEpisode, balance } = await arena.episode();
       const ack = await post(url, messageFor(episode));
@@ -136,7 +141,7 @@ async function deliveredEpisode(url: string) {
   const agent = new RemoteAgent({
     gateway: arena.gateway,
     sandbox: arena.sandbox,
-    transport: { kind: "url", url, secret: SECRET },
+    transport: { kind: "url", url, secret: SECRET, registration: url },
     mode: "tools",
   });
   return runEpisode(arena.sandbox, { agent, attack: attack() });
@@ -161,6 +166,28 @@ describe("the gateway's own Agent URL calls, to createBondedHandler", () => {
     } finally {
       server.closeAllConnections();
       await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
+  it("refuses an echo server that sends the challenge back without the proof", async () => {
+    // What a URL that doesn't hold the secret can do: reflect the body it was sent.
+    const echo = createServer((req, res) => {
+      let body = "";
+      req.on("data", (chunk: Buffer) => (body += chunk.toString()));
+      req.on("end", () => {
+        const { challenge } = JSON.parse(body) as { challenge: string };
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ challenge, proof: "0".repeat(64), version: "echo" }));
+      });
+    });
+    await new Promise<void>((resolve) => echo.listen(0, "127.0.0.1", resolve));
+    try {
+      const url = `http://127.0.0.1:${(echo.address() as AddressInfo).port}/`;
+      const result = await verifyAgentUrl(url, SECRET, { client: arena.gateway.agentUrls });
+      expect(result.ok).toBe(false);
+    } finally {
+      echo.closeAllConnections();
+      await new Promise((resolve) => echo.close(resolve));
     }
   });
 
@@ -221,7 +248,11 @@ describe.skipIf(!hasPython)("the Python example (examples/python-agent-url)", ()
         await post(url, { type: "verify", challenge: "challenge-from-a-test-0002" }),
       ).toMatchObject({
         status: 200,
-        body: { challenge: "challenge-from-a-test-0002", version: "py-1" },
+        body: {
+          challenge: "challenge-from-a-test-0002",
+          proof: await agentUrlVerifyProof(SECRET, "challenge-from-a-test-0002"),
+          version: "py-1",
+        },
       });
 
       const { episode, toolbox, gatewayEpisode, balance } = await arena.episode();

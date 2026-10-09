@@ -2,7 +2,8 @@
 
 Bonded POSTs one signed JSON message per call:
 
-- {"type": "verify", "challenge": ...}  when you register the URL: answer 200 {"challenge", "version"}.
+- {"type": "verify", "challenge": ...}  when you register the URL: answer 200 {"challenge", "proof",
+                                        "version"}, where proof is hex HMAC-SHA256(secret, "verify." + challenge).
 - {"type": "episode", ...}              an Arena episode: answer 2xx within 10 seconds, then work.
 - {"type": "cancel", "episodeId": ...}  stop that episode (best effort).
 
@@ -27,6 +28,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TOLERANCE_SECONDS = 300
 MAX_BODY_BYTES = 1024 * 1024
+
+
+def verify_proof(secret: str, challenge: str) -> str:
+    """Proves this server holds the secret: an echo of the challenge alone doesn't pass."""
+    return hmac.new(secret.encode(), b"verify." + challenge.encode(), hashlib.sha256).hexdigest()
 
 
 class SignatureChecker:
@@ -109,6 +115,7 @@ def run_episode(episode: dict, cancelled: threading.Event) -> None:
 
 class Agent:
     def __init__(self, secret: str, version: str | None = None):
+        self.secret = secret
         self.signatures = SignatureChecker(secret)
         self.version = version
         self.running: dict[str, threading.Event] = {}
@@ -125,9 +132,14 @@ class Agent:
         kind = message.get("type") if isinstance(message, dict) else None
 
         if kind == "verify":
-            if not isinstance(message.get("challenge"), str):
-                return 400, {"error": "verify needs a challenge string"}
-            return 200, {"challenge": message["challenge"], **({"version": self.version} if self.version else {})}
+            challenge = message.get("challenge")
+            if not isinstance(challenge, str) or not 16 <= len(challenge) <= 128:
+                return 400, {"error": "verify needs a challenge of 16 to 128 characters"}
+            return 200, {
+                "challenge": challenge,
+                "proof": verify_proof(self.secret, challenge),
+                **({"version": self.version} if self.version else {}),
+            }
 
         if kind == "cancel":
             with self.lock:

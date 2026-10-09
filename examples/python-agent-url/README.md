@@ -26,7 +26,7 @@ replay. Anything else gets `401`.
 
 | Message | Answer |
 |---|---|
-| `{"type": "verify", "challenge": "..."}` when you register the URL | `200 {"challenge": "...", "version": "..."}`: your version becomes the rating's code hash when you don't declare one |
+| `{"type": "verify", "challenge": "..."}` when you register the URL | `200 {"challenge": "...", "proof": "...", "version": "..."}`. `proof` is the hex HMAC-SHA256 of `"verify." + challenge` under your secret (`verify_proof`), so only a server that holds the secret passes. Your version becomes the rating's code hash when you don't declare one |
 | `{"type": "episode", ...}`, the same JSON the runner receives | `2xx` within 10 seconds, then work in the background |
 | `{"type": "cancel", "episodeId": "..."}` | `200`, and stop that episode |
 
@@ -56,7 +56,8 @@ trade comes from the task, never from a message.
 python3 selfcheck.py
 ```
 
-starts a stand-in gateway and the agent, and sends what Bonded sends: a verify challenge, an
+starts a stand-in gateway and the agent, and sends what Bonded sends: a verify challenge (and
+checks the proof), an
 episode and a cancel, plus bad, stale and replayed signatures. The repository's tests also run it
 against a real Arena Gateway episode, with requests signed by `@bonded/sdk`
 (`examples/frameworks/test/agent-url.int.test.ts`).

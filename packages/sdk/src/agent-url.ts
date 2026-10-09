@@ -4,12 +4,15 @@ import {
   AGENT_URL_TOLERANCE_SECONDS,
   AgentUrlReplayGuard,
   type AgentUrlMessage,
+  answerAgentUrlVerify,
   verifyAgentUrlRequest,
 } from "@bonded/shared/agent-url";
 import type { BondedEpisode } from "./episode.js";
 import { finishEpisode } from "./done.js";
 import type { EpisodeUsage } from "./mcp.js";
 
+/** For your own handler: the proof a verify answer carries, and the whole answer. */
+export { agentUrlVerifyProof, answerAgentUrlVerify } from "@bonded/shared/agent-url";
 export {
   SIGNATURE_HEADER,
   SIGNATURE_TOLERANCE_SECONDS,
@@ -23,7 +26,9 @@ export {
  * Agent URL mode: instead of running the Bonded runner, an agent serves one HTTPS endpoint and
  * Bonded calls it once per episode. Every call is a signed `POST` of one JSON message:
  *
- * - `{ type: "verify", challenge }` when the URL is registered: answer `200 { challenge, version? }`.
+ * - `{ type: "verify", challenge }` when the URL is registered: answer
+ *   `200 { challenge, proof, version? }`, where `proof` is the hex HMAC-SHA256 of
+ *   `"verify." + challenge` under the secret.
  * - `{ type: "episode", ... }` (the runner protocol's `EpisodeMessage`): answer `2xx` within
  *   10 seconds, then work: call the episode's tools and `POST {done}` when finished.
  * - `{ type: "cancel", episodeId }`: stop that episode (best effort).
@@ -116,6 +121,7 @@ export function createBondedHandler(options: BondedHandlerOptions): BondedHandle
     options.onError ??
     ((error: unknown, episode: BondedEpisode) =>
       console.error(`Bonded episode ${episode.episodeId} failed:`, error));
+  const secrets = Array.isArray(options.secret) ? options.secret : [options.secret];
   /** Signatures already accepted, until they fall out of the window: replays are refused. */
   const replay = new AgentUrlReplayGuard(tolerance);
   const running = new Map<string, AbortController>();
@@ -178,11 +184,16 @@ export function createBondedHandler(options: BondedHandlerOptions): BondedHandle
     if (!check.ok) return json(check.status, { error: check.reason });
     const message = check.message;
 
+    // The answer proves the secret (an HMAC of the challenge), so an echo server can't pass.
     if (message.type === "verify")
-      return json(200, {
-        challenge: message.challenge,
-        ...(options.version ? { version: options.version } : {}),
-      });
+      return json(
+        200,
+        await answerAgentUrlVerify(
+          await signingSecret(secrets, body, request.headers, now(), tolerance),
+          message,
+          options.version,
+        ),
+      );
 
     if (message.type === "cancel") {
       const controller = running.get(message.episodeId);
@@ -203,6 +214,25 @@ export function createBondedHandler(options: BondedHandlerOptions): BondedHandle
     else options.waitUntil?.(work);
     return json(202, { ok: true, episodeId: episode.episodeId });
   };
+}
+
+/**
+ * Which of the secrets signed a request already verified (while a secret rotates, the verify
+ * proof must be made with the one Bonded holds).
+ */
+async function signingSecret(
+  secrets: string[],
+  body: string,
+  headers: Headers,
+  nowMs: number,
+  toleranceSeconds: number,
+): Promise<string> {
+  if (secrets.length === 1) return secrets[0]!;
+  for (const secret of secrets) {
+    const check = await verifyAgentUrlRequest({ secret, body, headers, nowMs, toleranceSeconds });
+    if (check.ok) return secret;
+  }
+  return secrets[0]!;
 }
 
 /** The episode as the agent sees it (the same shape `fromBondedEnv` returns). */

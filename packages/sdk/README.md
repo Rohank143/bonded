@@ -346,7 +346,9 @@ What the handler does with each request:
    must match, compared in constant time. `secret` may be a list while you rotate it. A signature
    it has accepted before is refused as a replay. Failures answer `401`, and a body that isn't one
    of Bonded's messages `400`; nothing runs.
-2. `{ type: "verify", challenge }`: answers `200 { challenge, version }`.
+2. `{ type: "verify", challenge }`: answers `200 { challenge, proof, version }`. `proof` is the
+   hex HMAC-SHA256 of `"verify." + challenge` under the secret (`agentUrlVerifyProof`), so only a
+   server holding the secret passes; an echo server doesn't.
 3. `{ type: "episode", ... }`: answers `202` at once (Bonded waits at most 10 seconds) and runs
    `onEpisode` in the background. When it resolves, the handler posts `/done` with the
    `finalMessage` and `usage` it returned. If it throws, `/done` is still posted, saying the agent

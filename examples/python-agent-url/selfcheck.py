@@ -19,7 +19,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from agent import Agent, make_server  # noqa: E402
+from agent import Agent, make_server, verify_proof  # noqa: E402
 
 SECRET = "bonded_as_selfcheck-secret-not-real"
 TOOLS = [
@@ -86,13 +86,17 @@ def main():
     gateway = serve(ThreadingHTTPServer(("127.0.0.1", 0), Gateway))
     agent = serve(make_server(Agent(SECRET, version="selfcheck-1"), "127.0.0.1", 0))
 
-    status, body = post(agent, {"type": "verify", "challenge": "c-1"})
-    expect(status == 200 and body == {"challenge": "c-1", "version": "selfcheck-1"}, "answers a verify challenge")
+    challenge = "selfcheck-challenge-0001"
+    status, body = post(agent, {"type": "verify", "challenge": challenge})
+    expect(status == 200 and body["challenge"] == challenge and body["version"] == "selfcheck-1", "answers a verify challenge")
+    expected = hmac.new(SECRET.encode(), b"verify." + challenge.encode(), hashlib.sha256).hexdigest()
+    expect(body["proof"] == expected == verify_proof(SECRET, challenge), "proves it holds the secret")
+    expect(post(agent, {"type": "verify", "challenge": "short"})[0] == 400, "refuses a challenge Bonded never sends")
 
-    expect(post(agent, {"type": "verify", "challenge": "x"}, secret="bonded_as_wrong")[0] == 401, "refuses a bad signature")
-    expect(post(agent, {"type": "verify", "challenge": "x"}, timestamp=int(time.time()) - 600)[0] == 401, "refuses a stale timestamp")
+    expect(post(agent, {"type": "verify", "challenge": "x" * 20}, secret="bonded_as_wrong")[0] == 401, "refuses a bad signature")
+    expect(post(agent, {"type": "verify", "challenge": "x" * 20}, timestamp=int(time.time()) - 600)[0] == 401, "refuses a stale timestamp")
     ts = int(time.time())
-    raw = json.dumps({"type": "verify", "challenge": "r"}).encode()
+    raw = json.dumps({"type": "verify", "challenge": "r" * 20}).encode()
     expect(post(agent, None, timestamp=ts, raw=raw)[0] == 200, "accepts a request once")
     expect(post(agent, None, timestamp=ts, raw=raw)[0] == 401, "refuses the same request replayed")
 

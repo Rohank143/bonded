@@ -9,6 +9,7 @@ import {
   verifyBondedSignature,
 } from "../src/agent-url.js";
 import type { BondedEpisode } from "../src/index.js";
+import { agentUrlVerifyProof, checkAgentUrlVerifyProof } from "@bonded/shared/agent-url";
 
 /** A verify challenge as the gateway sends it (16 to 128 characters). */
 const CHALLENGE = "challenge-0123456789abcdef";
@@ -127,15 +128,34 @@ describe("signatures", () => {
 });
 
 describe("createBondedHandler", () => {
-  it("answers a verify challenge with the agent's version", async () => {
+  it("answers a verify challenge with a proof of the secret and the agent's version", async () => {
     const { handler } = setup({ version: "v1.2.3" });
     const res = await handler(await signed({ type: "verify", challenge: CHALLENGE }));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ challenge: CHALLENGE, version: "v1.2.3" });
+    const answer = (await res.json()) as { challenge: string; proof: string };
+    expect(answer).toEqual({
+      challenge: CHALLENGE,
+      proof: await agentUrlVerifyProof(SECRET, CHALLENGE),
+      version: "v1.2.3",
+    });
+    // The gateway's own check accepts it, and not under another secret.
+    expect(await checkAgentUrlVerifyProof(SECRET, CHALLENGE, answer)).toBe(true);
+    expect(await checkAgentUrlVerifyProof("bonded_as_someone-else", CHALLENGE, answer)).toBe(false);
     const noVersion = setup().handler;
     expect(
       await (await noVersion(await signed({ type: "verify", challenge: CHALLENGE }))).json(),
-    ).toEqual({ challenge: CHALLENGE });
+    ).toEqual({ challenge: CHALLENGE, proof: await agentUrlVerifyProof(SECRET, CHALLENGE) });
+  });
+
+  it("while a secret rotates, proves with the secret that signed the call", async () => {
+    const OLD = "bonded_as_test-secret-being-rotated-out";
+    const { handler } = setup({ secret: [SECRET, OLD] });
+    const res = await handler(
+      await signed({ type: "verify", challenge: CHALLENGE }, { secret: OLD }),
+    );
+    expect(((await res.json()) as { proof: string }).proof).toBe(
+      await agentUrlVerifyProof(OLD, CHALLENGE),
+    );
   });
 
   it("refuses bad, stale, missing and replayed signatures before reading the message", async () => {
@@ -313,7 +333,11 @@ describe("toNodeHandler", () => {
     const url = await listen(toNodeHandler(handler));
     const res = await post(url, { type: "verify", challenge: `node-${CHALLENGE}` });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ challenge: `node-${CHALLENGE}`, version: "abc" });
+    expect(await res.json()).toEqual({
+      challenge: `node-${CHALLENGE}`,
+      proof: await agentUrlVerifyProof(SECRET, `node-${CHALLENGE}`),
+      version: "abc",
+    });
     const bad = await fetch(url, {
       method: "POST",
       body: "{}",

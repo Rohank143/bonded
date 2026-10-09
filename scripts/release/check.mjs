@@ -39,7 +39,9 @@ const challenge = "release-check-challenge-0001";
 const body = JSON.stringify({ type: "verify", challenge });
 const signed = await agentUrl.signBondedRequest(secret, body);
 const ok = await handler(new Request("http://x/", { method: "POST", headers: signed, body }));
-assert.deepEqual(await ok.json(), { challenge, version: "check" });
+const answer = await ok.json();
+assert.equal(answer.version, "check");
+assert.ok(await sharedAgentUrl.checkAgentUrlVerifyProof(secret, challenge, answer), "the answer proves the secret");
 const bad = await handler(new Request("http://x/", { method: "POST", headers: { ...signed, "bonded-signature": "v1=" + "0".repeat(64) }, body }));
 assert.equal(bad.status, 401);
 
