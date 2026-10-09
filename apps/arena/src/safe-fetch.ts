@@ -33,7 +33,13 @@ for (const [network, prefix] of [
   NOT_PUBLIC.addSubnet(network, prefix, "ipv4");
 for (const [network, prefix] of [
   ["::", 128],
+  // IPv4-compatible (deprecated), NAT64 (well-known and local-use), Teredo and 6to4: each can
+  // carry an IPv4 address, private ones included.
+  ["::", 96],
   ["64:ff9b::", 96],
+  ["64:ff9b:1::", 48],
+  ["2001::", 32],
+  ["2002::", 16],
   ["100::", 64],
   ["2001:db8::", 32],
   ["fc00::", 7],
@@ -64,6 +70,9 @@ export class UnsafeUrlError extends Error {}
 /** The fetch ran past its deadline. */
 export class FetchTimeoutError extends Error {}
 
+/** The caller's `admit` refused the addresses the name resolved to (a rate limit). */
+export class AddressNotAdmittedError extends Error {}
+
 export interface SafeFetchOptions {
   /** Deadline for the whole fetch, from the name lookup to the last byte of the body. */
   timeoutMs: number;
@@ -84,6 +93,11 @@ export interface SafeRequestOptions extends SafeFetchOptions {
   method: "GET" | "POST";
   headers?: Record<string, string>;
   body?: string;
+  /**
+   * Called at connect time with the public addresses the name resolved to: return a reason to
+   * refuse them (e.g. a per-address rate limit), or undefined to go ahead.
+   */
+  admit?: (addresses: string[]) => string | undefined;
 }
 
 /**
@@ -105,6 +119,9 @@ export function safeRequest(
   const literal = url.hostname.replace(/^\[|\]$/g, "");
   if (isIP(literal) && !publicAddress(literal, options.allowLoopback))
     return Promise.reject(new UnsafeUrlError("the URL points at a private or internal address"));
+  // A literal address is never looked up, so it is admitted here.
+  const literalRefused = isIP(literal) ? options.admit?.([literal]) : undefined;
+  if (literalRefused) return Promise.reject(new AddressNotAdmittedError(literalRefused));
 
   const lookup = (
     hostname: string,
@@ -119,6 +136,8 @@ export function safeRequest(
           new UnsafeUrlError("the name resolves to a private or internal address"),
           "",
         );
+      const refused = options.admit?.(list.map((a) => a.address));
+      if (refused) return callback(new AddressNotAdmittedError(refused), "");
       if (lookupOptions.all) callback(null, list);
       else callback(null, list[0]!.address, list[0]!.family);
     });
