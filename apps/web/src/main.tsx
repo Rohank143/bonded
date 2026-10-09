@@ -21,6 +21,7 @@ import { Leaderboard } from "./pages/Leaderboard";
 import { Bounties } from "./pages/Bounties";
 import { NotFound } from "./pages/NotFound";
 import { NewAgent } from "./pages/NewAgent";
+import { TestAgent } from "./pages/TestAgent";
 import { Agents } from "./pages/Agents";
 import { Overview } from "./pages/Overview";
 import { AttackDetail, Attacks } from "./pages/Attacks";
@@ -40,6 +41,7 @@ const router = createBrowserRouter([
       { path: "/attacks/:id", element: <AttackDetail /> },
       { path: "/agents", element: <Agents /> },
       { path: "/agents/new", element: <NewAgent /> },
+      { path: "/agents/test", element: <TestAgent /> },
       { path: "/agents/:id", element: <Agent /> },
       { path: "/vaults", element: <Vaults /> },
       { path: "/vaults/:address", element: <Vault /> },

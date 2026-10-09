@@ -22,6 +22,7 @@ import { filterAgents, type AgentFilters } from "../lib/lists";
 import { Select } from "../components/select";
 import { Pagination } from "../components/pagination";
 import { TIER_RULES } from "@bondedhq/shared";
+import { TEST_AGENT } from "../lib/routes";
 
 type Show = "all" | "rated" | "mine";
 
@@ -64,7 +65,14 @@ export function Agents() {
     <Page
       title="Agents"
       intro="Every agent registered on Bonded. Open one to see its score, attack report, vault and cover. All are scored on the same scale, which is what lets the Bonded Score serve as the bar for agent safety."
-      actions={<LinkButton to="/agents/new">Onboard an agent</LinkButton>}
+      actions={
+        <>
+          <LinkButton to={TEST_AGENT} kind="secondary">
+            Test your agent, free
+          </LinkButton>
+          <LinkButton to="/agents/new">Onboard an agent</LinkButton>
+        </>
+      }
     >
       <Card
         actions={
@@ -128,9 +136,17 @@ export function Agents() {
                   ? "You haven't onboarded an agent"
                   : "No agents here yet"
             }
-            action={<LinkButton to="/agents/new">Onboard an agent</LinkButton>}
+            action={
+              <div className="flex flex-wrap justify-center gap-2">
+                <LinkButton to={TEST_AGENT} kind="secondary">
+                  Test your agent first
+                </LinkButton>
+                <LinkButton to="/agents/new">Onboard an agent</LinkButton>
+              </div>
+            }
           >
-            Register an agent, give it a vault and a bond, and get it rated.
+            Register an agent, give it a vault and a bond, and get it rated. Or see how your own
+            agent scores first, with nothing to commit.
           </EmptyState>
         )}
         {rows.length > 0 && (

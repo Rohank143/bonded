@@ -2,18 +2,23 @@ import type { BindingLevel, RemoteMode, SelfServeAgentKind, SelfServeKind } from
 import type { AttackSpec } from "@bondedhq/shared";
 import { apiUrl } from "../config";
 import type { EpisodeCard, EpisodeCounts, Outcome } from "./events";
+import type { AgentUrlInfo, CheckSummary, CodeHashInfo, Connection } from "./byoa-api";
 
-/** Error from the Bonded API, carrying its HTTP status and the API's error message. */
+/**
+ * Error from the Bonded API, carrying its HTTP status, the API's error message and the rest of
+ * its error body (for example when a refused request can be tried again).
+ */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly details: Record<string, unknown> = {},
   ) {
     super(message);
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiUrl}${path}`, init);
   const body: unknown = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -21,7 +26,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       typeof body === "object" && body && "error" in body
         ? String(body.error)
         : response.statusText;
-    throw new ApiError(response.status, message || `request failed (${response.status})`);
+    throw new ApiError(
+      response.status,
+      message || `request failed (${response.status})`,
+      typeof body === "object" && body ? (body as Record<string, unknown>) : {},
+    );
   }
   return body as T;
 }
@@ -265,7 +274,7 @@ export interface RunRecord extends RatingFacts {
   /** Episodes published so far, of how many, and a rough estimate of the seconds left. */
   progress?: { done: number; total: number | null; etaSeconds: number | null };
   id: string;
-  status: "queued" | "running" | "done" | "failed";
+  status: "queued" | "starting" | "running" | "done" | "failed";
   error: string | null;
   created_at: string;
   report: Report | null;
@@ -415,12 +424,20 @@ export interface RunnerRecord {
   attempts?: RatingAttempt[];
   /** The Arena Gateway's public URL, for the runner command; null when it isn't configured. */
   gatewayUrl: string | null;
+  /** How the agent is connected: its runner, or Bonded calling its Agent URL. Runner if absent. */
+  connection?: Connection;
+  /** The registered Agent URL and its last ownership check, when it has one. */
+  agentUrl?: AgentUrlInfo | null;
+  /** The latest connection check of the current connection, if any. */
+  lastCheck?: CheckSummary | null;
+  /** The code hash ratings will record: declared, or reported by the runner or the URL. */
+  codeHash?: CodeHashInfo | null;
 }
 
 /** One rating of an agent, as its history shows it. */
 export interface RatingAttempt {
   runId: string;
-  status: "queued" | "running" | "done" | "failed";
+  status: "queued" | "starting" | "running" | "done" | "failed";
   /** The system's own reason. */
   error: string | null;
   /** It stopped because of the agent. */
@@ -475,7 +492,12 @@ export const api = {
     }>("/leaderboard"),
   score: (agentId: string) => request<ScoreRecord>(`/agents/${agentId}/score`),
   tee: (agentId: string) => request<TeeCheckRecord>(`/agents/${agentId}/tee`),
-  run: (runId: string) => request<RunRecord>(`/arena/runs/${runId}`),
+  /** A run. A preview's is shown only to its owner: pass their session. */
+  run: (runId: string, session?: string) =>
+    request<RunRecord>(
+      `/arena/runs/${runId}`,
+      session ? { headers: { Authorization: `Bearer ${session}` } } : undefined,
+    ),
   startRun: (token: string, agentId: string) =>
     post<{ runId: string }>("/arena/runs", token, { agentId }),
   /** No operator token needed; without one the API caps cover at 20,000 tUSDG (testnet). */
@@ -497,6 +519,8 @@ export const api = {
     protection?: "vault" | "module";
     codeHash?: string;
     mode?: RemoteMode;
+    connection?: "runner" | "url";
+    previewId?: string;
     tee?: { url: string; composeHash: string };
     timestamp: number;
     signature: string;

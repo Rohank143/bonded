@@ -57,7 +57,7 @@ describe("registerForRatings, for your own agent", () => {
     const { sign } = signer();
     await expect(
       registerForRatings(sign, "12", { vault, kind: "remote", mandate }),
-    ).rejects.toThrow(/code hash and mode/);
+    ).rejects.toThrow(/mode is missing/);
     expect(sign).not.toHaveBeenCalled();
   });
 });

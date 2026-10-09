@@ -6,7 +6,7 @@ import { deployment } from "../config";
 import { useAgents, useClaims, waterfall } from "../lib/chain";
 import { bps, short, usd } from "../lib/format";
 import { showcaseAgents } from "../lib/showcase";
-import { APP_HOME } from "../lib/routes";
+import { APP_HOME, TEST_AGENT } from "../lib/routes";
 import { MANDATE_TOKENS } from "../lib/onboarding";
 import { ScoreRing, buttonClass, tierTone } from "../components/ui";
 import { Token, TokenChip, withTokens } from "../components/token";
@@ -70,10 +70,13 @@ function Hero() {
           <a href="#how" className={buttonClass("primary", "lg")}>
             See how it works <span aria-hidden>↓</span>
           </a>
-          <a href="#numbers" className={buttonClass("secondary", "lg")}>
-            Live numbers
-          </a>
+          <Link to={TEST_AGENT} className={buttonClass("secondary", "lg")}>
+            Test your agent, free
+          </Link>
         </div>
+        <p className="mt-3 text-sm text-muted">
+          Have an agent? See how it scores, free. No vault, no bond, no tokens.
+        </p>
       </div>
       <HeroProduct />
     </section>
