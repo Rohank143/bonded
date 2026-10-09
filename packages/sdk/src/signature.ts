@@ -6,7 +6,7 @@
  * - `bonded-signature`: `v1=<hex HMAC-SHA256(secret, "<timestamp>.<raw body>")>` (up to four,
  *   comma-separated, while a secret is rotated).
  *
- * The scheme lives in @bonded/shared (`@bonded/shared/agent-url`, which the gateway signs with);
+ * The scheme lives in @bondedhq/shared (`@bondedhq/shared/agent-url`, which the gateway signs with);
  * these are the SDK's names for it. Web Crypto only, so it runs in Node, Bun, Deno, Cloudflare
  * Workers and edge runtimes, and the comparison is Web Crypto's constant-time HMAC verify.
  */
@@ -16,7 +16,7 @@ import {
   AGENT_URL_TOLERANCE_SECONDS,
   signAgentUrlRequest,
   verifyAgentUrlRequest,
-} from "@bonded/shared/agent-url";
+} from "@bondedhq/shared/agent-url";
 
 export const SIGNATURE_HEADER = AGENT_URL_SIGNATURE_HEADER;
 export const TIMESTAMP_HEADER = AGENT_URL_TIMESTAMP_HEADER;

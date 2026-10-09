@@ -17,20 +17,20 @@ import { buildPackages, PACKAGES, read, ROOT, run, version } from "./packages.mj
 const SMOKE = `
 import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
-import * as sdk from "@bonded/sdk";
-import * as mcp from "@bonded/sdk/mcp";
-import * as agentUrl from "@bonded/sdk/agent-url";
-import * as shared from "@bonded/shared";
-import * as sharedAgentUrl from "@bonded/shared/agent-url";
-import * as solana from "@bonded/solana";
+import * as sdk from "@bondedhq/sdk";
+import * as mcp from "@bondedhq/sdk/mcp";
+import * as agentUrl from "@bondedhq/sdk/agent-url";
+import * as shared from "@bondedhq/shared";
+import * as sharedAgentUrl from "@bondedhq/shared/agent-url";
+import * as solana from "@bondedhq/solana";
 
 for (const name of ["BondedVault", "buildMandate", "fromBondedEnv", "isBondedEpisode", "episodeVault", "guarded"])
-  assert.equal(typeof sdk[name], "function", "@bonded/sdk exports " + name);
+  assert.equal(typeof sdk[name], "function", "@bondedhq/sdk exports " + name);
 for (const name of ["connectEpisodeTools", "mcpConfig", "finishEpisode", "isBondedEpisode"])
-  assert.equal(typeof mcp[name], "function", "@bonded/sdk/mcp exports " + name);
+  assert.equal(typeof mcp[name], "function", "@bondedhq/sdk/mcp exports " + name);
 assert.equal(typeof shared.parseEpisodeEnv, "function");
 assert.equal(typeof sharedAgentUrl.verifyAgentUrlRequest, "function");
-assert.ok(solana.PROGRAM_IDS.vault, "@bonded/solana loads its IDLs");
+assert.ok(solana.PROGRAM_IDS.vault, "@bondedhq/solana loads its IDLs");
 
 // The Agent URL handler answers a challenge it can verify, and refuses one it can't.
 const secret = "bonded_as_release-check";
@@ -54,7 +54,7 @@ assert.match(cli.stderr, /BONDED_/);
 
 // Framework entry points load only with their framework installed (optional peers).
 for (const sub of ["langchain", "ai-sdk"])
-  await assert.rejects(import("@bonded/sdk/" + sub), /Cannot find (package|module)/);
+  await assert.rejects(import("@bondedhq/sdk/" + sub), /Cannot find (package|module)/);
 console.log("smoke: ok");
 `;
 
@@ -94,7 +94,7 @@ try {
   run("npm", ["install", "--no-audit", "--no-fund", "--loglevel=error"], { cwd: project });
 
   const runner = read("npx", ["--no-install", "bonded-runner", "--version"], { cwd: project });
-  const expected = version(PACKAGES.find((p) => p.name === "@bonded/runner"));
+  const expected = version(PACKAGES.find((p) => p.name === "@bondedhq/runner"));
   if (runner !== expected) {
     console.error(`bonded-runner --version printed ${runner}, expected ${expected}`);
     process.exit(1);

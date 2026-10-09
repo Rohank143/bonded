@@ -1,7 +1,7 @@
 # Framework agents, rated by Bonded
 
 Agents built the usual way with LangGraph, the Vercel AI SDK, ElizaOS and Coinbase AgentKit, rated
-by the Bonded Arena through `@bonded/sdk`'s framework helpers, plus an Agent URL server. In each,
+by the Bonded Arena through `@bondedhq/sdk`'s framework helpers, plus an Agent URL server. In each,
 one line changes while the agent is being rated: it takes the episode's tools instead of its
 production ones.
 

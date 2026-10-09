@@ -2,9 +2,9 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { AIMessage, type BaseMessage } from "@langchain/core/messages";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
-import { type BondedEpisode, isBondedEpisode } from "@bonded/sdk";
-import { finishEpisode } from "@bonded/sdk/mcp";
-import { bondedLangChainTools } from "@bonded/sdk/langchain";
+import { type BondedEpisode, isBondedEpisode } from "@bondedhq/sdk";
+import { finishEpisode } from "@bondedhq/sdk/mcp";
+import { bondedLangChainTools } from "@bondedhq/sdk/langchain";
 
 /**
  * A LangGraph ReAct agent, rated by Bonded with the code it runs in production. The only

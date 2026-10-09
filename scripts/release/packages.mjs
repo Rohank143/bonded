@@ -11,10 +11,10 @@ export const ROOT = fileURLToPath(new URL("../../", import.meta.url));
  * (`workspace:^` ranges become `^<version>` in the published manifest).
  */
 export const PACKAGES = [
-  { name: "@bonded/shared", dir: "packages/shared" },
-  { name: "@bonded/solana", dir: "packages/solana" },
-  { name: "@bonded/sdk", dir: "packages/sdk" },
-  { name: "@bonded/runner", dir: "apps/runner" },
+  { name: "@bondedhq/shared", dir: "packages/shared" },
+  { name: "@bondedhq/solana", dir: "packages/solana" },
+  { name: "@bondedhq/sdk", dir: "packages/sdk" },
+  { name: "@bondedhq/runner", dir: "apps/runner" },
 ];
 
 export function version(pkg) {

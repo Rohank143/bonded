@@ -9,7 +9,7 @@ import {
   verifyBondedSignature,
 } from "../src/agent-url.js";
 import type { BondedEpisode } from "../src/index.js";
-import { agentUrlVerifyProof, checkAgentUrlVerifyProof } from "@bonded/shared/agent-url";
+import { agentUrlVerifyProof, checkAgentUrlVerifyProof } from "@bondedhq/shared/agent-url";
 
 /** A verify challenge as the gateway sends it (16 to 128 characters). */
 const CHALLENGE = "challenge-0123456789abcdef";

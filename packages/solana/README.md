@@ -1,4 +1,4 @@
-# @bonded/solana
+# @bondedhq/solana
 
 TypeScript client for Bonded's Solana programs: the registry, the Mandate Vault and the cover pool.
 
@@ -14,12 +14,12 @@ TypeScript client for Bonded's Solana programs: the registry, the Mandate Vault 
 
 ```ts
 import { Connection } from "@solana/web3.js";
-import { fetchVaults } from "@bonded/solana";
+import { fetchVaults } from "@bondedhq/solana";
 
 const vaults = await fetchVaults(new Connection("https://api.devnet.solana.com"));
 ```
 
-To trade through a vault from Solana Agent Kit, use `@bonded/sdk/solana-agent-kit`, which builds on
+To trade through a vault from Solana Agent Kit, use `@bondedhq/sdk/solana-agent-kit`, which builds on
 this package.
 
 ESM only, Node 22 or later. See the [Bonded repository](https://github.com/ddboy19912/bonded) for

@@ -1,6 +1,6 @@
 import { type ActionProvider, AgentKit, type WalletProvider } from "@coinbase/agentkit";
-import { type BondedEpisode, isBondedEpisode } from "@bonded/sdk";
-import { bondedEpisodeActionProvider } from "@bonded/sdk/agentkit";
+import { type BondedEpisode, isBondedEpisode } from "@bondedhq/sdk";
+import { bondedEpisodeActionProvider } from "@bondedhq/sdk/agentkit";
 
 /**
  * Coinbase AgentKit with the episode's tools while it is being rated, and its own action
