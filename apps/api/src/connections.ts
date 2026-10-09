@@ -17,7 +17,14 @@ import type { Hex } from "viem";
 
 /** Through the operator's runner (its key), or by calling the agent's own HTTPS endpoint. */
 export type AgentConnection =
-  { kind: "runner"; key: string } | { kind: "url"; url: string; secret: string };
+  | { kind: "runner"; key: string }
+  | {
+      kind: "url";
+      url: string;
+      secret: string;
+      /** What it is registered to ("<chain>:<agent id>" or "preview:<id>"): its own rate limit. */
+      registration: string;
+    };
 
 /** What a connection check streams while it runs (docs/BRING-YOUR-OWN-AGENT.md). */
 export type ConnectionCheckEvent =
@@ -71,7 +78,7 @@ export type AgentUrlVerifier = (url: string, secret: string) => Promise<AgentUrl
 
 /** Why a worker can't run connection checks (no gateway, or no check support in it). */
 export const CHECKS_UNAVAILABLE =
-  "Connection checks aren't available on this rating service yet: the Arena Gateway isn't running here";
+  "Connection checks aren't available on this rating service yet: the Arena Gateway isn't running here.";
 
 /**
  * Verify an Agent URL with the gateway's `verifyAgentUrl`: a signed `verify` challenge the agent
@@ -124,15 +131,26 @@ export function gatewayCheckRunner(gateway: ArenaGateway): ConnectionCheckRunner
  * Seam: the code hash a runner reported in its hello (`codeHash` and `codeSource`), read
  * defensively so a runner that reports none (or something malformed) just reports nothing.
  */
-export function reportedCode(hello: unknown): { codeHash: string; codeSource: string } | undefined {
+export function reportedCode(
+  hello: unknown,
+): { codeHash: string; codeSource: string; codeDetail?: string } | undefined {
   if (!hello || typeof hello !== "object") return undefined;
-  const h = hello as { codeHash?: unknown; codeSource?: unknown };
+  const h = hello as { codeHash?: unknown; codeSource?: unknown; codeDetail?: unknown };
   if (typeof h.codeHash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(h.codeHash)) return undefined;
   const source =
     typeof h.codeSource === "string" && /^[a-z][a-z0-9-]{0,31}$/.test(h.codeSource)
       ? h.codeSource
       : "runner";
-  return { codeHash: h.codeHash.toLowerCase(), codeSource: source };
+  // What it was made from (a commit, an image digest), when the runner says: display only.
+  const detail =
+    typeof h.codeDetail === "string" && /^[\x20-\x7e]{1,200}$/.test(h.codeDetail)
+      ? h.codeDetail
+      : undefined;
+  return {
+    codeHash: h.codeHash.toLowerCase(),
+    codeSource: source,
+    ...(detail ? { codeDetail: detail } : {}),
+  };
 }
 
 /** The code hash of an Agent URL that reported `version`: keccak256("url:" + version). */
@@ -142,7 +160,7 @@ export function urlCodeHash(version: string): Hex {
 
 /** Why a rating can't be queued without a check. */
 export const NEEDS_CHECK =
-  "run a connection check first: a rating needs a passing check of this exact connection (the same runner token or Agent URL, mode and code) in the last 24 hours";
+  "Run a connection check first: a rating needs a passing check of this exact connection (the same runner token or Agent URL, mode and code) in the last 24 hours.";
 
 /** How long a passing check lets a rating be queued. */
 const CHECK_VALID_MS = 86_400_000;
@@ -153,7 +171,7 @@ export function codeInfo(code: RatedCode | undefined, version?: string | null) {
     ? {
         value: code.hash.toLowerCase(),
         source: code.source,
-        detail: code.source === "url-version" ? (version ?? null) : null,
+        detail: code.source === "url-version" ? (version ?? null) : (code.detail ?? null),
         // Who says so: never verified by Bonded, only declared or reported.
         reportedBy:
           code.source === "declared"
@@ -186,4 +204,11 @@ export function checkSummary(k: ConnectionCheckRecord) {
     problems: result?.problems ?? [],
     warnings: result?.warnings ?? [],
   };
+}
+
+/** A check as anyone may see it: its outcome and the problems in words, no id, no output. */
+export function publicCheckSummary(k: ConnectionCheckRecord) {
+  const { id: _id, ...rest } = checkSummary(k);
+  void _id;
+  return rest;
 }

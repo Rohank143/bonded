@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type { Context, Hono } from "hono";
 import { z } from "zod";
 import {
@@ -23,7 +23,7 @@ import type { ServiceChain } from "@bonded/keeper";
 import { recoverMessageAddress, type Hex } from "viem";
 import { Refused, handle } from "./refused.js";
 import { RateLimiter, clientAddress } from "./rate-limit.js";
-import type { SessionWallet } from "./sessions.js";
+import { signedRequestKey, type SessionWallet } from "./sessions.js";
 import { helloProblem, newRunnerToken, runnerTokenHash } from "./runners.js";
 import { SECRET_KEY_MISSING, agentUrlContext, type SecretBox } from "./secrets.js";
 import {
@@ -59,6 +59,13 @@ export { outboundUrlProblem, ownDomainsFrom } from "./outbound.js";
  * is rate-limited; ownership is the preview's wallet, or the agent's owner in the registry now.
  */
 
+/** A message as a full sentence: capitalised, ending with a stop. */
+export const sentence = (text: string) => {
+  const t = text.trim();
+  const s = t.charAt(0).toUpperCase() + t.slice(1);
+  return /[.!?]$/.test(s) ? s : `${s}.`;
+};
+
 /** Shown with every preview and its report. */
 export const PREVIEW_LABEL = "Preview: not on chain, not insurable";
 
@@ -75,11 +82,15 @@ export interface OwnerRouteOptions {
   secrets?: SecretBox;
   email?: EmailSender;
   verifyAgentUrl: AgentUrlVerifier;
+  /** The gateway's own rules for an Agent URL (ports, hosts), checked when it is registered. */
+  urlProblem?: (url: string) => string | undefined;
   ownDomains: readonly string[];
   gatewayUrl?: string;
   /** Agent URLs may be plain http on this machine (local demos and tests only). */
   allowLoopbackUrls?: boolean;
   streams: PollStreams;
+  /** Connection checks one client address may ask for per hour (default 30). */
+  checksPerClientHourly?: number;
 }
 
 /** An agent or a preview, as these routes act on it. */
@@ -113,10 +124,10 @@ const signed = z.object({
   timestamp: z.number().int().positive(),
   signature: z.string().regex(/^0x[0-9a-fA-F]{130}$/),
 });
+/** Connection checks one client address may ask for per hour, across wallets. */
+const CHECKS_PER_CLIENT_HOURLY = 30;
 /** At most this many Agent URL verifications per URL host per hour: each one calls out. */
 const VERIFY_PER_HOST_HOURLY = 10;
-
-const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
 
 export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
   const { db, chain, policy, now } = options;
@@ -137,6 +148,13 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
     windowMs: 3_600_000,
     now,
   });
+  // Checks from one client address per hour, whichever wallets it signs in with.
+  const checkClients = new RateLimiter({
+    perClient: options.checksPerClientHourly ?? CHECKS_PER_CLIENT_HOURLY,
+    total: Number.MAX_SAFE_INTEGER,
+    windowMs: 3_600_000,
+    now,
+  });
   // Each registration or verification is an outbound POST: capped per wallet and in all too.
   const walletVerifies = new RateLimiter({
     perClient: policy.urlVerifiesPerWalletHourly,
@@ -147,7 +165,7 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
 
   const limited = (c: Context, limiter: RateLimiter) => {
     if (!limiter.allow(clientAddress(c.req.raw.headers)))
-      throw new Refused(429, "too many requests; try again in a few minutes");
+      throw new Refused(429, "Too many requests. Try again in a few minutes.");
   };
   /** The request body as an object (empty when there is none). */
   const bodyOf = async (c: Context): Promise<Record<string, unknown>> => {
@@ -177,7 +195,7 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
       preview.chainId !== chainId ||
       (wallet !== undefined && preview.owner !== wallet)
     )
-      throw new Refused(404, "preview not found");
+      throw new Refused(404, "That preview wasn't found.");
     return {
       key: previewKey(preview.id),
       kind: "preview",
@@ -197,9 +215,9 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
     const config = record?.config as
       { kind?: string; mode?: AgentMode; codeHash?: string } | undefined;
     if (!record?.enabled || record.source !== "user" || config?.kind !== REMOTE_KIND)
-      throw new Refused(404, "this agent isn't registered as your own agent");
+      throw new Refused(404, "This agent isn't registered as your own agent.");
     if (wallet !== undefined && ((await ownerOf(agentId)) !== wallet || record.owner !== wallet))
-      throw new Refused(403, "only the agent's owner can do that");
+      throw new Refused(403, "Only the agent's owner can do that.");
     return {
       key,
       kind: "agent",
@@ -233,22 +251,35 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
     const proof = signed.parse({ timestamp, signature });
     const age = Math.floor(now() / 1000) - proof.timestamp;
     if (age > SELF_SERVE_MAX_AGE_SECONDS || age < -60)
-      throw new Refused(400, "the signed request has expired; sign it again");
+      throw new Refused(400, "The signed request has expired. Sign it again.");
+    const message = byoaMessage({
+      action,
+      chainId,
+      agentId: uint.parse(c.req.param("id")),
+      fields: fields(body),
+      timestamp: proof.timestamp,
+    });
     const recovered = await recoverMessageAddress({
-      message: byoaMessage({
-        action,
-        chainId,
-        agentId: uint.parse(c.req.param("id")),
-        fields: fields(body),
-        timestamp: proof.timestamp,
-      }),
+      message,
       signature: proof.signature as Hex,
     }).catch(() => undefined);
-    if (!recovered) throw new Refused(400, "the signature is not valid");
-    if (!(await db.useSignature(sha256(proof.signature.toLowerCase()))))
-      throw new Refused(409, "that signed request was already used; sign again");
+    if (!recovered) throw new Refused(400, "The signature isn't valid.");
+    if (!(await db.useSignature(signedRequestKey(recovered, message))))
+      throw new Refused(409, "That signed request was already used. Sign it again.");
     return { wallet: recovered.toLowerCase(), body };
   }
+  /**
+   * The caller's own subject, for a read: another owner's agent or preview is "not found" (agent
+   * ids are public numbers, so a 403 would confirm what can't be read).
+   */
+  const ownedForRead = async (kind: Kind, id: string | undefined, wallet: string) => {
+    try {
+      return await subjectOf(kind, id, wallet);
+    } catch (e) {
+      if (e instanceof Refused && e.status === 403) throw new Refused(404, "That wasn't found.");
+      throw e;
+    }
+  };
   const reader = async (c: Context) => {
     limited(c, options.reads);
     return options.wallet(c);
@@ -456,7 +487,7 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
       if ("refused" in made)
         throw new Refused(
           429,
-          `at most ${policy.previewCreatesPerWalletDaily} previews a day per wallet; try again after ${made.nextAt.toISOString()}`,
+          `You can start at most ${policy.previewCreatesPerWalletDaily} previews a day. Try again after ${made.nextAt.toISOString()}.`,
           { retryAt: made.nextAt.toISOString() },
         );
       return c.json(await previewRecord(made), 201);
@@ -497,7 +528,7 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
       const subject = await previewSubject(c.req.param("id"), wallet);
       const stopped = await db.stopPreview(subject.id);
       if ("refused" in stopped)
-        throw new Refused(409, "its rating is running; it stops at the first failed episode");
+        throw new Refused(409, "Its rating is running. It stops at the first failed episode.");
       return c.json({ stopped: true });
     }),
   );
@@ -509,16 +540,17 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
       const { wallet, body } = await writer(c, "preview", "runner-token");
       empty.parse(body);
       const subject = await previewSubject(c.req.param("id"), wallet);
-      if (subject.preview!.status === "stopped") throw new Refused(409, "this preview was stopped");
+      if (subject.preview!.status === "stopped")
+        throw new Refused(409, "This preview was stopped.");
       if (subject.connection !== "runner")
-        throw new Refused(409, "this preview connects by Agent URL, not with a runner");
+        throw new Refused(409, "This preview connects by its Agent URL, not with a runner.");
       const token = newRunnerToken();
       const made = await db.createRunnerToken(subject.key, {
         hash: runnerTokenHash(token),
         createdBy: wallet,
         signedAt: stamp(),
       });
-      if ("refused" in made) throw new Refused(409, "a newer token request came first; try again");
+      if ("refused" in made) throw new Refused(409, "A newer token request came first. Try again.");
       c.header("Cache-Control", "no-store");
       return c.json(
         {
@@ -537,7 +569,7 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
       const { wallet } = await writer(c, "preview", "runner-token");
       const subject = await previewSubject(c.req.param("id"), wallet);
       const done = await db.revokeRunnerToken(subject.key, stamp());
-      if ("refused" in done) throw new Refused(409, "a newer token request came first; try again");
+      if ("refused" in done) throw new Refused(409, "A newer token request came first. Try again.");
       return c.json({ revoked: done.revoked });
     }),
   );
@@ -550,22 +582,26 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
     try {
       host = new URL(url).host.toLowerCase();
     } catch {
-      throw new Refused(400, "that isn't a URL");
+      throw new Refused(400, "That isn't a URL.");
     }
     if (!walletVerifies.allow(wallet))
       throw new Refused(
         429,
-        `at most ${policy.urlVerifiesPerWalletHourly} Agent URL checks an hour per wallet, and ${policy.urlVerifiesHourly} in all; try again later`,
+        `Agent URLs can be checked at most ${policy.urlVerifiesPerWalletHourly} times an hour per wallet (and ${policy.urlVerifiesHourly} in all). Try again later.`,
         { retryAt: new Date(now() + 3_600_000).toISOString() },
       );
     if (!verifies.allow(host))
-      throw new Refused(429, "too many verifications of this URL; try again in an hour", {
-        retryAt: new Date(now() + 3_600_000).toISOString(),
-      });
+      throw new Refused(
+        429,
+        "Your URL has been checked too often this hour. Try again in an hour.",
+        {
+          retryAt: new Date(now() + 3_600_000).toISOString(),
+        },
+      );
     const answer = await options
       .verifyAgentUrl(url, secret)
       .catch(() => ({ ok: false as const, problem: "The verification couldn't run; try again." }));
-    if (!answer.ok) throw new Refused(422, answer.problem);
+    if (!answer.ok) throw new Refused(422, sentence(answer.problem));
     const version = answer.version?.slice(0, 200) ?? null;
     return { version, codeHash: version ? urlCodeHash(version) : null };
   }
@@ -575,10 +611,11 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
     ["agent", "/self/agents/:id"],
   ] as const) {
     /**
-     * Register the agent's HTTPS endpoint: Bonded sends it a signed `verify` challenge and it
-     * must echo it within 10 s (refused, 422, with the reason otherwise). The secret that signs
-     * every call is returned once and stored only encrypted. A registered agent reached by its
-     * runner switches to Agent URL mode.
+     * Register the agent's HTTPS endpoint (after the URL rules: https, a public host, not one of
+     * Bonded's). The secret that signs every call is returned once and stored only encrypted; the
+     * agent needs it before it can answer, so the URL is checked by a separate call
+     * (…/agent-url/verify) once the agent has it. Until then it can't be used for checks or
+     * ratings. A registered agent reached by its runner switches to Agent URL mode.
      */
     app.post(
       `${base}/agent-url`,
@@ -588,20 +625,24 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
         }));
         const subject = await subjectOf(kind, c.req.param("id"), wallet);
         if (subject.preview?.status === "stopped")
-          throw new Refused(409, "this preview was stopped");
+          throw new Refused(409, "This preview was stopped.");
         if (subject.kind === "preview" && subject.connection !== "url")
-          throw new Refused(409, "this preview connects with the runner; it has no Agent URL");
+          throw new Refused(409, "This preview connects with the runner, so it has no Agent URL.");
         if (
           subject.kind === "agent" &&
           ((await db.agentRecord(subject.key))?.config as { tee?: unknown } | undefined)?.tee
         )
-          throw new Refused(409, "a TEE-bound agent is rated through its runner");
+          throw new Refused(
+            409,
+            "A TEE-bound agent is rated through its runner, not an Agent URL.",
+          );
         if (!options.secrets) throw new Refused(409, SECRET_KEY_MISSING);
         const { url } = urlInput.parse(body);
-        const problem = outboundUrlProblem(url, options.ownDomains, options.allowLoopbackUrls);
-        if (problem) throw new Refused(400, problem);
+        const problem =
+          outboundUrlProblem(url, options.ownDomains, options.allowLoopbackUrls) ??
+          options.urlProblem?.(url);
+        if (problem) throw new Refused(400, sentence(problem));
         const secret = newAgentSecret();
-        const reported = await challenge(url, secret, wallet);
         const id = randomUUID();
         const made = await db.createAgentUrl(subject.key, {
           id,
@@ -609,33 +650,31 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
           ciphertext: options.secrets.encrypt(secret, agentUrlContext(id)),
           createdBy: wallet,
         });
-        await db.markAgentUrlVerified(made.id, reported);
-        const live = await agentUrlInfo(subject.key);
         c.header("Cache-Control", "no-store");
         return c.json(
           {
             agentUrlId: made.id,
             url,
-            verified: true,
-            verifiedAt: live?.verifiedAt ?? null,
-            version: reported.version,
+            // Not yet: give the agent its secret, then call …/agent-url/verify.
+            verified: false,
+            verifiedAt: null,
+            version: null,
             // Shown once: Bonded keeps it only encrypted and never returns it again.
             secret,
             codeHash: subject.declaredCode
               ? codeInfo({ hash: subject.declaredCode, source: "declared" })
-              : codeInfo(
-                  reported.codeHash
-                    ? { hash: reported.codeHash, source: "url-version" }
-                    : undefined,
-                  reported.version,
-                ),
+              : null,
             createdAt: made.createdAt.toISOString(),
           },
           201,
         );
       }),
     );
-    /** Check the URL again (after a redeploy, say), with the stored secret. */
+    /**
+     * Prove the URL is the owner's: Bonded sends it a signed `verify` challenge with the stored
+     * secret and it must answer within 10 s (422 with the reason otherwise). Again after a
+     * redeploy, say. Capped per URL host, per wallet and in all: each one calls out.
+     */
     app.post(
       `${base}/agent-url/verify`,
       handle(async (c) => {
@@ -647,16 +686,28 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
         const subject = await subjectOf(kind, c.req.param("id"), wallet);
         if (!options.secrets) throw new Refused(409, SECRET_KEY_MISSING);
         const live = await db.agentUrl(subject.key);
-        if (!live) throw new Refused(404, "set your Agent URL first");
+        if (!live) throw new Refused(404, "Set your Agent URL first.");
         let secret: string;
         try {
           secret = options.secrets.decrypt(live.ciphertext, agentUrlContext(live.id));
         } catch {
-          throw new Refused(409, "the stored secret can't be used; set the Agent URL again");
+          throw new Refused(409, "The stored secret can't be used. Set the Agent URL again.");
         }
         const reported = await challenge(live.url, secret, wallet);
         await db.markAgentUrlVerified(live.id, reported);
-        return c.json({ verified: true, ...reported });
+        const info = await agentUrlInfo(subject.key);
+        return c.json({
+          verified: true,
+          url: live.url,
+          verifiedAt: info?.verifiedAt ?? null,
+          version: reported.version,
+          codeHash: subject.declaredCode
+            ? codeInfo({ hash: subject.declaredCode, source: "declared" })
+            : codeInfo(
+                reported.codeHash ? { hash: reported.codeHash, source: "url-version" } : undefined,
+                reported.version,
+              ),
+        });
       }),
     );
     /** Revoke the Agent URL and its secret (a registered agent goes back to its runner). */
@@ -689,9 +740,13 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
       handle(async (c) => {
         const { wallet, body } = await writer(c, kind, "check");
         empty.parse(body);
+        if (!checkClients.allow(clientAddress(c.req.raw.headers)))
+          throw new Refused(429, "Too many checks from here this hour. Try again later.", {
+            retryAt: new Date(now() + 3_600_000).toISOString(),
+          });
         const subject = await subjectOf(kind, c.req.param("id"), wallet);
         if (subject.preview?.status === "stopped")
-          throw new Refused(409, "this preview was stopped");
+          throw new Refused(409, "This preview was stopped.");
         const { current, code } = await connectionNow(subject);
         const problem = await connectionProblem(subject);
         const made = await db.createCheck(
@@ -717,12 +772,12 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
         );
         if ("refused" in made)
           throw made.refused === "busy"
-            ? new Refused(409, "a check is already running for this agent; wait for its result")
+            ? new Refused(409, "A check is already running for this agent. Wait for its result.")
             : new Refused(
                 429,
                 made.refused === "wallet-hourly"
-                  ? `at most ${policy.checksPerWalletHourly} checks an hour per wallet; try again after ${made.nextAt.toISOString()}`
-                  : `connection checks are busy; try again after ${made.nextAt.toISOString()}`,
+                  ? `You can run at most ${policy.checksPerWalletHourly} checks an hour. Try again after ${made.nextAt.toISOString()}.`
+                  : `Connection checks are busy right now. Try again after ${made.nextAt.toISOString()}.`,
                 { retryAt: made.nextAt.toISOString() },
               );
         if (
@@ -745,17 +800,16 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
 
     /**
      * What a rating will cost the owner in their own model spend and time, from the latest
-     * passing check: an estimate, honest when the agent didn't report its usage. By id: it says
-     * how long one benign episode took and what it reported, nothing more.
+     * passing check: an estimate, honest when the agent didn't report its usage. Its owner's
+     * session only.
      */
     app.get(
       `${base}/estimate`,
       handle(async (c) => {
-        limited(c, options.reads);
-        const subject = await subjectOf(kind, c.req.param("id"));
+        const subject = await ownedForRead(kind, c.req.param("id"), await reader(c));
         const check = await db.latestPassingCheck(subject.key);
         if (!check)
-          throw new Refused(409, "run a connection check first: the estimate comes from it");
+          throw new Refused(409, "Run a connection check first: the estimate comes from it.");
         const episodes =
           kind === "preview"
             ? previewPlan().episodes
@@ -764,12 +818,11 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
       }),
     );
 
-    /** Where results are sent: masked, never the webhook secret. */
+    /** Where results are sent: masked, never the webhook secret. Its owner's session only. */
     app.get(
       `${base}/notifications`,
       handle(async (c) => {
-        limited(c, options.reads);
-        const subject = await subjectOf(kind, c.req.param("id"));
+        const subject = await ownedForRead(kind, c.req.param("id"), await reader(c));
         return c.json(await notificationView(db, subject.owner, notifyOptions));
       }),
     );
@@ -800,6 +853,14 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
       mode: k.mode,
       codeHash: k.codeHash,
       codeSource: k.codeSource,
+      // Never verified by Bonded: declared by the owner, or reported by the runner or agent.
+      codeReportedBy: !k.codeHash
+        ? null
+        : k.codeSource === "declared"
+          ? "owner"
+          : k.codeSource === "url-version"
+            ? "agent"
+            : "runner",
       result: k.result,
       startedAt: k.startedAt?.toISOString() ?? null,
       finishedAt: k.finishedAt?.toISOString() ?? null,
@@ -808,28 +869,100 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
     };
   }
 
-  /** A check by its id: the id is the capability (unguessable, given only to its owner). */
+  /**
+   * Who may read a check or a rating's stream: the owner's session (Authorization), or for an
+   * EventSource, which can't send headers, a stream token from POST /streams/token (`?token=`):
+   * good for that one check or rating, for a few minutes, so the browser's reconnects work.
+   */
+  async function streamViewer(c: Context, kind: "check" | "rating", id: string) {
+    const token = c.req.query("token");
+    if (token) {
+      const held = streamTokens.get(token);
+      if (!held || held.expires < Date.now() || held.kind !== kind || held.id !== id) {
+        if (held && held.expires < Date.now()) streamTokens.delete(token);
+        throw new Refused(401, "That stream token has expired. Ask for a new one.");
+      }
+      return held.wallet;
+    }
+    return options.wallet(c);
+  }
+  /** Stream tokens: whose, what they open, when they expire (this process's memory). */
+  const streamTokens = new Map<
+    string,
+    { wallet: string; kind: "check" | "rating"; id: string; expires: number }
+  >();
+  const STREAM_TOKEN_MS = 5 * 60_000;
+  /** The owner of a check, or "not found" for anyone else. */
+  async function ownCheck(c: Context, wallet: string) {
+    const id = uuid.safeParse(c.req.param("id"));
+    const check = id.success ? await db.check(id.data) : undefined;
+    if (!check || check.chainId !== chainId || check.owner !== wallet)
+      throw new Refused(404, "That check wasn't found.");
+    return check;
+  }
+  /** The owner of a rating (the wallet it is charged to), or "not found" for anyone else. */
+  async function ownRating(id: string | undefined, wallet: string) {
+    const parsed = uuid.safeParse(id);
+    const row = parsed.success
+      ? (
+          await db.pool.query("SELECT id,charged_owner,status FROM ratings WHERE id=$1", [
+            parsed.data,
+          ])
+        ).rows[0]
+      : undefined;
+    if (!row || row.charged_owner !== wallet) throw new Refused(404, "That rating wasn't found.");
+    return row as { id: string; status: string };
+  }
+
+  /**
+   * A token to open the live stream of one check or rating with EventSource (`?token=`): for one
+   * the session's wallet owns, for five minutes.
+   */
+  app.post(
+    "/streams/token",
+    handle(async (c) => {
+      const { wallet, body } = await writer(c, "preview", "sign-in");
+      const input = z
+        .union([z.strictObject({ checkId: uuid }), z.strictObject({ runId: uuid })])
+        .parse(body);
+      if ("checkId" in input) {
+        const check = await db.check(input.checkId);
+        if (!check || check.chainId !== chainId || check.owner !== wallet)
+          throw new Refused(404, "That check wasn't found.");
+      } else await ownRating(input.runId, wallet);
+      if (streamTokens.size > 10_000)
+        for (const [k, v] of streamTokens) if (v.expires < Date.now()) streamTokens.delete(k);
+      const token = randomBytes(24).toString("base64url");
+      const expires = Date.now() + STREAM_TOKEN_MS;
+      streamTokens.set(
+        token,
+        "checkId" in input
+          ? { wallet, kind: "check", id: input.checkId, expires }
+          : { wallet, kind: "rating", id: input.runId, expires },
+      );
+      return c.json({ token, expiresAt: new Date(expires).toISOString() }, 201);
+    }),
+  );
+
+  /** A check: its owner's only (session), "not found" to anyone else. */
   app.get(
     "/checks/:id",
     handle(async (c) => {
-      limited(c, options.reads);
-      const id = uuid.safeParse(c.req.param("id"));
-      const check = id.success ? await db.check(id.data) : undefined;
-      if (!check || check.chainId !== chainId) throw new Refused(404, "check not found");
+      const check = await ownCheck(c, await reader(c));
       return c.json(await checkView(check));
     }),
   );
   /**
    * A check's live events as server-sent events (each a plain `message` whose data has its
-   * `type`), from the start or from Last-Event-ID; the stream ends after the `result`.
+   * `type`), from the start or from Last-Event-ID; the stream ends after the `result`. The
+   * owner's only: a session, or a stream token.
    */
   app.get(
     "/checks/:id/events",
     handle(async (c) => {
       limited(c, options.reads);
-      const id = uuid.safeParse(c.req.param("id"));
-      const check = id.success ? await db.check(id.data) : undefined;
-      if (!check || check.chainId !== chainId) throw new Refused(404, "check not found");
+      const raw = c.req.param("id");
+      const check = await ownCheck(c, await streamViewer(c, "check", raw ?? ""));
       let cursor = /^\d{1,18}$/.test(c.req.header("Last-Event-ID") ?? "")
         ? c.req.header("Last-Event-ID")!
         : "0";
@@ -839,14 +972,18 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
           const events = await db.checkEvents(check.id, cursor);
           if (events.length) cursor = events.at(-1)!.id;
           // The worker always ends a check with a `result` event; a reconnect after it ends at once.
+          const state = events.length ? undefined : (await db.check(check.id))?.status;
           const over =
             events.some((e) => (e.event as { type?: string }).type === "result") ||
-            (events.length === 0 &&
-              (await db.check(check.id))?.status !== "queued" &&
-              (await db.check(check.id))?.status !== "running");
+            (state !== undefined && state !== "queued" && state !== "running");
           return { events: events.map((e) => ({ id: e.id, data: e.event })), done: over };
         },
-        { intervalMs: 500, maxMs: 10 * 60_000 },
+        {
+          intervalMs: 500,
+          maxMs: 5 * 60_000,
+          client: clientAddress(c.req.raw.headers),
+          key: `check:${check.id}`,
+        },
       );
     }),
   );
@@ -862,7 +999,8 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
     handle(async (c) => {
       const { wallet } = await writer(c, "preview", "sign-in");
       const subject = await previewSubject(c.req.param("id"), wallet);
-      if (subject.preview!.status === "stopped") throw new Refused(409, "this preview was stopped");
+      if (subject.preview!.status === "stopped")
+        throw new Refused(409, "This preview was stopped.");
       const problem = await connectionProblem(subject);
       if (problem) throw new Refused(409, problem);
       const { code, config } = await connectionNow(subject);
@@ -936,31 +1074,42 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
   }
   /**
    * A rating's progress as server-sent events (plain messages): counts and an ETA only, never a
-   * verdict, with the rating's status; the stream ends when the rating does. By run id, like
-   * GET /arena/runs/:id.
+   * verdict, with the rating's status; the stream ends when the rating does. The owner's only (the
+   * wallet it is charged to): a session, or a stream token.
    */
   app.get(
     "/ratings/:id/progress",
     handle(async (c) => {
       limited(c, options.reads);
-      const id = uuid.safeParse(c.req.param("id"));
-      const exists = id.success
-        ? (await db.pool.query("SELECT 1 FROM ratings WHERE id=$1", [id.data])).rowCount
-        : 0;
-      if (!id.success || !exists) throw new Refused(404, "rating not found");
+      const raw = c.req.param("id") ?? "";
+      const rating = await ownRating(raw, await streamViewer(c, "rating", raw));
       let last = "";
+      let quietSince = Date.now();
       return options.streams.open(
         c,
         async () => {
-          const status = (await db.pool.query("SELECT status FROM ratings WHERE id=$1", [id.data]))
-            .rows[0]?.status as string;
-          const progress = { ...(await progressOf(id.data, status)), status };
+          const status = (
+            await db.pool.query("SELECT status FROM ratings WHERE id=$1", [rating.id])
+          ).rows[0]?.status as string;
+          const progress = { ...(await progressOf(rating.id, status)), status };
           const key = JSON.stringify(progress);
-          const events = key === last ? [] : [{ data: progress }];
+          const changed = key !== last;
           last = key;
-          return { events, done: status === "done" || status === "failed" };
+          if (changed) quietSince = Date.now();
+          // Nothing new for 10 minutes (a long wait in the queue): end; the client reconnects.
+          const idle = Date.now() - quietSince > 10 * 60_000;
+          return {
+            events: changed ? [{ data: progress }] : [],
+            done: status === "done" || status === "failed" || idle,
+          };
         },
-        { intervalMs: 2000, maxMs: 4 * 3_600_000 },
+        {
+          intervalMs: 2000,
+          // Waiting in the queue says little: a short stream. Running: up to the rating's ceiling.
+          maxMs: rating.status === "queued" ? 10 * 60_000 : 3 * 3_600_000,
+          client: clientAddress(c.req.raw.headers),
+          key: `rating:${rating.id}`,
+        },
       );
     }),
   );

@@ -60,6 +60,8 @@ ALTER TABLE runner_tokens ADD CONSTRAINT runner_tokens_key
   CHECK (agent_id ~ '^([0-9]+:[0-9]+|preview:[0-9a-f-]{36})$');
 ALTER TABLE runner_presence ADD COLUMN code_hash text;
 ALTER TABLE runner_presence ADD COLUMN code_source text;
+-- What the hash was made from, as the runner said (a commit, an image digest), for display only.
+ALTER TABLE runner_presence ADD COLUMN code_detail text;
 
 -- Agent URL mode: Bonded calls the agent's HTTPS endpoint for each episode, signing each call
 -- with the agent secret. The secret has to be usable to sign, so it is stored encrypted

@@ -257,6 +257,14 @@ async function runLocked(
   // Set once a remote episode comes back with its agent's fork share used up ("episode 3 of 40"):
   // whatever fails from then on was caused by the agent (ratingFailure).
   let budgetSpentIn: string | undefined;
+  // A remote agent's operator controls it live, so its episodes (verdicts, which ones were
+  // attacks) are published only once the rating is over for good; meanwhile only counts are
+  // kept. An attempt that will be retried is discarded, never published.
+  const held: unknown[] = [];
+  const flush = async () => {
+    for (const payload of held.splice(0))
+      await db.publish("rating.episode", payload).catch(() => undefined);
+  };
   // The owner of an operator-run agent being rated, told how it ended (never blocking it).
   let remoteOwner: { owner: string | null; agentId: string } | undefined;
   const notifyOwner = (
@@ -345,7 +353,7 @@ async function runLocked(
           true,
         );
       }
-      reach = { kind: "url", url: live.url, secret };
+      reach = { kind: "url", url: live.url, secret, registration: row.agent_id };
     } else if (connection === "runner") reach = { kind: "runner", key: row.agent_id };
     // Reported code must still be what runs: a runner restarted with other code (or a URL that
     // now reports another version) isn't what this rating was queued for.
@@ -474,111 +482,99 @@ async function runLocked(
             heldOut: fresh?.attacks.length ?? 0,
             ...(config.repeats ? { repeats: config.repeats } : {}),
           }).budgetMs;
-        // A remote agent's operator controls it live, so its episodes (verdicts, which ones were
-        // attacks) are published only once the rating is over; meanwhile only counts are kept.
-        const held: unknown[] = [];
-        const flush = async () => {
-          for (const payload of held.splice(0))
-            await db.publish("rating.episode", payload).catch(() => undefined);
-        };
-        let result: Awaited<ReturnType<typeof rateAgent>>;
-        try {
-          result = await rateAgent(sandbox, {
-            agent,
-            ...(withSentinel && sentinel ? { sentinel: sentinel.info } : {}),
-            attacks: [...attacks, ...(fresh?.attacks ?? [])],
-            unpublished:
-              config.kind === "remote"
-                ? new Set((fresh?.attacks ?? []).map((a) => a.id))
-                : library.unpublished,
-            ...(fresh ? { heldOut: fresh.heldOut } : {}),
-            codeHash: config.kind === "remote" ? (remoteCode as Hex) : ratedCodeHash(config),
-            ...(config.repeats ? { repeats: config.repeats } : {}),
-            // An operator-run agent could skip its work, or its reading, when it suspects an
-            // attack: only episodes where it was exposed count as trials (rate.ts, `exercise`).
-            ...(config.kind === "remote" ? { exercise: "exposed" as const } : {}),
-            ...(tee ? { tee } : {}),
-            vault: { mandate: config.mandate as EvmMandateInput },
-            // A remote rating's total shows at once, before its first episode.
-            onProgress: async (p) => {
-              if (config.kind === "remote" && p.done === 0)
-                await db.setRatingProgress(job, {
-                  done: 0,
-                  total: p.total,
-                  startedAt: new Date(ratingStarted),
-                });
-            },
-            onEpisode: async (episode, index, total) => {
-              await check();
-              // A remote rating stops at the first episode its agent fails (crash, exit, timeout,
-              // runner gone) and at its time budget: the attempt is recorded and not retried, so an
-              // operator can neither hold the worker nor choose which run counts by crashing.
-              if (config.kind === "remote") {
-                const remoteEpisode = (episode.agentSummary as { remote?: { durationMs?: number } })
-                  .remote;
-                agentMs += remoteEpisode?.durationMs ?? 0;
-                const elapsed = Date.now() - ratingStarted;
-                if (forkBudgetExhausted(episode)) {
-                  budgetSpentIn = `episode ${index + 1} of ${total}`;
-                  remoteStop = new RatingRefused(
-                    `stopped: the agent used up its share of fork requests in ${budgetSpentIn}`,
-                    true,
-                    { caused: true },
-                  );
-                } else if (bondedUrlFailure(episode)) {
-                  // Bonded couldn't call the agent's URL: not the agent's doing; retried.
-                  remoteStop = new RatingRefused(
-                    `stopped: Bonded couldn't reach the agent's URL in episode ${index + 1} of ${total}, not because of the agent; it will be retried`,
-                    false,
-                  );
-                } else if (episodeOutcome(episode) === "agent_error") {
-                  const report = (episode.agentSummary.finalMessage ?? "").slice(0, 500);
-                  remoteStop = new RatingRefused(
-                    `stopped: the agent failed in episode ${index + 1} of ${total}`,
-                    true,
-                    report ? { caused: true, report } : { caused: true },
-                  );
-                } else if (elapsed > remoteBudget) {
-                  const budget =
-                    remoteBudget >= 60_000
-                      ? `${Math.round(remoteBudget / 60_000)}-minute`
-                      : `${Math.ceil(remoteBudget / 1000)}-second`;
-                  // Charged to the agent only if it was the agent that took the time.
-                  remoteStop =
-                    agentMs > elapsed / 2
-                      ? new RatingRefused(
-                          `stopped: the rating ran past its ${budget} budget after ${index + 1} of ${total} episodes; the agent took ${Math.round((100 * agentMs) / elapsed)}% of the time`,
-                          true,
-                          { caused: true },
-                        )
-                      : new RatingRefused(
-                          `stopped: the rating ran past its ${budget} budget after ${index + 1} of ${total} episodes, not because of the agent; it will be retried`,
-                          false,
-                        );
-                }
+        const result = await rateAgent(sandbox, {
+          agent,
+          ...(withSentinel && sentinel ? { sentinel: sentinel.info } : {}),
+          attacks: [...attacks, ...(fresh?.attacks ?? [])],
+          unpublished:
+            config.kind === "remote"
+              ? new Set((fresh?.attacks ?? []).map((a) => a.id))
+              : library.unpublished,
+          ...(fresh ? { heldOut: fresh.heldOut } : {}),
+          codeHash: config.kind === "remote" ? (remoteCode as Hex) : ratedCodeHash(config),
+          ...(config.repeats ? { repeats: config.repeats } : {}),
+          // An operator-run agent could skip its work, or its reading, when it suspects an
+          // attack: only episodes where it was exposed count as trials (rate.ts, `exercise`).
+          ...(config.kind === "remote" ? { exercise: "exposed" as const } : {}),
+          ...(tee ? { tee } : {}),
+          vault: { mandate: config.mandate as EvmMandateInput },
+          // A remote rating's total shows at once, before its first episode.
+          onProgress: async (p) => {
+            if (config.kind === "remote" && p.done === 0)
+              await db.setRatingProgress(job, {
+                done: 0,
+                total: p.total,
+                startedAt: new Date(ratingStarted),
+              });
+          },
+          onEpisode: async (episode, index, total) => {
+            await check();
+            // A remote rating stops at the first episode its agent fails (crash, exit, timeout,
+            // runner gone) and at its time budget: the attempt is recorded and not retried, so an
+            // operator can neither hold the worker nor choose which run counts by crashing.
+            if (config.kind === "remote") {
+              const remoteEpisode = (episode.agentSummary as { remote?: { durationMs?: number } })
+                .remote;
+              agentMs += remoteEpisode?.durationMs ?? 0;
+              const elapsed = Date.now() - ratingStarted;
+              if (forkBudgetExhausted(episode)) {
+                budgetSpentIn = `episode ${index + 1} of ${total}`;
+                remoteStop = new RatingRefused(
+                  `stopped: the agent used up its share of fork requests in ${budgetSpentIn}`,
+                  true,
+                  { caused: true },
+                );
+              } else if (bondedUrlFailure(episode)) {
+                // Bonded couldn't call the agent's URL: not the agent's doing; retried.
+                remoteStop = new RatingRefused(
+                  `stopped: Bonded couldn't reach the agent's URL in episode ${index + 1} of ${total}, not because of the agent; it will be retried`,
+                  false,
+                );
+              } else if (episodeOutcome(episode) === "agent_error") {
+                const report = (episode.agentSummary.finalMessage ?? "").slice(0, 500);
+                remoteStop = new RatingRefused(
+                  `stopped: the agent failed in episode ${index + 1} of ${total}`,
+                  true,
+                  report ? { caused: true, report } : { caused: true },
+                );
+              } else if (elapsed > remoteBudget) {
+                const budget =
+                  remoteBudget >= 60_000
+                    ? `${Math.round(remoteBudget / 60_000)}-minute`
+                    : `${Math.ceil(remoteBudget / 1000)}-second`;
+                // Charged to the agent only if it was the agent that took the time.
+                remoteStop =
+                  agentMs > elapsed / 2
+                    ? new RatingRefused(
+                        `stopped: the rating ran past its ${budget} budget after ${index + 1} of ${total} episodes; the agent took ${Math.round((100 * agentMs) / elapsed)}% of the time`,
+                        true,
+                        { caused: true },
+                      )
+                    : new RatingRefused(
+                        `stopped: the rating ran past its ${budget} budget after ${index + 1} of ${total} episodes, not because of the agent; it will be retried`,
+                        false,
+                      );
               }
-              // Verdict only: planted text and traces can carry a private bounty payload.
-              const payload = {
-                runId: job.id,
-                index,
+            }
+            // Verdict only: planted text and traces can carry a private bounty payload.
+            const payload = {
+              runId: job.id,
+              index,
+              total,
+              // A library attack's text is public in attacks/; held-out and bounty text never is.
+              episode: publicEpisode(episode, publishedAs(episode.attackId)),
+            };
+            if (config.kind === "remote") {
+              held.push(payload);
+              await db.setRatingProgress(job, {
+                done: index + 1,
                 total,
-                // A library attack's text is public in attacks/; held-out and bounty text never is.
-                episode: publicEpisode(episode, publishedAs(episode.attackId)),
-              };
-              if (config.kind === "remote") {
-                held.push(payload);
-                await db.setRatingProgress(job, {
-                  done: index + 1,
-                  total,
-                  startedAt: new Date(ratingStarted),
-                });
-              } else await db.publish("rating.episode", payload);
-              if (remoteStop) throw remoteStop;
-            },
-          });
-        } finally {
-          await flush();
-        }
+                startedAt: new Date(ratingStarted),
+              });
+            } else await db.publish("rating.episode", payload);
+            if (remoteStop) throw remoteStop;
+          },
+        });
         // Every episode must have shown the same TEE deployment, or the measurement isn't earned.
         // Checked first: a failed TEE check also ends its episode, and this says why.
         const unbound = binding?.verdict(result.report.episodes.total);
@@ -702,6 +698,7 @@ async function runLocked(
     }
     // A complete rating posted: any standing from earlier stops resets.
     await db.finish(job);
+    await flush();
     notifyOwner("rating_finished", "done", { score: signed.attestation.score });
   } catch (error) {
     onError?.(error);
@@ -714,6 +711,9 @@ async function runLocked(
     // Only an attempt that is over: a retried one is still on its way.
     const status = (await db.pool.query("SELECT status FROM ratings WHERE id=$1", [job.id])).rows[0]
       ?.status;
+    // Over for good: its episodes go to the feed. Retried: this attempt's are dropped.
+    if (status === "failed") await flush();
+    else held.length = 0;
     if (status === "failed")
       notifyOwner(
         failure.reason.startsWith("not attested") ? "rating_refused" : "rating_failed",

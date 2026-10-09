@@ -3,6 +3,7 @@ import { mandateVaultAbi } from "@bonded/shared";
 import { privateKeyToAccount } from "viem/accounts";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
+  AgentUrlUnavailableError,
   ArenaGateway,
   episodeOutcome,
   loadAttackLibrary,
@@ -35,7 +36,15 @@ beforeAll(async () => {
     tokens: new StaticRunnerTokens({ [TOKEN]: "runner-agent" }),
     // The agent URLs here are on this machine.
     // The agent URLs here are all on this machine, so they share one host's rate limit.
-    agentUrl: { allowLoopback: true, limits: { callsPerMinute: 10_000, callBurst: 1_000 } },
+    agentUrl: {
+      allowLoopback: true,
+      limits: {
+        callsPerMinute: 10_000,
+        callBurst: 1_000,
+        verifiesPerMinute: 10_000,
+        verifyBurst: 1_000,
+      },
+    },
   });
   await gateway.listen();
 });
@@ -57,7 +66,7 @@ const remote = (url: string, fields: Partial<ConstructorParameters<typeof Remote
   new RemoteAgent({
     gateway,
     sandbox,
-    transport: { kind: "url", url, secret: SECRET },
+    transport: { kind: "url", url, secret: SECRET, registration: url },
     mode: "tools",
     ...fields,
   });
@@ -112,6 +121,24 @@ describe("Agent URL episodes", () => {
     );
   });
 
+  it("starts the deadline once the episode is delivered, not before", async () => {
+    // The agent takes 1.5 s to answer, then finishes at once: within a 1 s deadline counted from
+    // its answer, though not from the POST.
+    const at = await agentAt({
+      secret: SECRET,
+      answerDelayMs: 1_500,
+      onEpisode: async (episode) => {
+        await fetch(`${episode.endpoints.tools}/read_inbox`, { method: "POST" });
+        await fetch(episode.endpoints.done, { method: "POST" });
+      },
+    });
+    const result = await runEpisode(sandbox, {
+      agent: remote(at.url, { episodeTimeoutMs: 1_000 }),
+      attack: null,
+    });
+    expect(result.agentSummary.stoppedBecause).toBe("done");
+  });
+
   it("cancels an agent that runs out of time", async () => {
     const at = await agentAt({ secret: SECRET, onEpisode: () => {} });
     const result = await runEpisode(sandbox, {
@@ -156,11 +183,58 @@ describe("Agent URL episodes", () => {
         new RemoteAgent({
           gateway,
           sandbox,
-          transport: { kind: "url", url: "https://a.example", secret: SECRET },
+          transport: {
+            kind: "url",
+            url: "https://a.example",
+            secret: SECRET,
+            registration: "a",
+          },
           mode: "tools",
           tee: { onEvidence: () => {} },
         }),
     ).toThrow(/through the runner/);
+  });
+});
+
+describe("when Bonded's own rate limit is in the way", () => {
+  it("doesn't count it against the agent: the rating stops as Bonded's problem", async () => {
+    const tight = new ArenaGateway({
+      tokens: new StaticRunnerTokens(),
+      agentUrl: {
+        allowLoopback: true,
+        limits: { callsPerMinute: 0.001, callBurst: 1, slotWaitMs: 100 },
+      },
+    });
+    await tight.listen();
+    cleanup.push(() => tight.close());
+    const at = await agentAt({ secret: SECRET, agent: new ScriptedVulnerableAgent() });
+    const transport = { kind: "url", url: at.url, secret: SECRET, registration: "busy" } as const;
+    // Its one call a minute is spent.
+    await tight.agentUrls.send(
+      at.url,
+      SECRET,
+      { type: "cancel", episodeId: "x" },
+      { registration: "busy" },
+    );
+    const agent = new RemoteAgent({ gateway: tight, sandbox, transport, mode: "tools" });
+    const episode = await runEpisode(sandbox, { agent, attack: null });
+    const record = (episode.agentSummary as RemoteRunSummary).remote;
+    expect(record.bondedProblem).toMatch(/too often/);
+    expect(record.urlProblem).toBeUndefined();
+    expect(episode.agentSummary.finalMessage).toMatch(/not the agent's fault/);
+    expect(at.received.filter((m) => m.type === "episode")).toHaveLength(0);
+    await expect(
+      rateAgent(sandbox, { agent, attacks: paritySeeds().slice(0, 1), controls: 0 }),
+    ).rejects.toBeInstanceOf(AgentUrlUnavailableError);
+    // Another registration on the same host is unaffected.
+    const other = new RemoteAgent({
+      gateway: tight,
+      sandbox,
+      transport: { ...transport, registration: "other" },
+      mode: "tools",
+    });
+    const fine = await runEpisode(sandbox, { agent: other, attack: null });
+    expect(fine.agentSummary.stoppedBecause).toBe("done");
   });
 });
 

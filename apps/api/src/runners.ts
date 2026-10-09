@@ -182,7 +182,13 @@ export class RunnerPresenceWriter {
         runnerVersion: event.hello.runnerVersion,
         mode: event.hello.mode,
         teeUrl: event.hello.teeUrl,
-        ...(code ? { codeHash: code.codeHash, codeSource: code.codeSource } : {}),
+        ...(code
+          ? {
+              codeHash: code.codeHash,
+              codeSource: code.codeSource,
+              ...(code.codeDetail ? { codeDetail: code.codeDetail } : {}),
+            }
+          : {}),
       });
       if (id) this.connections.set(event.key, id);
       else this.connections.delete(event.key);

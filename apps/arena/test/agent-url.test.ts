@@ -3,19 +3,28 @@ import {
   type AgentUrlMessage,
   agentUrlCodeHash,
   AgentUrlReplayGuard,
+  answerAgentUrlVerify,
   verifyAgentUrlRequest,
 } from "@bonded/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AgentUrlClient, ArenaGateway, StaticRunnerTokens, verifyAgentUrl } from "../src/index.js";
+import {
+  AgentUrlClient,
+  ArenaGateway,
+  registrableDomain,
+  StaticRunnerTokens,
+  verifyAgentUrl,
+} from "../src/index.js";
 
 // Lets a test make a public-looking name resolve to an internal address (DNS rebinding).
 vi.mock("node:dns", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:dns")>();
   const lookup = (hostname: string, options: unknown, callback: unknown) => {
-    if (hostname === "rebind.example")
-      return (callback as (e: null, a: { address: string; family: number }[]) => void)(null, [
-        { address: "10.0.0.7", family: 4 },
-      ]);
+    const answer = callback as (e: Error | null, a: { address: string; family: number }[]) => void;
+    if (hostname === "rebind.example") return answer(null, [{ address: "10.0.0.7", family: 4 }]);
+    if (hostname === "nxdomain.example")
+      return answer(Object.assign(new Error("not found"), { code: "ENOTFOUND" }), []);
+    // Deterministic: localhost is 127.0.0.1 alone.
+    if (hostname === "localhost") return answer(null, [{ address: "127.0.0.1", family: 4 }]);
     return (actual.lookup as (...a: unknown[]) => void)(hostname, options, callback);
   };
   return { ...actual, lookup };
@@ -57,6 +66,19 @@ async function agent(handler: Handler): Promise<{ url: string; calls: AgentUrlMe
 }
 
 const local = (limits = {}) => new AgentUrlClient({ allowLoopback: true, limits });
+const NOT_PUBLIC =
+  "Your URL's host isn't reachable on the public internet: it must resolve to a public address";
+const RATE_LIMITED = "Bonded has called your URL too often in the last minute; try again shortly";
+
+/** An agent that answers verify properly, with the proof. */
+const proving: Handler = (_req, res, body) => {
+  const message = body ? (JSON.parse(body) as AgentUrlMessage) : undefined;
+  if (message?.type !== "verify") return void res.writeHead(204).end();
+  void answerAgentUrlVerify(SECRET, message, "v1.4.2").then((answer) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify(answer));
+  });
+};
 
 describe("which URLs an agent may register", () => {
   const strict = new AgentUrlClient();
@@ -73,8 +95,27 @@ describe("which URLs an agent may register", () => {
       "https://[::1]/",
       "https://[fd00::1]/",
       "https://localhost/",
+      "https://localhost./",
+      // Names that only exist inside a network, refused before any lookup.
+      "https://broadcasthost/",
+      "https://printer.local/",
+      "https://db.railway.internal/",
+      "https://metadata.google.internal/",
+      "https://router.home.arpa/",
+      "https://x.localhost/",
+      "https://nothing.invalid/",
     ])
-      expect(strict.urlProblem(url), url).toMatch(/private or internal/);
+      expect(strict.urlProblem(url), url).toBe(NOT_PUBLIC);
+  });
+
+  it("must use port 443 (any port only on this machine, for a local rating)", () => {
+    expect(strict.urlProblem("https://agent.example.com:443/")).toBeUndefined();
+    for (const port of [22, 81, 8443, 6379])
+      expect(strict.urlProblem(`https://agent.example.com:${port}/`)).toBe(
+        "Your URL must use the standard https port (443)",
+      );
+    expect(local().urlProblem("http://127.0.0.1:3000/")).toBeUndefined();
+    expect(local().urlProblem("https://agent.example.com:8443/")).toMatch(/port \(443\)/);
   });
 
   it("can't be one of Bonded's own hosts or the gateway itself", async () => {
@@ -112,24 +153,34 @@ describe("which URLs an agent may register", () => {
     }
   });
 
-  it("refuses a name that resolves to an internal address, when it connects", async () => {
-    const call = await strict.send("https://rebind.example/agent", SECRET, {
-      type: "cancel",
-      episodeId: "e",
-    });
-    expect(call).toMatchObject({ ok: false, caused: "agent" });
-    expect(call.ok === false && call.problem).toMatch(/private or internal/);
+  it("refuses a name that resolves to an internal address, when it connects, in the same words as one that doesn't resolve", async () => {
+    const logged: string[] = [];
+    const client = new AgentUrlClient({ log: (line) => logged.push(line) });
+    const cancel = { type: "cancel", episodeId: "e" } as const;
+    const rebind = await client.send("https://rebind.example/agent", SECRET, cancel);
+    const missing = await client.send("https://nxdomain.example/agent", SECRET, cancel);
+    expect(rebind).toEqual({ ok: false, problem: NOT_PUBLIC, caused: "agent" });
+    expect(missing).toEqual(rebind);
+    // The detail stays on the server, without the secret.
+    expect(logged.join("\n")).toMatch(/nxdomain\.example failed: ENOTFOUND/);
+    expect(logged.join("\n")).not.toContain(SECRET);
+  });
+
+  it("knows the site a host belongs to", () => {
+    expect(registrableDomain("a.b.example.com")).toBe("example.com");
+    expect(registrableDomain("Example.COM.")).toBe("example.com");
+    expect(registrableDomain("shop.example.co.uk")).toBe("example.co.uk");
+    expect(registrableDomain("my-agent.up.railway.app")).toBe("my-agent.up.railway.app");
+    expect(registrableDomain("x.my-agent.vercel.app")).toBe("my-agent.vercel.app");
+    expect(registrableDomain("93.184.216.34")).toBe("93.184.216.34");
   });
 });
 
 describe("calling an agent URL", () => {
   it("signs every call so the agent can verify it, and verify returns the version", async () => {
-    const { url, calls } = await agent((_req, res, body) => {
-      const message = body ? (JSON.parse(body) as AgentUrlMessage) : undefined;
-      if (message?.type !== "verify") return void res.writeHead(401).end();
-      res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ challenge: message.challenge, version: "v1.4.2" }));
-    });
+    const { url, calls } = await agent((req, res, body) =>
+      body ? proving(req, res, body) : void res.writeHead(401).end(),
+    );
     const result = await verifyAgentUrl(url, SECRET, { allowLoopback: true });
     expect(result).toEqual({ ok: true, version: "v1.4.2", codeHash: agentUrlCodeHash("v1.4.2") });
     expect(calls).toHaveLength(1);
@@ -142,12 +193,21 @@ describe("calling an agent URL", () => {
     });
   });
 
-  it("requires the challenge back", async () => {
-    const wrong = await agent((_req, res) => res.end(JSON.stringify({ challenge: "nope" })));
-    expect(await verifyAgentUrl(wrong.url, SECRET, { allowLoopback: true })).toMatchObject({
-      ok: false,
-      problem: expect.stringMatching(/without sending the challenge back/),
+  it("requires proof of the secret, so an echo server can't pass", async () => {
+    // The review's proof of concept: a server that echoes the body knows no secret.
+    const echo = await agent((_req, res, body) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(body);
     });
+    const proofless = await agent((_req, res, body) => {
+      const message = JSON.parse(body) as { challenge: string };
+      res.end(JSON.stringify({ challenge: message.challenge, proof: "ab".repeat(32) }));
+    });
+    for (const url of [echo.url, proofless.url])
+      expect(await verifyAgentUrl(url, SECRET, { allowLoopback: true })).toMatchObject({
+        ok: false,
+        problem: expect.stringMatching(/without proving it holds the agent secret/),
+      });
     const text = await agent((_req, res) => res.end("hello"));
     expect(await verifyAgentUrl(text.url, SECRET, { allowLoopback: true })).toMatchObject({
       ok: false,
@@ -219,29 +279,64 @@ describe("calling an agent URL", () => {
     ).toMatchObject({ ok: false, problem: "Nothing accepted a connection at your URL" });
   });
 
-  it("rate limits calls per host, whoever makes them", async () => {
+  it("limits episode calls per registration, so one operator can't use up another's", async () => {
     const ok = await agent((_req, res) => res.writeHead(204).end());
     const client = local({ callsPerMinute: 2, callBurst: 2 });
     const cancel = (episodeId: string) => ({ type: "cancel", episodeId }) as const;
-    expect((await client.send(ok.url, SECRET, cancel("e1"))).ok).toBe(true);
-    expect((await client.send(`${ok.url}?other-path`, SECRET, cancel("e2"))).ok).toBe(true);
-    expect(await client.send(ok.url, SECRET, cancel("e3"))).toEqual({
+    const as = (registration: string) => ({ registration });
+    expect((await client.send(ok.url, SECRET, cancel("e1"), as("noisy"))).ok).toBe(true);
+    expect((await client.send(`${ok.url}?x`, SECRET, cancel("e2"), as("noisy"))).ok).toBe(true);
+    expect(await client.send(ok.url, SECRET, cancel("e3"), as("noisy"))).toEqual({
       ok: false,
-      problem: "Bonded has called your URL too often in the last minute; try again shortly",
+      problem: RATE_LIMITED,
       caused: "bonded",
     });
-    expect(ok.calls).toHaveLength(2);
+    // Another agent on the same host still gets its calls.
+    expect((await client.send(ok.url, SECRET, cancel("e4"), as("victim"))).ok).toBe(true);
+    expect(ok.calls).toHaveLength(3);
   });
 
-  it("gives an agent URL one episode at a time", async () => {
+  it("limits verify calls by host name (trailing dot or not), domain and resolved address", async () => {
+    const ok = await agent(proving);
+    const port = new URL(ok.url).port;
+    const client = local({ verifiesPerMinute: 1, verifyBurst: 1 });
+    expect((await client.verify(`http://localhost:${port}/`, SECRET)).ok).toBe(true);
+    // The same host with a trailing dot is the same bucket.
+    expect(await client.verify(`http://localhost.:${port}/`, SECRET)).toEqual({
+      ok: false,
+      problem: RATE_LIMITED,
+    });
+    // Another name for the same address: refused at connect time by the address's bucket.
+    expect(await client.verify(`http://127.0.0.1:${port}/`, SECRET)).toEqual({
+      ok: false,
+      problem: RATE_LIMITED,
+    });
+    expect(ok.calls).toHaveLength(1);
+  });
+
+  it("drops the longest-idle buckets first, not the oldest", async () => {
+    const ok = await agent((_req, res) => res.writeHead(204).end());
+    const client = local({ callsPerMinute: 0.001, callBurst: 1, maxBuckets: 2 });
+    const send = (registration: string, id: string) =>
+      client.send(ok.url, SECRET, { type: "cancel", episodeId: id }, { registration });
+    expect((await send("a", "1")).ok).toBe(true);
+    expect((await send("b", "2")).ok).toBe(true);
+    // "a" is used again (refused), so it is the most recent; a third bucket drops "b".
+    expect((await send("a", "3")).ok).toBe(false);
+    expect((await send("c", "4")).ok).toBe(true);
+    // "a" is still remembered as spent: re-registering buckets can't reset it.
+    expect((await send("a", "5")).ok).toBe(false);
+  });
+
+  it("gives a registration one episode at a time, whatever URL it uses", async () => {
     const client = local();
-    const release = await client.acquire("https://a.example/x", "ep-1", 0);
-    await expect(client.acquire("https://a.example/x", "ep-2", 150)).rejects.toThrow(
+    const release = await client.acquire("agent:1", "ep-1", 0);
+    await expect(client.acquire("agent:1", "ep-2", 150)).rejects.toThrow(
       /still busy with episode ep-1/,
     );
-    const other = await client.acquire("https://b.example/x", "ep-3", 0);
+    const other = await client.acquire("agent:2", "ep-3", 0);
     release();
     other();
-    (await client.acquire("https://a.example/x", "ep-2", 0))();
+    (await client.acquire("agent:1", "ep-2", 0))();
   });
 });

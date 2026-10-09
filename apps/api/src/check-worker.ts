@@ -212,6 +212,7 @@ async function connectionFor(
         kind: "url",
         url: live.url,
         secret: secrets.decrypt(live.ciphertext, agentUrlContext(live.id)),
+        registration: check.subject,
       },
     };
   } catch {

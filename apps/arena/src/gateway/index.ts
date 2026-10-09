@@ -6,6 +6,7 @@ export {
   type AgentUrlVerifyResult,
   BONDED_OWN_HOSTS,
   DEFAULT_AGENT_URL_LIMITS,
+  registrableDomain,
   verifyAgentUrl,
 } from "./agent-url.js";
 export {
@@ -23,6 +24,8 @@ export {
 } from "./server.js";
 export {
   type AgentTransport,
+  AgentUrlUnavailableError,
+  bondedFailure,
   RemoteAgent,
   type RemoteEpisodeEvent,
   type RemoteAgentOptions,

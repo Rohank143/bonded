@@ -31,6 +31,15 @@ const signInInput = z.strictObject({
   signature: z.string().regex(/^0x[0-9a-fA-F]{130}$/),
 });
 
+/**
+ * What makes a signed request "used": who signed and exactly what, not the signature's bytes. The
+ * same message signed again (or one signature written another way: v as 0/1 or 27/28, high or
+ * low s) is the same request, so it is refused as a replay.
+ */
+export function signedRequestKey(signer: string, message: string): string {
+  return sha256(`${signer.toLowerCase()}\n${message}`);
+}
+
 /** Reads the caller's session: its wallet, or a 401 the web app can act on. */
 export type SessionWallet = (c: Context) => Promise<string>;
 
@@ -47,9 +56,9 @@ export function sessionRoutes(
   };
   const wallet: SessionWallet = async (c) => {
     const token = bearer(c);
-    if (!token) throw new Refused(401, "sign in with your wallet first");
+    if (!token) throw new Refused(401, "Sign in with your wallet first.");
     const session = await db.session(sha256(token), chainId);
-    if (!session) throw new Refused(401, "your session has ended; sign in again");
+    if (!session) throw new Refused(401, "Your session has ended. Sign in again.");
     return session.wallet;
   };
 
@@ -62,37 +71,38 @@ export function sessionRoutes(
       throw new Refused(429, "too many requests; try again in a few minutes");
     const input = signInInput.parse(await c.req.json());
     if (input.chainId !== undefined && input.chainId !== chainId)
-      throw new Refused(400, "that sign-in is for another chain");
+      throw new Refused(400, "That sign-in is for another chain.");
     const age = Math.floor(now() / 1000) - input.timestamp;
     if (age > SELF_SERVE_MAX_AGE_SECONDS || age < -60)
-      throw new Refused(400, "the signed request has expired; sign it again");
+      throw new Refused(400, "The signed request has expired. Sign it again.");
+    const message = selfServeMessage({
+      action: "sign-in",
+      chainId,
+      wallet: input.wallet,
+      timestamp: input.timestamp,
+    });
     const recovered = await recoverMessageAddress({
-      message: selfServeMessage({
-        action: "sign-in",
-        chainId,
-        wallet: input.wallet,
-        timestamp: input.timestamp,
-      }),
+      message,
       signature: input.signature as Hex,
     }).catch(() => undefined);
-    if (!recovered) throw new Refused(400, "the signature is not valid");
+    if (!recovered) throw new Refused(400, "The signature isn't valid.");
     if (recovered.toLowerCase() !== input.wallet.toLowerCase())
-      throw new Refused(403, "the signature isn't from that wallet");
+      throw new Refused(403, "The signature isn't from that wallet.");
     const token = `${SESSION_PREFIX}${randomBytes(32).toString("base64url")}`;
     const opened = await db.createSession(
       {
         tokenHash: sha256(token),
         chainId,
         wallet: recovered,
-        signatureHash: sha256(input.signature.toLowerCase()),
+        signatureHash: signedRequestKey(recovered, message),
         ttlMs: SESSION_TTL_MS,
       },
       SESSIONS_PER_WALLET_HOURLY,
     );
     if ("refused" in opened)
       throw opened.refused === "replayed"
-        ? new Refused(409, "that signed request was already used; sign again")
-        : new Refused(429, "too many sign-ins from this wallet; try again in an hour");
+        ? new Refused(409, "That signed request was already used. Sign it again.")
+        : new Refused(429, "Too many sign-ins from this wallet. Try again in an hour.");
     c.header("Cache-Control", "no-store");
     return c.json(
       {
@@ -113,7 +123,7 @@ export function sessionRoutes(
       handle(async (c) => {
         const token = bearer(c);
         const session = token ? await db.session(sha256(token), chainId) : undefined;
-        if (!session) throw new Refused(401, "not signed in");
+        if (!session) throw new Refused(401, "You aren't signed in.");
         return c.json({ wallet: session.wallet, expiresAt: session.expiresAt.toISOString() });
       }),
     );
@@ -124,7 +134,7 @@ export function sessionRoutes(
       path,
       handle(async (c) => {
         const token = bearer(c);
-        if (!token) throw new Refused(401, "not signed in");
+        if (!token) throw new Refused(401, "You aren't signed in.");
         return c.json({ signedOut: await db.revokeSession(sha256(token)) });
       }),
     );

@@ -185,10 +185,10 @@ export function previewRefusalMessage(
 ): string {
   switch (refusal.refused) {
     case "busy":
-      return "this preview already has a rating queued or running";
+      return "This preview already has a rating queued or running.";
     case "wallet-daily":
-      return `at most ${policy.previewPerWalletDaily} preview ${policy.previewPerWalletDaily === 1 ? "rating" : "ratings"} a day per wallet; try again after ${refusal.nextAt.toISOString()}`;
+      return `You can run at most ${policy.previewPerWalletDaily} preview ${policy.previewPerWalletDaily === 1 ? "rating" : "ratings"} a day. Try again after ${refusal.nextAt.toISOString()}.`;
     case "daily":
-      return `today's preview ratings are used up; try again after ${refusal.nextAt.toISOString()}`;
+      return `Today's preview ratings are used up. Try again after ${refusal.nextAt.toISOString()}.`;
   }
 }

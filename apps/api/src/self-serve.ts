@@ -37,7 +37,7 @@ import {
 import { RateLimiter, clientAddress } from "./rate-limit.js";
 import { Refused, handle } from "./refused.js";
 import { SECRET_KEY_MISSING } from "./secrets.js";
-import { NEEDS_CHECK, checkSummary, codeInfo } from "./connections.js";
+import { NEEDS_CHECK, codeInfo, publicCheckSummary } from "./connections.js";
 import {
   DEFAULT_REMOTE_POLICY,
   remoteQuota,
@@ -147,6 +147,12 @@ export function selfServeRoutes(
     coverCaps?: Readonly<Record<BindingLevel, number>>;
     /** Whether Agent URL mode can be used here (AGENT_URL_SECRET_KEY is set). */
     agentUrls?: boolean;
+    /**
+     * The owner session's wallet (sessions.ts): runner tokens and ratings of an owned agent can be
+     * asked for with it instead of a fresh signature, so the agent page needs one sign-in. The
+     * registry is still asked who owns the agent, each time.
+     */
+    wallet?: (c: Context) => Promise<string>;
   },
 ) {
   const { db, chain } = options;
@@ -348,10 +354,8 @@ export function selfServeRoutes(
               // Ready to be reached: runner connected, or Agent URL verified (never the URL here).
               connectionReady: current?.ready ?? false,
               tee: config.tee ?? null,
-              // The preview it was made official from, whose report stays linked.
-              preview: fromPreview
-                ? { previewId: fromPreview.id, ratingId: fromPreview.ratingId }
-                : null,
+              // Made official from a preview: whether, not which (the owner's session lists theirs).
+              fromPreview: Boolean(fromPreview),
               // Underwriting policy, not score: the most cover it can hold, by binding.
               coverCaps: options.coverCaps ?? UNDERWRITING_COVER_CAP_USD,
               // The most a rating will be, before the owner asks for one.
@@ -397,7 +401,7 @@ export function selfServeRoutes(
       )
         throw new Refused(
           400,
-          "a TEE-bound agent needs a declared code hash (the one its TEE reports) and the runner, which forwards its evidence",
+          "A TEE-bound agent needs a declared code hash (the one its TEE reports) and the runner, which forwards its evidence.",
         );
       if (input.kind === REMOTE_KIND && input.connection === "url" && !options.agentUrls)
         throw new Refused(409, SECRET_KEY_MISSING);
@@ -497,11 +501,15 @@ export function selfServeRoutes(
     handle(async (c) => {
       limit(c);
       const agentId = uint.parse(c.req.param("id"));
-      const input = signedInput.parse(await c.req.json());
-      const who = await signer(
-        { action: "rate", chainId: d.chainId, agentId, timestamp: input.timestamp },
-        input.signature,
-      );
+      let who: string;
+      if (withSession(c)) who = await options.wallet!(c);
+      else {
+        const input = signedInput.parse(await c.req.json());
+        who = await signer(
+          { action: "rate", chainId: d.chainId, agentId, timestamp: input.timestamp },
+          input.signature,
+        );
+      }
       const record = await db.agentRecord(rowId(agentId));
       if (!record?.enabled || record.source !== "user")
         throw new Refused(404, "register the agent for ratings first");
@@ -530,7 +538,7 @@ export function selfServeRoutes(
           throw new Refused(
             409,
             connection === "url"
-              ? "the agent's URL isn't verified; verify it, then rate"
+              ? "The agent's URL isn't verified yet. Verify it, then rate."
               : "no runner is connected for this agent; start it, then rate",
           );
         code = config.codeHash ? { hash: config.codeHash, source: "declared" } : current.code;
@@ -538,8 +546,8 @@ export function selfServeRoutes(
           throw new Refused(
             409,
             connection === "url"
-              ? "the Agent URL reported no version, so there is no code hash: report a version when you answer the verify challenge, or register a code hash"
-              : "the runner reported no code hash: update @bonded/runner, or register a code hash",
+              ? "The Agent URL reported no version, so there is no code hash. Report a version when you answer the verify challenge, or register a code hash."
+              : "The runner reported no code hash. Update @bonded/runner, or register a code hash.",
           );
         const passing = await db.passingCheck(rowId(agentId), {
           mode: config.mode,
@@ -576,23 +584,38 @@ export function selfServeRoutes(
    * The owner's own agent, ready for a runner token: registered as remote, and asked for by the
    * agent's owner (the registry's, not whoever registered it) with a fresh signature.
    */
+  /** With a session: its wallet. Otherwise the signer of a fresh signed request. */
+  const withSession = (c: Context) =>
+    Boolean(options.wallet) && (c.req.header("Authorization") ?? "").startsWith("Bearer ");
   async function remoteOwner(c: Context, action: "runner-token" | "revoke-runner-token") {
     limit(c);
     const agentId = uint.parse(c.req.param("id"));
-    const input = signedInput.parse(await c.req.json());
-    const who = await signer(
-      { action, chainId: d.chainId, agentId, timestamp: input.timestamp },
-      input.signature,
-    );
+    let who: string;
+    let timestamp: number;
+    if (withSession(c)) {
+      who = await options.wallet!(c);
+      // Ordered after every request on record, signed or not.
+      timestamp = Math.max(
+        Math.floor(now() / 1000),
+        (await db.lastRunnerRequestAt(rowId(agentId))) + 1,
+      );
+    } else {
+      const input = signedInput.parse(await c.req.json());
+      who = await signer(
+        { action, chainId: d.chainId, agentId, timestamp: input.timestamp },
+        input.signature,
+      );
+      timestamp = input.timestamp;
+    }
     const record = await db.agentRecord(rowId(agentId));
     if (!record?.enabled) throw new Refused(404, "register the agent for ratings first");
     if ((record.config as { kind?: string }).kind !== REMOTE_KIND)
       throw new Refused(409, "runner tokens are for agents registered as your own agent");
     if ((record.config as { connection?: string }).connection === "url")
-      throw new Refused(409, "this agent is reached by its Agent URL; it has no runner");
+      throw new Refused(409, "This agent is reached by its Agent URL, so it has no runner.");
     if ((await ownerOf(agentId)) !== who)
       throw new Refused(403, "only the agent's owner can manage its runner token");
-    return { agentId, who, timestamp: input.timestamp };
+    return { agentId, who, timestamp };
   }
 
   /**
@@ -660,14 +683,16 @@ export function selfServeRoutes(
       return c.json({
         ...status,
         connection,
+        // Public: that a URL is set and answered, never the URL itself (the owner's session
+        // shows it at GET …/agent-url); the last check's outcome, never its id or its output.
         agentUrl: url
           ? {
-              url: url.url,
+              configured: true,
               verifiedAt: url.verifiedAt?.toISOString() ?? null,
               version: url.version,
             }
           : null,
-        lastCheck: checks[0] ? checkSummary(checks[0]) : null,
+        lastCheck: checks[0] ? publicCheckSummary(checks[0]) : null,
         codeHash: codeInfo(
           declared ? { hash: declared, source: "declared" } : current.code,
           url?.version,

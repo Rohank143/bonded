@@ -1,4 +1,6 @@
 import {
+  AgentUrlUnavailableError,
+  bondedFailure,
   HOSTED_REMOTE_PROFILE,
   RemoteAgent,
   TeeVerificationError,
@@ -217,6 +219,9 @@ export interface RatingFailure {
  * so it gets a generic reason and is retried.
  */
 export function ratingFailure(error: unknown, budgetSpentIn?: string): RatingFailure {
+  // Bonded couldn't call the agent's URL: not the agent's doing, so no standing or cooldown, and
+  // the rating is retried.
+  if (error instanceof AgentUrlUnavailableError) return { reason: error.message, final: false };
   if (error instanceof RatingRefused && error.agent)
     return {
       reason: error.message,
@@ -236,18 +241,11 @@ export function ratingFailure(error: unknown, budgetSpentIn?: string): RatingFai
 
 /**
  * Whether an episode failed because Bonded couldn't call the agent's URL (its own per-host rate
- * limit, or the URL transport being unavailable): not the agent's doing, so never charged to it.
- * A URL that answered non-2xx, or didn't answer in 10 s, is the agent's (that's "url failed").
+ * limit): the gateway's `bondedFailure`, so never charged to the agent. A URL that answered
+ * non-2xx, or didn't answer in 10 s, is the agent's. (rateAgent itself stops such a rating with
+ * AgentUrlUnavailableError before the episode is counted; this covers any episode that slips by.)
  */
 export function bondedUrlFailure(value: unknown): boolean {
-  const e = value as {
-    agentSummary?: {
-      finalMessage?: unknown;
-      remote?: { urlUnavailable?: unknown; urlCaused?: unknown };
-    };
-  } | null;
-  const remote = e?.agentSummary?.remote;
-  if (remote?.urlUnavailable === true || remote?.urlCaused === "bonded") return true;
-  const said = e?.agentSummary?.finalMessage;
-  return typeof said === "string" && said.startsWith("the agent's URL wasn't called");
+  const summary = (value as { agentSummary?: object } | null)?.agentSummary;
+  return Boolean(summary && bondedFailure(summary));
 }

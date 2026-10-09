@@ -15,17 +15,36 @@ export interface PollResult {
  */
 export class PollStreams {
   private readonly active = new Set<AbortController>();
+  /** Streams open per client address, and per thing streamed (a check, a rating). */
+  private readonly perClient = new Map<string, number>();
+  private readonly perKey = new Map<string, number>();
   private closing = false;
 
-  constructor(private readonly limit = 50) {}
+  constructor(
+    private readonly limit = 50,
+    private readonly limits = { perClient: 4, perKey: 3 },
+  ) {}
 
   open(
     c: Context,
     poll: () => Promise<PollResult>,
-    options: { intervalMs?: number; maxMs?: number } = {},
+    options: { intervalMs?: number; maxMs?: number; client?: string; key?: string } = {},
   ): Response | Promise<Response> {
+    const client = options.client ?? "unknown";
+    const key = options.key ?? "";
     if (this.closing || this.active.size >= this.limit)
       return c.json({ error: "too many live streams open; try again shortly" }, 503);
+    if ((this.perClient.get(client) ?? 0) >= this.limits.perClient)
+      return c.json({ error: "too many live streams open from here; close one first" }, 429);
+    if (key && (this.perKey.get(key) ?? 0) >= this.limits.perKey)
+      return c.json({ error: "too many live streams open for this; close one first" }, 429);
+    const bump = (map: Map<string, number>, k: string, by: number) => {
+      const n = (map.get(k) ?? 0) + by;
+      if (n > 0) map.set(k, n);
+      else map.delete(k);
+    };
+    bump(this.perClient, client, 1);
+    if (key) bump(this.perKey, key, 1);
     const abort = new AbortController();
     this.active.add(abort);
     const stop = () => abort.abort();
@@ -63,7 +82,10 @@ export class PollStreams {
           }
         } finally {
           c.req.raw.signal.removeEventListener("abort", stop);
-          this.active.delete(abort);
+          if (this.active.delete(abort)) {
+            bump(this.perClient, client, -1);
+            if (key) bump(this.perKey, key, -1);
+          }
         }
       },
       async () => {

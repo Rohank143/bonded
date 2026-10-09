@@ -15,7 +15,9 @@ export function ownDomainsFrom(urls: readonly (string | undefined)[]): string[] 
       /* not a URL: nothing to block */
     }
   }
-  return [...hosts].filter(Boolean);
+  // Loopback is ruled by allowLoopback alone (a local web app on localhost mustn't stop a local
+  // agent on another port from being used in a local demo).
+  return [...hosts].filter((h) => h && !["localhost", "127.0.0.1", "::1", "[::1]"].includes(h));
 }
 
 /**
@@ -28,25 +30,25 @@ export function outboundUrlProblem(
   ownDomains: readonly string[],
   allowLoopback = false,
 ): string | undefined {
-  if (raw.length > 2048) return "the URL is over 2,048 characters";
+  if (raw.length > 2048) return "Your URL is longer than 2,048 characters.";
   let url: URL;
   try {
     url = new URL(raw);
   } catch {
-    return "that isn't a URL";
+    return "That isn't a URL.";
   }
   const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
   const loopback = host === "localhost" || host === "127.0.0.1" || host === "::1";
   if (url.protocol !== "https:" && !(allowLoopback && loopback && url.protocol === "http:"))
-    return "the URL must use https";
-  if (url.username || url.password) return "the URL can't carry a user name or password";
-  if (url.hash) return "the URL can't have a #fragment";
+    return "Your URL must use https.";
+  if (url.username || url.password) return "Your URL can't carry a user name or password.";
+  if (url.hash) return "Your URL can't have a #fragment.";
   if (!allowLoopback && (loopback || host.endsWith(".localhost") || host.endsWith(".internal")))
-    return "the URL must be reachable on the public internet";
+    return "Your URL must be reachable on the public internet.";
   for (const own of ownDomains) {
     const bare = own.replace(/^.*\*/, "");
     if (host === own || host.endsWith(`.${own}`) || (bare !== own && host.endsWith(bare)))
-      return "the URL can't be one of Bonded's own";
+      return "Your URL can't be one of Bonded's own addresses.";
   }
   return undefined;
 }

@@ -26,7 +26,7 @@ export function newSecret(prefix: string): string {
 
 /** Why a feature that needs AGENT_URL_SECRET_KEY is off. */
 export const SECRET_KEY_MISSING =
-  "Agent URL mode and webhooks are off on this service: AGENT_URL_SECRET_KEY isn't set";
+  "Agent URL mode and webhooks are off on this service: AGENT_URL_SECRET_KEY isn't set.";
 
 export class SecretBox {
   private readonly key: Buffer;
