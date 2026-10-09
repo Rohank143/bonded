@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyPreset,
+  basisLine,
   bondTable,
   minimumBond,
   premiumPerYear,
@@ -56,5 +57,22 @@ describe("bond and cover in plain words", () => {
         maxDailyUsd: 5_000,
       }),
     ).toEqual({ mode: "enforce", tokens: ["tTSLA"], maxTx: "1200", maxDaily: "5000" });
+  });
+
+  it("says where a suggested mandate came from", () => {
+    const basis = {
+      trades: 1,
+      tokens: [],
+      largestTradeUsd: 0,
+      usedRouter: false,
+      transfers: 0,
+      approvals: 0,
+    };
+    expect(basisLine({ ...basis, sources: ["check"] })).toBe("your passing check (1 trade)");
+    expect(basisLine({ ...basis, sources: ["check", "preview", "rating"], trades: 4 })).toBe(
+      "your passing check, your preview and its rating (4 trades)",
+    );
+    expect(basisLine({ ...basis, sources: [] })).toBeUndefined();
+    expect(basisLine(null)).toBeUndefined();
   });
 });

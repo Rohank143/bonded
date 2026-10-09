@@ -51,20 +51,29 @@ export const initWorks = (framework: Framework) => framework !== "python";
  * `npx @bondedhq/runner init`, run in the agent's folder (the runner's own command, as Track R
  * ships it). It detects the framework, shows the changes as a diff and asks before writing
  * (`--print` only shows, `--yes` applies). With the runner token and the gateway it then starts
- * the runner and runs the connection check; with `--url` it adds an Agent URL route instead.
+ * the runner and runs the connection check with the token; with `--url` it adds an Agent URL route
+ * instead. The token goes in `BONDED_RUNNER_TOKEN`, not `--token`, so it isn't in the process
+ * list. `--api` is added only when this page talks to another API than the runner's default.
  */
 export function initCommand(input: {
   connection: Connection;
   token?: string | null;
   gatewayUrl?: string | null;
+  apiUrl?: string | null;
 }): string {
   if (input.connection === "url") return `npx ${RUNNER_PACKAGE} init --url`;
   return [
+    ...(input.token ? [`BONDED_RUNNER_TOKEN=${input.token}`] : []),
     `npx ${RUNNER_PACKAGE} init`,
-    ...(input.token ? [`--token ${input.token}`] : []),
     ...(input.gatewayUrl ? [`--gateway ${input.gatewayUrl}`] : []),
+    ...(input.token && input.apiUrl && input.apiUrl !== RUNNER_DEFAULT_API
+      ? [`--api ${input.apiUrl}`]
+      : []),
   ].join(" ");
 }
+
+/** The API the runner's `init` checks against when it isn't told (`DEFAULT_API_URL` there). */
+export const RUNNER_DEFAULT_API = "https://api-production-ba50.up.railway.app";
 
 /** What init does, in a sentence, for the page to say next to the command. */
 export const INIT_NOTE =

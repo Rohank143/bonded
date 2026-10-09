@@ -19,7 +19,7 @@ export function InboxBell() {
   const owner = useOwnerSession();
   const inbox = useInbox(owner.session?.session);
   if (!owner.session || !inbox.data) return null;
-  const unread = unreadCount(inbox.data.items);
+  const unread = unreadCount(inbox.data);
   return (
     <Link
       to="/inbox"

@@ -3,10 +3,10 @@ import { apiUrl, deployment } from "../config";
 import { request, type RunnerRecord } from "./api";
 import { byoaMessage, type ByoaAction } from "./byoa-messages";
 import { createRunnerToken, requestRating, revokeRunnerToken, type Signer } from "./self-serve";
-import type { ApiMessage } from "./troubleshooting";
+import { withCodes, type ApiMessage, type CheckIssue } from "./troubleshooting";
 import type { RatingCompare } from "./report-actions";
 import type { SuggestedMandate } from "./bond-cover";
-import type { AgentHealth, InboxItem, ServiceStatus, VaultActivity } from "./health";
+import type { AgentHealth, InboxPage, ServiceStatus, VaultActivityRecord } from "./health";
 
 /**
  * The API calls behind "Test your agent", Agent URL mode, connection checks, progress, cost
@@ -88,6 +88,8 @@ export interface CheckSummary {
   problems?: ApiMessage[];
   /** Advice only: a passing check can still carry these. */
   warnings?: ApiMessage[];
+  /** The same sentences with their troubleshooting codes. */
+  issues?: CheckIssue[];
 }
 
 /** What the agent reported using at `/done` (optional, never trusted). */
@@ -116,6 +118,8 @@ export type CheckEvent =
       problems: ApiMessage[];
       /** Advice only, never a reason to fail (e.g. surfaces it didn't read). */
       warnings?: ApiMessage[];
+      /** The problems and warnings with their troubleshooting codes. */
+      issues?: CheckIssue[];
       taskCompleted: boolean;
       toolsCalled: number;
       surfacesRead: string[];
@@ -175,6 +179,10 @@ export interface NotificationSettings {
   emailAvailable: boolean;
   /** This deployment can sign webhooks (its secret key is set). */
   webhookAvailable?: boolean;
+  /** The notification types the owner turned off (snake_case, e.g. "low_gas"). */
+  muted?: string[];
+  /** Every notification type there is, in the same names. */
+  types?: string[];
 }
 
 export type PreviewStatus =
@@ -254,6 +262,36 @@ export interface PreviewSession {
 }
 
 const now = () => Math.floor(Date.now() / 1000);
+
+/**
+ * A check (summary or result) with each problem and warning carrying its code: the API keeps
+ * `problems` and `warnings` as plain sentences and puts the codes in `issues`.
+ */
+export function codedCheck<
+  T extends { problems?: ApiMessage[]; warnings?: ApiMessage[]; issues?: CheckIssue[] },
+>(check: T): T;
+export function codedCheck<
+  T extends { problems?: ApiMessage[]; warnings?: ApiMessage[]; issues?: CheckIssue[] },
+>(check: T | null | undefined): T | null | undefined;
+export function codedCheck<
+  T extends { problems?: ApiMessage[]; warnings?: ApiMessage[]; issues?: CheckIssue[] },
+>(check: T | null | undefined): T | null | undefined {
+  if (!check || !check.issues?.length) return check;
+  return {
+    ...check,
+    ...(check.problems ? { problems: withCodes(check.problems, check.issues, "problem") } : {}),
+    ...(check.warnings ? { warnings: withCodes(check.warnings, check.issues, "warning") } : {}),
+  };
+}
+
+const codedEvent = (e: CheckEvent): CheckEvent => (e.type === "result" ? codedCheck(e) : e);
+
+/** A preview with its checks' sentences coded. */
+const codedPreview = (p: PreviewRecord): PreviewRecord => ({
+  ...p,
+  lastCheck: codedCheck(p.lastCheck) ?? null,
+  ...(p.passingCheck !== undefined ? { passingCheck: codedCheck(p.passingCheck) ?? null } : {}),
+});
 
 /** The API path of a subject's own endpoints. */
 export function subjectPath(subject: Subject): string {
@@ -360,8 +398,11 @@ export const byoaApi = {
   previewAllowance: (wallet: string) =>
     request<PreviewAllowance>(`/previews/allowance?wallet=${encodeURIComponent(wallet)}`),
   /** GET /previews: the signed-in wallet's previews, newest first. */
-  listPreviews: (session: string) =>
-    request<{ items: PreviewRecord[] }>("/previews", bearer(session)),
+  listPreviews: (session: string): Promise<{ items: PreviewRecord[] }> =>
+    request<{ items: PreviewRecord[] }>("/previews", bearer(session)).then((r) => ({
+      ...r,
+      items: r.items.map(codedPreview),
+    })),
   /** POST /previews: a new preview with its mode and connection. Nothing is made on chain. */
   createPreview: (session: string, input: { mode: RemoteMode; connection: Connection }) =>
     request<PreviewRecord>("/previews", {
@@ -370,8 +411,10 @@ export const byoaApi = {
       body: JSON.stringify(input),
     }),
   /** GET /previews/:id. */
-  preview: (session: string, id: string) =>
-    request<PreviewRecord>(subjectPath({ kind: "preview", id }), bearer(session)),
+  preview: (session: string, id: string): Promise<PreviewRecord> =>
+    request<PreviewRecord>(subjectPath({ kind: "preview", id }), bearer(session)).then(
+      codedPreview,
+    ),
   /**
    * POST …/runner-token: a runner token, shown once. With a session, no signature; an agent's
    * owner without one signs the existing request.
@@ -491,8 +534,12 @@ export const byoaApi = {
   startCheck: (subject: Subject, auth: Auth) =>
     write<{ checkId: string }>("POST", `${subjectPath(subject)}/checks`, subject, auth, "check"),
   /** GET /checks/:id: the events so far, for its owner. */
-  check: (checkId: string, session: string) =>
-    request<CheckRecord>(`/checks/${encodeURIComponent(checkId)}`, bearer(session)),
+  check: (checkId: string, session: string): Promise<CheckRecord> =>
+    request<CheckRecord>(`/checks/${encodeURIComponent(checkId)}`, bearer(session)).then((k) => ({
+      ...k,
+      events: k.events.map(codedEvent),
+      ...(k.result !== undefined ? { result: codedCheck(k.result) } : {}),
+    })),
   /**
    * GET /checks/:id/events (SSE): each event as it happens, ending with `result`. Opened with a
    * stream token (EventSource can't send the session); a check is over well within its life.
@@ -507,7 +554,7 @@ export const byoaApi = {
       session,
       { checkId },
       `/checks/${encodeURIComponent(checkId)}/events`,
-      onEvent,
+      (e) => onEvent(codedEvent(e)),
       onError,
     ),
   /** GET …/estimate: from the latest passing check; 409 without one. */
@@ -581,13 +628,42 @@ export const byoaApi = {
     request<SuggestedMandate>(`${subjectPath(subject)}/suggested-mandate`, bearer(session)),
   /** GET /self/agents/:id/vault-activity: trades through its vault from the agent key. Public. */
   vaultActivity: (agentId: string) =>
-    request<VaultActivity>(`/self/agents/${agentId}/vault-activity`),
+    request<VaultActivityRecord>(`/self/agents/${agentId}/vault-activity`),
   /** GET /self/agents/:id/health: everything the owner needs to know at a glance (session). */
   agentHealth: (agentId: string, session: string) =>
     request<AgentHealth>(`/self/agents/${agentId}/health`, bearer(session)),
-  /** GET /self/notifications/inbox: the signed-in wallet's in-app notifications, newest first. */
-  inbox: (session: string) =>
-    request<{ items: InboxItem[] }>("/self/notifications/inbox", bearer(session)),
+  /**
+   * GET /self/notifications/inbox?limit=&before=&unread=1: the signed-in wallet's in-app
+   * notifications, newest first, with the unread count and the id to page from (`next`).
+   */
+  inbox: (session: string, page: { limit?: number; before?: string; unread?: boolean } = {}) => {
+    const q = new URLSearchParams();
+    if (page.limit) q.set("limit", String(page.limit));
+    if (page.before) q.set("before", page.before);
+    if (page.unread) q.set("unread", "1");
+    const query = q.toString();
+    return request<InboxPage>(
+      `/self/notifications/inbox${query ? `?${query}` : ""}`,
+      bearer(session),
+    );
+  },
+  /** GET /self/notifications: the signed-in owner's settings, with what is muted. */
+  ownerNotifications: (session: string) =>
+    request<NotificationSettings>("/self/notifications", bearer(session)),
+  /** PUT /self/notifications { muted }: the full list of types to turn off (replaces the saved one). */
+  saveMuted: (session: string, muted: string[]) =>
+    request<NotificationSettings>("/self/notifications", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...bearer(session).headers },
+      body: JSON.stringify({ muted }),
+    }),
+  /** POST /self/notifications/inbox/read: mark these read, or everything up to `through`. */
+  markInboxRead: (session: string, which: { ids: string[] } | { through: string }) =>
+    request<{ marked: number }>("/self/notifications/inbox/read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...bearer(session).headers },
+      body: JSON.stringify(which),
+    }),
   /** GET /status: the public service status (cached by the API). */
   status: () => request<ServiceStatus>("/status"),
 };

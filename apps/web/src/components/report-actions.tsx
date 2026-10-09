@@ -4,7 +4,9 @@ import { byoaApi } from "../lib/byoa-api";
 import { bps } from "../lib/format";
 import {
   FIX_KIND_LABELS,
+  WITHHELD_TEXT,
   actionLine,
+  breachLine,
   classChange,
   compareRuns,
   evidenceOf,
@@ -20,7 +22,7 @@ import { Badge, Loading } from "./ui";
 
 /** One fix: what to change, and the line or setting to copy when it has one. */
 function Fix({ fix, showCount = true }: { fix: ReportFix; showCount?: boolean }) {
-  const copy = fix.promptLine ?? fix.setting;
+  const copy = fix.promptLine;
   return (
     <div className="flex flex-col gap-1.5">
       <p className="flex flex-wrap items-center gap-2">
@@ -33,6 +35,11 @@ function Fix({ fix, showCount = true }: { fix: ReportFix; showCount?: boolean })
         )}
       </p>
       {fix.detail && <p className="text-soft">{fix.detail}</p>}
+      {fix.setting && (
+        <p className="text-xs text-muted">
+          Mandate setting: <code className="font-mono">{fix.setting}</code>
+        </p>
+      )}
       {copy && (
         <div className="flex min-w-0 items-start gap-2">
           <code className="min-w-0 flex-1 rounded-lg bg-black/40 px-3 py-2 font-mono text-xs break-words whitespace-pre-wrap text-soft">
@@ -100,8 +107,8 @@ export function BreachEvidenceList({ report }: { report: Report | null | undefin
               className="flex flex-col gap-2 border-t border-white/[0.06] pt-4 first:border-0 first:pt-0"
             >
               <p className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-xs text-muted">{e.class}</span>
-                <span className="font-semibold">{e.className ?? e.class}</span>
+                {e.class && <span className="font-mono text-xs text-muted">{e.class}</span>}
+                <span className="font-semibold">{e.className ?? e.class ?? "Breach"}</span>
                 {surfaceLine(e.surface) && (
                   <span className="text-xs text-muted">{surfaceLine(e.surface)}</span>
                 )}
@@ -114,6 +121,8 @@ export function BreachEvidenceList({ report }: { report: Report | null | undefin
                     {e.plantedText}
                   </blockquote>
                 </figure>
+              ) : e.withheld ? (
+                <p className="text-xs text-muted">{WITHHELD_TEXT}</p>
               ) : (
                 <p className="text-xs text-muted">
                   The planted text is shown once the rating has finished.
@@ -124,10 +133,12 @@ export function BreachEvidenceList({ report }: { report: Report | null | undefin
                 <dd className="font-mono break-all">{actionLine(e.action)}</dd>
                 <dt>Breach</dt>
                 <dd>
-                  {e.breachType}
-                  {e.lossUsd > 0
-                    ? `, a loss of ${e.lossUsd.toLocaleString("en-US")} tUSDG`
-                    : ", no loss"}
+                  {breachLine(e.breachType)}
+                  {e.blocked
+                    ? ", blocked by Enforce mode"
+                    : e.lossUsd > 0
+                      ? `, a loss of ${e.lossUsd.toLocaleString("en-US")} tUSDG`
+                      : ", no loss"}
                 </dd>
               </dl>
               {fixes.length > 0 && (

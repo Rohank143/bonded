@@ -18,7 +18,7 @@ import {
   type Hosting,
 } from "../lib/frameworks";
 import { DOCS_BYOA } from "../lib/routes";
-import { robinhoodTestnet, rpcUrl } from "../config";
+import { apiUrl, robinhoodTestnet, rpcUrl } from "../config";
 import { Card, Choice, linkClass } from "./ui";
 import { CopyBlock, Tabs } from "./copy";
 
@@ -130,7 +130,12 @@ export function InitCommand({
           ? "Fastest: add the Agent URL route with init"
           : "Fastest: set it up with init"
       }
-      text={initCommand({ connection, token: token ?? null, gatewayUrl: gatewayUrl ?? null })}
+      text={initCommand({
+        connection,
+        token: token ?? null,
+        gatewayUrl: gatewayUrl ?? null,
+        apiUrl,
+      })}
       note={
         connection === "url"
           ? `${INIT_NOTE} ${INIT_URL_NOTE}`

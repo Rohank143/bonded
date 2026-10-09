@@ -5,6 +5,7 @@ import {
   connectionFor,
   hostingFor,
   initCommand,
+  RUNNER_DEFAULT_API,
   initWorks,
   rememberFramework,
   rememberedFramework,
@@ -37,7 +38,23 @@ describe("framework-first answers", () => {
     expect(initCommand({ connection: "runner" })).toBe("npx @bondedhq/runner init");
     expect(
       initCommand({ connection: "runner", token: "bonded_rt_x", gatewayUrl: "https://gw.example" }),
-    ).toBe("npx @bondedhq/runner init --token bonded_rt_x --gateway https://gw.example");
+    ).toBe(
+      "BONDED_RUNNER_TOKEN=bonded_rt_x npx @bondedhq/runner init --gateway https://gw.example",
+    );
+    // Another API than the runner's default is named; the default isn't.
+    expect(
+      initCommand({
+        connection: "runner",
+        token: "bonded_rt_x",
+        gatewayUrl: "https://gw.example",
+        apiUrl: "http://localhost:8787",
+      }),
+    ).toBe(
+      "BONDED_RUNNER_TOKEN=bonded_rt_x npx @bondedhq/runner init --gateway https://gw.example --api http://localhost:8787",
+    );
+    expect(initCommand({ connection: "runner", token: "t", apiUrl: RUNNER_DEFAULT_API })).toBe(
+      "BONDED_RUNNER_TOKEN=t npx @bondedhq/runner init",
+    );
     expect(initWorks("python")).toBe(false);
     expect(initWorks("eliza")).toBe(true);
   });

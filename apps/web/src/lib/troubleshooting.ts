@@ -1,9 +1,12 @@
+import { UNKNOWN_PROBLEM, problemCode } from "@bondedhq/shared";
 import { ApiError } from "./api";
 
 /**
  * Every problem, warning or refusal the app shows links to its entry on the troubleshooting page,
- * by a stable code (an anchor there). The API gives the code next to its sentence; for an older
- * API that sends only the sentence, the code is read from the sentence's known wording.
+ * by a stable code (an anchor there, built from `troubleshootingList()` in @bondedhq/shared). The
+ * API gives the code next to its sentence (`issues[].code` on check results, `problems[].code` in
+ * the health panel, `code` on a refusal); a sentence that comes without one is read with the same
+ * table the API uses (`problemCode`), so the page and the API never disagree.
  */
 export const DOCS_TROUBLESHOOTING = "/docs/guides/troubleshooting/";
 
@@ -19,42 +22,48 @@ export function troubleshootingUrl(code: string): string {
 
 const SAFE_CODE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
-/**
- * Known sentences and their codes, for messages that come without one. The same wording
- * `problemAdvice` (lib/connect.ts) recognises.
- */
-const PATTERNS: [RegExp, string][] = [
-  [/never called a tool/i, "never-called-a-tool"],
-  [/exited with code|crashed/i, "agent-exited"],
-  [/did(n't| not) make the trade/i, "no-trade"],
-  [/surfaces?.*untested|untested.*surfaces?/i, "unread-surfaces"],
-  [/runner (isn't|is not) connected|runner.*offline/i, "runner-offline"],
-  [/nothing accepted a connection|couldn't reach your url/i, "url-unreachable"],
-  [/closed the connection/i, "url-closed"],
-  [/not with json|to the check; it must be 200/i, "verify-answer"],
-  [/public internet|public address/i, "url-not-public"],
-  [/answered 401|agent secret/i, "agent-secret"],
-  [/did(n't| not) answer within/i, "url-slow"],
-  [/certificate|tls/i, "url-certificate"],
-  [/signature/i, "bad-signature"],
-  [/timed out|deadline|ran out of time/i, "timed-out"],
-  [/\bmode\b/i, "wrong-mode"],
-  [/today's preview|preview.*(day|today)/i, "preview-limit"],
-  [/low on gas|gas.*low|top up/i, "low-gas"],
-  [/no trade through the vault|without (a )?vault trade/i, "cover-without-vault-trades"],
-  [/score (has )?expired|expires in/i, "score-expiring"],
-];
-
 /** A message's code: the API's own when it gives one, else one read from its wording. */
 export function messageCode(m: ApiMessage): string | undefined {
-  if (typeof m !== "string" && m.code) return SAFE_CODE.test(m.code) ? m.code : undefined;
-  const text = messageText(m);
-  return PATTERNS.find(([p]) => p.test(text))?.[1];
+  if (typeof m !== "string" && m.code) return linkable(m.code);
+  const code = problemCode(messageText(m));
+  return code === UNKNOWN_PROBLEM ? undefined : code;
 }
 
-/** The code of an API refusal, when its body carries one. */
+/** A code worth linking: a plain anchor, and not the catch-all for unrecognised sentences. */
+const linkable = (code: unknown): string | undefined =>
+  typeof code === "string" && SAFE_CODE.test(code) && code !== UNKNOWN_PROBLEM ? code : undefined;
+
+/** The code of an API refusal: `{ error, code, details: { code } }`, when its body carries one. */
 export function errorCode(error: unknown): string | undefined {
   if (!(error instanceof ApiError)) return undefined;
-  const code = error.details.code;
-  return typeof code === "string" && SAFE_CODE.test(code) ? code : undefined;
+  const nested = error.details.details;
+  return (
+    linkable(error.details.code) ??
+    (nested && typeof nested === "object"
+      ? linkable((nested as { code?: unknown }).code)
+      : undefined)
+  );
+}
+
+/** A check's problem or warning with its code, as the API lists them in `issues`. */
+export interface CheckIssue {
+  code: string;
+  severity: "problem" | "warning";
+  message: string;
+}
+
+/**
+ * A check result's sentences with their codes: `problems` and `warnings` stay plain sentences in
+ * the API's answer, and `issues` carries the same sentences with their codes.
+ */
+export function withCodes(
+  sentences: readonly ApiMessage[] | undefined,
+  issues: readonly CheckIssue[] | undefined,
+  severity: CheckIssue["severity"],
+): ApiMessage[] {
+  return (sentences ?? []).map((m) => {
+    if (typeof m !== "string") return m;
+    const issue = issues?.find((i) => i.message === m && i.severity === severity);
+    return issue ? { code: issue.code, message: m } : m;
+  });
 }

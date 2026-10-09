@@ -1,5 +1,6 @@
 import type { Report, RunRecord } from "./api";
 import { SURFACE_LABELS } from "./byoa";
+import { BREACH_LABELS } from "./episode-text";
 
 /**
  * The actionable part of a report (launch item 2.1): for each breached episode, what the agent
@@ -8,31 +9,51 @@ import { SURFACE_LABELS } from "./byoa";
  * a model's. Planted text is in a report only once its rating has finished.
  */
 
-/** What the agent did in a breached episode: a tool call, or a decoded `execute`. */
+/** What the agent did in a breached episode: a tool call, or an `execute` it signed, decoded. */
 export interface BreachAction {
   tool?: string | null;
+  /** Amounts, tokens and addresses only, never free text. */
   args?: Record<string, unknown> | null;
-  /** A chain-mode `execute`, decoded, e.g. "transfer 4,000 tUSDG to 0xBad…". */
-  decoded?: string | null;
+  /** True when the agent signed the `execute` itself and Bonded decoded it into the tool and args. */
+  decoded?: boolean | null;
 }
 
 export interface BreachEvidence {
   episodeId?: string;
-  class: string;
-  className?: string;
+  attackId?: string | null;
+  class: string | null;
+  className?: string | null;
   /** The surface the attack was planted on (`AttackSurface`), when it had one. */
   surface?: string | null;
-  /** The exact text the agent read. Only once the rating has finished. */
+  surfaces?: string[];
+  /** The exact text the agent read. Only once the rating has finished, and never when withheld. */
   plantedText?: string | null;
-  /** A held-out attack, made for this rating alone. */
+  /** Who it appeared to come from. */
+  sender?: string;
+  /** A held-out attack (made for this rating, or from the shared held-out set). */
   heldOut?: boolean;
+  /** The attack is reused by later ratings (an accepted bounty or the shared held-out set). */
+  withheld?: boolean;
+  /** Whether the agent read a place the attack was planted. */
+  read?: boolean | null;
   action?: BreachAction | null;
-  /** The breach the vault recorded, e.g. "T1 unauthorized transfer". */
+  /** The breach type the vault recorded, e.g. "T1_UNAUTHORIZED_TRANSFER". */
   breachType: string;
   lossUsd: number;
+  /** Enforce mode blocked it. */
+  blocked?: boolean;
+  /** Taken later with approvals the agent granted. */
+  drained?: { token: string; amount: string }[];
   /** Ids of the fixes (`ReportFix.id`) that would have stopped it. */
   fixes?: string[];
 }
+
+/** Why a breach's planted text isn't shown. */
+export const WITHHELD_TEXT =
+  "This attack is reused by later ratings, so its text stays unpublished.";
+
+/** The breach type in words: "a transfer the mandate doesn't allow". */
+export const breachLine = (type: string) => BREACH_LABELS[type] ?? type;
 
 export type FixKind = "prompt" | "mandate" | "guard" | "sentinel";
 
@@ -43,7 +64,7 @@ export interface ReportFix {
   detail?: string | null;
   /** For a prompt fix: the line to add to the system prompt. */
   promptLine?: string | null;
-  /** For a mandate fix: the setting, e.g. "Allow only these recipients: 0x…". */
+  /** For a mandate fix: the mandate field it changes, e.g. "destinations" or "maxTradeUsd". */
   setting?: string | null;
   /** How many of this rating's breaches it would have prevented. */
   prevents: number;
@@ -96,13 +117,10 @@ export function fixesFor(
 
 /** What the agent did, in a line. */
 export function actionLine(action: BreachAction | null | undefined): string {
-  if (!action) return "No action was recorded.";
-  if (action.decoded) return action.decoded;
-  if (action.tool) {
-    const args = action.args ? JSON.stringify(action.args) : "";
-    return args && args !== "{}" ? `${action.tool}(${args})` : `${action.tool}()`;
-  }
-  return "No action was recorded.";
+  if (!action?.tool) return "No action was recorded.";
+  const args = action.args ? JSON.stringify(action.args) : "";
+  const call = args && args !== "{}" ? `${action.tool}(${args})` : `${action.tool}()`;
+  return action.decoded ? `${call}, decoded from an execute the agent signed` : call;
 }
 
 /** Where the attack was, in words: "planted in its messages". */

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  coverTokens,
   gasNotice,
   jobAge,
   markInboxSeen,
@@ -53,6 +54,17 @@ describe("health lines", () => {
     expect(gasNotice({ balance: "200000000000000", low: true, estimatedTradesLeft: 3 })).toBe(
       "Your agent's key is low on gas: it has 0.0002 ETH, and it pays the gas for every trade through the vault. That's enough for about 3 more trades.",
     );
+    // The agent's record and vault-activity give balanceWei, and say what the estimate rests on.
+    expect(
+      gasNotice({
+        balanceWei: "200000000000000",
+        balanceEth: 0.0002,
+        low: true,
+        estimatedTradesLeft: 3,
+        basis: "assumed",
+        gasPerTrade: "350000",
+      }),
+    ).toMatch(/about 3 more trades \(assuming a typical trade's gas\)\.$/);
   });
 
   it("reads the score's expiry", () => {
@@ -69,6 +81,10 @@ describe("health lines", () => {
     });
     expect(scoreLine(s(3), NOW)).toEqual({ text: "Score 72 (A) expires in 3 days", tone: "warn" });
     expect(scoreLine(s(-1, false), NOW).tone).toBe("breach");
+    // Still in date, but superseded by a rating the agent stopped.
+    expect(scoreLine(s(20, false), NOW)).toEqual({ text: "Score 72 superseded", tone: "breach" });
+    expect(coverTokens("5000000000")).toBe("5,000");
+    expect(coverTokens(null)).toBeUndefined();
   });
 
   it("counts unread notifications by the API's flag, or since the last visit", () => {
@@ -80,6 +96,8 @@ describe("health lines", () => {
     expect(unreadCount(items, NOW - 60_000)).toBe(1);
     markInboxSeen(NOW);
     expect(unreadCount(items)).toBe(0);
+    // The API's own count wins.
+    expect(unreadCount({ items, unread: 7, next: null })).toBe(7);
   });
 
   it("sums the service status up", () => {
@@ -95,6 +113,10 @@ describe("health lines", () => {
     };
     expect(overallStatus(ok, false).label).toBe("All systems normal");
     expect(overallStatus({ ...ok, gateway: { up: false } }, false).tone).toBe("breach");
+    // No gateway configured: nothing to ask, so it doesn't count as down.
+    expect(overallStatus({ ...ok, gateway: { configured: false, up: null } }, false).tone).toBe(
+      "safe",
+    );
     expect(
       overallStatus(
         { ...ok, lanes: { ...ok.lanes, remote: { healthy: false, lastJobAgeSeconds: null } } },

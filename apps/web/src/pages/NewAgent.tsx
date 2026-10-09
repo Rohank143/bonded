@@ -91,6 +91,7 @@ import {
   BOND_EXPLAINED,
   PRESET_LABELS,
   applyPreset,
+  basisLine,
   bondTable,
   recommendedBond,
   type PresetChoice,
@@ -214,9 +215,10 @@ export function NewAgent() {
   useEffect(() => {
     if (presetApplied.current || !suggested.data?.presets.length) return;
     presetApplied.current = true;
+    const recommended = suggested.data.recommended ?? "conservative";
     choosePreset(
-      suggested.data.presets.some((p) => p.id === "conservative")
-        ? "conservative"
+      suggested.data.presets.some((p) => p.id === recommended)
+        ? recommended
         : suggested.data.presets[0]!.id,
     );
     // Once, when the suggestion arrives.
@@ -797,8 +799,8 @@ export function NewAgent() {
                 <fieldset className="flex flex-col gap-2">
                   <legend className="mb-1 font-medium">Start from what your agent did</legend>
                   <p className="mb-1 text-xs text-muted">
-                    {suggested.data.basis
-                      ? `From ${suggested.data.basis}: `
+                    {basisLine(suggested.data.basis)
+                      ? `From ${basisLine(suggested.data.basis)}: `
                       : "From your preview: "}
                     it traded{" "}
                     {suggested.data.tokens.length ? suggested.data.tokens.join(", ") : "no tokens"}
@@ -810,6 +812,13 @@ export function NewAgent() {
                       : ""}
                     .
                   </p>
+                  {suggested.data.notes?.length ? (
+                    <ul className="mb-1 list-disc pl-5 text-xs text-soft">
+                      {suggested.data.notes.map((n) => (
+                        <li key={n}>{n}</li>
+                      ))}
+                    </ul>
+                  ) : null}
                   <div className="grid gap-2 sm:grid-cols-3">
                     {(["conservative", "active", "custom"] as const)
                       .filter(

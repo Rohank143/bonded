@@ -8,6 +8,7 @@ import {
   COVER_TEXT,
   COVER_WITHOUT_TRADES,
   RUNNER_TEXT,
+  coverTokens,
   gasNotice,
   scoreLine,
   vaultTradingLine,
@@ -16,7 +17,7 @@ import {
   type Tone,
   type VaultActivity,
 } from "../lib/health";
-import { messageCode, messageText } from "../lib/troubleshooting";
+import { messageCode } from "../lib/troubleshooting";
 import { useOwnerSession } from "../lib/owner-session";
 import { FixLink } from "./problem";
 import { AddressLink, Badge, Button, Card, Loading, TxLink, linkClass } from "./ui";
@@ -141,18 +142,19 @@ export function HealthPanel({
   if (health.isPending) return <Loading what="its health" />;
   // An API without the health endpoint yet: what the agent's record already says.
   const h: AgentHealth | undefined = health.data;
-  const vault = h?.vault ?? reg?.vaultActivity ?? null;
+  const vault = h?.vault?.activity ?? reg?.vaultActivity ?? null;
   const gas = h?.gas ?? reg?.agentGas ?? null;
   const coverWithout = h?.coverWithoutVaultTrades ?? reg?.coverWithoutVaultTrades;
   if (!h && !vault && !gas && !coverWithout) return null;
   const score = h ? scoreLine(h.score) : undefined;
   const problems = h?.problems ?? [];
+  const serious = problems.filter((p) => p.severity !== "warning").length;
   return (
     <Card
       title="Health"
       actions={
         problems.length ? (
-          <Badge tone="warn" dot>
+          <Badge tone={serious ? "breach" : "warn"} dot>
             {problems.length} to look at
           </Badge>
         ) : h ? (
@@ -165,23 +167,24 @@ export function HealthPanel({
       <div className="flex flex-col gap-4 text-sm">
         {problems.length > 0 && (
           <ul className="flex flex-col gap-2" aria-label="Problems">
-            {problems.map((p) => {
-              const action = typeof p === "string" ? undefined : p.action;
-              return (
-                <li
-                  key={messageText(p)}
-                  className="rounded-xl border border-warn/30 bg-warn-soft px-3.5 py-2.5"
-                >
-                  <span className="font-medium">{messageText(p)}</span>{" "}
-                  <FixLink code={messageCode(p)} className="text-xs" />
-                  {action && <span className="mt-0.5 block text-soft">{action}</span>}
-                </li>
-              );
-            })}
+            {problems.map((p) => (
+              <li
+                key={`${p.code}:${p.message}`}
+                className={`rounded-xl border px-3.5 py-2.5 ${p.severity === "warning" ? "border-warn/30 bg-warn-soft" : "border-breach/30 bg-breach-soft"}`}
+              >
+                <span className="font-medium">{p.message}</span>{" "}
+                <FixLink code={messageCode(p)} className="text-xs" />
+                {p.action && <span className="mt-0.5 block text-soft">{p.action}</span>}
+              </li>
+            ))}
           </ul>
         )}
         <CoverWithoutTradesWarning show={coverWithout} />
-        <LowGasNotice gas={gas} />
+        <LowGasNotice
+          gas={
+            gas && !gas.address && h?.vault?.agentKey ? { ...gas, address: h.vault.agentKey } : gas
+          }
+        />
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2">
           {score && (
             <Row label="Score">
@@ -215,15 +218,19 @@ export function HealthPanel({
               <span className={TEXT_TONE[COVER_TEXT[h.cover.status].tone]}>
                 {COVER_TEXT[h.cover.status].label}
               </span>
-              {h.cover.amount != null && h.cover.status !== "none" && (
-                <span className="text-muted">, {h.cover.amount.toLocaleString("en-US")} tUSDG</span>
+              {coverTokens(h.cover.amount) && h.cover.status !== "none" && (
+                <span className="text-muted">, {coverTokens(h.cover.amount)} tUSDG</span>
               )}
             </Row>
           )}
-          {h?.nextRatingAt && (
+          {(h?.nextRatingAt || h?.nextRating?.reason) && (
             <Row label="Next re-rating">
               <span className="text-muted">
-                {when(Math.floor(Date.parse(h.nextRatingAt) / 1000))}
+                {h.nextRatingAt
+                  ? when(Math.floor(Date.parse(h.nextRatingAt) / 1000))
+                  : h.nextRating?.status === "queued" || h.nextRating?.status === "running"
+                    ? `A rating is ${h.nextRating.status}`
+                    : h.nextRating?.reason}
               </span>
             </Row>
           )}

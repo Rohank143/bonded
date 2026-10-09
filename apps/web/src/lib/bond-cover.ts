@@ -98,28 +98,59 @@ export const COVER_EXCLUDES_MODULE =
 export const BOND_EXPLAINED =
   "The bond is your own stake in the agent. If a claim against its cover is paid, the bond pays first, then the cover pool; so the bond is lost only when your agent breaks its mandate and someone is paid for it. Cover needs a bond of at least a share of the cover, set by the score's tier. A bigger bond also lowers the premium.";
 
-/** GET …/suggested-mandate: what the agent actually used, and presets built from it. */
+/**
+ * GET …/suggested-mandate (`SuggestedMandate` in @bondedhq/shared): what the agent actually used
+ * in its passing check and its preview or rating, and two presets built from it. There is no
+ * "custom" preset from the API: custom is the owner's edit of either.
+ */
 export interface MandatePreset {
   id: "conservative" | "active";
   label: string;
   /** In plain words, what the preset allows. */
   line?: string;
   mode: MandateForm["mode"];
+  /** Token symbols it allows besides the base asset (e.g. "tNVDA"). */
   tokens: string[];
   maxTxUsd: number;
   maxDailyUsd: number;
+  /** The whole draft with addresses (`rules.assets` etc.), for building the mandate. */
+  rules?: Record<string, unknown>;
+}
+
+export interface SuggestionBasis {
+  sources: ("check" | "preview" | "rating")[];
+  trades: number;
+  tokens: string[];
+  largestTradeUsd: number;
+  usedRouter: boolean;
+  transfers: number;
+  approvals: number;
 }
 
 export interface SuggestedMandate {
-  /** Token symbols it traded in its passing check and preview. */
+  /** Token symbols it traded, besides the base asset. */
   tokens: string[];
-  /** Contracts it called. */
+  /** Contracts it called through the vault. */
   contracts: { address: string; label?: string | null }[];
-  /** Its largest trade, in dollars, if it traded. */
+  /** Its largest trade, in dollars; null when no trade was seen. */
   largestTradeUsd: number | null;
   presets: MandatePreset[];
-  /** Where it came from, in a sentence (e.g. "your passing check and preview p1"). */
-  basis?: string | null;
+  /** The preset the API recommends. */
+  recommended?: MandatePreset["id"];
+  /** Things the owner has to decide, in plain words. */
+  notes?: string[];
+  /** What the suggestion was built from. */
+  basis?: SuggestionBasis | null;
+}
+
+const SOURCE_WORDS = { check: "your passing check", preview: "your preview", rating: "its rating" };
+
+/** "your passing check and your preview (3 trades)": where a suggestion came from. */
+export function basisLine(basis: SuggestionBasis | null | undefined): string | undefined {
+  if (!basis?.sources.length) return undefined;
+  const words = basis.sources.map((s) => SOURCE_WORDS[s] ?? s);
+  const list = words.length > 1 ? `${words.slice(0, -1).join(", ")} and ${words.at(-1)}` : words[0];
+  return `${list} (${basis.trades} trade${basis.trades === 1 ? "" : "s"})`;
 }
 
 export const PRESET_LABELS = {

@@ -1,5 +1,4 @@
 import { ago } from "./format";
-import type { ApiMessage } from "./troubleshooting";
 import { ethText } from "./wallet-help";
 
 /**
@@ -8,40 +7,119 @@ import { ethText } from "./wallet-help";
  * shows for each. Plain functions, so each state is testable.
  */
 
-/** GET /self/agents/:id/vault-activity: trades through the vault (or module) from the agent key. */
+/** Trades through the vault (or module) from the agent key, from the keeper's index. */
 export interface VaultActivity {
   firstTradeAt: string | null;
   lastTradeAt: string | null;
   trades24h: number;
+  trades7d?: number;
+  total?: number;
   lastTxHash: string | null;
 }
 
-/** The agent key's gas: it pays for its own `execute` calls. Balance in wei, as a string. */
+/**
+ * The agent key's gas: it pays for its own `execute` calls. `GET /self/agents/:id` and
+ * `…/vault-activity` give `balanceWei`; the health panel gives the same as `balance` (wei, a
+ * decimal string) with the key's `address`.
+ */
 export interface AgentGas {
   address?: string | null;
-  balance: string;
+  balanceWei?: string;
+  balance?: string;
+  balanceEth?: number;
   low: boolean;
-  /** Trades it can still pay for at recent gas use, when known. */
+  /** Trades the balance pays for at today's gas price; null when the price is unknown. */
   estimatedTradesLeft?: number | null;
+  /** Where the per-trade gas comes from: the agent's own recent trades, or an assumed typical one. */
+  basis?: "measured" | "assumed";
+  gasPerTrade?: string;
 }
 
-export type RunnerHealth = "connected" | "offline" | "never" | "url";
+/** The balance in wei, whichever field the endpoint used. */
+export const gasWei = (g: AgentGas): string | undefined => g.balanceWei ?? g.balance;
+
+/** The cover on the vault, as the chain has it. Amounts in base-asset units (6 decimals). */
+export interface ChainCover {
+  policyId: string;
+  status: string;
+  active: boolean;
+  coverAmount: string;
+  remainingCover: string;
+  endsAt: string;
+  paidUntil: string;
+  pastDueSince: string | null;
+  lapsesAt: string | null;
+}
+
+/** GET /self/agents/:id/vault-activity (public chain data). */
+export interface VaultActivityRecord extends VaultActivity {
+  vault: string;
+  agentKey: string | null;
+  frozen: boolean | null;
+  coverWithoutVaultTrades: boolean;
+  agentGas: AgentGas | null;
+  cover: ChainCover | null;
+}
+
+/** "bonded": one of Bonded's own designs, run in the Arena, so there is nothing to connect. */
+export type RunnerHealth = "connected" | "offline" | "never" | "url" | "bonded";
 export type CoverHealth = "active" | "none" | "past-due" | "grace" | "lapsed";
 
-/** A problem in a sentence, with what to do about it. */
-export type HealthProblem = ApiMessage & { action?: string | null };
+/** A problem in a sentence, with its code and what to do about it. */
+export interface HealthProblem {
+  code: string;
+  severity: "problem" | "warning";
+  message: string;
+  action?: string;
+}
 
 /** GET /self/agents/:id/health (session). */
 export interface AgentHealth {
-  score: { value: number; tier: string; expiresAt: string; valid: boolean } | null;
-  runner: { status: RunnerHealth; lastSeenAt?: string | null };
-  vault: VaultActivity | null;
+  agentId?: string;
+  score: {
+    value: number;
+    tier: string;
+    expiresAt: string;
+    valid: boolean;
+    status?: "current" | "expiring" | "expired";
+    issuedAt?: string;
+    runId?: string;
+    txHash?: string;
+  } | null;
+  runner: {
+    status: RunnerHealth;
+    lastSeenAt?: string | null;
+    verified?: boolean;
+    version?: string | null;
+    mode?: string | null;
+  };
+  vault: {
+    address: string;
+    protection?: string;
+    agentKey: string | null;
+    frozen: boolean | null;
+    activity: VaultActivity;
+  } | null;
   gas: AgentGas | null;
-  cover: { status: CoverHealth; amount?: number | null; paidUntil?: string | null } | null;
+  cover: (Partial<ChainCover> & { status: CoverHealth; amount?: string | null }) | null;
   nextRatingAt: string | null;
+  nextRating?: { status: string; at: string | null; reason: string | null };
   /** Active cover but no trade through the vault in the last 7 days (or ever). */
   coverWithoutVaultTrades?: boolean;
-  problems: (string | { code?: string | null; message: string; action?: string | null })[];
+  problems: HealthProblem[];
+  /** No open problem (warnings can remain). */
+  ok?: boolean;
+}
+
+/** A cover amount from the chain (6 decimals) in whole tokens, for a line of text. */
+export function coverTokens(amount: string | number | null | undefined): string | undefined {
+  if (amount === null || amount === undefined) return undefined;
+  if (typeof amount === "number") return amount.toLocaleString("en-US");
+  try {
+    return (Number(BigInt(amount)) / 1e6).toLocaleString("en-US", { maximumFractionDigits: 2 });
+  } catch {
+    return undefined;
+  }
 }
 
 export type Tone = "safe" | "warn" | "breach" | "neutral";
@@ -73,15 +151,23 @@ export const COVER_WITHOUT_TRADES =
 /** The low-gas notice, or undefined when there's enough. */
 export function gasNotice(gas: AgentGas | null | undefined): string | undefined {
   if (!gas?.low) return undefined;
-  let balance: string;
+  const wei = gasWei(gas);
+  let balance = "little ETH";
   try {
-    balance = ethText(BigInt(gas.balance));
+    if (wei !== undefined) balance = ethText(BigInt(wei));
   } catch {
-    balance = gas.balance;
+    balance = wei ?? balance;
   }
+  // Say what the estimate rests on: the agent's own trades, or an assumed typical trade.
+  const basis =
+    gas.basis === "measured"
+      ? " (from its recent trades)"
+      : gas.basis === "assumed"
+        ? " (assuming a typical trade's gas)"
+        : "";
   const left =
     gas.estimatedTradesLeft != null
-      ? ` That's enough for about ${gas.estimatedTradesLeft} more trade${gas.estimatedTradesLeft === 1 ? "" : "s"}.`
+      ? ` That's enough for about ${gas.estimatedTradesLeft} more trade${gas.estimatedTradesLeft === 1 ? "" : "s"}${basis}.`
       : "";
   return `Your agent's key is low on gas: it has ${balance}, and it pays the gas for every trade through the vault.${left}`;
 }
@@ -91,6 +177,7 @@ export const RUNNER_TEXT: Record<RunnerHealth, { label: string; tone: Tone }> = 
   offline: { label: "Runner offline", tone: "warn" },
   never: { label: "Runner never connected", tone: "neutral" },
   url: { label: "Agent URL", tone: "safe" },
+  bonded: { label: "Run by Bonded", tone: "safe" },
 };
 
 export const COVER_TEXT: Record<CoverHealth, { label: string; tone: Tone }> = {
@@ -108,7 +195,10 @@ export function scoreLine(
 ): { text: string; tone: Tone } {
   if (!s) return { text: "Not rated yet", tone: "neutral" };
   const left = Date.parse(s.expiresAt) - nowMs;
-  if (!s.valid || left <= 0) return { text: `Score ${s.value} expired`, tone: "breach" };
+  if (s.status === "expired" || left <= 0)
+    return { text: `Score ${s.value} expired`, tone: "breach" };
+  // Valid only when not superseded by a stopped rating.
+  if (!s.valid) return { text: `Score ${s.value} superseded`, tone: "breach" };
   const days = Math.floor(left / 86_400_000);
   if (days < 7)
     return {
@@ -118,16 +208,31 @@ export function scoreLine(
   return { text: `Score ${s.value} (${s.tier}), valid for ${days} more days`, tone: "safe" };
 }
 
-/** GET /self/notifications/inbox (session): the owner's in-app notifications, newest first. */
+/** GET /self/notifications/inbox (session): one of the owner's in-app notifications. */
 export interface InboxItem {
   id: string;
-  /** e.g. score-expiring, runner-offline, breach, claim-filed, claim-paid, cover-lapsing, low-gas. */
+  /** The type in kebab-case, e.g. score-expiring, runner-offline, breach-recorded, low-gas. */
   kind: string;
+  /** The type as the settings name it (snake_case), e.g. low_gas: what `muted` lists. */
+  type?: string;
+  /** Its troubleshooting entry, when it has one. */
   code?: string | null;
+  /** The title, in a sentence. */
   message: string;
+  /** What to do about it. */
+  action?: string | null;
   createdAt: string;
   agentId?: string | null;
+  previewId?: string | null;
+  subject?: string | null;
   read?: boolean;
+}
+
+/** A page of the inbox: newest first, the unread count and the id to page on from. */
+export interface InboxPage {
+  items: InboxItem[];
+  unread?: number;
+  next?: string | null;
 }
 
 const SEEN_KEY = "bonded:inbox-seen";
@@ -149,22 +254,36 @@ export function markInboxSeen(nowMs = Date.now()) {
   }
 }
 
-/** Unread items: the API's own `read` when it gives one, else newer than the last visit. */
-export function unreadCount(items: InboxItem[], seenAt = inboxSeenAt()): number {
+/**
+ * Unread notifications: the API's own count when it gives one, else from each item's `read`, else
+ * newer than this browser's last visit.
+ */
+export function unreadCount(page: InboxPage | InboxItem[], seenAt = inboxSeenAt()): number {
+  const items = Array.isArray(page) ? page : page.items;
+  if (!Array.isArray(page) && typeof page.unread === "number") return page.unread;
   return items.filter((i) => (i.read !== undefined ? !i.read : Date.parse(i.createdAt) > seenAt))
     .length;
 }
 
+/** One lane of work: connection checks, or remote ratings and previews. */
+export interface LaneStatus {
+  healthy: boolean;
+  queued?: number;
+  oldestQueuedSeconds?: number | null;
+  lastJobAgeSeconds: number | null;
+}
+
 /** GET /status (public, cached). */
 export interface ServiceStatus {
-  gateway: { up: boolean };
-  lanes: {
-    check: { healthy: boolean; lastJobAgeSeconds: number | null };
-    remote: { healthy: boolean; lastJobAgeSeconds: number | null };
-  };
-  previewQueue: number;
-  version: string | null;
+  /** Everything up and both lanes healthy. */
+  ok?: boolean;
   checkedAt: string;
+  version: string | null;
+  api?: { up: boolean };
+  /** `up` is null when this deployment has no gateway configured (nothing to ask). */
+  gateway: { configured?: boolean; up: boolean | null };
+  lanes: { check: LaneStatus; remote: LaneStatus };
+  previewQueue: number;
 }
 
 /** The overall state, for the small indicator. */
@@ -177,7 +296,7 @@ export function overallStatus(
 } {
   if (failed) return { label: "Status unknown", tone: "neutral" };
   if (!s) return { label: "Checking status", tone: "neutral" };
-  if (!s.gateway.up) return { label: "Ratings are down", tone: "breach" };
+  if (s.gateway.up === false) return { label: "Ratings are down", tone: "breach" };
   if (!s.lanes.check.healthy || !s.lanes.remote.healthy)
     return { label: "Ratings are slow", tone: "warn" };
   return { label: "All systems normal", tone: "safe" };

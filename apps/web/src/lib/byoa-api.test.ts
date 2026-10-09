@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { selfServeMessage } from "@bondedhq/shared";
 import { apiUrl, deployment } from "../config";
 import { ApiError } from "./api";
-import { byoaApi, streamEvents, subjectPath } from "./byoa-api";
+import { byoaApi, streamEvents, subjectPath, type CheckResult } from "./byoa-api";
 import { byoaMessage } from "./byoa-messages";
 import { snippets } from "./snippets";
 
@@ -354,6 +354,53 @@ describe("byoaApi, launch endpoints", () => {
       "Bearer sess",
       "Bearer sess",
       undefined,
+    ]);
+  });
+});
+
+describe("byoaApi, the API's real shapes", () => {
+  it("pages the inbox and marks it read", async () => {
+    const fetch = mockFetch(200, { items: [], unread: 0, next: null });
+    await byoaApi.inbox("sess", { limit: 10, before: "41", unread: true });
+    await byoaApi.markInboxRead("sess", { through: "40" });
+    expect(sent(fetch, 0).url.slice(apiUrl.length)).toBe(
+      "/self/notifications/inbox?limit=10&before=41&unread=1",
+    );
+    expect(sent(fetch, 1)).toMatchObject({
+      url: `${apiUrl}/self/notifications/inbox/read`,
+      method: "POST",
+      body: { through: "40" },
+    });
+  });
+
+  it("gives each check sentence the code the API lists in issues", async () => {
+    mockFetch(200, {
+      id: "chk",
+      status: "failed",
+      events: [
+        {
+          type: "result",
+          passed: false,
+          problems: ["Your agent never called a tool"],
+          warnings: [],
+          issues: [
+            {
+              code: "never-called-a-tool",
+              severity: "problem",
+              message: "Your agent never called a tool",
+            },
+          ],
+          taskCompleted: false,
+          toolsCalled: 0,
+          surfacesRead: [],
+        },
+      ],
+      result: null,
+    });
+    const record = await byoaApi.check("chk", "sess");
+    const result = record.events[0] as CheckResult;
+    expect(result.problems).toEqual([
+      { code: "never-called-a-tool", message: "Your agent never called a tool" },
     ]);
   });
 });

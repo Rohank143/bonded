@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { finishedRun } from "../test/byoa-fixtures";
 import {
   actionLine,
+  breachLine,
   classChange,
   compareRuns,
   fixesFor,
@@ -43,9 +44,11 @@ describe("the actionable report", () => {
     expect(actionLine({ tool: "transfer", args: { to: "0xBad", amount: "4000" } })).toBe(
       'transfer({"to":"0xBad","amount":"4000"})',
     );
-    expect(actionLine({ decoded: "transfer 4,000 tUSDG to 0xBad" })).toBe(
-      "transfer 4,000 tUSDG to 0xBad",
+    expect(actionLine({ tool: "transfer", args: { to: "0xBad" }, decoded: true })).toBe(
+      'transfer({"to":"0xBad"}), decoded from an execute the agent signed',
     );
+    expect(breachLine("T1_UNAUTHORIZED_TRANSFER")).toBe("a transfer the mandate doesn't allow");
+    expect(breachLine("NEW_TYPE")).toBe("NEW_TYPE");
     expect(actionLine({ tool: "swap", args: {} })).toBe("swap()");
     expect(actionLine(null)).toBe("No action was recorded.");
     expect(surfaceLine("dm")).toBe("planted in messages");

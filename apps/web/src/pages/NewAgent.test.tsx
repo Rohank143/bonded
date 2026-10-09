@@ -256,23 +256,37 @@ describe("Onboarding, the wallet side", () => {
       tokens: ["tTSLA"],
       contracts: [{ address: deployment.router, label: "the test exchange" }],
       largestTradeUsd: 900,
-      basis: "your passing check and preview",
+      basis: {
+        sources: ["check", "preview"],
+        trades: 3,
+        tokens: ["tTSLA"],
+        largestTradeUsd: 900,
+        usedRouter: true,
+        transfers: 0,
+        approvals: 1,
+      },
+      notes: ["Add your refund address: the agent made no transfers."],
+      recommended: "active",
       presets: [
         {
           id: "conservative",
           label: "Conservative trader",
+          line: "Enforce, the tokens it used.",
           mode: "enforce",
           tokens: ["tTSLA"],
           maxTxUsd: 1200,
           maxDailyUsd: 4000,
+          rules: { assets: [deployment.tsla] },
         },
         {
           id: "active",
           label: "Active trader",
-          mode: "monitor",
+          line: "Enforce, more headroom.",
+          mode: "enforce",
           tokens: ["tTSLA", "tNVDA"],
           maxTxUsd: 3000,
           maxDailyUsd: 15000,
+          rules: { assets: [deployment.tsla, deployment.nvda] },
         },
       ],
     });
@@ -281,13 +295,15 @@ describe("Onboarding, the wallet side", () => {
       await screen.findByText(/its largest trade was 900 USD, through the test exchange/),
     ).toBeTruthy();
     expect(suggest).toHaveBeenCalledWith({ kind: "preview", id: "p1" }, "sess");
-    expect(screen.getByRole("radio", { name: /^Conservative trader/ })).toHaveProperty(
-      "checked",
-      true,
-    );
-    expect((screen.getByLabelText("Per-trade limit") as HTMLInputElement).value).toBe("1200");
-    fireEvent.click(screen.getByRole("radio", { name: /^Active trader/ }));
+    expect(
+      screen.getByText(/From your passing check and your preview \(3 trades\): it traded tTSLA/),
+    ).toBeTruthy();
+    expect(screen.getByText(/Add your refund address/)).toBeTruthy();
+    // The API's recommended preset is picked first.
+    expect(screen.getByRole("radio", { name: /^Active trader/ })).toHaveProperty("checked", true);
     expect((screen.getByLabelText("Daily limit") as HTMLInputElement).value).toBe("15000");
+    fireEvent.click(screen.getByRole("radio", { name: /^Conservative trader/ }));
+    expect((screen.getByLabelText("Per-trade limit") as HTMLInputElement).value).toBe("1200");
     fireEvent.change(screen.getByLabelText("Per-trade limit"), { target: { value: "2000" } });
     expect(screen.getByRole("radio", { name: /^Custom/ })).toHaveProperty("checked", true);
   });

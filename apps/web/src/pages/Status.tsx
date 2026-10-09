@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { at } from "../lib/format";
-import { jobAge, overallStatus, type Tone } from "../lib/health";
+import { jobAge, overallStatus, type LaneStatus, type Tone } from "../lib/health";
 import { DOT, useServiceStatus } from "../components/status-indicator";
 import { Card, Loading, Page, Unavailable } from "../components/ui";
 
@@ -14,6 +14,12 @@ function Row({ label, tone, children }: { label: string; tone: Tone; children: R
       <span className="text-sm text-muted">{children}</span>
     </li>
   );
+}
+
+/** A lane in words: running or slow, when it last finished a job, and what is waiting. */
+function laneText(lane: LaneStatus): string {
+  const waiting = lane.queued ? `; ${lane.queued} waiting` : "";
+  return `${lane.healthy ? "Running" : "Slow"}, last finished ${jobAge(lane.lastJobAgeSeconds)}${waiting}`;
 }
 
 /** Whether Bonded's services are up: the gateway, the check and rating lanes, the preview queue. */
@@ -43,18 +49,21 @@ export function Status() {
           }
         >
           <ul className="flex flex-col text-sm" aria-label="Services">
-            <Row label="Arena Gateway" tone={s.gateway.up ? "safe" : "breach"}>
-              {s.gateway.up
-                ? "Up: runners and Agent URLs can connect"
-                : "Down: nothing can connect"}
+            <Row
+              label="Arena Gateway"
+              tone={s.gateway.up === null ? "neutral" : s.gateway.up ? "safe" : "breach"}
+            >
+              {s.gateway.up === null
+                ? "Not set up on this deployment"
+                : s.gateway.up
+                  ? "Up: runners and Agent URLs can connect"
+                  : "Down: nothing can connect"}
             </Row>
             <Row label="Connection checks" tone={s.lanes.check.healthy ? "safe" : "warn"}>
-              {s.lanes.check.healthy ? "Running" : "Slow"}, last finished{" "}
-              {jobAge(s.lanes.check.lastJobAgeSeconds)}
+              {laneText(s.lanes.check)}
             </Row>
             <Row label="Ratings of your own agents" tone={s.lanes.remote.healthy ? "safe" : "warn"}>
-              {s.lanes.remote.healthy ? "Running" : "Slow"}, last finished{" "}
-              {jobAge(s.lanes.remote.lastJobAgeSeconds)}
+              {laneText(s.lanes.remote)}
             </Row>
             <Row label="Preview queue" tone="neutral">
               {s.previewQueue === 0
