@@ -999,6 +999,9 @@ describe("registered agents", () => {
     const run = await bodyOf(await app.request(`/arena/runs/${runId}`));
     expect(run).toMatchObject({ codeHash: hash(0xbeef), codeSource: "git", progress: { done: 0 } });
     // The cost estimate comes from the check, labelled as one.
+    // The estimate is the owner's: 401 without a session, "not found" for another wallet.
+    expect((await get(`/self/agents/${agentId}/estimate`)).status).toBe(401);
+    expect((await get(`/self/agents/${agentId}/estimate`, theirs)).status).toBe(404);
     const estimate = await bodyOf(await get(`/self/agents/${agentId}/estimate`, session));
     expect(estimate).toMatchObject({
       estimate: true,
@@ -1068,6 +1071,12 @@ describe("registered agents", () => {
     );
     await connect(token as string, "tools", hash(3));
     expect((await get(`/previews/${preview.id}/estimate`, session)).status).toBe(409);
+    expect((await get(`/previews/${preview.id}/estimate`)).status).toBe(401);
+    const other = await sessionFor(stranger);
+    expect((await get(`/previews/${preview.id}/estimate`, other)).status).toBe(404);
+    expect((await get(`/previews/${preview.id}/notifications`)).status).toBe(401);
+    expect((await get(`/previews/${preview.id}/notifications`, other)).status).toBe(404);
+    expect((await get(`/previews/${preview.id}/notifications`, session)).status).toBe(200);
     await send("POST", `/previews/${preview.id}/checks`, {}, session);
     await workCheckOne(pg.db, chainId, {
       runCheck: async (r) => {
@@ -1205,7 +1214,13 @@ describe("round 2, as the web app calls it", () => {
     });
     expect(put.status, JSON.stringify(await put.clone().json())).toBe(200);
     expect((await bodyOf(put)).webhookSecret).toMatch(/^bonded_ws_/);
-    const shown = await bodyOf(await app.request(`/self/agents/${agentId}/notifications`));
+    // Reading them needs the owner's session: 401 without, "not found" for anyone else.
+    expect((await app.request(`/self/agents/${agentId}/notifications`)).status).toBe(401);
+    const theirs = await sessionFor(stranger);
+    expect((await get(`/self/agents/${agentId}/notifications`, theirs)).status).toBe(404);
+    const shown = await bodyOf(
+      await get(`/self/agents/${agentId}/notifications`, await sessionFor()),
+    );
     expect(shown).toEqual({
       webhook: { url: "https://hooks.example/…" },
       email: null,

@@ -249,6 +249,18 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
       throw new Refused(409, "that signed request was already used; sign again");
     return { wallet: recovered.toLowerCase(), body };
   }
+  /**
+   * The caller's own subject, for a read: another owner's agent or preview is "not found" (agent
+   * ids are public numbers, so a 403 would confirm what can't be read).
+   */
+  const ownedForRead = async (kind: Kind, id: string | undefined, wallet: string) => {
+    try {
+      return await subjectOf(kind, id, wallet);
+    } catch (e) {
+      if (e instanceof Refused && e.status === 403) throw new Refused(404, "not found");
+      throw e;
+    }
+  };
   const reader = async (c: Context) => {
     limited(c, options.reads);
     return options.wallet(c);
@@ -745,14 +757,13 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
 
     /**
      * What a rating will cost the owner in their own model spend and time, from the latest
-     * passing check: an estimate, honest when the agent didn't report its usage. By id: it says
-     * how long one benign episode took and what it reported, nothing more.
+     * passing check: an estimate, honest when the agent didn't report its usage. Its owner's
+     * session only.
      */
     app.get(
       `${base}/estimate`,
       handle(async (c) => {
-        limited(c, options.reads);
-        const subject = await subjectOf(kind, c.req.param("id"));
+        const subject = await ownedForRead(kind, c.req.param("id"), await reader(c));
         const check = await db.latestPassingCheck(subject.key);
         if (!check)
           throw new Refused(409, "run a connection check first: the estimate comes from it");
@@ -764,12 +775,11 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
       }),
     );
 
-    /** Where results are sent: masked, never the webhook secret. */
+    /** Where results are sent: masked, never the webhook secret. Its owner's session only. */
     app.get(
       `${base}/notifications`,
       handle(async (c) => {
-        limited(c, options.reads);
-        const subject = await subjectOf(kind, c.req.param("id"));
+        const subject = await ownedForRead(kind, c.req.param("id"), await reader(c));
         return c.json(await notificationView(db, subject.owner, notifyOptions));
       }),
     );
