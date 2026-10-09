@@ -6,7 +6,13 @@ import { codeIdentity } from "../code-hash.js";
 import { Runner } from "../runner.js";
 import { gatewayUrlProblem } from "../tail.js";
 import { appendEnvNames, applyPlan, installCommand, run } from "./apply.js";
-import { type CheckTarget, eventLine, resultLines, runConnectionCheck } from "./check.js";
+import {
+  type CheckTarget,
+  DEFAULT_API_URL,
+  eventLine,
+  resultLines,
+  runConnectionCheck,
+} from "./check.js";
 import { detectProject, type Framework, FRAMEWORKS, type Project } from "./detect.js";
 import { unifiedDiff } from "./diff.js";
 import { frameworkLine, type InitPlan, planInit } from "./plan.js";
@@ -26,15 +32,19 @@ On yes it writes them and adds @bondedhq/sdk with your package manager.
   --env                append the new variables' names, with empty values, to .env
   --skip-install       don't add @bondedhq/sdk
 
-Connect right after (optional):
-  --token <token>      your runner token (or BONDED_RUNNER_TOKEN): starts the runner with the
-                       agent command after --, or your package.json start script
+Connect right after (optional). With a runner token and the gateway, init starts the runner
+with the agent command after -- (or your package.json start script) and, once it is connected,
+runs a connection check with the runner token and prints its events and result:
+  BONDED_RUNNER_TOKEN  your runner token, from your agent's page. Prefer this to --token, which
+                       anyone on the machine can read in the process list
+  --token <token>      the same, on the command line
   --gateway <url>      the Arena Gateway (or BONDED_GATEWAY_URL)
   --mode tools|chain   default tools
-  --api <url>          the Bonded API (or BONDED_API_URL), with
-  --session <token>    your session token (or BONDED_SESSION_TOKEN), and
+  --api <url>          the Bonded API (or BONDED_API_URL); default ${DEFAULT_API_URL}
+  --skip-check         start the runner without running a check
+  --session <token>    the older way: check with your session token (or BONDED_SESSION_TOKEN)
   --preview <id> | --agent <id>
-                       runs a connection check through the runner and prints it
+                       and the preview or agent to check (needed only with --session)
 
 Example:
   npx @bondedhq/runner init
@@ -85,6 +95,7 @@ export async function initCommand(argv: string[], io: InitIO): Promise<number> {
         gateway: { type: "string" },
         mode: { type: "string", default: "tools" },
         api: { type: "string" },
+        "skip-check": { type: "boolean", default: false },
         session: { type: "string" },
         preview: { type: "string" },
         agent: { type: "string" },
@@ -172,7 +183,7 @@ export async function initCommand(argv: string[], io: InitIO): Promise<number> {
   const gateway = values.gateway ?? io.env.BONDED_GATEWAY_URL;
   if (!token || !gateway) {
     io.out(
-      `\nNext: start the runner with your runner token (from your agent's page):\n  BONDED_RUNNER_TOKEN=... npx @bondedhq/runner --gateway <gateway url>${mode.data === "chain" ? " --mode chain" : ""} -- ${agentCommand(project, command).join(" ") || "<your agent command>"}\nthen run a connection check on the page.`,
+      `\nNext: start the runner with your runner token (from your agent's page):\n  BONDED_RUNNER_TOKEN=... npx @bondedhq/runner --gateway <gateway url>${mode.data === "chain" ? " --mode chain" : ""} -- ${agentCommand(project, command).join(" ") || "<your agent command>"}\nthen run a connection check on the page. Or run init again with BONDED_RUNNER_TOKEN and --gateway: it starts the runner and runs the check here.`,
     );
     return 0;
   }
@@ -188,23 +199,51 @@ export async function initCommand(argv: string[], io: InitIO): Promise<number> {
     );
     return 1;
   }
-  const api = values.api ?? io.env.BONDED_API_URL;
+  if (values.token)
+    io.err(
+      "Note: a token given with --token shows in the process list. Next time, set BONDED_RUNNER_TOKEN instead.",
+    );
+  const api = (values.api ?? io.env.BONDED_API_URL ?? DEFAULT_API_URL).trim();
+  const apiProblem = apiUrlProblem(api);
+  if (apiProblem) {
+    io.err(apiProblem);
+    return 1;
+  }
   const session = values.session ?? io.env.BONDED_SESSION_TOKEN;
   const subject = values.preview
     ? { kind: "preview" as const, id: values.preview }
     : values.agent
       ? { kind: "agent" as const, id: values.agent }
       : undefined;
+  // The runner token names what to check; a session and a subject is the older way, still read.
+  const check: CheckTarget | undefined = values["skip-check"]
+    ? undefined
+    : session && subject
+      ? { api, session, subject }
+      : { api, runnerToken: token };
   return (io.connect ?? connect)({
     gateway,
     token,
     mode: mode.data,
     command: agent,
     cwd: root,
-    ...(api && session && subject ? { check: { api, session, subject } } : {}),
+    ...(check ? { check } : {}),
     out: io.out,
     err: io.err,
   });
+}
+
+/** Why an API URL can't be used: it must be https, except on this machine. */
+export function apiUrlProblem(api: string): string | undefined {
+  let url: URL;
+  try {
+    url = new URL(api);
+  } catch {
+    return `--api must be a URL, e.g. ${DEFAULT_API_URL}`;
+  }
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  if (url.protocol === "https:" || (url.protocol === "http:" && local)) return undefined;
+  return "--api must be https (plain http only on localhost)";
 }
 
 /** The agent's command: what came after --, else the package.json start script. */

@@ -1,8 +1,14 @@
 /**
- * A client for Bonded's connection check, so `init` can run one right after connecting: start it
- * (`POST …/checks`, with the owner's session), then follow its live events (`GET
- * /checks/:id/events`) until the result. The API decides pass or fail; this only prints it.
+ * A client for Bonded's connection check, so `init` can run one right after connecting. With the
+ * runner token alone: `POST /runner/check` (the token as the bearer, no body) checks the preview
+ * or agent the token belongs to and answers with a stream token, then `GET
+ * /checks/:id/events?token=` follows it to the result. With an owner's session (the older way):
+ * `POST /previews/:id/checks` or `/self/agents/:id/checks`, then the same events with the
+ * session. The API decides pass or fail; this only prints it.
  */
+
+/** The Bonded API the runner talks to when neither --api nor BONDED_API_URL says otherwise. */
+export const DEFAULT_API_URL = "https://api-production-ba50.up.railway.app";
 
 /** What a connection check streams (the API's `ConnectionCheckEvent`). */
 export type CheckEvent =
@@ -22,6 +28,8 @@ export interface CheckResult {
   passed: boolean;
   problems: string[];
   warnings?: string[];
+  /** The same sentences with their troubleshooting codes. */
+  issues?: { code: string; severity: "problem" | "warning"; message: string }[];
   taskCompleted: boolean | null;
   toolsCalled: number;
   surfacesRead: string[];
@@ -29,14 +37,20 @@ export interface CheckResult {
   codeHash?: string;
 }
 
-export interface CheckTarget {
-  /** The Bonded API, e.g. https://api.bonded.example. */
-  api: string;
-  /** A session token from signing in (`bonded_ss_...`). */
-  session: string;
-  /** A preview (`/previews/:id`) or a registered agent (`/self/agents/:id`). */
-  subject: { kind: "preview" | "agent"; id: string };
-}
+export type CheckTarget =
+  | {
+      /** The Bonded API, e.g. https://api.bonded.example. */
+      api: string;
+      /** The runner token (`bonded_rt_...`): it names the preview or agent to check. */
+      runnerToken: string;
+    }
+  | {
+      api: string;
+      /** A session token from signing in (`bonded_ss_...`). */
+      session: string;
+      /** A preview (`/previews/:id`) or a registered agent (`/self/agents/:id`). */
+      subject: { kind: "preview" | "agent"; id: string };
+    };
 
 export async function runConnectionCheck(
   target: CheckTarget,
@@ -45,24 +59,45 @@ export async function runConnectionCheck(
 ): Promise<CheckResult> {
   const fetcher = options.fetch ?? fetch;
   const base = target.api.replace(/\/+$/, "");
-  const headers = { authorization: `Bearer ${target.session}` };
-  const path =
-    target.subject.kind === "preview"
-      ? `/previews/${encodeURIComponent(target.subject.id)}/checks`
-      : `/self/agents/${encodeURIComponent(target.subject.id)}/checks`;
-  const started = await fetcher(`${base}${path}`, {
-    method: "POST",
-    headers: { ...headers, "content-type": "application/json" },
-    body: "{}",
-  });
+  const byToken = "runnerToken" in target;
+  const started = byToken
+    ? await fetcher(`${base}/runner/check`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${target.runnerToken}` },
+      })
+    : await fetcher(
+        `${base}${
+          target.subject.kind === "preview"
+            ? `/previews/${encodeURIComponent(target.subject.id)}/checks`
+            : `/self/agents/${encodeURIComponent(target.subject.id)}/checks`
+        }`,
+        {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${target.session}`,
+            "content-type": "application/json",
+          },
+          body: "{}",
+        },
+      );
   const body = (await started.json().catch(() => ({}))) as {
     checkId?: string;
     error?: string;
     events?: CheckEvent[];
     result?: CheckResult | null;
+    streamToken?: string;
   };
   if (!started.ok || !body.checkId)
     throw new Error(body.error ?? `the API answered ${started.status} to the check`);
+  if (byToken && !body.streamToken)
+    throw new Error("the API didn't give a stream token for the check's events");
+  // The events: with the stream token the check came with, or with the session.
+  const eventsUrl = byToken
+    ? `${base}/checks/${encodeURIComponent(body.checkId)}/events?token=${encodeURIComponent(body.streamToken!)}`
+    : `${base}/checks/${encodeURIComponent(body.checkId)}/events`;
+  const headers: Record<string, string> = byToken
+    ? {}
+    : { authorization: `Bearer ${target.session}` };
   const seen = body.events ?? [];
   seen.forEach(onEvent);
   if (body.result) {
@@ -74,7 +109,7 @@ export async function runConnectionCheck(
   let lastId = "";
   let skip = seen.length;
   while (Date.now() < deadline) {
-    const response = await fetcher(`${base}/checks/${body.checkId}/events`, {
+    const response = await fetcher(eventsUrl, {
       headers: {
         ...headers,
         accept: "text/event-stream",
@@ -161,12 +196,21 @@ export function eventLine(event: CheckEvent): string {
   }
 }
 
-/** The result as lines: the verdict, then each problem and warning. */
+/** Where each problem's fix is explained, by its code (the anchor). */
+export const TROUBLESHOOTING_URL = "https://bonded-nu.vercel.app/docs/guides/troubleshooting/";
+
+/** The result as lines: the verdict, then each problem and warning, with its fix's link. */
 export function resultLines(result: CheckResult): string[] {
+  const line = (kind: "problem" | "warning", text: string) => {
+    const code = result.issues?.find((i) => i.message === text && i.severity === kind)?.code;
+    return code && code !== "other" && /^[a-z0-9-]+$/.test(code)
+      ? [`  ${kind}: ${text}`, `    how to fix: ${TROUBLESHOOTING_URL}#${code}`]
+      : [`  ${kind}: ${text}`];
+  };
   return [
     result.passed ? "Connection check passed: a rating will work." : "Connection check failed:",
-    ...result.problems.map((p) => `  problem: ${p}`),
-    ...(result.warnings ?? []).map((w) => `  warning: ${w}`),
+    ...result.problems.flatMap((p) => line("problem", p)),
+    ...(result.warnings ?? []).flatMap((w) => line("warning", w)),
     `  ${result.toolsCalled} tool call${result.toolsCalled === 1 ? "" : "s"}, task ${result.taskCompleted ? "done" : "not done"}${result.surfacesRead.length ? `, read ${result.surfacesRead.join(", ")}` : ""}`,
   ];
 }

@@ -260,6 +260,79 @@ describe("initCommand", () => {
     expect(t.ran).toEqual([]);
   });
 
+  it("checks with the runner token alone, against the default API, when there's no session", async () => {
+    const dir = copy("langchain");
+    const t = io(dir);
+    const connects: unknown[] = [];
+    const code = await initCommand(
+      ["--yes", "--skip-install", "--gateway", "https://arena.example.com"],
+      {
+        ...t.io,
+        env: { BONDED_RUNNER_TOKEN: "bonded_rt_x" },
+        connect: async (o) => {
+          connects.push({ ...o, out: undefined, err: undefined });
+          return 0;
+        },
+      },
+    );
+    expect(code).toBe(0);
+    expect(connects).toEqual([
+      expect.objectContaining({
+        token: "bonded_rt_x",
+        check: { api: "https://api-production-ba50.up.railway.app", runnerToken: "bonded_rt_x" },
+      }),
+    ]);
+    // The token came from the environment, so there is nothing to warn about.
+    expect(t.out.join("\n")).not.toMatch(/process list/);
+  });
+
+  it("warns when the token is on the command line, and can skip the check", async () => {
+    const dir = copy("langchain");
+    const t = io(dir);
+    const connects: { check?: unknown }[] = [];
+    const code = await initCommand(
+      [
+        "--yes",
+        "--skip-install",
+        "--token",
+        "bonded_rt_x",
+        "--gateway",
+        "https://arena.example.com",
+        "--api",
+        "https://api.example.com",
+        "--skip-check",
+      ],
+      {
+        ...t.io,
+        connect: async (o) => {
+          connects.push(o);
+          return 0;
+        },
+      },
+    );
+    expect(code).toBe(0);
+    expect(connects[0]!.check).toBeUndefined();
+    expect(t.out.join("\n")).toMatch(/shows in the process list/);
+  });
+
+  it("refuses a plain http API off this machine", async () => {
+    const dir = copy("langchain");
+    const t = io(dir);
+    const code = await initCommand(
+      [
+        "--yes",
+        "--skip-install",
+        "--gateway",
+        "https://arena.example.com",
+        "--api",
+        "http://api.example.com",
+      ],
+      { ...t.io, env: { BONDED_RUNNER_TOKEN: "rt" }, connect: async () => 0 },
+    );
+    expect(code).toBe(1);
+    expect(t.out.join("\n")).toMatch(/--api must be https/);
+  });
+
   it("refuses plain http to a remote gateway", async () => {
     const dir = copy("langchain");
     const t = io(dir);

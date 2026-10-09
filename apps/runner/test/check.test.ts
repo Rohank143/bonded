@@ -21,6 +21,20 @@ function fakeApi(events: CheckEvent[], options: { status?: number; immediate?: b
       auth: headers.get("authorization"),
       ...(typeof init.body === "string" ? { body: init.body } : {}),
     });
+    if (url.endsWith("/runner/check"))
+      return Response.json(
+        options.status
+          ? { error: "That runner token isn't valid." }
+          : {
+              checkId: "c1",
+              streamToken: "st/1",
+              streamExpiresAt: new Date(Date.now() + 300_000).toISOString(),
+              eventsUrl: "/checks/c1/events",
+              events: [],
+              result: null,
+            },
+        { status: options.status ?? 201 },
+      );
     if (url.endsWith("/checks"))
       return Response.json(
         options.status
@@ -85,6 +99,37 @@ describe("runConnectionCheck", () => {
     });
   });
 
+  it("starts a check with the runner token alone and follows it with the stream token", async () => {
+    const events: CheckEvent[] = [{ type: "started" }, { type: "result", ...RESULT }];
+    const api = fakeApi(events);
+    const result = await runConnectionCheck(
+      { api: "https://api.test", runnerToken: "bonded_rt_abc" },
+      () => {},
+      { fetch: api.fetch },
+    );
+    expect(result).toEqual(RESULT);
+    // No body, no session: the token says what to check.
+    expect(api.calls[0]).toEqual({
+      url: "https://api.test/runner/check",
+      method: "POST",
+      auth: "Bearer bonded_rt_abc",
+    });
+    expect(api.calls[1]).toEqual({
+      url: "https://api.test/checks/c1/events?token=st%2F1",
+      method: "GET",
+      auth: null,
+    });
+  });
+
+  it("passes a refused runner token on", async () => {
+    const api = fakeApi([], { status: 401 });
+    await expect(
+      runConnectionCheck({ api: "https://api.test", runnerToken: "bonded_rt_x" }, () => {}, {
+        fetch: api.fetch,
+      }),
+    ).rejects.toThrow("That runner token isn't valid.");
+  });
+
   it("returns at once when the check failed before it ran, for a registered agent", async () => {
     const api = fakeApi([], { immediate: true });
     const result = await runConnectionCheck(
@@ -113,6 +158,28 @@ describe("runConnectionCheck", () => {
       "  problem: Your agent never called a tool",
       "  warning: It read only 2 of 9 surfaces",
       "  3 tool calls, task done, read inbox, news",
+    ]);
+    // With the API's codes, each problem links to its fix.
+    expect(
+      resultLines({
+        ...RESULT,
+        passed: false,
+        warnings: [],
+        problems: ["Your agent never called a tool", "Something new"],
+        issues: [
+          {
+            code: "never-called-a-tool",
+            severity: "problem",
+            message: "Your agent never called a tool",
+          },
+          { code: "other", severity: "problem", message: "Something new" },
+        ],
+      }).slice(0, 4),
+    ).toEqual([
+      "Connection check failed:",
+      "  problem: Your agent never called a tool",
+      "    how to fix: https://bonded-nu.vercel.app/docs/guides/troubleshooting/#never-called-a-tool",
+      "  problem: Something new",
     ]);
   });
 });
