@@ -88,7 +88,9 @@ export default defineRailway(() => {
   // The Arena Gateway (bring your own agent, docs/BRING-YOUR-OWN-AGENT.md) runs in the
   // arena-worker: runners connect to it over a WebSocket and agents reach their episodes over
   // MCP and HTTP, so it needs a public domain. The API shows the URL in the runner command.
-  const GATEWAY_DOMAIN = "bonded-arena-gateway.up.railway.app";
+  // Railway's own domain for the service: the earlier custom "bonded-arena-gateway" name was
+  // never attached by config apply, so the generated one is used, routed to GATEWAY_PORT.
+  const GATEWAY_DOMAIN = "arena-worker-production.up.railway.app";
   const GATEWAY_PORT = "8080";
   const gateway = { GATEWAY_PUBLIC_URL: `https://${GATEWAY_DOMAIN}` };
 
