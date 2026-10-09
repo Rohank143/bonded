@@ -4,7 +4,11 @@ import { connectChain, type ServiceChain } from "@bonded/keeper";
 import { CascadeSentinel, type SentinelModel } from "@bonded/demo-agents";
 import { asEntryPoint, deployReferenceAccount } from "@bonded/sandbox";
 import { checkWithSentinel, installMandateModule } from "@bondedhq/sdk";
-import { sentinelCheckDigest, sentinelCheckMessage, type SentinelCheckBody } from "@bondedhq/shared";
+import {
+  sentinelCheckDigest,
+  sentinelCheckMessage,
+  type SentinelCheckBody,
+} from "@bondedhq/shared";
 import { privateKeyToAccount } from "viem/accounts";
 import { createApi } from "../src/index.js";
 import {
