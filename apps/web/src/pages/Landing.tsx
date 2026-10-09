@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { useReadContracts } from "wagmi";
-import { bondedRegistryAbi, coverPoolAbi, tierForScore } from "@bonded/shared";
+import { bondedRegistryAbi, coverPoolAbi, tierForScore } from "@bondedhq/shared";
 import { deployment } from "../config";
 import { useAgents, useClaims, waterfall } from "../lib/chain";
 import { bps, short, usd } from "../lib/format";

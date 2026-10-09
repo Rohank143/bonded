@@ -1,4 +1,4 @@
-import type { AttackSpec, SelfServeKind } from "@bonded/shared";
+import type { AttackSpec, SelfServeKind } from "@bondedhq/shared";
 import { apiUrl } from "../config";
 import type { EpisodeCard, EpisodeCounts, Outcome } from "./events";
 

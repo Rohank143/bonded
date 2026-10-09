@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import { ANVIL_KEYS } from "@bonded/arena";
 import { connectChain } from "@bonded/keeper";
-import { parseEvmDeployment } from "@bonded/shared";
+import { parseEvmDeployment } from "@bondedhq/shared";
 import { createApi } from "../src/index.js";
 import { postgres } from "./postgres.js";
 

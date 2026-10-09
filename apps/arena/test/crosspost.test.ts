@@ -1,8 +1,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { attestationMessage as solanaMessage } from "@bonded/solana";
-import { bondedRegistryAbi, MODEL_FAMILY_CODE } from "@bonded/shared";
+import { attestationMessage as solanaMessage } from "@bondedhq/solana";
+import { bondedRegistryAbi, MODEL_FAMILY_CODE } from "@bondedhq/shared";
 import { encodeAbiParameters, encodeEventTopics, type Log } from "viem";
 import { expect, it } from "vitest";
 import { readLinks, registeredAgentId, toSolanaAttestation, writeLinks } from "../src/crosspost.js";

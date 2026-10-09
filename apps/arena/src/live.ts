@@ -5,7 +5,7 @@ import {
   type AttackSpec,
   type EvmMandate,
   mandateVaultAbi,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { lookalikeOf } from "./attacks.js";
 import { DEFAULT_GOAL, mandatePolicy, plantAttack, runWithTimeout } from "./episode.js";

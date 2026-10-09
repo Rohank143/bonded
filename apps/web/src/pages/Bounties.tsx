@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useAccount, usePublicClient, useReadContract } from "wagmi";
 import { getAbiItem, type Hex } from "viem";
-import { ATTACK_CLASSES, BOUNTY_SPEC_EXAMPLE, bountyBoardAbi, testTokenAbi } from "@bonded/shared";
+import { ATTACK_CLASSES, BOUNTY_SPEC_EXAMPLE, bountyBoardAbi, testTokenAbi } from "@bondedhq/shared";
 import { deployment, faucets, isLocal, networkName } from "../config";
 import { api, type BountiesQuery, type BountyRecord } from "../lib/api";
 import { checkSpec, commitmentIfReady, isSalt, newSalt, specUriOf } from "../lib/bounty";

@@ -14,7 +14,7 @@ import {
   type EvmMandate as EvmMandateType,
   type SelfServeKind,
   type SelfServeRequest,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import type { ServiceChain } from "@bonded/keeper";
 import {
   decodeFunctionData,

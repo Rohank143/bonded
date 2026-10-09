@@ -5,7 +5,7 @@ import {
   type SentinelQuestionSet,
   sentinelQuestions,
   sentinelState,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { type ContrastRow, usesUntrainedMechanism } from "./contrast.js";
 import type { SentinelRow } from "./dataset.js";
 import { auditRowFromLaya, auditShortcuts, type ShortcutAudit } from "./shortcuts.js";

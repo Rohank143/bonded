@@ -1,7 +1,7 @@
 import { useId, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router";
-import { tierForScore } from "@bonded/shared";
+import { tierForScore } from "@bondedhq/shared";
 import { addressUrl, short, txUrl } from "../lib/format";
 import { explorerUrl } from "../config";
 import { describeError } from "../lib/errors";

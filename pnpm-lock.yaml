@@ -50,7 +50,7 @@ importers:
       '@bonded/keeper':
         specifier: workspace:*
         version: link:../keeper
-      '@bonded/shared':
+      '@bondedhq/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@hono/node-server':
@@ -78,10 +78,10 @@ importers:
       '@bonded/demo-agents':
         specifier: workspace:*
         version: link:../demo-agents
-      '@bonded/shared':
+      '@bondedhq/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@bonded/solana':
+      '@bondedhq/solana':
         specifier: workspace:*
         version: link:../../packages/solana
       '@phala/dcap-qvl':
@@ -89,10 +89,10 @@ importers:
         version: 0.6.5
       '@solana/web3.js':
         specifier: ^1.98.4
-        version: 1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
+        version: 1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
       viem:
         specifier: ^2.56.9
-        version: 2.56.9(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.6.5)
+        version: 2.56.9(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.6.5)
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
@@ -102,7 +102,7 @@ importers:
 
   apps/demo-agents:
     dependencies:
-      '@bonded/shared':
+      '@bondedhq/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@coinbase/agentkit':
@@ -138,10 +138,10 @@ importers:
       '@bonded/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@bonded/shared':
+      '@bondedhq/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@bonded/solana':
+      '@bondedhq/solana':
         specifier: workspace:*
         version: link:../../packages/solana
       '@solana/web3.js':
@@ -153,7 +153,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@bonded/shared':
+      '@bondedhq/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@codemirror/lang-yaml':
@@ -268,10 +268,10 @@ importers:
     dependencies:
       '@anchor-lang/core':
         specifier: ^1.2.0
-        version: 1.2.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
+        version: 1.2.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
       '@solana/web3.js':
         specifier: ^1.98.4
-        version: 1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
+        version: 1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
       bn.js:
         specifier: ^5.2.3
         version: 5.2.5
@@ -282,7 +282,7 @@ importers:
 
   services/tee-agent:
     dependencies:
-      '@bonded/shared':
+      '@bondedhq/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@phala/dstack-sdk':
@@ -6456,18 +6456,18 @@ snapshots:
       '@types/node': 22.20.4
       typescript: 5.9.3
 
-  '@anchor-lang/borsh@1.2.0(@solana/web3.js@1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6))':
+  '@anchor-lang/borsh@1.2.0(@solana/web3.js@1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10))':
     dependencies:
-      '@solana/web3.js': 1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
+      '@solana/web3.js': 1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
       bn.js: 5.2.5
       buffer-layout: 1.2.2
 
-  '@anchor-lang/core@1.2.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)':
+  '@anchor-lang/core@1.2.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)':
     dependencies:
-      '@anchor-lang/borsh': 1.2.0(@solana/web3.js@1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6))
+      '@anchor-lang/borsh': 1.2.0(@solana/web3.js@1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10))
       '@anchor-lang/errors': 1.2.0
       '@noble/hashes': 1.8.0
-      '@solana/web3.js': 1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
+      '@solana/web3.js': 1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
       bn.js: 5.2.5
       bs58: 4.0.1
       buffer-layout: 1.2.2
@@ -14998,6 +14998,23 @@ snapshots:
       isows: 1.0.7(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))
       ox: 0.14.45(typescript@5.9.3)(zod@4.6.5)
       ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
+    optionalDependencies:
+      typescript: 5.9.3
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+      - zod
+
+  viem@2.56.9(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.6.5):
+    dependencies:
+      '@noble/curves': 1.9.1
+      '@noble/hashes': 1.8.0
+      '@scure/bip32': 1.7.0
+      '@scure/bip39': 1.6.0
+      abitype: 1.2.3(typescript@5.9.3)(zod@4.6.5)
+      isows: 1.0.7(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))
+      ox: 0.14.45(typescript@5.9.3)(zod@4.6.5)
+      ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
     optionalDependencies:
       typescript: 5.9.3
     transitivePeerDependencies:

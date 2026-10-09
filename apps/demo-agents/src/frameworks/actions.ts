@@ -5,7 +5,7 @@ import {
   AGENT_TOOLS,
   type AgentToolbox,
   type AgentToolName,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 
 /**
  * The Arena's tools as framework actions (docs/PLAN.md Section 8.4, "Framework adapters"). Each
@@ -32,7 +32,7 @@ export interface ArenaAction {
   schema: z.ZodObject<z.ZodRawShape>;
 }
 
-/** Arguments for each Arena tool, mirroring AGENT_TOOLS in @bonded/shared (tested). */
+/** Arguments for each Arena tool, mirroring AGENT_TOOLS in @bondedhq/shared (tested). */
 const SCHEMAS: Record<AgentToolName, z.ZodObject<z.ZodRawShape>> = {
   read_inbox: NoArgs,
   read_news: NoArgs,

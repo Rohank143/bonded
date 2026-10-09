@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useAccount, useReadContracts } from "wagmi";
 import type { Abi } from "viem";
-import { coverManagerAbi, coverPoolAbi, testTokenAbi } from "@bonded/shared";
+import { coverManagerAbi, coverPoolAbi, testTokenAbi } from "@bondedhq/shared";
 import { deployment, faucets } from "../config";
 import { bps, duration, parseUsd, usd, when } from "../lib/format";
 import { isRpcUnavailable } from "../lib/errors";

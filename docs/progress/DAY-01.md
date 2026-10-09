@@ -8,7 +8,7 @@ Plan reference: docs/PLAN.md Section 20, Day 1.
 - **CI:** `.github/workflows/ci.yml` runs on every PR and on pushes to `main`:
   - TypeScript job: format check, typecheck, lint, tests.
   - Contracts job: `forge fmt --check`, `forge build --sizes`, `forge test`.
-- **`@bonded/shared`:**
+- **`@bondedhq/shared`:**
   - `Mandate` (EVM and Solana variants), with `mandateHash` (canonical JSON + keccak256) and `toEvmMandateParams` (whole-dollar limits → 6-decimal on-chain values).
   - `AttackSpec`, the ten attack classes, attack surfaces and breach-type codes.
   - `Attestation` and `Quote`, model-family codes, EIP-712 types and signing helpers.

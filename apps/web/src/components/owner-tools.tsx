@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount, useSignMessage } from "wagmi";
-import { SELF_SERVE_KIND_LABELS, type SelfServeKind } from "@bonded/shared";
+import { SELF_SERVE_KIND_LABELS, type SelfServeKind } from "@bondedhq/shared";
 import { deployment } from "../config";
 import { api } from "../lib/api";
 import { recallAgent } from "../lib/onboarding";

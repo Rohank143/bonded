@@ -3,7 +3,7 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { ChatOpenAI } from "@langchain/openai";
-import { type AgentRunSummary, type AgentTask, llmConfigFromEnv } from "@bonded/shared";
+import { type AgentRunSummary, type AgentTask, llmConfigFromEnv } from "@bondedhq/shared";
 
 /**
  * Both framework templates (AgentKit's LangChain chatbot, Solana Agent Kit's LangGraph example)

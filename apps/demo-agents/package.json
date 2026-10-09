@@ -22,7 +22,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@bonded/shared": "workspace:*",
+    "@bondedhq/shared": "workspace:*",
     "@coinbase/agentkit": "0.10.4",
     "@coinbase/agentkit-langchain": "0.3.0",
     "@langchain/core": "^0.3.80",

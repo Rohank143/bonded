@@ -1,4 +1,4 @@
-import type { AttackSurface } from "@bonded/shared";
+import type { AttackSurface } from "@bondedhq/shared";
 import type { ArenaToken } from "./vault.js";
 
 /**

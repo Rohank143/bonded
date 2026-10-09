@@ -1,4 +1,4 @@
-import type { AgentRunSummary, AgentTask, AgentToolbox, ArenaAgent } from "@bonded/shared";
+import type { AgentRunSummary, AgentTask, AgentToolbox, ArenaAgent } from "@bondedhq/shared";
 import { findInstructions } from "./instructions.js";
 
 /** Everything an agent told to "check first" would read. */
