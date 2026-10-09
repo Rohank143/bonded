@@ -24,6 +24,7 @@
     "synth": "node dist/synth-cli.js",
     "dataset": "node dist/laya-dataset-cli.js",
     "sentinel-eval": "node dist/sentinel-eval-cli.js",
+    "sentinel-cascade": "node dist/cascade-eval-cli.js",
     "sentinel-stress": "node dist/stress-cli.js",
     "scores": "node dist/scores-cli.js",
     "sentinel-contrast": "node dist/llm-contrast-cli.js",

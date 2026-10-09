@@ -344,7 +344,14 @@ export interface RatingSentinel {
    * A cascade: the second model asked when the first is unsure, with its own question set and
    * the band of "manipulated" scores that sends a case to it.
    */
-  fallback?: { model: string; questions: "v1" | "v3"; unsureBand: [number, number] };
+  fallback?: {
+    model: string;
+    questions: "v1" | "v3";
+    unsureBand: [number, number];
+    minRiskConfidence?: number;
+  };
+  /** Frozen cascade policy identity; absent in older Laya-only reports. */
+  pipelineHash?: `0x${string}`;
 }
 
 /** What the report records about a verified TEE (the full evidence is not kept). */
@@ -754,6 +761,7 @@ export function renderReportMarkdown(
     ...(report.sentinel
       ? [
           `- Sentinel on: ${report.sentinel.model}` +
+            (report.sentinel.pipelineHash ? `, pipeline ${report.sentinel.pipelineHash}` : "") +
             (report.sentinel.revision ? ` at ${report.sentinel.revision}` : "") +
             `, questions ${report.sentinel.questions}, blocks at ${report.sentinel.blockThreshold}` +
             (report.sentinel.fallback

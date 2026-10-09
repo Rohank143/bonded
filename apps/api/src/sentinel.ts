@@ -1,12 +1,19 @@
 import type { Context, Hono } from "hono";
+import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { keccak256, recoverMessageAddress, stringToBytes, type Hex } from "viem";
 import type { Database } from "@bonded/db";
 import type { RatingSentinel } from "@bonded/arena";
 import {
   GuardedAgent,
+  CascadeSentinel,
+  DecisionModelSentinel,
+  LlmDecisionModel,
   LayaSentinel,
   SentinelGuard,
+  SentinelAssessmentError,
+  mergeUsage,
+  type ModelUsage,
   createHardenedAgent,
   createPartialAgent,
   createVulnerableAgent,
@@ -16,6 +23,12 @@ import {
   SENTINEL_CHECK_MAX_AGE_SECONDS,
   SENTINEL_INPUT_CHARS,
   SENTINEL_SERVING,
+  OpenAICompatibleClient,
+  llmConfigFromEnv,
+  canonicalHash,
+  sentinelCascadePolicySchema,
+  sentinelCascadePolicyHash,
+  verifySentinelCascadeEvidence,
   mandateModuleFactoryAbi,
   mandateVaultAbi,
   mandateVaultFactoryAbi,
@@ -46,27 +59,101 @@ export interface SentinelService {
  * clearly instead of running without it.
  */
 export function sentinelFromEnv(env: NodeJS.ProcessEnv = process.env): SentinelService | undefined {
+  const mode = z.enum(["laya", "cascade"]).parse(env.SENTINEL_MODE ?? "laya");
   const url = env.SENTINEL_URL?.trim().replace(/\/+$/, "");
-  if (!url) return undefined;
+  if (!url) {
+    if (mode === "cascade") throw new Error("cascade mode requires SENTINEL_URL");
+    return undefined;
+  }
   const repo = env.SENTINEL_MODEL_REPO?.trim();
   const revision = env.SENTINEL_MODEL_REVISION?.trim();
+  let healthCache: { expires: number; result: Promise<boolean> } | undefined;
+  const health = () => {
+    if (!healthCache || healthCache.expires <= Date.now()) {
+      healthCache = {
+        expires: Date.now() + 30_000,
+        result: (async () => {
+          const response = await fetch(`${url}/health`, {
+            signal: AbortSignal.timeout(3_000),
+          }).catch(() => undefined);
+          if (!response?.ok) return false;
+          return (
+            mode !== "cascade" || Boolean(revision && (await response.text()).includes(revision))
+          );
+        })().catch(() => false),
+      };
+    }
+    return healthCache.result;
+  };
+  const primary = new LayaSentinel({
+    url,
+    apiKey: env.LAYA_API_KEY,
+    questions: SENTINEL_SERVING.questions,
+  });
+  const info: RatingSentinel = {
+    model: "laya/typed-decisions",
+    // The service's own pin (Railway references it), so a report names the checkpoint.
+    ...(repo ? { repo } : {}),
+    ...(revision ? { revision } : {}),
+    questions: SENTINEL_SERVING.questions,
+    blockThreshold: SENTINEL_SERVING.blockThreshold,
+  };
+  let model: SentinelModel = primary;
+  if (mode === "cascade") {
+    if (!env.SENTINEL_CASCADE_POLICY_FILE || !env.SENTINEL_CASCADE_EVALUATION_FILE)
+      throw new Error("cascade mode requires frozen policy and passing evaluation files");
+    const policy = sentinelCascadePolicySchema.parse(
+      JSON.parse(readFileSync(env.SENTINEL_CASCADE_POLICY_FILE, "utf8")),
+    );
+    verifySentinelCascadeEvidence(
+      policy,
+      JSON.parse(readFileSync(env.SENTINEL_CASCADE_EVALUATION_FILE, "utf8")),
+    );
+    const config = llmConfigFromEnv(env);
+    if (
+      policy.primary.repo !== repo ||
+      policy.primary.revision !== revision ||
+      policy.fallback.baseUrl.replace(/\/+$/, "") !== config.baseUrl
+    )
+      throw new Error(
+        "cascade evaluation does not match the configured checkpoint or LLM endpoint",
+      );
+    info.fallback = {
+      model: policy.fallback.model,
+      questions: "v1",
+      unsureBand: policy.unsureBand,
+      minRiskConfidence: policy.minRiskConfidence,
+    };
+    info.pipelineHash = sentinelCascadePolicyHash(policy);
+    const verifiedPrimary: SentinelModel = {
+      name: primary.name,
+      get usage() {
+        return primary.usage;
+      },
+      async assess(fields, options) {
+        const started = performance.now();
+        if (!(await health()))
+          throw new Error("Sentinel health does not confirm the evaluated checkpoint");
+        options?.signal?.throwIfAborted();
+        const answer = await primary.assess(fields, options);
+        return { ...answer, latencyMs: performance.now() - started };
+      },
+    };
+    model = new CascadeSentinel(
+      verifiedPrimary,
+      new DecisionModelSentinel(
+        new LlmDecisionModel({
+          model: policy.fallback.model,
+          client: new OpenAICompatibleClient(config),
+        }),
+      ),
+      { unsureBand: policy.unsureBand, minRiskConfidence: policy.minRiskConfidence },
+    );
+  }
   return {
-    model: new LayaSentinel({
-      url,
-      apiKey: env.LAYA_API_KEY,
-      questions: SENTINEL_SERVING.questions,
-    }),
-    info: {
-      model: "laya/typed-decisions",
-      // The service's own pin (Railway references it), so a report names the checkpoint.
-      ...(repo ? { repo } : {}),
-      ...(revision ? { revision } : {}),
-      questions: SENTINEL_SERVING.questions,
-      blockThreshold: SENTINEL_SERVING.blockThreshold,
-    },
-    health: async () =>
-      (await fetch(`${url}/health`, { signal: AbortSignal.timeout(3_000) }).catch(() => undefined))
-        ?.ok === true,
+    model,
+    info,
+    health,
   };
 }
 
@@ -74,8 +161,11 @@ export function sentinelFromEnv(env: NodeJS.ProcessEnv = process.env): SentinelS
  * The code hash a rating with Sentinel in front attests: the agent's own code hash combined
  * with Sentinel, so a score earned with it never shares a hash with the agent alone.
  */
-export function sentinelCodeHash(codeHash: Hex): Hex {
-  return keccak256(stringToBytes(`${codeHash.toLowerCase()}+sentinel`));
+export function sentinelCodeHash(codeHash: Hex, info?: RatingSentinel): Hex {
+  const suffix = info?.fallback
+    ? `+sentinel:${info.pipelineHash ?? canonicalHash(JSON.stringify(info))}`
+    : "+sentinel";
+  return keccak256(stringToBytes(`${codeHash.toLowerCase()}${suffix}`));
 }
 
 /** One of Bonded's built-in scripted designs, with Sentinel in front of it when given. */
@@ -171,6 +261,8 @@ export function sentinelRoutes(
   const d = chain.deployment;
   const limits = { ...DEFAULT_SENTINEL_LIMITS, ...options.limits };
   const now = () => (limits.now ?? Date.now)();
+  const pipelineHash =
+    sentinel?.info.pipelineHash ?? canonicalHash(JSON.stringify(sentinel?.info ?? null));
   const requests = new RateLimiter({ ...limits.requests, now });
   const agents = new RateLimiter({
     perClient: limits.perAgent,
@@ -257,6 +349,15 @@ export function sentinelRoutes(
       available: await healthy(),
       ...(sentinel ? sentinel.info : {}),
       last24h: { checks: day.checks, blocked: day.blocked },
+      ...(sentinel
+        ? {
+            metrics24h: await db.sentinelMetrics(
+              d.chainId,
+              new Date(now() - 86_400_000),
+              pipelineHash,
+            ),
+          }
+        : {}),
     });
   });
 
@@ -303,14 +404,30 @@ export function sentinelRoutes(
       if (running >= limits.concurrent)
         throw new Refused(503, "Sentinel is busy; try again in a few seconds");
       running++;
+      const started = performance.now();
+      const usageParts: ModelUsage[] = [];
       let assessment: Awaited<ReturnType<SentinelModel["assess"]>>;
       try {
         assessment = await sentinel.model.assess(body, {
           signal: AbortSignal.timeout(limits.timeoutMs),
+          onUsage: (usage) => usageParts.push(usage),
         });
       } catch (e) {
         // No answer from Sentinel: the status shows it down for a while.
         failedAt = now();
+        const usage = mergeUsage(...usageParts);
+        await db.recordSentinelCheck(d.chainId, input.agentId, {
+          status: "error",
+          manipulated: null,
+          blocked: null,
+          latencyMs: performance.now() - started,
+          pipelineHash,
+          model: sentinel.model.name,
+          ...(e instanceof SentinelAssessmentError ? e.metrics : {}),
+          inputTokens: usage?.inputTokens,
+          outputTokens: usage?.outputTokens,
+          // Failed calls may have unreported charges; never claim their cost is complete.
+        });
         if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError"))
           throw new Refused(503, "Sentinel took too long; try again");
         throw new Refused(503, "Sentinel didn't answer; try again");
@@ -322,6 +439,14 @@ export function sentinelRoutes(
         manipulated: assessment.manipulated,
         blocked,
         latencyMs: assessment.latencyMs,
+        pipelineHash,
+        model: assessment.model,
+        escalated: assessment.escalated ?? false,
+        primaryLatencyMs: assessment.primaryLatencyMs ?? assessment.latencyMs,
+        fallbackLatencyMs: assessment.fallbackLatencyMs,
+        inputTokens: assessment.usage?.inputTokens,
+        outputTokens: assessment.usage?.outputTokens,
+        llmCostUsd: assessment.usage?.costUsd,
       });
       return c.json({
         blocked,
@@ -330,6 +455,11 @@ export function sentinelRoutes(
         blockThreshold: sentinel.info.blockThreshold,
         model: assessment.model,
         latencyMs: Math.round(assessment.latencyMs),
+        escalated: assessment.escalated ?? false,
+        primaryLatencyMs: Math.round(assessment.primaryLatencyMs ?? assessment.latencyMs),
+        ...(assessment.fallbackLatencyMs === undefined
+          ? {}
+          : { fallbackLatencyMs: Math.round(assessment.fallbackLatencyMs) }),
         // Advisory: the agent decides whether to go ahead; the vault still enforces the mandate.
         advice: blocked
           ? "Don't take this action: it looks driven by what the agent read, not its mandate."

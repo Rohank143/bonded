@@ -89,6 +89,51 @@ export function Sentinel() {
       />
       <ErrorText error={status.error} />
 
+      {s?.fallback ? (
+        <section>
+          <h2 className="font-serif text-3xl leading-tight">
+            Laya first, a second opinion when unsure
+          </h2>
+          <p className="mt-2 max-w-[65ch] text-sm text-muted">
+            Uncertain checks go to {s.fallback.model}. Those checks share the mandate, proposed
+            action and outside inputs with the model provider. The vault still decides payouts.
+          </p>
+          <StatStrip
+            stats={[
+              {
+                label: "Checks escalated",
+                value:
+                  s.metrics24h?.escalationRate == null
+                    ? "—"
+                    : `${(100 * s.metrics24h.escalationRate).toFixed(1)}%`,
+                hint: "last 24 hours, current guard",
+              },
+              {
+                label: "LLM cost / 1,000",
+                value:
+                  s.metrics24h?.llmUsdPer1000 == null
+                    ? "—"
+                    : `$${s.metrics24h.llmUsdPer1000.toFixed(3)}`,
+                hint: "provider spend; hosting separate",
+              },
+              {
+                label: "Check latency p95",
+                value:
+                  s.metrics24h?.latencyMs.p95 == null
+                    ? "—"
+                    : `${s.metrics24h.latencyMs.p95.toLocaleString()} ms`,
+                hint: "includes both paths",
+              },
+              {
+                label: "Checks without an answer",
+                value: s.metrics24h ? s.metrics24h.errors.toLocaleString() : "—",
+                hint: "refused; never treated as safe",
+              },
+            ]}
+          />
+        </section>
+      ) : null}
+
       <section>
         <h2 className="font-serif text-3xl leading-tight">How a check works</h2>
         <ol className="panel mt-5 grid overflow-hidden p-0 md:grid-cols-2 xl:grid-cols-4">

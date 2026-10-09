@@ -179,8 +179,13 @@ const LANE_LOCK: Record<RatingLane | "all", number> = { all: 7004, builtin: 7004
  * front the rated code is different, so it gets the combined hash (`sentinelCodeHash`). This
  * holds for operator configs and self-serve registrations alike.
  */
-export function ratedCodeHash(config: { codeHash: string; sentinel?: boolean }): Hex {
-  return config.sentinel ? sentinelCodeHash(config.codeHash as Hex) : (config.codeHash as Hex);
+export function ratedCodeHash(
+  config: { codeHash: string; sentinel?: boolean },
+  sentinel?: SentinelService,
+): Hex {
+  return config.sentinel
+    ? sentinelCodeHash(config.codeHash as Hex, sentinel?.info)
+    : (config.codeHash as Hex);
 }
 /** Process one durable rating job under the chain worker lock; retries recover accepted posts. */
 export async function workOne(
@@ -400,7 +405,7 @@ async function runLocked(
               ? new Set((fresh?.attacks ?? []).map((a) => a.id))
               : library.unpublished,
           ...(fresh ? { heldOut: fresh.heldOut } : {}),
-          codeHash: ratedCodeHash(config),
+          codeHash: ratedCodeHash(config, sentinel),
           ...(config.repeats ? { repeats: config.repeats } : {}),
           // An operator-run agent could skip its work, or its reading, when it suspects an
           // attack: only episodes where it was exposed count as trials (rate.ts, `exercise`).

@@ -32,6 +32,7 @@ export const DEFAULT_SENTINEL_BLOCK_THRESHOLD: number = SENTINEL_SERVING.blockTh
 export class SentinelGuard implements ActionGuard {
   readonly name: string;
   private readonly model: SentinelModel;
+  private totals: ModelUsage | undefined;
 
   /**
    * @param model a Sentinel model (Laya, a cascade) or any typed decision model, which is asked
@@ -46,9 +47,9 @@ export class SentinelGuard implements ActionGuard {
     this.name = `sentinel/${this.model.name}`;
   }
 
-  /** The model's usage, so the agent can report it and a spending cap can count it. */
+  /** This guard's own calls; unrelated checks on a shared production model cannot affect a rating. */
   get usage(): ModelUsage | undefined {
-    return this.model.usage;
+    return this.totals;
   }
 
   async check(
@@ -56,11 +57,27 @@ export class SentinelGuard implements ActionGuard {
     args: Record<string, string>,
     context: GuardContext,
   ): Promise<GuardVerdict> {
-    const assessment = await this.model.assess({
-      mandate: context.task.mandate,
-      proposedAction: { tool, args },
-      untrustedInputs: context.untrustedCalls,
-    });
+    let emitted = false;
+    const addUsage = (usage: ModelUsage) => {
+      emitted = true;
+      const previous = this.totals;
+      this.totals = {
+        inputTokens: (previous?.inputTokens ?? 0) + usage.inputTokens,
+        outputTokens: (previous?.outputTokens ?? 0) + usage.outputTokens,
+        ...(usage.costUsd !== undefined && (!previous || previous.costUsd !== undefined)
+          ? { costUsd: (previous?.costUsd ?? 0) + usage.costUsd }
+          : {}),
+      };
+    };
+    const assessment = await this.model.assess(
+      {
+        mandate: context.task.mandate,
+        proposedAction: { tool, args },
+        untrustedInputs: context.untrustedCalls,
+      },
+      { onUsage: addUsage, signal: AbortSignal.timeout(20_000) },
+    );
+    if (!emitted && assessment.usage) addUsage(assessment.usage);
     const risk = assessment.actionRisk
       ? { action_risk: assessment.actionRisk.answer, action_risk_source: "model" }
       : {

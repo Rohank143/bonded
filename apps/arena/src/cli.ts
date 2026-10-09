@@ -36,6 +36,7 @@ import { ArenaGateway, newRunnerToken, RemoteAgent, StaticRunnerTokens } from ".
 import { FileHeldOutLedger, freshHeldOut } from "./held-out-fresh.js";
 import { rateAgent } from "./rate.js";
 import { sentinelInfo } from "./sentinel-info.js";
+import { cascadeFromPolicy } from "./sentinel-policy.js";
 import { attestTeeAgent } from "./tee.js";
 import { describeOutcome, summarise } from "./report.js";
 import { Sandbox } from "./sandbox.js";
@@ -61,6 +62,7 @@ Agent:
                            write (vulnerable gets Sentinel alone, hardened gets it after its policy guard);
                            laya:<url> uses a Laya server (LAYA_API_KEY if it needs one)
   --sentinel-fallback <id> with laya:<url>, ask this LLM when Laya is unsure (the cascade)
+  --sentinel-policy <path> with laya:<url>, use the exact frozen cascade policy
   --sentinel-questions <s> with laya:<url>, the checkpoint's question set: v1 or v3 (default: v1)
   --enforce                run the vault in Enforce mode (blocked, not just recorded)
   --code-hash <0x..>       rate only: hash of the code version being rated (default: hash of its name)
@@ -123,6 +125,7 @@ async function main(): Promise<number> {
       model: { type: "string" },
       "sentinel-model": { type: "string" },
       "sentinel-fallback": { type: "string" },
+      "sentinel-policy": { type: "string" },
       "sentinel-questions": { type: "string" },
       enforce: { type: "boolean", default: false },
       "code-hash": { type: "string" },
@@ -285,6 +288,7 @@ async function main(): Promise<number> {
                 values["sentinel-model"],
                 values["sentinel-fallback"],
                 values["sentinel-questions"],
+                values["sentinel-policy"],
               ),
             }
           : {}),
@@ -450,10 +454,13 @@ function buildAgent(values: {
   "sentinel-model"?: string;
   "sentinel-fallback"?: string;
   "sentinel-questions"?: string;
+  "sentinel-policy"?: string;
 }): ArenaAgent {
   const brain = values.brain;
   if (brain !== "scripted" && brain !== "llm") throw new Error(`unknown brain ${brain}`);
   const llm = values.model ? { model: values.model } : {};
+  if (values["sentinel-policy"] && !values["sentinel-model"]?.startsWith("laya:"))
+    throw new Error("--sentinel-policy requires --sentinel-model laya:<url>");
   const sentinel = values["sentinel-model"]
     ? [
         new SentinelGuard(
@@ -461,6 +468,7 @@ function buildAgent(values: {
             values["sentinel-model"],
             values["sentinel-fallback"],
             values["sentinel-questions"],
+            values["sentinel-policy"],
           ),
         ),
       ]
@@ -495,7 +503,12 @@ function buildAgent(values: {
 }
 
 /** `laya:<url>` for a Laya server, optionally with an LLM fallback; otherwise an LLM model id. */
-function sentinelModel(spec: string, fallback?: string, questions?: string) {
+function sentinelModel(spec: string, fallback?: string, questions?: string, policy?: string) {
+  if (policy) {
+    if (fallback || questions)
+      throw new Error("--sentinel-policy cannot be combined with fallback or question overrides");
+    return cascadeFromPolicy(spec.slice("laya:".length).replace(/\/+$/, ""), policy);
+  }
   if (!spec.startsWith("laya:")) {
     if (fallback) throw new Error("--sentinel-fallback needs --sentinel-model laya:<url>");
     if (questions) throw new Error("--sentinel-questions needs --sentinel-model laya:<url>");

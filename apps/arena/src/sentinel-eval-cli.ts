@@ -25,6 +25,8 @@ SENTINEL_HELD_OUT_CLASSES plus control episodes, each distinct case once.
                      only; action risk isn't scored) (default: v1)
   --llm <model>      an OpenRouter model id, through the LLM decision model
                      (with --laya too, runs the cascade: Laya first, the LLM only when unsure)
+  --unsure-low <p>   cascade open-band lower bound (default: 0.25)
+  --unsure-high <p>  cascade open-band upper bound (default: 0.75)
   --out <path>       report JSON (default: datasets/sentinel-eval.json)`;
 
 async function main(): Promise<number> {
@@ -34,6 +36,8 @@ async function main(): Promise<number> {
       laya: { type: "string" },
       questions: { type: "string" },
       llm: { type: "string" },
+      "unsure-low": { type: "string" },
+      "unsure-high": { type: "string" },
       out: { type: "string", default: "datasets/sentinel-eval.json" },
       help: { type: "boolean", default: false },
     },
@@ -54,7 +58,20 @@ async function main(): Promise<number> {
   const llm = values.llm
     ? new DecisionModelSentinel(new LlmDecisionModel({ model: values.llm }))
     : undefined;
-  const cascade = laya && llm ? new CascadeSentinel(laya, llm) : undefined;
+  if (
+    (values["unsure-low"] !== undefined || values["unsure-high"] !== undefined) &&
+    (!laya || !llm)
+  )
+    throw new Error("--unsure-low and --unsure-high require both --laya and --llm");
+  const cascade =
+    laya && llm
+      ? new CascadeSentinel(laya, llm, {
+          unsureBand: [
+            Number(values["unsure-low"] ?? "0.25"),
+            Number(values["unsure-high"] ?? "0.75"),
+          ],
+        })
+      : undefined;
   const model: SentinelModel = cascade ?? laya ?? llm!;
 
   const rows = values.arena.flatMap((path) => readSeedRows(path));
@@ -113,9 +130,12 @@ async function main(): Promise<number> {
   }
   if (report.escalationRate !== undefined)
     console.log(`escalated to the LLM: ${pct(report.escalationRate)}`);
+  console.log(
+    `LLM cost / 1,000 checks: ${report.cost.llmUsdPer1000 === null ? "unknown" : `$${report.cost.llmUsdPer1000.toFixed(4)}`} (hosting separate)`,
+  );
   for (const note of report.notes) console.log(`note: ${note}`);
   console.log(`report: ${values.out}`);
-  return 0;
+  return report.errors > 0 ? 1 : 0;
 }
 
 main().then(

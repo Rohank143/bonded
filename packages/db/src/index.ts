@@ -356,6 +356,7 @@ export class Database {
       "0016_held_out_payloads.sql",
       "0017_agent_standing.sql",
       "0018_rating_registration.sql",
+      "0019_sentinel_cascade.sql",
     ];
     await this.transaction(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(7001)");
@@ -385,13 +386,83 @@ export class Database {
   async recordSentinelCheck(
     chainId: number,
     agentId: string,
-    check: { manipulated: number; blocked: boolean; latencyMs: number },
+    check: {
+      manipulated: number | null;
+      blocked: boolean | null;
+      latencyMs: number;
+      status?: "success" | "error";
+      pipelineHash?: string;
+      model?: string;
+      escalated?: boolean;
+      primaryLatencyMs?: number;
+      fallbackLatencyMs?: number;
+      inputTokens?: number;
+      outputTokens?: number;
+      llmCostUsd?: number;
+    },
   ): Promise<void> {
     await this.pool.query(
-      `INSERT INTO sentinel_checks(chain_id,agent_id,manipulated,blocked,latency_ms)
-       VALUES($1,$2::numeric,$3,$4,$5)`,
-      [chainId, agentId, check.manipulated, check.blocked, Math.round(check.latencyMs)],
+      `INSERT INTO sentinel_checks(chain_id,agent_id,manipulated,blocked,latency_ms,status,
+        pipeline_hash,model,escalated,primary_latency_ms,fallback_latency_ms,input_tokens,output_tokens,llm_cost_usd)
+       VALUES($1,$2::numeric,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+      [
+        chainId,
+        agentId,
+        check.manipulated,
+        check.blocked,
+        Math.round(check.latencyMs),
+        check.status ?? "success",
+        check.pipelineHash,
+        check.model,
+        check.escalated,
+        check.primaryLatencyMs === undefined ? null : Math.round(check.primaryLatencyMs),
+        check.fallbackLatencyMs === undefined ? null : Math.round(check.fallbackLatencyMs),
+        check.inputTokens,
+        check.outputTokens,
+        check.llmCostUsd,
+      ],
     );
+  }
+  /** Durable metrics for one deployed pipeline. Unknown legacy or failed-call cost stays unknown. */
+  async sentinelMetrics(chainId: number, since: Date, pipelineHash: string) {
+    const r = await this.pool.query(
+      `SELECT count(*)::int AS checks,
+        count(*) FILTER (WHERE status='error')::int AS errors,
+        count(*) FILTER (WHERE escalated)::int AS escalations,
+        count(escalated)::int AS routed,
+        count(llm_cost_usd)::int AS costed,
+        sum(llm_cost_usd)::float8 AS cost,
+        sum(input_tokens)::float8 AS input_tokens, sum(output_tokens)::float8 AS output_tokens,
+        percentile_disc(0.5) WITHIN GROUP (ORDER BY latency_ms) AS p50,
+        percentile_disc(0.95) WITHIN GROUP (ORDER BY latency_ms) AS p95,
+        percentile_disc(0.5) WITHIN GROUP (ORDER BY primary_latency_ms) AS primary_p50,
+        percentile_disc(0.95) WITHIN GROUP (ORDER BY primary_latency_ms) AS primary_p95,
+        percentile_disc(0.5) WITHIN GROUP (ORDER BY fallback_latency_ms) AS fallback_p50,
+        percentile_disc(0.95) WITHIN GROUP (ORDER BY fallback_latency_ms) AS fallback_p95
+       FROM sentinel_checks WHERE chain_id=$1 AND checked_at >= $2 AND pipeline_hash=$3`,
+      [chainId, since, pipelineHash],
+    );
+    const m = r.rows[0];
+    return {
+      checks: m.checks as number,
+      errors: m.errors as number,
+      escalations: m.escalations as number,
+      escalationRate: m.routed ? m.escalations / m.routed : null,
+      knownCostChecks: m.costed as number,
+      llmCostUsd: m.checks && m.costed === m.checks ? m.cost : null,
+      llmUsdPer1000: m.checks && m.costed === m.checks ? (m.cost * 1000) / m.checks : null,
+      inputTokens: m.input_tokens as number | null,
+      outputTokens: m.output_tokens as number | null,
+      latencyMs: { p50: m.p50 as number | null, p95: m.p95 as number | null },
+      primaryLatencyMs: {
+        p50: m.primary_p50 as number | null,
+        p95: m.primary_p95 as number | null,
+      },
+      fallbackLatencyMs: {
+        p50: m.fallback_p50 as number | null,
+        p95: m.fallback_p95 as number | null,
+      },
+    };
   }
   /** Sentinel checks since `since`, for one agent or every agent on the chain. */
   async sentinelCheckCounts(
