@@ -15,6 +15,7 @@ import {
   ServerToRunner,
 } from "@bonded/shared";
 import { WebSocket } from "ws";
+import { type CodeIdentity, codeIdentity } from "./code-hash.js";
 import { backoffDelay, gatewayUrlProblem, Tail } from "./tail.js";
 
 /**
@@ -43,6 +44,11 @@ export interface RunnerOptions {
   /** Copy the agent's output to the runner's own stdout and stderr (default true). */
   echo?: boolean;
   version?: string;
+  /**
+   * The code version it launches, reported in hello. Default: worked out from the command
+   * (`codeIdentity`: BONDED_CODE_HASH, BONDED_IMAGE_DIGEST, the git commit, or unpinned).
+   */
+  code?: CodeIdentity;
   heartbeatMs?: number;
   backoff?: { initialMs: number; maxMs: number };
   killGraceMs?: number;
@@ -78,12 +84,15 @@ export class Runner {
   private wake: (() => void) | undefined;
   private readonly outbox: RunnerToServer[] = [];
   private readonly log: (line: string) => void;
+  /** The code hash it reports, and where it came from. */
+  readonly code: CodeIdentity;
 
   constructor(private readonly options: RunnerOptions) {
     if (options.command.length === 0) throw new Error("no agent command given");
     const problem = gatewayUrlProblem(options.gateway);
     if (problem) throw new Error(problem);
     this.log = options.log ?? (() => {});
+    this.code = options.code ?? codeIdentity({ command: options.command });
   }
 
   /** Connects, and keeps reconnecting with backoff, until stopped or refused for good. */
@@ -158,6 +167,8 @@ export class Runner {
           protocol: RUNNER_PROTOCOL_VERSION,
           mode: this.options.mode,
           ...(this.options.teeUrl ? { teeUrl: this.options.teeUrl } : {}),
+          codeHash: this.code.codeHash,
+          codeSource: this.code.codeSource,
         });
         for (const message of this.outbox.splice(0)) this.write(message);
         heartbeat = setInterval(() => {

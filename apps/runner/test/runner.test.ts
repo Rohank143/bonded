@@ -132,6 +132,19 @@ describe("the runner", () => {
     await eventually(() => gateway.of("ping").length >= 2);
   });
 
+  it("reports its code hash and where it came from in hello", async () => {
+    const code = {
+      codeHash: `0x${"ef".repeat(32)}` as const,
+      codeSource: "image" as const,
+      detail: "x",
+    };
+    const { gateway } = await setup({ command: node(""), code });
+    expect(gateway.of("hello")[0]).toMatchObject({
+      codeHash: code.codeHash,
+      codeSource: "image",
+    });
+  });
+
   it("runs the agent with the episode in its environment, never the runner token", async () => {
     process.env.BONDED_RUNNER_TOKEN = "must-not-leak";
     try {
