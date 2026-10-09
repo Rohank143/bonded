@@ -73,7 +73,7 @@ describe("ConnectAgent", () => {
     await waitFor(() => expect(create).toHaveBeenCalledWith("12", expect.anything()));
     expect(
       await screen.findByText(
-        "BONDED_RUNNER_TOKEN=bonded_rt_secret npx @bonded/runner --gateway https://gw.example -- <your agent command>",
+        "BONDED_RUNNER_TOKEN=bonded_rt_secret npx @bondedhq/runner --gateway https://gw.example -- <your agent command>",
       ),
     ).toBeTruthy();
     expect(

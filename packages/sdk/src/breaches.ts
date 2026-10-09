@@ -1,4 +1,4 @@
-import { type BreachType, breachTypeFromCode, mandateVaultAbi } from "@bonded/shared";
+import { type BreachType, breachTypeFromCode, mandateVaultAbi } from "@bondedhq/shared";
 import { type Address, type Hex, isAddressEqual, type Log, parseEventLogs } from "viem";
 
 /** One entry in the vault's breach log: what pays claims and decides ratings. */

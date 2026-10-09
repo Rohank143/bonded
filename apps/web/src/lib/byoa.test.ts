@@ -24,7 +24,7 @@ describe("runner commands", () => {
 
   it("pass the token in the environment, and leave the agent command for the owner", () => {
     expect(runnerCommand(base)).toBe(
-      "BONDED_RUNNER_TOKEN=bonded_rt_abc npx @bonded/runner --gateway https://gw.example -- <your agent command>",
+      "BONDED_RUNNER_TOKEN=bonded_rt_abc npx @bondedhq/runner --gateway https://gw.example -- <your agent command>",
     );
     expect(runnerDockerCommand(base)).toBe(
       "docker run --rm -e BONDED_RUNNER_TOKEN=bonded_rt_abc <your agent image> --gateway https://gw.example -- <your agent command>",
@@ -33,7 +33,7 @@ describe("runner commands", () => {
 
   it("add chain mode and the TEE's URL only when they apply", () => {
     expect(runnerCommand({ ...base, mode: "chain", teeUrl: "https://tee.example" })).toBe(
-      "BONDED_RUNNER_TOKEN=bonded_rt_abc npx @bonded/runner --gateway https://gw.example --mode chain --tee-url https://tee.example -- <your agent command>",
+      "BONDED_RUNNER_TOKEN=bonded_rt_abc npx @bondedhq/runner --gateway https://gw.example --mode chain --tee-url https://tee.example -- <your agent command>",
     );
   });
 });

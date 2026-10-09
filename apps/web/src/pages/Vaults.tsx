@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router";
 import { useReadContracts } from "wagmi";
-import { coverManagerAbi, mandateVaultAbi } from "@bonded/shared";
+import { coverManagerAbi, mandateVaultAbi } from "@bondedhq/shared";
 import { deployment } from "../config";
 import { useAgents, useVaults } from "../lib/chain";
 import { short, usd } from "../lib/format";

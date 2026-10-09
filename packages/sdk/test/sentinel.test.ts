@@ -3,7 +3,7 @@ import {
   SENTINEL_INPUT_CHARS,
   sentinelCheckDigest,
   sentinelCheckMessage,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { type Hex, recoverMessageAddress } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";

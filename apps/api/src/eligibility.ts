@@ -1,4 +1,4 @@
-import { bondedRegistryAbi, operatorBondAbi } from "@bonded/shared";
+import { bondedRegistryAbi, operatorBondAbi } from "@bondedhq/shared";
 import type { ServiceChain } from "@bonded/keeper";
 
 /**

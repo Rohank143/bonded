@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import type { ArenaAgent } from "@bonded/shared";
+import type { ArenaAgent } from "@bondedhq/shared";
 import { SpendingCap } from "./budget.js";
 import { datasetRows, type SentinelRow, writeDataset } from "./dataset.js";
 import { BENIGN_GOALS, type EpisodeResult, runEpisode, saveEpisode } from "./episode.js";

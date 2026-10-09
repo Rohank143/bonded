@@ -2,7 +2,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { parseSentinelQuestionSet } from "@bonded/shared";
+import { parseSentinelQuestionSet } from "@bondedhq/shared";
 import {
   buildContrastRows,
   type ContrastRow,

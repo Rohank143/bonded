@@ -7,7 +7,7 @@ import {
   BountySpecError,
   type ChatClient,
   parseBountySpec,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { stringify } from "yaml";
 import { SpendingCap } from "./budget.js";
 import {

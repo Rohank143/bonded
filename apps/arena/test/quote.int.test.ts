@@ -14,7 +14,7 @@ import {
   type SignedQuote,
   testTokenAbi,
   toEvmMandateParams,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { hashTypedData } from "viem";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {

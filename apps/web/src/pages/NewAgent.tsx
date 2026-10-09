@@ -23,7 +23,7 @@ import {
   type RemoteAgentSpec,
   type RemoteMode,
   type SelfServeAgentKind,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { deployment, robinhoodTestnet } from "../config";
 import { wagmiConfig } from "../wagmi";
 import {

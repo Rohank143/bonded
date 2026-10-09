@@ -20,7 +20,7 @@ import {
   selfServeMessage,
   type RemoteAgentSpec,
   type SelfServeRequest,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { privateKeyToAccount } from "viem/accounts";
 import { createApi } from "../src/index.js";
 import {

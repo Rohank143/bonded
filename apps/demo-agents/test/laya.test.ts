@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sentinelQuestions } from "@bonded/shared";
+import { sentinelQuestions } from "@bondedhq/shared";
 import {
   CascadeSentinel,
   DecisionModelSentinel,

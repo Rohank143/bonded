@@ -15,7 +15,7 @@ import {
   signQuote,
   testTokenAbi,
   type EvmMandateParams,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { encodeAbiParameters, encodeFunctionData, type Abi, type Address, type Hex } from "viem";
 import { postgres } from "./postgres.js";
 

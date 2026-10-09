@@ -5,7 +5,7 @@ import {
   type ModuleAccountType,
   type ModuleInstallPlan,
   prepareModuleInstall,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import type { Address } from "viem";
 import { buildMandate } from "./mandate.js";
 
@@ -14,7 +14,7 @@ export type { ModuleAccountType, ModuleInstallPlan };
 /**
  * Approvals a module can't see: before installing (and while installed), list the account's
  * allowances to the mandate's targets for tokens the mandate doesn't cover, and revoke them.
- * See `checkUnprotectedAllowances` in @bonded/shared.
+ * See `checkUnprotectedAllowances` in @bondedhq/shared.
  */
 export {
   checkUnprotectedAllowances,
@@ -23,7 +23,7 @@ export {
   type AllowanceCheck,
   type AllowanceFinding,
   type TokenRef,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 
 export interface InstallMandateModuleInput {
   /** MandateModuleFactory (`moduleFactory` in the deployment file). */
