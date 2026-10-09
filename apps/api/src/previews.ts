@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type { Context, Hono } from "hono";
 import { z } from "zod";
 import {
@@ -23,7 +23,7 @@ import type { ServiceChain } from "@bonded/keeper";
 import { recoverMessageAddress, type Hex } from "viem";
 import { Refused, handle } from "./refused.js";
 import { RateLimiter, clientAddress } from "./rate-limit.js";
-import type { SessionWallet } from "./sessions.js";
+import { signedRequestKey, type SessionWallet } from "./sessions.js";
 import { helloProblem, newRunnerToken, runnerTokenHash } from "./runners.js";
 import { SECRET_KEY_MISSING, agentUrlContext, type SecretBox } from "./secrets.js";
 import {
@@ -80,6 +80,8 @@ export interface OwnerRouteOptions {
   /** Agent URLs may be plain http on this machine (local demos and tests only). */
   allowLoopbackUrls?: boolean;
   streams: PollStreams;
+  /** Connection checks one client address may ask for per hour (default 30). */
+  checksPerClientHourly?: number;
 }
 
 /** An agent or a preview, as these routes act on it. */
@@ -113,10 +115,10 @@ const signed = z.object({
   timestamp: z.number().int().positive(),
   signature: z.string().regex(/^0x[0-9a-fA-F]{130}$/),
 });
+/** Connection checks one client address may ask for per hour, across wallets. */
+const CHECKS_PER_CLIENT_HOURLY = 30;
 /** At most this many Agent URL verifications per URL host per hour: each one calls out. */
 const VERIFY_PER_HOST_HOURLY = 10;
-
-const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
 
 export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
   const { db, chain, policy, now } = options;
@@ -134,6 +136,13 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
   const verifies = new RateLimiter({
     perClient: VERIFY_PER_HOST_HOURLY,
     total: 500,
+    windowMs: 3_600_000,
+    now,
+  });
+  // Checks from one client address per hour, whichever wallets it signs in with.
+  const checkClients = new RateLimiter({
+    perClient: options.checksPerClientHourly ?? CHECKS_PER_CLIENT_HOURLY,
+    total: Number.MAX_SAFE_INTEGER,
     windowMs: 3_600_000,
     now,
   });
@@ -234,18 +243,19 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
     const age = Math.floor(now() / 1000) - proof.timestamp;
     if (age > SELF_SERVE_MAX_AGE_SECONDS || age < -60)
       throw new Refused(400, "the signed request has expired; sign it again");
+    const message = byoaMessage({
+      action,
+      chainId,
+      agentId: uint.parse(c.req.param("id")),
+      fields: fields(body),
+      timestamp: proof.timestamp,
+    });
     const recovered = await recoverMessageAddress({
-      message: byoaMessage({
-        action,
-        chainId,
-        agentId: uint.parse(c.req.param("id")),
-        fields: fields(body),
-        timestamp: proof.timestamp,
-      }),
+      message,
       signature: proof.signature as Hex,
     }).catch(() => undefined);
     if (!recovered) throw new Refused(400, "the signature is not valid");
-    if (!(await db.useSignature(sha256(proof.signature.toLowerCase()))))
+    if (!(await db.useSignature(signedRequestKey(recovered, message))))
       throw new Refused(409, "that signed request was already used; sign again");
     return { wallet: recovered.toLowerCase(), body };
   }
@@ -701,6 +711,10 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
       handle(async (c) => {
         const { wallet, body } = await writer(c, kind, "check");
         empty.parse(body);
+        if (!checkClients.allow(clientAddress(c.req.raw.headers)))
+          throw new Refused(429, "too many checks from here this hour; try again later", {
+            retryAt: new Date(now() + 3_600_000).toISOString(),
+          });
         const subject = await subjectOf(kind, c.req.param("id"), wallet);
         if (subject.preview?.status === "stopped")
           throw new Refused(409, "this preview was stopped");
@@ -826,28 +840,98 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
     };
   }
 
-  /** A check by its id: the id is the capability (unguessable, given only to its owner). */
+  /**
+   * Who may read a check or a rating's stream: the owner's session (Authorization), or for an
+   * EventSource, which can't send headers, a stream ticket from POST /streams/ticket, used once.
+   */
+  async function streamViewer(c: Context, kind: "check" | "rating", id: string) {
+    const ticket = c.req.query("ticket");
+    if (ticket) {
+      const held = tickets.get(ticket);
+      tickets.delete(ticket);
+      if (!held || held.expires < Date.now() || held.kind !== kind || held.id !== id)
+        throw new Refused(401, "that stream ticket has expired; ask for a new one");
+      return held.wallet;
+    }
+    return options.wallet(c);
+  }
+  /** One-use stream tickets: wallet, what they open, when they expire (process memory). */
+  const tickets = new Map<
+    string,
+    { wallet: string; kind: "check" | "rating"; id: string; expires: number }
+  >();
+  const TICKET_MS = 60_000;
+  /** The owner of a check, or "not found" for anyone else. */
+  async function ownCheck(c: Context, wallet: string) {
+    const id = uuid.safeParse(c.req.param("id"));
+    const check = id.success ? await db.check(id.data) : undefined;
+    if (!check || check.chainId !== chainId || check.owner !== wallet)
+      throw new Refused(404, "check not found");
+    return check;
+  }
+  /** The owner of a rating (the wallet it is charged to), or "not found" for anyone else. */
+  async function ownRating(id: string | undefined, wallet: string) {
+    const parsed = uuid.safeParse(id);
+    const row = parsed.success
+      ? (
+          await db.pool.query("SELECT id,charged_owner,status FROM ratings WHERE id=$1", [
+            parsed.data,
+          ])
+        ).rows[0]
+      : undefined;
+    if (!row || row.charged_owner !== wallet) throw new Refused(404, "rating not found");
+    return row as { id: string; status: string };
+  }
+
+  /**
+   * A ticket to open one live stream with EventSource (`?ticket=`): for a check or a rating the
+   * session's wallet owns, good once, for a minute.
+   */
+  app.post(
+    "/streams/ticket",
+    handle(async (c) => {
+      const { wallet, body } = await writer(c, "preview", "sign-in");
+      const input = z
+        .union([z.strictObject({ checkId: uuid }), z.strictObject({ runId: uuid })])
+        .parse(body);
+      if ("checkId" in input) {
+        const check = await db.check(input.checkId);
+        if (!check || check.chainId !== chainId || check.owner !== wallet)
+          throw new Refused(404, "check not found");
+      } else await ownRating(input.runId, wallet);
+      if (tickets.size > 10_000)
+        for (const [k, v] of tickets) if (v.expires < Date.now()) tickets.delete(k);
+      const ticket = randomBytes(24).toString("base64url");
+      const expires = Date.now() + TICKET_MS;
+      tickets.set(
+        ticket,
+        "checkId" in input
+          ? { wallet, kind: "check", id: input.checkId, expires }
+          : { wallet, kind: "rating", id: input.runId, expires },
+      );
+      return c.json({ ticket, expiresAt: new Date(expires).toISOString() }, 201);
+    }),
+  );
+
+  /** A check: its owner's only (session), "not found" to anyone else. */
   app.get(
     "/checks/:id",
     handle(async (c) => {
-      limited(c, options.reads);
-      const id = uuid.safeParse(c.req.param("id"));
-      const check = id.success ? await db.check(id.data) : undefined;
-      if (!check || check.chainId !== chainId) throw new Refused(404, "check not found");
+      const check = await ownCheck(c, await reader(c));
       return c.json(await checkView(check));
     }),
   );
   /**
    * A check's live events as server-sent events (each a plain `message` whose data has its
-   * `type`), from the start or from Last-Event-ID; the stream ends after the `result`.
+   * `type`), from the start or from Last-Event-ID; the stream ends after the `result`. The
+   * owner's only: a session, or a stream ticket.
    */
   app.get(
     "/checks/:id/events",
     handle(async (c) => {
       limited(c, options.reads);
-      const id = uuid.safeParse(c.req.param("id"));
-      const check = id.success ? await db.check(id.data) : undefined;
-      if (!check || check.chainId !== chainId) throw new Refused(404, "check not found");
+      const raw = c.req.param("id");
+      const check = await ownCheck(c, await streamViewer(c, "check", raw ?? ""));
       let cursor = /^\d{1,18}$/.test(c.req.header("Last-Event-ID") ?? "")
         ? c.req.header("Last-Event-ID")!
         : "0";
@@ -857,14 +941,18 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
           const events = await db.checkEvents(check.id, cursor);
           if (events.length) cursor = events.at(-1)!.id;
           // The worker always ends a check with a `result` event; a reconnect after it ends at once.
+          const state = events.length ? undefined : (await db.check(check.id))?.status;
           const over =
             events.some((e) => (e.event as { type?: string }).type === "result") ||
-            (events.length === 0 &&
-              (await db.check(check.id))?.status !== "queued" &&
-              (await db.check(check.id))?.status !== "running");
+            (state !== undefined && state !== "queued" && state !== "running");
           return { events: events.map((e) => ({ id: e.id, data: e.event })), done: over };
         },
-        { intervalMs: 500, maxMs: 10 * 60_000 },
+        {
+          intervalMs: 500,
+          maxMs: 5 * 60_000,
+          client: clientAddress(c.req.raw.headers),
+          key: `check:${check.id}`,
+        },
       );
     }),
   );
@@ -954,31 +1042,42 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
   }
   /**
    * A rating's progress as server-sent events (plain messages): counts and an ETA only, never a
-   * verdict, with the rating's status; the stream ends when the rating does. By run id, like
-   * GET /arena/runs/:id.
+   * verdict, with the rating's status; the stream ends when the rating does. The owner's only (the
+   * wallet it is charged to): a session, or a stream ticket.
    */
   app.get(
     "/ratings/:id/progress",
     handle(async (c) => {
       limited(c, options.reads);
-      const id = uuid.safeParse(c.req.param("id"));
-      const exists = id.success
-        ? (await db.pool.query("SELECT 1 FROM ratings WHERE id=$1", [id.data])).rowCount
-        : 0;
-      if (!id.success || !exists) throw new Refused(404, "rating not found");
+      const raw = c.req.param("id") ?? "";
+      const rating = await ownRating(raw, await streamViewer(c, "rating", raw));
       let last = "";
+      let quietSince = Date.now();
       return options.streams.open(
         c,
         async () => {
-          const status = (await db.pool.query("SELECT status FROM ratings WHERE id=$1", [id.data]))
-            .rows[0]?.status as string;
-          const progress = { ...(await progressOf(id.data, status)), status };
+          const status = (
+            await db.pool.query("SELECT status FROM ratings WHERE id=$1", [rating.id])
+          ).rows[0]?.status as string;
+          const progress = { ...(await progressOf(rating.id, status)), status };
           const key = JSON.stringify(progress);
-          const events = key === last ? [] : [{ data: progress }];
+          const changed = key !== last;
           last = key;
-          return { events, done: status === "done" || status === "failed" };
+          if (changed) quietSince = Date.now();
+          // Nothing new for 10 minutes (a long wait in the queue): end; the client reconnects.
+          const idle = Date.now() - quietSince > 10 * 60_000;
+          return {
+            events: changed ? [{ data: progress }] : [],
+            done: status === "done" || status === "failed" || idle,
+          };
         },
-        { intervalMs: 2000, maxMs: 4 * 3_600_000 },
+        {
+          intervalMs: 2000,
+          // Waiting in the queue says little: a short stream. Running: up to the rating's ceiling.
+          maxMs: rating.status === "queued" ? 10 * 60_000 : 3 * 3_600_000,
+          client: clientAddress(c.req.raw.headers),
+          key: `rating:${rating.id}`,
+        },
       );
     }),
   );

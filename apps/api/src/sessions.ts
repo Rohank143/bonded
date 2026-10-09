@@ -31,6 +31,15 @@ const signInInput = z.strictObject({
   signature: z.string().regex(/^0x[0-9a-fA-F]{130}$/),
 });
 
+/**
+ * What makes a signed request "used": who signed and exactly what, not the signature's bytes. The
+ * same message signed again (or one signature written another way: v as 0/1 or 27/28, high or
+ * low s) is the same request, so it is refused as a replay.
+ */
+export function signedRequestKey(signer: string, message: string): string {
+  return sha256(`${signer.toLowerCase()}\n${message}`);
+}
+
 /** Reads the caller's session: its wallet, or a 401 the web app can act on. */
 export type SessionWallet = (c: Context) => Promise<string>;
 
@@ -66,13 +75,14 @@ export function sessionRoutes(
     const age = Math.floor(now() / 1000) - input.timestamp;
     if (age > SELF_SERVE_MAX_AGE_SECONDS || age < -60)
       throw new Refused(400, "the signed request has expired; sign it again");
+    const message = selfServeMessage({
+      action: "sign-in",
+      chainId,
+      wallet: input.wallet,
+      timestamp: input.timestamp,
+    });
     const recovered = await recoverMessageAddress({
-      message: selfServeMessage({
-        action: "sign-in",
-        chainId,
-        wallet: input.wallet,
-        timestamp: input.timestamp,
-      }),
+      message,
       signature: input.signature as Hex,
     }).catch(() => undefined);
     if (!recovered) throw new Refused(400, "the signature is not valid");
@@ -84,7 +94,7 @@ export function sessionRoutes(
         tokenHash: sha256(token),
         chainId,
         wallet: recovered,
-        signatureHash: sha256(input.signature.toLowerCase()),
+        signatureHash: signedRequestKey(recovered, message),
         ttlMs: SESSION_TTL_MS,
       },
       SESSIONS_PER_WALLET_HOURLY,

@@ -37,7 +37,7 @@ import {
 import { RateLimiter, clientAddress } from "./rate-limit.js";
 import { Refused, handle } from "./refused.js";
 import { SECRET_KEY_MISSING } from "./secrets.js";
-import { NEEDS_CHECK, checkSummary, codeInfo } from "./connections.js";
+import { NEEDS_CHECK, codeInfo, publicCheckSummary } from "./connections.js";
 import {
   DEFAULT_REMOTE_POLICY,
   remoteQuota,
@@ -348,10 +348,8 @@ export function selfServeRoutes(
               // Ready to be reached: runner connected, or Agent URL verified (never the URL here).
               connectionReady: current?.ready ?? false,
               tee: config.tee ?? null,
-              // The preview it was made official from, whose report stays linked.
-              preview: fromPreview
-                ? { previewId: fromPreview.id, ratingId: fromPreview.ratingId }
-                : null,
+              // Made official from a preview: whether, not which (the owner's session lists theirs).
+              fromPreview: Boolean(fromPreview),
               // Underwriting policy, not score: the most cover it can hold, by binding.
               coverCaps: options.coverCaps ?? UNDERWRITING_COVER_CAP_USD,
               // The most a rating will be, before the owner asks for one.
@@ -660,14 +658,16 @@ export function selfServeRoutes(
       return c.json({
         ...status,
         connection,
+        // Public: that a URL is set and answered, never the URL itself (the owner's session
+        // shows it at GET …/agent-url); the last check's outcome, never its id or its output.
         agentUrl: url
           ? {
-              url: url.url,
+              configured: true,
               verifiedAt: url.verifiedAt?.toISOString() ?? null,
               version: url.version,
             }
           : null,
-        lastCheck: checks[0] ? checkSummary(checks[0]) : null,
+        lastCheck: checks[0] ? publicCheckSummary(checks[0]) : null,
         codeHash: codeInfo(
           declared ? { hash: declared, source: "declared" } : current.code,
           url?.version,

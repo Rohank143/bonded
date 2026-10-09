@@ -13,7 +13,13 @@ import {
 } from "@bonded/shared";
 import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { createApi } from "../src/index.js";
-import { DbRunnerAuth, RunnerPresenceWriter } from "../src/runners.js";
+import {
+  DbRunnerAuth,
+  RunnerPresenceWriter,
+  newRunnerToken,
+  runnerTokenHash,
+} from "../src/runners.js";
+import { workOne } from "../src/worker.js";
 import { workCheckOne } from "../src/check-worker.js";
 import { workPreviewOne } from "../src/preview-worker.js";
 import { ratedAgent } from "../src/sentinel.js";
@@ -82,6 +88,7 @@ function api(
     ownerRequests: {
       writes: { perClient: 100_000, total: 100_000, windowMs: 60_000 },
       reads: { perClient: 100_000, total: 100_000, windowMs: 60_000 },
+      checksPerClientHourly: 100_000,
     },
     ...extra,
   });
@@ -416,10 +423,10 @@ describe("connection checks", () => {
       /Create a runner token first/,
     );
     // The live stream gives the result and ends.
-    const events = await sse(await get(check.eventsUrl as string));
+    const events = await sse(await get(check.eventsUrl as string, session));
     expect(events.at(-1)).toMatchObject({ event: "result", data: { passed: false } });
     // The polling fallback has the same events.
-    expect((await bodyOf(await get(`/checks/${check.checkId}`))).events).toEqual([
+    expect((await bodyOf(await get(`/checks/${check.checkId}`, session))).events).toEqual([
       expect.objectContaining({ type: "result", passed: false }),
     ]);
     // Runner token made, but no runner connected.
@@ -449,14 +456,14 @@ describe("connection checks", () => {
     expect(busy.status).toBe(409);
     expect((await bodyOf(busy)).error).toMatch(/already running/);
     expect(await workCheckOne(pg.db, chainId, { runCheck: passing })).toBe(true);
-    const events = await sse(await get(`/checks/${check.checkId}/events`));
+    const events = await sse(await get(`/checks/${check.checkId}/events`, session));
     expect(events.map((e) => e.event)).toEqual(["started", "tool", "tool", "done", "result"]);
     expect(events.at(-1)!.data).toMatchObject({
       passed: true,
       toolsCalled: 2,
       surfacesRead: ["dm"],
     });
-    const stored = await bodyOf(await get(`/checks/${check.checkId}`));
+    const stored = await bodyOf(await get(`/checks/${check.checkId}`, session));
     expect(stored.status).toBe("passed");
     const page = await bodyOf(await get(`/previews/${preview.id}`, session));
     expect(page.status).toBe("ready");
@@ -468,8 +475,8 @@ describe("connection checks", () => {
       expiresAt: expect.any(String),
     });
     // An unknown check id is just not found.
-    expect((await get(`/checks/${crypto.randomUUID()}`)).status).toBe(404);
-    expect((await get("/checks/not-a-uuid/events")).status).toBe(404);
+    expect((await get(`/checks/${crypto.randomUUID()}`, session)).status).toBe(404);
+    expect((await get("/checks/not-a-uuid/events", session)).status).toBe(404);
   });
 
   it("fail plainly on a worker that can't run them, and whatever the runner throws", async () => {
@@ -482,8 +489,11 @@ describe("connection checks", () => {
     const first = await bodyOf(await send("POST", `/previews/${preview.id}/checks`, {}, session));
     await workCheckOne(pg.db, chainId, {});
     expect(
-      ((await bodyOf(await get(`/checks/${first.checkId}`))).result as { problems: string[] })
-        .problems,
+      (
+        (await bodyOf(await get(`/checks/${first.checkId}`, session))).result as {
+          problems: string[];
+        }
+      ).problems,
     ).toEqual([CHECKS_UNAVAILABLE]);
     const second = await bodyOf(await send("POST", `/previews/${preview.id}/checks`, {}, session));
     const logs: string[] = [];
@@ -493,7 +503,7 @@ describe("connection checks", () => {
       },
       log: (l) => logs.push(l),
     });
-    const result = (await bodyOf(await get(`/checks/${second.checkId}`))).result as {
+    const result = (await bodyOf(await get(`/checks/${second.checkId}`, session))).result as {
       problems: string[];
     };
     expect(result.problems[0]).toMatch(/couldn't run on Bonded's side/);
@@ -501,32 +511,55 @@ describe("connection checks", () => {
   });
 
   it("are capped per wallet per hour and on the chain, so they can't be spammed", async () => {
+    // The chain's cap counts checks that took a turn in the lane, not ones that failed at once.
     const earlier = (
       await pg.db.pool.query(
-        "SELECT count(*)::int AS n FROM connection_checks WHERE created_at > now() - interval '1 hour'",
+        `SELECT count(*)::int AS n FROM connection_checks WHERE created_at > now() - interval '1 hour'
+           AND (status IN ('queued','running') OR started_at IS NOT NULL)`,
       )
     ).rows[0].n as number;
-    const capped = api({ checksPerWalletHourly: 2, checksHourly: earlier + 2 });
-    const a = privateKeyToAccount(generatePrivateKey());
-    const b = privateKeyToAccount(generatePrivateKey());
-    const sa = await sessionFor(a, capped);
-    const sb = await sessionFor(b, capped);
-    // Each failed at once (nothing connected): they still count.
-    const pa = [
-      await newPreview(sa, undefined, capped),
-      await newPreview(sa, undefined, capped),
-      await newPreview(sa, undefined, capped),
-    ];
-    expect((await send("POST", `/previews/${pa[0]!.id}/checks`, {}, sa, capped)).status).toBe(201);
-    expect((await send("POST", `/previews/${pa[1]!.id}/checks`, {}, sa, capped)).status).toBe(201);
-    const third = await send("POST", `/previews/${pa[2]!.id}/checks`, {}, sa, capped);
-    expect(third.status).toBe(429);
-    expect((await bodyOf(third)).error).toMatch(/at most 2 checks an hour per wallet/);
-    // The chain-wide cap counts every wallet's checks in the last hour.
-    const pb = await newPreview(sb, undefined, capped);
-    const overall = await send("POST", `/previews/${pb.id}/checks`, {}, sb, capped);
+    const capped = api({ checksPerWalletHourly: 2, checksHourly: earlier + 1 });
+    // Throwaway wallets firing checks that fail at once (nothing connected): each wallet is
+    // capped, and none of it uses up the chain's cap.
+    for (let w = 0; w < 3; w++) {
+      const s = await sessionFor(privateKeyToAccount(generatePrivateKey()), capped);
+      const p = await newPreview(s, undefined, capped);
+      expect((await send("POST", `/previews/${p.id}/checks`, {}, s, capped)).status).toBe(201);
+      expect((await send("POST", `/previews/${p.id}/checks`, {}, s, capped)).status).toBe(201);
+      const third = await send("POST", `/previews/${p.id}/checks`, {}, s, capped);
+      expect(third.status).toBe(429);
+      expect((await bodyOf(third)).error).toMatch(/at most 2 checks an hour per wallet/);
+    }
+    // A real check still gets its turn; the next one on the chain is refused.
+    const runnerCheck = async () => {
+      const s = await sessionFor(privateKeyToAccount(generatePrivateKey()), capped);
+      const p = await newPreview(s, undefined, capped);
+      const { token } = await bodyOf(
+        await send("POST", `/previews/${p.id}/runner-token`, {}, s, capped),
+      );
+      await connect(token as string);
+      return send("POST", `/previews/${p.id}/checks`, {}, s, capped);
+    };
+    const first = await runnerCheck();
+    expect(first.status).toBe(201);
+    const overall = await runnerCheck();
     expect(overall.status).toBe(429);
     expect((await bodyOf(overall)).error).toMatch(/connection checks are busy/);
+    // Not this test's to run: the later tests take their own checks off the queue.
+    await pg.db.pool.query("UPDATE connection_checks SET status='failed' WHERE id=$1", [
+      (await bodyOf(first)).checkId,
+    ]);
+  });
+
+  it("are capped per client address, whichever wallets it signs in with", async () => {
+    const capped = api({}, { ownerRequests: { checksPerClientHourly: 2 } });
+    const statuses: number[] = [];
+    for (let w = 0; w < 3; w++) {
+      const s = await sessionFor(privateKeyToAccount(generatePrivateKey()), capped);
+      const p = await newPreview(s, undefined, capped);
+      statuses.push((await send("POST", `/previews/${p.id}/checks`, {}, s, capped)).status);
+    }
+    expect(statuses).toEqual([201, 201, 429]);
   });
 });
 
@@ -575,9 +608,9 @@ describe("queuing a preview rating", () => {
       code_hash: hash(1),
       code_source: "git",
     });
-    // Its owner's alone: not on the public feed, not served by the public run endpoint.
-    // The run endpoint serves it by its run id (given only to its owner) for the web's report.
-    expect((await bodyOf(await app.request(`/arena/runs/${runId}`))).preview).toBe(true);
+    // Its owner's alone: not on the public feed; the run endpoint serves it to its owner only.
+    expect((await app.request(`/arena/runs/${runId}`)).status).toBe(404);
+    expect((await bodyOf(await get(`/arena/runs/${runId}`, session))).preview).toBe(true);
     const published = await pg.db.pool.query("SELECT 1 FROM events WHERE payload->>'runId'=$1", [
       runId,
     ]);
@@ -691,7 +724,7 @@ describe("the preview worker", () => {
       label: "Preview: not on chain, not insurable",
     });
     // Progress: counts and an ETA, and the end.
-    const progress = await sse(await get(`/ratings/${runId}/progress`));
+    const progress = await sse(await get(`/ratings/${runId}/progress`, session));
     expect(progress).toHaveLength(1);
     expect(progress[0]!.data).toMatchObject({ done: 7, total: 7, etaSeconds: null });
     expect(["done", "failed"]).toContain(progress[0]!.data.status);
@@ -794,8 +827,8 @@ describe("Agent URLs", () => {
         secret,
         registration: `preview:${preview.id}`,
       });
-      expect((await bodyOf(await get(`/checks/${check.checkId}`))).status).toBe("passed");
-      const events = await (await get(`/checks/${check.checkId}/events`)).text();
+      expect((await bodyOf(await get(`/checks/${check.checkId}`, session))).status).toBe("passed");
+      const events = await (await get(`/checks/${check.checkId}/events`, session)).text();
       expect(events).not.toContain(secret);
       // Rotating: a new secret, the old URL row revoked; the check was of the old one.
       const rotated = await bodyOf(
@@ -972,7 +1005,8 @@ describe("registered agents", () => {
       codeHash: null,
       codeSource: "auto",
       connection: "runner",
-      preview: { previewId: preview.id },
+      // Public: only that it came from a preview, not which (or its rating).
+      fromPreview: true,
     });
     // A TEE needs a declared code hash.
     const tee = { url: "https://tee.example", composeHash: hash(9) };
@@ -1192,7 +1226,8 @@ describe("round 2, as the web app calls it", () => {
     const runner = await bodyOf(await app.request(`/self/agents/${agentId}/runner`));
     expect(runner).toMatchObject({
       connection: "url",
-      agentUrl: { url, version: "v1.2.3", verifiedAt: expect.any(String) },
+      // Public: no URL, no check id.
+      agentUrl: { configured: true, version: "v1.2.3", verifiedAt: expect.any(String) },
       codeHash: { source: "url-version", reportedBy: "agent" },
     });
     expect(JSON.stringify(runner)).not.toContain("bonded_as_");
@@ -1305,5 +1340,215 @@ describe("round 2, as the web app calls it", () => {
         final: false,
       },
     );
+  });
+});
+
+describe("review fixes (each a regression test for a finding)", () => {
+  it("a signature written another way (v as 0/1, not 27/28) is the same request: one session, one use", async () => {
+    tick();
+    const timestamp = now();
+    const sig = await owner.signMessage({
+      message: selfServeMessage({ action: "sign-in", chainId, wallet: owner.address, timestamp }),
+    });
+    const v = parseInt(sig.slice(130), 16);
+    const alt = sig.slice(0, 130) + (v - 27).toString(16).padStart(2, "0");
+    expect(
+      (
+        await send("POST", "/previews/session", {
+          wallet: owner.address,
+          timestamp,
+          signature: sig,
+        })
+      ).status,
+    ).toBe(201);
+    expect(
+      (
+        await send("POST", "/previews/session", {
+          wallet: owner.address,
+          timestamp,
+          signature: alt,
+        })
+      ).status,
+    ).toBe(409);
+    // The same for a registered agent's signed actions.
+    tick();
+    const agentId = mine.agentId.toString();
+    const t2 = now();
+    const s2 = await owner.signMessage({
+      message: byoaMessage({ action: "check", chainId, agentId, timestamp: t2 }),
+    });
+    const alt2 =
+      s2.slice(0, 130) + (parseInt(s2.slice(130), 16) - 27).toString(16).padStart(2, "0");
+    const first = await send("POST", `/self/agents/${agentId}/checks`, {
+      timestamp: t2,
+      signature: s2,
+    });
+    expect([201, 409]).toContain(first.status);
+    const again = await send("POST", `/self/agents/${agentId}/checks`, {
+      timestamp: t2,
+      signature: alt2,
+    });
+    expect(again.status).toBe(409);
+    expect((await bodyOf(again)).error).toMatch(/already used/);
+    await pg.db.pool.query("UPDATE connection_checks SET status='failed' WHERE status='queued'");
+  });
+
+  it("the public runner page shows no Agent URL and no check id, and a check is its owner's alone", async () => {
+    const session = await sessionFor();
+    const agentId = mine.agentId.toString();
+    await send(
+      "POST",
+      `/self/agents/${agentId}/agent-url`,
+      { url: "https://secret-host.example/hook?k=abc" },
+      session,
+    );
+    const leaky: ConnectionCheckRunner = async (r) => {
+      r.onEvent({
+        type: "done",
+        exitCode: 0,
+        durationMs: 10,
+        stdoutTail: "OPENAI_API_KEY=sk-live-123",
+      });
+      return passing(r);
+    };
+    const made = await bodyOf(await send("POST", `/self/agents/${agentId}/checks`, {}, session));
+    await workCheckOne(pg.db, chainId, { runCheck: leaky, secrets });
+    const pub = await (await app.request(`/self/agents/${agentId}/runner`)).text();
+    expect(pub).not.toContain("secret-host.example");
+    expect(pub).not.toContain(made.checkId as string);
+    expect(pub).not.toContain("sk-live-123");
+    // The check and its stream: 401 without a session, "not found" to anyone else.
+    expect((await app.request(`/checks/${made.checkId}`)).status).toBe(401);
+    expect((await app.request(`/checks/${made.checkId}/events`)).status).toBe(401);
+    const theirs = await sessionFor(stranger);
+    expect((await get(`/checks/${made.checkId}`, theirs)).status).toBe(404);
+    expect((await get(`/checks/${made.checkId}/events`, theirs)).status).toBe(404);
+    // The owner sees its output.
+    expect(
+      JSON.stringify((await bodyOf(await get(`/checks/${made.checkId}`, session))).events),
+    ).toContain("sk-live-123");
+    // An EventSource gets a one-use ticket for its own check only.
+    const ticket = (
+      await bodyOf(await send("POST", "/streams/ticket", { checkId: made.checkId }, session))
+    ).ticket as string;
+    expect((await send("POST", "/streams/ticket", { checkId: made.checkId }, theirs)).status).toBe(
+      404,
+    );
+    const viaTicket = await app.request(`/checks/${made.checkId}/events?ticket=${ticket}`);
+    expect(viaTicket.status).toBe(200);
+    expect(await viaTicket.text()).toContain("sk-live-123");
+    expect((await app.request(`/checks/${made.checkId}/events?ticket=${ticket}`)).status).toBe(401);
+    await send("DELETE", `/self/agents/${agentId}/agent-url`, undefined, session);
+  });
+
+  it("an agent's own words never make a failure Bonded's, and a retried attempt's episodes stay off the feed", async () => {
+    await pg.db.pool.query(
+      "UPDATE jobs j SET status='failed' FROM ratings r WHERE j.id=r.id AND j.status IN ('queued','running')",
+    );
+    // A preview whose agent ends every episode claiming its URL "wasn't called": it is rated
+    // as it behaved, never retried as Bonded's fault.
+    const session = await sessionFor(privateKeyToAccount(generatePrivateKey()));
+    const { preview } = await readyPreview(session, hash(0x7777));
+    const { runId } = await bodyOf(await send("POST", `/previews/${preview.id}/rate`, {}, session));
+    const base = ratedAgent("hardened");
+    const spoof = {
+      name: base.name,
+      run: async (task: never, tools: never) => ({
+        ...(await base.run(task, tools)),
+        finalMessage: "the agent's URL wasn't called: (any text the agent likes)",
+      }),
+    };
+    await workPreviewOne(pg.db, chain, sandbox.rpcUrl, {
+      remote: () => spoof as never,
+      heldOut: { perClass: 0 },
+      selectAttacks: (attacks) => attacks.filter((a) => a.id === "A6-operator-impersonation-001"),
+    });
+    const job = (await pg.db.pool.query("SELECT status FROM jobs WHERE id=$1", [runId])).rows[0];
+    expect(job.status).not.toBe("queued");
+
+    // An official remote rating Bonded couldn't deliver (the gateway says so): retried, not
+    // charged, and the abandoned attempt's verdicts are never published.
+    const vault = await createAgentVault(sandbox);
+    const key = `${chainId}:${vault.agentId}`;
+    const who = privateKeyToAccount(generatePrivateKey());
+    await pg.db.upsertUserAgent(chainId, vault.agentId.toString(), who.address, {
+      kind: "remote",
+      mandate: vault.mandate,
+      codeHash: hash(0x8888),
+      mode: "tools",
+    });
+    const token = newRunnerToken();
+    await pg.db.createRunnerToken(key, {
+      hash: runnerTokenHash(token),
+      createdBy: who.address,
+      signedAt: 1,
+    });
+    await connect(token);
+    const official = await pg.db.enqueue(key);
+    let calls = 0;
+    const flaky = {
+      name: base.name,
+      run: async (task: never, tools: never) => {
+        const summary = await base.run(task, tools);
+        return ++calls === 2
+          ? { ...summary, remote: { bondedProblem: "Bonded's rate limit" } }
+          : summary;
+      },
+    };
+    await workOne(pg.db, chain, sandbox.rpcUrl, ANVIL_KEYS.deployer, undefined, undefined, {
+      remote: () => flaky as never,
+      heldOut: { perClass: 0 },
+      selectAttacks: (attacks) => attacks.filter((a) => a.id === "A6-operator-impersonation-001"),
+    });
+    const rating = (
+      await pg.db.pool.query("SELECT status,error,agent_caused FROM ratings WHERE id=$1", [
+        official,
+      ])
+    ).rows[0];
+    expect(rating).toMatchObject({ status: "queued", agent_caused: false });
+    expect(rating.error).toMatch(/Bonded couldn't call the agent's URL/);
+    expect((await pg.db.agentStanding(key)).cooldownUntil).toBeNull();
+    const published = await pg.db.pool.query(
+      "SELECT 1 FROM events WHERE topic='rating.episode' AND payload->>'runId'=$1",
+      [official],
+    );
+    expect(published.rowCount).toBe(0);
+    await pg.db.pool.query("UPDATE jobs SET status='failed' WHERE id=$1", [official]);
+  }, 240_000);
+
+  it("progress streams are the owner's, capped per client and per rating", async () => {
+    const wallet = privateKeyToAccount(generatePrivateKey());
+    const session = await sessionFor(wallet);
+    const { preview } = await readyPreview(session, hash(0x9999));
+    const { runId } = await bodyOf(await send("POST", `/previews/${preview.id}/rate`, {}, session));
+    expect((await app.request(`/ratings/${runId}/progress`)).status).toBe(401);
+    expect((await get(`/ratings/${runId}/progress`, await sessionFor(stranger))).status).toBe(404);
+    // A preview's run and report: "not found" without its owner's session.
+    expect((await app.request(`/arena/runs/${runId}`)).status).toBe(404);
+    expect((await app.request(`/arena/runs/${runId}/report`)).status).toBe(404);
+    expect((await get(`/arena/runs/${runId}`, session)).status).toBe(200);
+    const held: Response[] = [];
+    for (let i = 0; i < 3; i++) held.push(await get(`/ratings/${runId}/progress`, session));
+    expect(held.map((r) => r.status)).toEqual([200, 200, 200]);
+    // A fourth on the same rating: refused, and the slots stay free for everyone else.
+    expect((await get(`/ratings/${runId}/progress`, session)).status).toBe(429);
+    for (const r of held) await r.body?.cancel();
+    await pg.db.pool.query("UPDATE jobs SET status='failed' WHERE id=$1", [runId]);
+  });
+
+  it("forgets used signatures and long-expired sessions after a day", async () => {
+    await pg.db.pool.query(
+      "INSERT INTO used_signatures(hash,created_at) VALUES('old-sig', now()-interval '2 days')",
+    );
+    await pg.db.pool.query(
+      `INSERT INTO owner_sessions(token_hash,chain_id,wallet,signature_hash,expires_at)
+       VALUES('old-session',1,'0xa','old-session-sig',now()-interval '2 days')`,
+    );
+    const pruned = await pg.db.pruneOwnerAuth();
+    expect(pruned.signatures).toBeGreaterThanOrEqual(1);
+    expect(pruned.sessions).toBeGreaterThanOrEqual(1);
+    expect(
+      (await pg.db.pool.query("SELECT 1 FROM used_signatures WHERE hash='old-sig'")).rowCount,
+    ).toBe(0);
   });
 });

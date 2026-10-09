@@ -235,6 +235,8 @@ if (role === "migrate") {
           const before = new Date(Date.now() - retentionDays * 86_400_000);
           await db.pruneEvents(before);
           await db.pruneSentinelChecks(before);
+          // Used sign-in signatures and long-expired sessions (a day past their window).
+          await db.pruneOwnerAuth();
         },
         3_600_000,
       ),

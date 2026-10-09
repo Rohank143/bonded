@@ -147,6 +147,8 @@ export function createApi(options: {
   ownerRequests?: {
     writes?: ConstructorParameters<typeof RateLimiter>[0];
     reads?: ConstructorParameters<typeof RateLimiter>[0];
+    /** Connection checks per client address per hour (default 30). */
+    checksPerClientHourly?: number;
   };
 }) {
   const { db, chain } = options;
@@ -186,7 +188,7 @@ export function createApi(options: {
   // Previews, Agent URLs, checks and notification settings are made with an owner session
   // (sessions.ts), opened by a wallet signature.
   const PUBLIC_POST =
-    /^\/(bounties\/\d{1,78}\/reveal|self\/agents(\/\d{1,78}\/(rate|runner-token|agent-url|agent-url\/verify|checks))?|quotes|sentinel\/check|self\/session|self\/notifications(\/webhook-secret)?|previews(\/session|\/[0-9a-f-]{36}\/(stop|runner-token|agent-url|agent-url\/verify|checks|rate|notifications))?|self\/agents\/\d{1,78}\/notifications)$/;
+    /^\/(bounties\/\d{1,78}\/reveal|self\/agents(\/\d{1,78}\/(rate|runner-token|agent-url|agent-url\/verify|checks))?|quotes|sentinel\/check|self\/session|self\/notifications(\/webhook-secret)?|previews(\/session|\/[0-9a-f-]{36}\/(stop|runner-token|agent-url|agent-url\/verify|checks|rate|notifications))?|self\/agents\/\d{1,78}\/notifications|streams\/ticket)$/;
   const PUBLIC_PUT =
     /^\/(self\/notifications|previews\/[0-9a-f-]{36}\/notifications|self\/agents\/\d{1,78}\/notifications)$/;
   const PUBLIC_DELETE =
@@ -216,6 +218,29 @@ export function createApi(options: {
     if (e instanceof QuoteError) return c.json({ error: e.message }, 409);
     console.error("API request failed", e.name);
     return c.json({ error: "request failed" }, 503);
+  });
+  // Bring your own agent, round 2: sessions, previews, Agent URLs, checks, estimates, progress
+  // and notification settings.
+  const ownerNow = options.selfServe?.now ?? Date.now;
+  const writes = new RateLimiter({
+    perClient: 60,
+    total: 1200,
+    windowMs: 10 * 60_000,
+    ...options.ownerRequests?.writes,
+    now: ownerNow,
+  });
+  const reads = new RateLimiter({
+    perClient: 600,
+    total: 20_000,
+    windowMs: 10 * 60_000,
+    ...options.ownerRequests?.reads,
+    now: ownerNow,
+  });
+  const wallet = sessionRoutes(app, {
+    db,
+    chainId: chain.deployment.chainId,
+    now: ownerNow,
+    writes,
   });
   app.get("/health", async (c) => {
     await db.pool.query("SELECT 1");
@@ -339,15 +364,19 @@ export function createApi(options: {
   for (const path of ["/arena/runs/:id", "/arena/runs/:id/report"])
     app.get(path, async (c) => {
       const id = z.uuid().parse(c.req.param("id"));
-      // A preview's rating too, by its run id: given only to its owner, never on the public feed.
+      // A preview's rating too, but only to its owner's session: "not found" to anyone else.
       const r = await db.pool.query(
         `SELECT id,status,report,report_json,error,created_at,code_hash AS "codeHash",
-           code_source AS "codeSource", (preview_id IS NOT NULL) AS preview
+           code_source AS "codeSource", (preview_id IS NOT NULL) AS preview, charged_owner
          FROM ratings WHERE id=$1`,
         [id],
       );
       if (!r.rowCount) return c.json({ error: "run not found" }, 404);
-      const row = r.rows[0];
+      const { charged_owner: chargedOwner, ...row } = r.rows[0];
+      if (row.preview) {
+        const viewer = await wallet(c).catch(() => undefined);
+        if (!viewer || viewer !== chargedOwner) return c.json({ error: "run not found" }, 404);
+      }
       if (path.endsWith("/report"))
         return row.report_json
           ? c.body(row.report_json, 200, { "Content-Type": "application/json; charset=utf-8" })
@@ -546,29 +575,6 @@ export function createApi(options: {
     ...(options.coverCaps ? { coverCaps: options.coverCaps } : {}),
     agentUrls: Boolean(options.secrets),
   });
-  // Bring your own agent, round 2: sessions, previews, Agent URLs, checks, estimates, progress
-  // and notification settings.
-  const ownerNow = options.selfServe?.now ?? Date.now;
-  const writes = new RateLimiter({
-    perClient: 60,
-    total: 1200,
-    windowMs: 10 * 60_000,
-    ...options.ownerRequests?.writes,
-    now: ownerNow,
-  });
-  const reads = new RateLimiter({
-    perClient: 600,
-    total: 20_000,
-    windowMs: 10 * 60_000,
-    ...options.ownerRequests?.reads,
-    now: ownerNow,
-  });
-  const wallet = sessionRoutes(app, {
-    db,
-    chainId: chain.deployment.chainId,
-    now: ownerNow,
-    writes,
-  });
   const ownDomains = [
     ...ownDomainsFrom([...(options.webOrigins ?? []), options.gatewayUrl]),
     ...(options.ownDomains ?? []),
@@ -598,6 +604,9 @@ export function createApi(options: {
     ...(options.allowLoopbackUrls ? { allowLoopbackUrls: true } : {}),
     ...(options.email ? { email: options.email } : {}),
     streams,
+    ...(options.ownerRequests?.checksPerClientHourly
+      ? { checksPerClientHourly: options.ownerRequests.checksPerClientHourly }
+      : {}),
   });
   notificationRoutes(app, {
     db,

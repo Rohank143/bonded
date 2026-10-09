@@ -194,3 +194,10 @@ export function checkSummary(k: ConnectionCheckRecord) {
     warnings: result?.warnings ?? [],
   };
 }
+
+/** A check as anyone may see it: its outcome and the problems in words, no id, no output. */
+export function publicCheckSummary(k: ConnectionCheckRecord) {
+  const { id: _id, ...rest } = checkSummary(k);
+  void _id;
+  return rest;
+}

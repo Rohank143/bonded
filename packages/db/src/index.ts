@@ -488,6 +488,8 @@ const agentUrlRow = (row: Record<string, unknown>): AgentUrlRecord => ({
   version: (row.version as string | null) ?? null,
   codeHash: (row.code_hash as string | null) ?? null,
 });
+/** SQL: a check that takes (or took) a turn in the check lane, not one that failed at once. */
+const LANE_CHECK = "(status IN ('queued','running') OR started_at IS NOT NULL)";
 /** What a check that the worker lost (it restarted mid-check) says. */
 const INTERRUPTED_CHECK = {
   passed: false,
@@ -2076,6 +2078,19 @@ export class Database {
     ).rows[0];
     return row ? { wallet: row.wallet, expiresAt: row.expires_at } : undefined;
   }
+  /**
+   * Delete what owner sign-ins leave behind once it can't matter: used signatures after a day
+   * (a signature is accepted for 10 minutes) and sessions a day after they expired.
+   */
+  async pruneOwnerAuth(): Promise<{ signatures: number; sessions: number }> {
+    const a = await this.pool.query(
+      "DELETE FROM used_signatures WHERE created_at < now() - interval '1 day'",
+    );
+    const b = await this.pool.query(
+      "DELETE FROM owner_sessions WHERE expires_at < now() - interval '1 day'",
+    );
+    return { signatures: a.rowCount ?? 0, sessions: b.rowCount ?? 0 };
+  }
   /** End a session. */
   async revokeSession(tokenHash: string): Promise<boolean> {
     const r = await this.pool.query(
@@ -2475,9 +2490,13 @@ export class Database {
       if (busy.rowCount) return { refused: "busy" as const };
       const counts = (
         await c.query(
+          // The wallet's cap counts every check it asked for; the chain's counts only the checks
+          // that took a turn in the lane (one that failed at once ran nothing), so throwaway
+          // wallets can't use it up with checks that cost nothing.
           `SELECT count(*) FILTER (WHERE owner=$2)::int AS wallet,
              min(created_at) FILTER (WHERE owner=$2) AS wallet_first,
-             count(*)::int AS lane, min(created_at) AS lane_first
+             count(*) FILTER (WHERE ${LANE_CHECK})::int AS lane,
+             min(created_at) FILTER (WHERE ${LANE_CHECK}) AS lane_first
            FROM connection_checks WHERE chain_id=$1 AND created_at > now() - interval '1 hour'`,
           [input.chainId, owner],
         )
