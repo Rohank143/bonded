@@ -169,6 +169,7 @@ export class Runner {
           ...(this.options.teeUrl ? { teeUrl: this.options.teeUrl } : {}),
           codeHash: this.code.codeHash,
           codeSource: this.code.codeSource,
+          codeDetail: this.code.detail.slice(0, 200),
         });
         for (const message of this.outbox.splice(0)) this.write(message);
         heartbeat = setInterval(() => {

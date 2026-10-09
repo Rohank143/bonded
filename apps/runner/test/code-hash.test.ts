@@ -62,7 +62,7 @@ describe("the runner's code hash", () => {
       codeHash: codeHashOf("git-dirty", commit),
       codeSource: "git-dirty",
     });
-    expect(dirty.detail).toMatch(/uncommitted changes/);
+    expect(dirty.detail).toBe(commit);
   });
 
   it("reads a real repository's commit and dirty state", () => {

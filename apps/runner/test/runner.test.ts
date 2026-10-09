@@ -142,6 +142,7 @@ describe("the runner", () => {
     expect(gateway.of("hello")[0]).toMatchObject({
       codeHash: code.codeHash,
       codeSource: "image",
+      codeDetail: "x",
     });
   });
 
