@@ -107,7 +107,7 @@ export type BondedHandler = (
  *     return { usage: { inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0 } };
  *   },
  * });
- * export const POST = handler; // Next.js; or app.post("/bonded", handler) in Hono
+ * export const POST = handler; // Next.js; or app.post("/bonded", (c) => handler(c.req.raw)) in Hono
  * ```
  */
 export function createBondedHandler(options: BondedHandlerOptions): BondedHandler {
