@@ -64,6 +64,18 @@ export const PAGES = [
   },
 
   {
+    src: "packages/sdk/README.md",
+    slug: "reference/sdk",
+    label: "SDK (@bondedhq/sdk)",
+    title: "@bondedhq/sdk",
+  },
+  {
+    src: "apps/runner/README.md",
+    slug: "reference/runner",
+    label: "Runner (@bondedhq/runner)",
+    title: "@bondedhq/runner",
+  },
+  {
     src: "contracts/evm/deployments/README.md",
     slug: "reference/deployments",
     label: "Deployments",
@@ -105,6 +117,8 @@ export const SHORT_NAMES = {
   "docs/disclosures/README.md": "the disclosure policy",
   "contracts/evm/README.md": "the contracts page",
   "contracts/evm/deployments/README.md": "the deployments page",
+  "packages/sdk/README.md": "the SDK reference",
+  "apps/runner/README.md": "the runner reference",
 };
 
 /** Sections left out of the site. */

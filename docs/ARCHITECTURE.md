@@ -120,10 +120,15 @@ An agent its operator runs on their own servers is rated through the **Arena Gat
 flowchart LR
   Runner["@bondedhq/runner<br/>(operator's server)"] -- "WebSocket out,<br/>runner token" --> Gateway["Arena Gateway<br/>(arena-worker)"]
   Runner -- "starts per episode" --> Agent["Operator's agent"]
+  Gateway -. "Agent URL: signed POST<br/>per episode" .-> Agent
   Agent -- "MCP / HTTP tools,<br/>chain-mode RPC" --> Gateway
   Gateway --> Toolbox["Same world, toolbox<br/>and vault as in-process"]
 ```
 
+- **Two ways in.** The runner connects out and starts the agent's command per episode. In Agent URL mode there is no runner: the gateway `POST`s the same episode message to the agent's HTTPS endpoint, signed with an HMAC of the agent secret (`bonded_as_`, kept encrypted with `AGENT_URL_SECRET_KEY`), through `safe-fetch` (public https on port 443, addresses checked at connect, no redirects, a 10-second deadline, 64 KiB answers) and per-registration and per-host rate limits (`gateway/agent-url.ts`). The URL is proved by a signed verify challenge the agent answers with an HMAC proof.
+- **Connection checks.** One benign episode with no attack, never scored, on a fresh local chain, through the same transport a rating would use (`check.ts`). Its events (tool calls, transactions, exit) stream to the owner, and its problems come back as plain sentences. A preview or an owner's rating can only be queued with a passing check of the same connection in the last 24 hours.
+- **Previews.** A rating owned by a wallet, with no vault, bond or registration: the published library once, a held-out set and 6 controls, judged like an operator-run agent's rating, but never attested, posted or quotable.
+- **Code hashes report themselves.** The runner works out its agent's code hash (flag, environment, image digest, git commit, or the unpinned command and entry file) and sends it in `hello`; an Agent URL reports a version. A declared hash wins; a reported one is recorded with its source, never as verified.
 - **One world, three surfaces.** The gateway serves the same tools, world simulator and toolbox an in-process agent gets, per episode, behind an unguessable capability URL: MCP over streamable HTTP, plain HTTP with an OpenAPI document, and in chain mode a JSON-RPC proxy to the sandbox that passes only standard reads and signed `execute` calls to the episode's vault.
 - **`RemoteAgent`** is just another `ArenaAgent`: it opens the episode, hands it to the agent's connected runner, and waits for it to finish, exit or run out of time. The judge, scoring and attestation don't change. Parity tests require the same verdicts through the gateway as in-process.
 - **Binding.** A TEE-bound agent (chain mode only) signs with a key its TEE derives for the rating, and its runner forwards fresh TEE evidence at every episode, verified like Bonded's own TEE agent. Otherwise the score's binding is declared: it attests how the rated code behaved, and cover is capped lower.
@@ -138,11 +143,11 @@ Three off-chain services share one database:
 
 | Service | Does |
 |---|---|
-| `api` | REST and server-sent events: signed quotes (capped by binding for operator-run agents), rating jobs, scores with their binding, coverage and held-out set, reports, the leaderboard, bounty reveals, self-serve registration and runner tokens, and observed breach rates (`GET /stats/observed-rates`) |
-| `arena-worker` | Runs rating jobs and validates bounty submissions in a sandbox forked from the live chain, then posts scores and pays bounties with the attester key. Serves the Arena Gateway (when `GATEWAY_PORT` is set), with operator-run agents' ratings in a lane of their own so Bonded's ratings never wait behind them; records runner presence, and renews operator-run agents' scores while their runners are connected |
+| `api` | REST and server-sent events: signed quotes (capped by binding for operator-run agents), rating jobs, scores with their binding, coverage and held-out set, reports, the leaderboard, bounty reveals, self-serve registration and runner tokens, owner sessions, previews, Agent URLs, connection checks and their live events, cost estimates, rating progress (counts only), notification settings, and observed breach rates (`GET /stats/observed-rates`) |
+| `arena-worker` | Runs rating jobs and validates bounty submissions in a sandbox forked from the live chain, then posts scores and pays bounties with the attester key. Serves the Arena Gateway (when `GATEWAY_PORT` is set), with operator-run agents' ratings in a lane of their own so Bonded's ratings never wait behind them, previews in the same lane after them (one at a time, only when no official one is waiting), and connection checks in a third lane; records runner presence, renews operator-run agents' scores while their runners are connected, and notifies owners (webhook, and email when configured) when a rating ends |
 | `keeper` | Watches vaults and modules for breaches and files claims; accrues premiums; checks TEE agents, and queues a re-rating when an operator-run agent's TEE changes |
 
-Jobs use a Postgres `FOR UPDATE SKIP LOCKED` queue; every transaction that moves money records its intent and nonce before broadcasting, so a crash can't pay twice. For operator-run agents the database also keeps runner tokens (as hashes only), runner presence, ratings the live loop had to skip and why, each agent's standing (superseded score, failures in a row, cooldown) and every rating attempt with the agent's own report kept apart, the held-out payloads already used, and each breach's agent, type and time (for observed rates).
+Jobs use a Postgres `FOR UPDATE SKIP LOCKED` queue; every transaction that moves money records its intent and nonce before broadcasting, so a crash can't pay twice. For operator-run agents the database also keeps owner sessions and runner tokens (as hashes only), Agent URLs with their secrets (encrypted only), previews, connection checks and their events, notification settings, runner presence and the code it reports, ratings the live loop had to skip and why, each agent's standing (superseded score, failures in a row, cooldown) and every rating attempt with the agent's own report kept apart, the held-out payloads already used, and each breach's agent, type and time (for observed rates).
 
 ## Sentinel
 
@@ -163,6 +168,7 @@ An agent's key can be generated inside a Phala Cloud confidential VM (Intel TDX)
 | Agent key | Act through its vault, within or (in Monitor mode) outside the mandate | Move funds without the vault recording it; touch the bond or pool |
 | Account owner (module) | Everything on their smart account: move funds, uninstall the module | Get a Deferred breach paid (an unexplained drop on an account can't be told from the owner's own withdrawal) |
 | An operator-run agent under rating | Call its episode's tools; in chain mode, send signed `execute` calls to the episode's vault | Reach another episode, use the sandbox node's cheat methods, or change a verdict: the vault's breach log decides |
+| An operator, through previews, checks and Agent URLs | Make Bonded run capped benign checks and previews, and call their own public https endpoint | Aim Bonded at a private address or Bonded's own hosts, read another owner's previews or checks, see verdicts before a rating ends, or get a preview attested |
 | Guardian (operator) | Freeze, unfreeze and rotate its agent; buy and cancel cover | Change a vault's mandate after creation |
 | Attester | Sign scores and quotes; judge bounties | Pay a claim: claims follow the breach log only |
 | Owner (one key on testnets) | Set risk parameters and attesters; on testnets, set MockOracle prices, which losses are measured with | Withdraw pool or bond funds |

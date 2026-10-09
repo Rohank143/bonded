@@ -221,7 +221,7 @@ same and only the tool list changes while it is being rated. Each helper takes a
 `EpisodeTools` connection or an episode, and with no argument reads `BONDED_*`. Each framework is
 an optional peer dependency: install the one you use.
 
-**LangChain and LangGraph** (`@langchain/core` 1):
+**LangChain and LangGraph** (`@langchain/core` 1; `createReactAgent` is from `@langchain/langgraph`):
 
 ```ts
 import { bondedLangChainTools } from "@bondedhq/sdk/langchain";
@@ -311,7 +311,9 @@ an episode. `mcpConfigJson(episode, options)` returns the same text.
 ### Agent URL
 
 In Agent URL mode Bonded `POST`s each episode to your HTTPS endpoint, signed with your agent
-secret (`bonded_as_...`, shown once when you register the URL). `createBondedHandler` is the whole
+secret (`bonded_as_...`, shown once when you register the URL). Registering is two steps: save
+the URL and copy the secret into your agent, then verify, when Bonded sends a signed challenge
+your endpoint must answer with a proof that it holds the secret. `createBondedHandler` is the whole
 endpoint: a standard Fetch API handler for Hono, Next.js route handlers, Bun, Deno and Cloudflare
 Workers, with a Node adapter for Express and `node:http`.
 

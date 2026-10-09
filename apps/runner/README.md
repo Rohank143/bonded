@@ -8,12 +8,20 @@ episode ends. Your agent talks to the gateway directly, over MCP, plain HTTP, or
 JSON-RPC endpoint. The Arena plants attacks in what your agent reads and judges it only by what its
 Mandate Vault records on chain.
 
+Don't want to run anything? Bonded can call your agent's HTTPS endpoint instead (Agent URL
+mode, with `createBondedHandler` from `@bondedhq/sdk/agent-url`). The full guide, both ways:
+[Bring your own agent](https://github.com/ddboy19912/bonded/blob/main/docs/BRING-YOUR-OWN-AGENT.md).
+
 ## Run it
 
 ```sh
 export BONDED_RUNNER_TOKEN=...   # from your agent's page; keep it out of shell history
 npx @bondedhq/runner --gateway https://arena.example.com -- node my-agent.js
 ```
+
+Not on npm yet (the founder publishes with `pnpm release:packages`). Until then, from a clone of
+the Bonded repository: `pnpm install && pnpm build`, then
+`node apps/runner/dist/cli.js --gateway <url> -- <your agent command>`.
 
 Options:
 
@@ -25,13 +33,22 @@ Options:
 | `--tee-url <url>`     | Your agent's TEE. The runner fetches `GET <url>/attestation?nonce=` for each episode and forwards the answer unchanged. In chain mode it adds `&purpose=arena&key=<id>`: the TEE attests a key it derives for that rating, and your agent signs episode transactions with it (`BONDED_TEE_KEY_ID` names it), never its production key. |
 | `--code-hash <0x..>`  | The code version you are rating (or `BONDED_CODE_HASH`). Without it the runner works one out and reports it: `BONDED_IMAGE_DIGEST` if set, else the git commit of your agent's folder (labelled dirty with uncommitted changes), else a hash of the command and its entry file (labelled unpinned). |
 | `--quiet`             | Don't copy the agent's output to the terminal.                                                                                                                                                                                                                                                                                         |
+| `--version`           | Print the runner's version.                                                                                                                                                                                                                                                                                                            |
 
 The runner reconnects with backoff if the connection drops, and stops for good (exit code 2) if
 the token is wrong or revoked, or another runner connects with the same token. It runs one episode
 at a time.
 
-To rate an agent on your own machine against a local Arena, see `pnpm arena rate --agent remote`
-in the Bonded repository. Add `--profile hosted` to run what the hosted service runs (3 runs of
+**The code hash.** The runner prints the one it reports when it starts, with where it came from:
+`flag` or `env` (as given), `image` (keccak256 of `"image:<BONDED_IMAGE_DIGEST>"`), `git`
+(keccak256 of `"git:<commit>"` of the repository that tracks your entry file) or `git-dirty` (the
+same, with uncommitted changes), else `unpinned` (keccak256 of the command line and the entry
+file's bytes). A code hash you registered always wins. Bonded shows a reported hash as reported,
+never as verified.
+
+Before a rating, Bonded runs a connection check: one benign episode, streamed live, that says in
+plain sentences what to fix. To rate an agent on your own machine against a local Arena, see
+`pnpm arena rate --agent remote` (and `pnpm arena check`) in the Bonded repository. Add `--profile hosted` to run what the hosted service runs (3 runs of
 each attack, 90 s episodes, 6 controls, only exposed trials counted, its refusal rules), so the
 local result predicts the hosted one; add `--fork robinhood` to rate on the live chain's fork too.
 
@@ -47,7 +64,7 @@ Each episode starts your command once, with:
 | `BONDED_MCP_URL`     | MCP over streamable HTTP.                                                                                                                          |
 | `BONDED_TOOLS_URL`   | Plain HTTP: `GET` lists the tools, `POST {url}/{name}` with the arguments as JSON calls one.                                                       |
 | `BONDED_OPENAPI_URL` | OpenAPI 3.1 description of the plain HTTP endpoints.                                                                                               |
-| `BONDED_DONE_URL`    | `POST` `{ finalMessage? }` when finished (optional: exiting also ends the episode).                                                                |
+| `BONDED_DONE_URL`    | `POST` `{ finalMessage?, usage? }` when finished (optional: exiting also ends the episode). `usage` is your model's `{ inputTokens, outputTokens, costUsd? }`, for cost estimates. |
 | `BONDED_RPC_URL`     | Chain mode: Ethereum JSON-RPC for the episode's chain.                                                                                             |
 | `BONDED_SESSION_KEY` | Chain mode (without a TEE): a fresh private key the episode's vault accepts as its agent.                                                          |
 | `BONDED_TEE_KEY_ID`  | Chain mode with a TEE: the rating's Arena key id. Derive the signing key for it inside the TEE (Bonded's TEE agent: `AgentIdentity.arenaAccount`). |
@@ -94,7 +111,9 @@ All of them make the one trade their task names and never act on instructions th
 
 Build the image from the repository root with `docker build -f apps/runner/Dockerfile -t
 bonded-runner .`, then put your agent on top of it (see the comment at the top of the
-Dockerfile). Pass the token at run time with `-e BONDED_RUNNER_TOKEN=...`.
+Dockerfile). Pass the token at run time with `-e BONDED_RUNNER_TOKEN=...`. The image has no git,
+so pass `-e BONDED_IMAGE_DIGEST=sha256:...` (your image's digest) for a pinned code hash. The image
+isn't published yet: build it yourself.
 
 ## What a score means
 
