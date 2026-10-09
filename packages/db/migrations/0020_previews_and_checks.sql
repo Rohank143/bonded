@@ -29,7 +29,8 @@ CREATE TABLE previews (
   connection text NOT NULL CHECK (connection IN ('runner', 'url')),
   code_hash text,
   status text NOT NULL DEFAULT 'created' CHECK (status IN
-    ('created', 'checking', 'ready', 'queued', 'running', 'done', 'failed', 'refused', 'stopped')),
+    ('created', 'checking', 'ready', 'queued', 'starting', 'running', 'done', 'failed', 'refused',
+     'stopped')),
   rating_id uuid,
   error text,
   upgraded_to text,

@@ -1656,3 +1656,94 @@ describe("one sign-in for the agent page, local Agent URLs, and code details", (
     expect((await bodyOf(hosted)).error).toBe("Your URL must use https.");
   });
 });
+
+describe("setting up, a new secret, and preview status without polling", () => {
+  it("shows a preview as starting, with its start time, while the sandbox is set up", async () => {
+    await pg.db.pool.query(
+      "UPDATE jobs j SET status='failed' FROM ratings r WHERE j.id=r.id AND j.status IN ('queued','running')",
+    );
+    const session = await sessionFor(privateKeyToAccount(generatePrivateKey()));
+    const { preview } = await readyPreview(session, hash(0x5ea1));
+    const { runId } = await bodyOf(await send("POST", `/previews/${preview.id}/rate`, {}, session));
+    let during: Promise<unknown> | undefined;
+    await workPreviewOne(pg.db, chain, sandbox.rpcUrl, {
+      // The agent is built once the sandbox is up and before the episodes: still setting up.
+      remote: () => {
+        during = Promise.all([
+          get(`/previews/${preview.id}`, session).then(bodyOf),
+          pg.db.pool.query("SELECT status,progress FROM ratings WHERE id=$1", [runId]),
+        ]);
+        return ratedAgent("hardened");
+      },
+      heldOut: { perClass: 0 },
+      selectAttacks: (attacks) => attacks.filter((a) => a.id === "A6-operator-impersonation-001"),
+    });
+    const [page, rating] = (await during) as [
+      Record<string, unknown>,
+      { rows: { status: string; progress: { startedAt: string; total: number | null } }[] },
+    ];
+    expect(page.status).toBe("starting");
+    expect(rating.rows[0]!.status).toBe("starting");
+    expect(Date.parse(rating.rows[0]!.progress.startedAt)).toBeGreaterThan(0);
+    // Over: its progress keeps when it began setting up, and counts from the episodes.
+    const done = await bodyOf(await get(`/previews/${preview.id}`, session));
+    expect(
+      (done.rating as { progress: { startedAt: string; done: number } }).progress,
+    ).toMatchObject({
+      startedAt: rating.rows[0]!.progress.startedAt,
+      done: 7,
+    });
+    // Its status as a stream (a stream token, as an EventSource would use): the state, then the end.
+    const token = (
+      await bodyOf(await send("POST", "/streams/token", { previewId: preview.id }, session))
+    ).token as string;
+    expect((await app.request(`/previews/${preview.id}/events`)).status).toBe(401);
+    expect((await get(`/previews/${preview.id}/events`, await sessionFor(stranger))).status).toBe(
+      404,
+    );
+    const events = await sse(await app.request(`/previews/${preview.id}/events?token=${token}`));
+    expect(events).toHaveLength(1);
+    expect(events[0]!.data).toMatchObject({
+      ratingId: runId,
+      progress: { done: 7, total: 7 },
+    });
+    expect(["done", "refused", "failed"]).toContain(events[0]!.data.status);
+  }, 240_000);
+
+  it("gives an Agent URL a new secret, keeping the URL, unverified until checked again", async () => {
+    const session = await sessionFor();
+    const p = await newPreview(session, { mode: "tools", connection: "url" });
+    const first = await bodyOf(
+      await send(
+        "POST",
+        `/previews/${p.id}/agent-url`,
+        { url: "https://rotate.example/a" },
+        session,
+      ),
+    );
+    await send("POST", `/previews/${p.id}/agent-url/verify`, {}, session);
+    const rotated = await send("POST", `/previews/${p.id}/agent-url/secret`, {}, session);
+    expect(rotated.status).toBe(201);
+    const body = await bodyOf(rotated);
+    expect(body).toMatchObject({
+      url: "https://rotate.example/a",
+      verified: false,
+      verifiedAt: null,
+    });
+    expect(body.secret).toMatch(/^bonded_as_/);
+    expect(body.secret).not.toBe(first.secret);
+    // The old secret is gone at once: only the new row is live, and it decrypts to the new secret.
+    const live = (await pg.db.agentUrl(`preview:${p.id}`))!;
+    expect(live.id).toBe(body.agentUrlId);
+    expect(secrets.decrypt(live.ciphertext, `agent-url:${live.id}`)).toBe(body.secret);
+    const old = (
+      await pg.db.pool.query("SELECT revoked_at FROM agent_urls WHERE id=$1", [first.agentUrlId])
+    ).rows[0];
+    expect(old.revoked_at).not.toBeNull();
+    // Without a URL there is nothing to rotate.
+    const empty = await newPreview(session, { mode: "tools", connection: "url" });
+    expect((await send("POST", `/previews/${empty.id}/agent-url/secret`, {}, session)).status).toBe(
+      404,
+    );
+  });
+});
