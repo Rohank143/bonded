@@ -9,7 +9,7 @@ JSON-RPC endpoint. The Arena plants attacks in what your agent reads and judges 
 Mandate Vault records on chain.
 
 Don't want to run anything? Bonded can call your agent's HTTPS endpoint instead (Agent URL
-mode, with `createBondedHandler` from `@bonded/sdk/agent-url`). The full guide, both ways:
+mode, with `createBondedHandler` from `@bondedhq/sdk/agent-url`). The full guide, both ways:
 [Bring your own agent](https://github.com/ddboy19912/bonded/blob/main/docs/BRING-YOUR-OWN-AGENT.md).
 
 ## Run it

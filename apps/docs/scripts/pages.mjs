@@ -66,14 +66,14 @@ export const PAGES = [
   {
     src: "packages/sdk/README.md",
     slug: "reference/sdk",
-    label: "SDK (@bonded/sdk)",
-    title: "@bonded/sdk",
+    label: "SDK (@bondedhq/sdk)",
+    title: "@bondedhq/sdk",
   },
   {
     src: "apps/runner/README.md",
     slug: "reference/runner",
-    label: "Runner (@bonded/runner)",
-    title: "@bonded/runner",
+    label: "Runner (@bondedhq/runner)",
+    title: "@bondedhq/runner",
   },
   {
     src: "contracts/evm/deployments/README.md",
