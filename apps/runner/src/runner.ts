@@ -49,6 +49,10 @@ export interface RunnerOptions {
    * (`codeIdentity`: BONDED_CODE_HASH, BONDED_IMAGE_DIGEST, the git commit, or unpinned).
    */
   code?: CodeIdentity;
+  /** Where the agent command runs. Default: the runner's own working directory. */
+  cwd?: string;
+  /** Called each time the runner connects to the gateway (after it says hello). */
+  onConnect?: () => void;
   heartbeatMs?: number;
   backoff?: { initialMs: number; maxMs: number };
   killGraceMs?: number;
@@ -172,6 +176,7 @@ export class Runner {
           codeDetail: this.code.detail.slice(0, 200),
         });
         for (const message of this.outbox.splice(0)) this.write(message);
+        this.options.onConnect?.();
         heartbeat = setInterval(() => {
           if (Date.now() - lastPong > 3 * heartbeatMs) {
             this.log("no answer from the gateway; reconnecting");
@@ -280,8 +285,11 @@ export class Runner {
   }> {
     const [command, ...args] = this.options.command;
     const env: NodeJS.ProcessEnv = { ...process.env, ...episodeEnv(episode) };
-    // The runner's own credential never reaches the agent.
+    // The runner's own credential never reaches the agent, and neither does the production
+    // vault's (bondedVaultFromEnv in @bondedhq/sdk): a rated episode can't trade real funds.
     delete env.BONDED_RUNNER_TOKEN;
+    delete env.BONDED_AGENT_KEY;
+    delete env.BONDED_VAULT_ADDRESS;
     const stdout = new Tail(RUNNER_TAIL_BYTES);
     const stderr = new Tail(RUNNER_TAIL_BYTES);
     const echo = this.options.echo ?? true;
@@ -290,6 +298,7 @@ export class Runner {
       try {
         child = spawn(command!, args, {
           env,
+          ...(this.options.cwd ? { cwd: this.options.cwd } : {}),
           stdio: ["ignore", "pipe", "pipe"],
           // Its own process group, so stopping it stops anything it started.
           detached: process.platform !== "win32",

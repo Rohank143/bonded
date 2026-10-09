@@ -1,0 +1,19 @@
+// ecosystem.config.cjs: start it with your runner token in the environment:
+//   BONDED_RUNNER_TOKEN=... pm2 start ecosystem.config.cjs
+//   pm2 save && pm2 startup   (starts it again at boot; pm2 keeps the token in its dump file)
+module.exports = {
+  apps: [
+    {
+      name: "bonded-runner",
+      cwd: "/srv/my-agent",
+      script: "npx",
+      args: ["--yes","@bondedhq/runner","--gateway","https://arena.example.com","--","node","dist/agent.js","--say","it's"],
+      interpreter: "none",
+      autorestart: true,
+      restart_delay: 10000,
+      // Exit code 2: the token was refused or another runner took over. Restarting won't help.
+      stop_exit_codes: [2],
+      kill_timeout: 15000,
+    },
+  ],
+};

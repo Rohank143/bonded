@@ -1,0 +1,16 @@
+{
+  "name": "next-agent",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@langchain/core": "^1.2.12",
+    "next": "^15.3.0",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

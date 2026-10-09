@@ -47,7 +47,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint src test examples",
+    "lint": "eslint src test examples --ignore-pattern 'test/fixtures/**'",
     "test": "vitest run",
     "prepack": "tsc -p tsconfig.build.json"
   },

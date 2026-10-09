@@ -17,8 +17,8 @@ ESM only, Node 22 or later. Not yet published to npm (the founder publishes with
 | `@bondedhq/sdk` | The vault client, dry runs, the guard, Sentinel, mandates, `fromBondedEnv` | |
 | `@bondedhq/sdk/mcp` | An episode's tools over MCP, `/done`, MCP config | |
 | `@bondedhq/sdk/agent-url` | The Agent URL handler | |
-| `@bondedhq/sdk/langchain` | The episode's tools as LangChain `StructuredTool`s | `@langchain/core` 1 |
-| `@bondedhq/sdk/ai-sdk` | The episode's tools as a Vercel AI SDK tool set | `ai` 5 to 7 |
+| `@bondedhq/sdk/langchain` | The episode's tools as LangChain `StructuredTool`s; the vault's trading tools | `@langchain/core` 1 |
+| `@bondedhq/sdk/ai-sdk` | The episode's tools as a Vercel AI SDK tool set; the vault's trading tools | `ai` 5 to 7 |
 | `@bondedhq/sdk/eliza` | The ElizaOS plugin, with a rating mode | `@elizaos/core` 1.7 |
 | `@bondedhq/sdk/agentkit` | AgentKit wallet provider for the vault; the episode's tools as actions | `@coinbase/agentkit` 0.10 |
 | `@bondedhq/sdk/solana-agent-kit` | Solana Agent Kit plugin for the Solana vault | `solana-agent-kit` 2, `@bondedhq/solana` |
@@ -46,6 +46,16 @@ const log = await vault.breaches(); // the vault's breach log, oldest first
 ```
 
 Amounts are in the token's base units (`bigint`). Each write waits for its transaction and returns `{ hashes, breaches }`. A swap approves the router for exactly `amountIn` first when the vault's allowance is short, so it can take two transactions. `swap` speaks the interface of Bonded's testnet market (`DemoRouter`); for any other venue pass a `SwapRouter` (`{ address, encodeSwap, quote? }`) as `router`, or encode the call yourself and use `call`.
+
+**From the environment.** `bondedVaultFromEnv()` builds the production vault from
+`BONDED_VAULT_ADDRESS` (the vault or module), `BONDED_AGENT_KEY` (its agent key, a 0x private key),
+`BONDED_ROUTER_ADDRESS` (the swap venue, optional), `BONDED_VAULT_CHAIN_ID` (default 46630, Robinhood
+Chain testnet) and `BONDED_VAULT_RPC_URL` (default: that chain's public RPC). It returns `undefined`
+while `BONDED_VAULT_ADDRESS` isn't set, so the same code runs before the agent has a vault, and
+throws `BondedError` (`CONFIG`) naming every missing or malformed variable. These names differ from
+the `BONDED_*` variables the runner sets for an episode, and the runner removes `BONDED_AGENT_KEY`
+and `BONDED_VAULT_ADDRESS` from a rated agent's environment, so a rating never trades real funds.
+`bonded-runner init` writes the code that uses it.
 
 ### Mandate modules on smart accounts
 
@@ -367,6 +377,50 @@ gateway signs with, from `@bondedhq/shared/agent-url` (a small entry point witho
 for edge bundles). A Python endpoint with no dependencies is in
 [`examples/python-agent-url`](../../examples/python-agent-url/README.md).
 
+## Vault trading tools for LangChain, LangGraph and the AI SDK
+
+The agent's Mandate Vault as tools, for production: `swap`, `transfer`, `approve` and
+`vault_status`. They have the same names and arguments as the episode's write tools, so the
+agent's prompts work the same while it is rated.
+
+```ts
+import { bondedVaultFromEnv, isBondedEpisode } from "@bondedhq/sdk";
+import { bondedLangChainTools, bondedVaultLangChainTools } from "@bondedhq/sdk/langchain";
+
+const vault = bondedVaultFromEnv()!; // or new BondedVault({ ... })
+const tools = isBondedEpisode()
+  ? await bondedLangChainTools()
+  : [...readOnlyTools, ...bondedVaultLangChainTools({ vault })];
+```
+
+```ts
+import { bondedAiSdkTools, bondedVaultAiSdkTools } from "@bondedhq/sdk/ai-sdk";
+
+const tools = isBondedEpisode()
+  ? await bondedAiSdkTools()
+  : { ...readOnlyTools, ...bondedVaultAiSdkTools({ vault }) };
+```
+
+- **Arguments** are what a model writes: tokens by symbol (`tUSDG`) or address, amounts in whole
+  tokens as decimal strings (`"250"`). `swap` takes `{ tokenIn, tokenOut, amountIn, minOut? }`,
+  `transfer` `{ token, to, amount }`, `approve` `{ token, spender, amount }`. Symbols come from
+  `tokens` when you pass it, otherwise from the mandate itself (the vault's `getAssets()`, with each
+  token's symbol and decimals, read once).
+- **Results.** A write returns what moved (`{ sold, received }`, `{ sent, to }`, `{ approved, spender }`)
+  and its `transactions`; when the vault recorded a breach (Monitor mode), also `breaches` and a
+  `warning`. `vault_status` returns `{ vault, kind, holder, mode, frozen, breachCount, balances }`.
+- **The guard is on by default** (`guard: false` turns it off): each write is dry-run against the
+  vault first and refused on a predicted breach, so the model gets an error instead of a recorded
+  breach. A refusal, a blocked or reverted call, or bad arguments come back to the model (LangChain:
+  `Error: ...` text; AI SDK: `{ error }`), never thrown.
+- **Sentinel** (optional, advisory): pass `sentinel: { apiUrl, mandate }` to ask it before each
+  write that passes the dry run. What the agent read comes from `context()` if you pass it; the AI
+  SDK tools otherwise use the tool results earlier in the conversation (the last 20).
+- Take your own write tools out of the list in production, so every trade goes through the vault.
+
+`bondedVaultTools(options)` from `@bondedhq/sdk` is the same set, framework-neutral
+(`{ name, description, inputSchema, call(args) }`), for wrapping in another framework.
+
 ## Coinbase AgentKit
 
 ```ts
@@ -421,6 +475,6 @@ episode's tools: see [Framework helpers](#framework-helpers).
 pnpm --filter @bondedhq/sdk test
 ```
 
-Tests run against a local anvil with the protocol deployed by the production scripts, and check allowed and breaching actions against the vault's breach log, for the core client and each framework. The Agent URL handler's tests (signatures, verify, acknowledging then working, cancel, deadline) run without a chain. The framework helpers are tested end to end against a real Arena Gateway in `examples/frameworks` (`pnpm --filter @bonded/example-frameworks test`). The Solana tests need the programs built (`pnpm solana:build`) and the Solana CLI's `solana-test-validator`; without them they skip with a message. `pnpm --filter @bondedhq/sdk typecheck` also checks the ElizaOS plugin against `@elizaos/core`'s own types.
+Tests run against a local anvil with the protocol deployed by the production scripts, and check allowed and breaching actions against the vault's breach log, for the core client and each framework. The Agent URL handler's tests (signatures, verify, acknowledging then working, cancel, deadline) run without a chain. The vault trading tools are tested on the same local chain (`test/vault-tools.int.test.ts`): a swap by symbol, a breaching transfer refused by the guard, Sentinel fed from the conversation, and a Monitor-mode breach with the guard off. The framework helpers are tested end to end against a real Arena Gateway in `examples/frameworks` (`pnpm --filter @bonded/example-frameworks test`). The Solana tests need the programs built (`pnpm solana:build`) and the Solana CLI's `solana-test-validator`; without them they skip with a message. `pnpm --filter @bondedhq/sdk typecheck` also checks the ElizaOS plugin against `@elizaos/core`'s own types.
 
 An example agent that uses the SDK is in [`examples/byo-agent`](../../examples/byo-agent/README.md).

@@ -1,0 +1,46 @@
+--- /dev/null
++++ b/src/bonded.ts
+@@ -0,0 +1,19 @@
++// Added by `bonded-runner init`: Bonded's rating hook and Mandate Vault plugin. Edit it freely.
++// Guide: https://github.com/ddboy19912/bonded/blob/main/docs/BRING-YOUR-OWN-AGENT.md
++import { bondedVaultFromEnv, isBondedEpisode } from "@bondedhq/sdk";
++import { bondedEpisodePlugin, bondedPlugin } from "@bondedhq/sdk/eliza";
++
++const vault = bondedVaultFromEnv();
++
++/**
++ * Bonded's plugin, for your agent's plugins:
++ * - in production with BONDED_VAULT_ADDRESS set: BONDED_SWAP, BONDED_TRANSFER and BONDED_APPROVE
++ *   through your Mandate Vault (each dry-run first) and the BONDED_VAULT provider; while Bonded
++ *   rates the agent it swaps them for the episode's tools by itself;
++ * - without a vault: the episode's tools while Bonded rates the agent, and nothing otherwise.
++ */
++export const bondedPlugins = vault
++  ? [bondedPlugin({ vault })]
++  : isBondedEpisode()
++    ? [bondedEpisodePlugin()]
++    : [];
+
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,13 +1,14 @@
+ import type { IAgentRuntime, Project, ProjectAgent } from "@elizaos/core";
+ import { character } from "./character";
+ import { tradingPlugin } from "./plugin";
++import { bondedPlugins } from "./bonded";
+ 
+ export const projectAgent: ProjectAgent = {
+   character,
+   init: async (runtime: IAgentRuntime) => {
+     console.log(`Starting ${runtime.character.name}`);
+   },
+-  plugins: [tradingPlugin],
++  plugins: [...bondedPlugins, tradingPlugin],
+ };
+ 
+ const project: Project = { agents: [projectAgent] };
+
+# Variables
+BONDED_VAULT_ADDRESS, BONDED_AGENT_KEY, BONDED_ROUTER_ADDRESS
+# Adds
+@bondedhq/sdk
