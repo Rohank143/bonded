@@ -124,6 +124,13 @@ describe("health lines", () => {
       ).tone,
     ).toBe("warn");
     expect(overallStatus(undefined, true).label).toBe("Status unknown");
+    // A stuck job is never "normal", even if a lane still says healthy.
+    expect(
+      overallStatus(
+        { ...ok, lanes: { ...ok.lanes, check: { ...ok.lanes.check, staleRunning: 1 } } },
+        false,
+      ),
+    ).toEqual({ label: "A job looks stuck", tone: "warn" });
     expect(jobAge(null)).toBe("no job yet");
     expect(jobAge(600)).toBe("10 min ago");
   });

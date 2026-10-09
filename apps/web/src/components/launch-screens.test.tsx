@@ -218,6 +218,33 @@ describe("problem links", () => {
 });
 
 describe("status and notifications", () => {
+  it("shows running jobs, and says so when one looks stuck", async () => {
+    vi.spyOn(byoaApi, "status").mockResolvedValue(
+      status({
+        lanes: {
+          check: { healthy: true, lastJobAgeSeconds: 40, running: 1, oldestRunningSeconds: 120 },
+          remote: {
+            healthy: false,
+            lastJobAgeSeconds: 600,
+            running: 2,
+            oldestRunningSeconds: 1_800,
+            staleRunning: 1,
+          },
+        },
+      }),
+    );
+    wrap(<Status />);
+    expect(await screen.findByText("A job looks stuck")).toBeTruthy();
+    expect(
+      screen.getByText("Running, last finished under 2 min ago · 1 running · started 2 min ago"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        /Slow, last finished 10 min ago · 2 running · started 30 min ago.*a job looks stuck/,
+      ),
+    ).toBeTruthy();
+  });
+
   it("shows each service on the status page", async () => {
     vi.spyOn(byoaApi, "status").mockResolvedValue(
       status({
