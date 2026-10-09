@@ -23,6 +23,9 @@ import {
 } from "@bondedhq/shared";
 import { encodeFunctionData, keccak256, stringToBytes } from "viem";
 import { createApi } from "../src/index.js";
+import { AgentStatusReader } from "../src/agent-status.js";
+import { Notifier } from "../src/notifications.js";
+import { OwnerAlerts } from "../src/owner-alerts.js";
 import { postgres } from "./postgres.js";
 let pg: Awaited<ReturnType<typeof postgres>>,
   sandbox: Sandbox,
@@ -252,6 +255,46 @@ it("rejects capacity, signs an API quote, binds it and automatically pays a brea
     functionName: "totalAssets",
   });
   const keeper = new Keeper(pg.db, chain, 0n);
+  // The owner's alerts: a claim is announced as filed only once its transaction is broadcast.
+  const owner = chain.wallet.account.address.toLowerCase();
+  await pg.db.upsertUserAgent(chain.deployment.chainId, vault.agentId.toString(), owner, {
+    vault: vault.address,
+  });
+  const alerts = new OwnerAlerts(
+    pg.db,
+    chain.deployment.chainId,
+    new Notifier(pg.db),
+    new AgentStatusReader(pg.db, chain, { ttlMs: 0 }),
+  );
+  const notified = async (type: string) =>
+    (
+      await pg.db.pool.query("SELECT 1 FROM owner_notifications WHERE owner=$1 AND type=$2", [
+        owner,
+        type,
+      ])
+    ).rowCount;
+  // fileClaim's simulation rejects (here: a breach id that doesn't exist), so nothing is
+  // broadcast: no filed timestamp, and no "claim filed" alert.
+  const rejected = new Keeper(
+    pg.db,
+    {
+      ...chain,
+      send: async (address, abi, name, args, lifecycle) =>
+        chain.send(address, abi, name, name === "fileClaim" ? [args[0], [999n]] : args, lifecycle),
+    },
+    0n,
+  );
+  await rejected.tick();
+  const attempted = await pg.db.pool.query(
+    "SELECT status,claim_filed_at,error FROM handled_events WHERE vault=$1",
+    [vault.address.toLowerCase()],
+  );
+  expect(attempted.rows).toEqual([
+    { status: "pending", claim_filed_at: null, error: "claim failed; will retry" },
+  ]);
+  await alerts.sweep();
+  expect(await notified("breach_recorded")).toBe(1);
+  expect(await notified("claim_filed")).toBe(0);
   const failing = new Keeper(
     pg.db,
     {
@@ -289,6 +332,12 @@ it("rejects capacity, signs an API quote, binds it and automatically pays a brea
     blocked: false,
   });
   expect(paid.rows[0].occurred_at).toBeInstanceOf(Date);
+  // The broadcast recorded the filing: one "claim filed" alert, however often the sweep runs.
+  expect(paid.rows[0].claim_filed_at).toBeInstanceOf(Date);
+  await alerts.sweep();
+  await alerts.sweep();
+  expect(await notified("claim_filed")).toBe(1);
+  await pg.db.pool.query("DELETE FROM agents WHERE source='user'");
   const events = await pg.db.pool.query("SELECT * FROM events WHERE topic='claim.paid'");
   expect(events.rowCount).toBe(1);
   await new Keeper(pg.db, chain, 0n).tick();

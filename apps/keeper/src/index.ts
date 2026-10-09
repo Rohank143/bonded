@@ -316,19 +316,30 @@ export class Keeper {
           });
           const now = (await read.getBlock()).timestamp;
           if (breach.timestamp < start || breach.timestamp > end || now > end + window) continue;
-          // Simulation repeats the checks after accrual, including lapse, deductible and liquidity.
-          // The owner hears "claim filed" once, from the first attempt (owner-alerts.ts).
-          await this.db.pool.query(
-            "UPDATE handled_events SET claim_filed_at=coalesce(claim_filed_at,now()) WHERE id=$1",
-            [e.id],
+          // Simulation repeats the checks after accrual, including lapse, deductible and liquidity,
+          // and a rejected simulation (say, PoolShortfall) broadcasts nothing. So the claim counts
+          // as filed only once its transaction is broadcast: the owner hears "claim filed" once,
+          // from that first broadcast (owner-alerts.ts). A failed attempt only sets the error.
+          const filed = async () => {
+            await this.db.pool.query(
+              "UPDATE handled_events SET claim_filed_at=coalesce(claim_filed_at,now()) WHERE id=$1",
+              [e.id],
+            );
+          };
+          const hash = await this.chain.send(
+            d.claimsEngine,
+            claimsEngineAbi,
+            "fileClaim",
+            [policyId, [BigInt(e.breach_id)]],
+            {
+              beforeBroadcast: async () => {},
+              onBroadcast: filed,
+              onReverted: async () => {},
+            },
           );
-          const hash = await this.chain.send(d.claimsEngine, claimsEngineAbi, "fileClaim", [
-            policyId,
-            [BigInt(e.breach_id)],
-          ]);
           await this.db.transaction(async (c) => {
             await c.query(
-              "UPDATE handled_events SET status='claimed',tx_hash=$2,error=NULL WHERE id=$1",
+              "UPDATE handled_events SET status='claimed',tx_hash=$2,error=NULL,claim_filed_at=coalesce(claim_filed_at,now()) WHERE id=$1",
               [e.id, hash],
             );
             await this.db.publish(

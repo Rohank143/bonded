@@ -47,6 +47,7 @@ export interface AgentChainStatus {
   frozen: boolean | null;
   vaultActivity: VaultTradingStatus;
   agentGas: AgentGas | null;
+  /** The vault's active policy, or else its latest one (lapsed, expired, ...); null if none. */
   cover: CoverStatus | null;
   /** Active cover, and no trade through the vault in the last 7 days (or ever). */
   coverWithoutVaultTrades: boolean;
@@ -78,6 +79,16 @@ export class AgentStatusReader {
     return value;
   }
 
+  private async latestPolicyOf(vault: Address): Promise<bigint | undefined> {
+    const row = (
+      await this.db.pool.query(
+        "SELECT max(policy_id)::text AS id FROM keeper_policies WHERE chain_id=$1 AND vault=$2",
+        [this.chain.deployment.chainId, vault.toLowerCase()],
+      )
+    ).rows[0] as { id: string | null } | undefined;
+    return row?.id ? BigInt(row.id) : undefined;
+  }
+
   private async load(vault: Address, nowMs: number): Promise<AgentChainStatus> {
     const { read, deployment: d } = this.chain;
     const call = <T>(functionName: string, address: Address = vault, args: unknown[] = []) =>
@@ -90,7 +101,7 @@ export class AgentStatusReader {
         } as never)
         .then((v) => v as T)
         .catch(() => undefined);
-    const [activity, agentKey, frozen, policyId, grace, gasPrice] = await Promise.all([
+    const [activity, agentKey, frozen, activePolicyId, grace, gasPrice] = await Promise.all([
       this.db.vaultActivity(d.chainId, vault, new Date(nowMs)),
       call<Address>("agent"),
       call<boolean>("frozen"),
@@ -98,6 +109,15 @@ export class AgentStatusReader {
       call<bigint>("gracePeriod", d.coverManager),
       read.getGasPrice().catch(() => null),
     ]);
+    // CoverManager clears activePolicyOf when a policy closes (lapsed, expired, cancelled), so a
+    // lapsed cover would read as none. Without an active one, show the vault's latest policy from
+    // the keeper's index of CoverBound events, with its closed status.
+    const policyId =
+      activePolicyId && activePolicyId > 0n
+        ? activePolicyId
+        : activePolicyId === undefined
+          ? undefined
+          : await this.latestPolicyOf(vault);
     const balance = agentKey
       ? await read.getBalance({ address: agentKey }).catch(() => null)
       : null;
