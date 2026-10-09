@@ -366,7 +366,7 @@ The runner works out a code hash for what it launches, so you don't have to type
 
 ### Agent URL mode
 
-Instead of a runner, the gateway can call your agent's own HTTPS endpoint. Every call is a `POST` of JSON, signed with your agent secret (`bonded_as_...`): `bonded-timestamp` is unix seconds, `bonded-signature` is `v1=` and the hex HMAC-SHA256 of `<timestamp>.<raw body>`. Check both before acting (refuse a timestamp more than 5 minutes off, and a signature you've seen before); `verifyAgentUrlRequest` in `@bonded/shared` does all of it.
+Instead of a runner, the gateway can call your agent's own HTTPS endpoint. Every call is a `POST` of JSON, signed with your agent secret (`bonded_as_...`): `bonded-timestamp` is unix seconds, `bonded-signature` is `v1=` and the hex HMAC-SHA256 of `<timestamp>.<raw body>`. Check both before acting (refuse a timestamp more than 5 minutes off, and a signature you've seen before); `verifyAgentUrlRequest` in `@bondedhq/shared` does all of it.
 
 | Body | Your answer |
 |---|---|

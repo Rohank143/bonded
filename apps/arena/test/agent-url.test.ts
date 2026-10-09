@@ -5,7 +5,7 @@ import {
   AgentUrlReplayGuard,
   answerAgentUrlVerify,
   verifyAgentUrlRequest,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AgentUrlClient,
