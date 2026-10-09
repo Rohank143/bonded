@@ -1,4 +1,4 @@
-import type { ChatClient, ChatRequest, ChatResponse, ToolCall } from "@bonded/shared";
+import type { ChatClient, ChatRequest, ChatResponse, ToolCall } from "@bondedhq/shared";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_AGENT_MODEL, LlmVulnerableAgent } from "../src/index.js";
 import { FakeToolbox, task } from "./fakes.js";

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mandateHash, selfServeMessage } from "@bonded/shared";
+import { mandateHash, selfServeMessage } from "@bondedhq/shared";
 import { api } from "./api";
 import { buildMandate } from "./onboarding";
 import { createRunnerToken, registerForRatings, revokeRunnerToken } from "./self-serve";

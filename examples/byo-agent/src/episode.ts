@@ -1,4 +1,4 @@
-import { type BondedEpisode, BondedVault } from "@bonded/sdk";
+import { type BondedEpisode, BondedVault } from "@bondedhq/sdk";
 import { defineChain } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { buy, type Outcome, send, type Strategy, type UntrustedInput } from "./agent.js";

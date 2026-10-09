@@ -19,7 +19,7 @@ export const SELF_SERVE_KIND_LABELS: Record<SelfServeKind, string> = {
 
 /**
  * The operator's own agent (bring your own agent, docs/BRING-YOUR-OWN-AGENT.md): any code, run
- * wherever the operator runs it, rated through the Arena Gateway by `@bonded/runner`.
+ * wherever the operator runs it, rated through the Arena Gateway by `@bondedhq/runner`.
  */
 export const REMOTE_KIND = "remote";
 /** A built-in design, or the operator's own agent. */
@@ -34,7 +34,7 @@ export const REMOTE_MODES = AgentMode.options;
 export type RemoteMode = AgentMode;
 
 /**
- * How Bonded reaches the operator's agent for each episode: through `@bonded/runner`, which the
+ * How Bonded reaches the operator's agent for each episode: through `@bondedhq/runner`, which the
  * operator runs next to the agent (the default), or by calling the agent's own HTTPS endpoint
  * (Agent URL mode: no install).
  */

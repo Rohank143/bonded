@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { BondedVault, fromBondedEnv, type TokenInfo } from "@bonded/sdk";
+import { BondedVault, fromBondedEnv, type TokenInfo } from "@bondedhq/sdk";
 import { defineChain, getAddress, type Hex, isAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { runOnce } from "./agent.js";

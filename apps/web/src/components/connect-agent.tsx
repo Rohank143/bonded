@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSignMessage } from "wagmi";
-import type { BindingLevel, RemoteMode } from "@bonded/shared";
+import type { BindingLevel, RemoteMode } from "@bondedhq/shared";
 import { api, type RatingAttempt, type SelfAgentRecord } from "../lib/api";
 import { BINDING_LABELS, expectedLine, lapseReason, runnerView } from "../lib/byoa";
 import { byoaApi, type Auth, type Connection, type Subject } from "../lib/byoa-api";

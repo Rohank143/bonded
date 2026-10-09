@@ -10,7 +10,7 @@ import {
   testTokenAbi,
   type RemoteAgentSpec,
   type SelfServeRequest,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { createApi } from "../src/index.js";
 import {

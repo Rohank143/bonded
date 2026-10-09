@@ -1,5 +1,5 @@
 {
-  "name": "@bonded/sdk",
+  "name": "@bondedhq/sdk",
   "version": "0.1.0",
   "description": "Trade through a Bonded Mandate Vault from any TypeScript agent: a typed vault client with dry runs, Sentinel checks, a mandate builder, and plugins for Coinbase AgentKit, Solana Agent Kit and ElizaOS.",
   "license": "MIT",
@@ -59,13 +59,13 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@bonded/shared": "workspace:^",
+    "@bondedhq/shared": "workspace:^",
     "viem": "^2.56.9",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@bonded/sandbox": "workspace:*",
-    "@bonded/solana": "workspace:*",
+    "@bondedhq/solana": "workspace:*",
     "@coinbase/agentkit": "0.10.4",
     "@elizaos/core": "1.7.2",
     "@solana/spl-token": "0.4.15",
@@ -73,14 +73,14 @@
     "solana-agent-kit": "2.0.10"
   },
   "peerDependencies": {
-    "@bonded/solana": "workspace:^",
+    "@bondedhq/solana": "workspace:^",
     "@coinbase/agentkit": "^0.10.4",
     "@elizaos/core": "^1.7.2",
     "@solana/web3.js": "^1.98.4",
     "solana-agent-kit": "^2.0.10"
   },
   "peerDependenciesMeta": {
-    "@bonded/solana": {
+    "@bondedhq/solana": {
       "optional": true
     },
     "@coinbase/agentkit": {

@@ -6,12 +6,12 @@ import {
   type RunnerTokenValidator,
 } from "@bonded/arena";
 import type { Database } from "@bonded/db";
-import { AgentMode } from "@bonded/shared";
+import { AgentMode } from "@bondedhq/shared";
 import { reportedCode } from "./connections.js";
 import { agentConfig } from "./worker.js";
 
 /**
- * Runner tokens (bring your own agent): what `@bonded/runner` presents to the Arena Gateway to say
+ * Runner tokens (bring your own agent): what `@bondedhq/runner` presents to the Arena Gateway to say
  * which agent it runs. The owner creates one by signing in their wallet (self-serve.ts); the API
  * shows it once and stores only its sha256. The gateway runs in the arena-worker, checks each
  * connection and every heartbeat against the database here, and its presence events are written

@@ -1,6 +1,6 @@
 import { REMOTE_CONTROLS, Sandbox, episodeOutcome, freshHeldOut, rateAgent } from "@bonded/arena";
 import { json, previewKey, type Database, type PreviewOutcome } from "@bonded/db";
-import type { AgentMode, AttackSpec, ChatClient } from "@bonded/shared";
+import type { AgentMode, AttackSpec, ChatClient } from "@bondedhq/shared";
 import type { ServiceChain } from "@bonded/keeper";
 import type { Hex } from "viem";
 import { ratingLibrary } from "./library.js";

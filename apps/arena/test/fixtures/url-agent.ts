@@ -7,7 +7,7 @@ import {
   type DoneRequest,
   type EpisodeMessage,
   verifyAgentUrlRequest,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { toolboxFor, type Transport } from "./gateway-client.js";
 
 /**

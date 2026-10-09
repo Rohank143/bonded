@@ -1,4 +1,7 @@
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   type EpisodeMessage,
   parseRunnerMessage,
@@ -6,12 +9,30 @@ import {
   RUNNER_TAIL_BYTES,
   RunnerToServer,
   type ServerToRunner,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { type WebSocket, WebSocketServer } from "ws";
 import { afterEach, describe, expect, it } from "vitest";
 import { backoffDelay, gatewayUrlProblem, Runner, type RunnerOptions, Tail } from "../src/index.js";
 
 const TOKEN = "runner-test-token-123456";
+
+/**
+ * Timing: these tests spawn real processes and sockets, which a loaded machine (the full pipeline,
+ * every package at once) slows by seconds. So every wait is on the condition itself, bounded
+ * generously (WAIT_MS), and each test gets TEST_MS; nothing asserts that something is fast.
+ */
+const WAIT_MS = 20_000;
+const TEST_MS = 60_000;
+
+/**
+ * A fixed code identity: without one, each Runner works its own out with synchronous git calls,
+ * which block the event loop for seconds under load (code-hash.test.ts covers that path).
+ */
+const CODE = {
+  codeHash: `0x${"11".repeat(32)}` as `0x${string}`,
+  codeSource: "flag" as const,
+  detail: "--code-hash",
+};
 
 /** A stand-in gateway: accepts the runner's WebSocket and records what it says. */
 async function fakeGateway() {
@@ -73,6 +94,7 @@ async function setup(options: Partial<RunnerOptions> & { command: string[] }) {
     heartbeatMs: 1_000,
     backoff: { initialMs: 20, maxMs: 50 },
     killGraceMs: 300,
+    code: CODE,
     ...options,
   });
   const started = runner.start();
@@ -85,7 +107,7 @@ async function setup(options: Partial<RunnerOptions> & { command: string[] }) {
   return { gateway, runner, started };
 }
 
-async function eventually(check: () => boolean, timeoutMs = 5_000): Promise<void> {
+async function eventually(check: () => boolean, timeoutMs = WAIT_MS): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!check()) {
     if (Date.now() > deadline) throw new Error("timed out waiting");
@@ -116,7 +138,7 @@ function episode(fields: Partial<EpisodeMessage> = {}): EpisodeMessage {
 
 const node = (script: string) => [process.execPath, "-e", script];
 
-describe("the runner", () => {
+describe("the runner", { timeout: TEST_MS }, () => {
   it("says hello with its mode and keeps a heartbeat", async () => {
     const { gateway } = await setup({
       command: node(""),
@@ -195,14 +217,18 @@ describe("the runner", () => {
   });
 
   it("stops an agent on cancel: SIGTERM, then SIGKILL if it won't exit", async () => {
+    // The agent says when its SIGTERM handler is in place, so the cancel never races its start.
+    const dir = mkdtempSync(join(tmpdir(), "bonded-runner-test-"));
+    stops.push(async () => rmSync(dir, { recursive: true, force: true }));
+    const ready = join(dir, "ready");
     const { gateway } = await setup({
-      command: node("process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"),
+      command: node(
+        `process.on('SIGTERM',()=>{});require('fs').writeFileSync(${JSON.stringify(ready)},'1');setInterval(()=>{},1000)`,
+      ),
     });
     const ep = episode();
     gateway.send(ep);
-    await eventually(() => gateway.of("episode_started").length === 1);
-    // Give node time to install its SIGTERM handler.
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await eventually(() => gateway.of("episode_started").length === 1 && existsSync(ready));
     const started = Date.now();
     gateway.send({ type: "cancel", episodeId: ep.episodeId });
     await eventually(() => gateway.of("episode_done").length === 1);
@@ -222,7 +248,7 @@ describe("the runner", () => {
       episodeId: second.episodeId,
       error: "the runner is already running an episode",
     });
-    await eventually(() => gateway.of("episode_done").length === 2, 3_000);
+    await eventually(() => gateway.of("episode_done").length === 2);
     expect(gateway.of("episode_done")[1]).toMatchObject({
       episodeId: first.episodeId,
       exitCode: null,
@@ -315,6 +341,7 @@ describe("the runner", () => {
       token: "wrong-token-000000000",
       mode: "tools",
       command: node(""),
+      code: CODE,
     });
     expect(await refused.start()).toEqual({
       code: 2,
@@ -332,6 +359,7 @@ describe("the runner", () => {
         token: TOKEN,
         mode: "tools",
         command: node(""),
+        code: CODE,
       });
       const stopped = runner.start();
       await eventually(() => gateway.connections === before + 1);

@@ -5,7 +5,7 @@ import {
   bondedDomain,
   bondedRegistryAbi,
   type ModelFamily,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { verifyTypedData } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { ANVIL_KEYS, type Sandbox } from "./sandbox.js";

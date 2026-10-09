@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sentinelQuestions } from "@bonded/shared";
+import { sentinelQuestions } from "@bondedhq/shared";
 import {
   CascadeSentinel,
   DecisionModelSentinel,
@@ -138,6 +138,45 @@ const risk = (answer: "within_mandate" | "breach_likely", p: number) => ({
 });
 
 describe("CascadeSentinel", () => {
+  it("validates, copies and uses an open confidence band", () => {
+    const primary = new Fixed("p", { manipulated: 0.5 });
+    const fallback = new Fixed("f", { manipulated: 0.9 });
+    for (const band of [
+      [0.8, 0.2],
+      [-0.1, 0.8],
+      [0.2, 1.1],
+      [NaN, 0.8],
+    ])
+      expect(
+        () => new CascadeSentinel(primary, fallback, { unsureBand: band as [number, number] }),
+      ).toThrow(/unsureBand/);
+    expect(() => new CascadeSentinel(primary, fallback, { minRiskConfidence: Infinity })).toThrow(
+      /minRiskConfidence/,
+    );
+    const band: [number, number] = [0.2, 0.8];
+    const cascade = new CascadeSentinel(primary, fallback, { unsureBand: band });
+    band[0] = 0.6;
+    for (const [p, unsure] of [
+      [0.2, false],
+      [0.21, true],
+      [0.5, true],
+      [0.8, false],
+    ] as const)
+      expect(cascade.unsure({ manipulated: p, model: "p", latencyMs: 1 })).toBe(unsure);
+  });
+
+  it("preserves escalation and primary timing when the fallback fails", async () => {
+    const cascade = new CascadeSentinel(new Fixed("p", { manipulated: 0.5 }), {
+      name: "failed",
+      assess: async () => {
+        throw new Error("provider unavailable");
+      },
+    });
+    await expect(cascade.assess(fields)).rejects.toMatchObject({
+      metrics: { escalated: true, primaryLatencyMs: 1 },
+    });
+    expect(cascade.escalations).toBe(1);
+  });
   it("keeps a confident answer and escalates an unsure one", async () => {
     const llm = new Fixed("llm", { manipulated: 0.95, actionRisk: risk("breach_likely", 0.9) });
     const sure = new CascadeSentinel(
@@ -244,6 +283,21 @@ describe("SentinelGuard", () => {
     // "no" at 0.9 confidence is a 0.1 probability of manipulation.
     expect((verdict.labels as { manipulated: number }).manipulated).toBeCloseTo(0.1);
   });
+
+  it("counts only its own usage when guards and API checks share a model", async () => {
+    const f = fakeFetch(() => ({ json: layaAnswer(0.1, { within_mandate: 1 }) }));
+    const model = new LayaSentinel({ url: "u", fetch: f.impl });
+    const a = new SentinelGuard(model),
+      b = new SentinelGuard(model);
+    await Promise.all([
+      a.check("swap", { amountIn: "10" }, context),
+      b.check("swap", { amountIn: "20" }, context),
+      model.assess(fields),
+    ]);
+    expect(a.usage).toEqual({ inputTokens: 700, outputTokens: 0, costUsd: 0 });
+    expect(b.usage).toEqual(a.usage);
+    expect(model.usage.inputTokens).toBe(2100);
+  });
 });
 
 describe("DecisionModelSentinel", () => {
@@ -282,15 +336,20 @@ describe("LayaDecisionModel", () => {
       };
     });
     const model = new LayaDecisionModel({ url: "u", fetch: f.impl });
-    const d = await model.decide({
-      type: "noul",
-      key: "buy",
-      instruction: "Buy now.",
-      context: { news: "calm" },
-    });
+    const usage: unknown[] = [];
+    const d = await model.decide(
+      {
+        type: "noul",
+        key: "buy",
+        instruction: "Buy now.",
+        context: { news: "calm" },
+      },
+      { onUsage: (u) => usage.push(u) },
+    );
     expect(d).toEqual({ answer: "no", confidence: 0.8 });
     expect(model.latenciesMs).toHaveLength(1);
     expect(model.usage.inputTokens).toBe(50);
+    expect(usage).toEqual([{ inputTokens: 50, outputTokens: 0, costUsd: 0 }]);
   });
 
   it("rejects a choice whose own probability is missing", async () => {

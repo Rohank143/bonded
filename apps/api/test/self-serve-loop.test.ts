@@ -17,7 +17,7 @@ import {
   testTokenAbi,
   toEvmMandateParams,
   type SignedQuote,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import {
   encodeFunctionData,
   getAbiItem,

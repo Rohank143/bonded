@@ -1,6 +1,6 @@
 import { appendFileSync } from "node:fs";
 import { findInstructions } from "@bonded/demo-agents";
-import type { AgentRunSummary, AgentTask, AgentToolbox, ArenaAgent } from "@bonded/shared";
+import type { AgentRunSummary, AgentTask, AgentToolbox, ArenaAgent } from "@bondedhq/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   ArenaGateway,

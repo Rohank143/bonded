@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import { ANVIL_KEYS, Sandbox, createAgentVault } from "@bonded/arena";
 import { connectChain, type ServiceChain } from "@bonded/keeper";
-import { selfServeMessage } from "@bonded/shared";
+import { selfServeMessage } from "@bondedhq/shared";
 import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { createApi } from "../src/index.js";
 import { SecretBox, agentUrlContext, secretBoxFromEnv, verifySignature } from "../src/secrets.js";
@@ -16,7 +16,7 @@ import {
   type RatingNotification,
 } from "../src/notifications.js";
 import { safeRequest } from "@bonded/arena";
-import { signAgentUrlRequest } from "@bonded/shared";
+import { signAgentUrlRequest } from "@bondedhq/shared";
 import { workOne } from "../src/worker.js";
 import {
   DbRunnerAuth,
@@ -61,7 +61,7 @@ describe("secrets at rest", () => {
     expect(() => secretBoxFromEnv({ AGENT_URL_SECRET_KEY: "short" })).toThrow(/must be 32 bytes/);
     expect(() => secretBoxFromEnv({ AGENT_URL_SECRET_KEY: "short" })).not.toThrow(/short/);
   });
-  it("check webhook calls signed as v1=HMAC-SHA256(secret, timestamp.body) by @bonded/shared", async () => {
+  it("check webhook calls signed as v1=HMAC-SHA256(secret, timestamp.body) by @bondedhq/shared", async () => {
     const headers = await signAgentUrlRequest("s3cret", '{"a":1}', 1_000_000);
     expect(headers["bonded-timestamp"]).toBe("1000");
     const check = (body: string, nowSeconds: number, secret = "s3cret") =>

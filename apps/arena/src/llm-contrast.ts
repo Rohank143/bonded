@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { AGENT_TOOL_NAMES, AGENT_TOOLS, type ChatClient } from "@bonded/shared";
+import { AGENT_TOOL_NAMES, AGENT_TOOLS, type ChatClient } from "@bondedhq/shared";
 import { SpendingCap } from "./budget.js";
 import {
   type ContrastOrder,

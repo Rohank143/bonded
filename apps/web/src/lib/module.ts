@@ -1,10 +1,10 @@
-import type { ModuleAccountType, ModuleInstallPlan } from "@bonded/shared";
+import type { ModuleAccountType, ModuleInstallPlan } from "@bondedhq/shared";
 import type { Address, Hex } from "viem";
 
 /**
  * Protecting the smart account an agent already uses (ERC-7579, e.g. Safe through Safe7579) with
  * a MandateModule instead of a Bonded vault. The account itself makes the calls (create the
- * module, install it as an executor and as a hook); `prepareModuleInstall` in @bonded/shared
+ * module, install it as an executor and as a hook); `prepareModuleInstall` in @bondedhq/shared
  * builds them, and this turns its plan into what the owner sends from their account.
  */
 

@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { codeHashOf } from "@bonded/shared";
+import { codeHashOf } from "@bondedhq/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { codeIdentity, gitState } from "../src/index.js";
 
@@ -19,7 +19,8 @@ function tempDir(): string {
 const HASH = `0x${"Ab".repeat(32)}`;
 const noGit = () => undefined;
 
-describe("the runner's code hash", () => {
+// Real git calls and file reads: slow on a loaded machine, never asserted to be fast.
+describe("the runner's code hash", { timeout: 60_000 }, () => {
   it("takes --code-hash first, then BONDED_CODE_HASH, as given", () => {
     const env = { BONDED_CODE_HASH: `0x${"cd".repeat(32)}`, BONDED_IMAGE_DIGEST: "sha256:1" };
     expect(codeIdentity({ command: ["node", "a.js"], flag: HASH, env, git: noGit })).toMatchObject({

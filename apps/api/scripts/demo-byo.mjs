@@ -1,6 +1,6 @@
 // `pnpm demo -- --byo`: the bring-your-own-agent part of the local demo (demo.mjs runs it after
 // the usual story). Two more agents, both owned by the demo's operator key:
-//   1. Your own agent: examples/byo-agent, started by the real @bonded/runner, connected to a local
+//   1. Your own agent: examples/byo-agent, started by the real @bondedhq/runner, connected to a local
 //      Arena Gateway with a runner token made through the API, then rated through the gateway
 //      (tool mode, declared binding, plus a held-out set made for this rating alone).
 //   2. A smart account protected by a MandateModule: the ERC-7579 reference account (from the
@@ -28,7 +28,7 @@ import {
   testTokenAbi,
   tierForScore,
   toEvmMandateParams,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import {
   createWalletClient,
   encodeAbiParameters,
@@ -142,7 +142,7 @@ export async function runByoDemo(ctx) {
   // Enough test tUSDG for a vault deposit, an account balance and two bonds.
   await send(d.usdg, testTokenAbi, "faucet", [usd(200_000)]);
 
-  say("Your own agent: examples/byo-agent, connected through @bonded/runner");
+  say("Your own agent: examples/byo-agent, connected through @bondedhq/runner");
   const byoId = await register("byo-agent");
   const byoMandate = mandateFor(byoId, "monitor", "own agent");
   const made = await send(d.factory, mandateVaultFactoryAbi, "createVault", [

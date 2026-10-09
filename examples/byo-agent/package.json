@@ -2,7 +2,7 @@
   "name": "@bonded/example-byo-agent",
   "version": "0.1.0",
   "private": true,
-  "description": "A small trading agent that runs on your own server and trades through a Bonded Mandate Vault with @bonded/sdk.",
+  "description": "A small trading agent that runs on your own server and trades through a Bonded Mandate Vault with @bondedhq/sdk.",
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -12,11 +12,11 @@
     "start": "node dist/main.js"
   },
   "dependencies": {
-    "@bonded/sdk": "workspace:*",
+    "@bondedhq/sdk": "workspace:*",
     "viem": "^2.56.9"
   },
   "devDependencies": {
     "@bonded/sandbox": "workspace:*",
-    "@bonded/shared": "workspace:*"
+    "@bondedhq/shared": "workspace:*"
   }
 }

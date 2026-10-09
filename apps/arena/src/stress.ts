@@ -1,4 +1,4 @@
-import { AGENT_TOOLS, type AgentToolName } from "@bonded/shared";
+import { AGENT_TOOLS, type AgentToolName } from "@bondedhq/shared";
 import type { SentinelRow } from "./dataset.js";
 
 /**

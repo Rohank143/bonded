@@ -1,11 +1,11 @@
 import { ANVIL_KEYS, Sandbox } from "@bonded/sandbox";
-import { BondedVault, buildMandate, fromBondedEnv } from "@bonded/sdk";
+import { BondedVault, buildMandate, fromBondedEnv } from "@bondedhq/sdk";
 import {
   bondedRegistryAbi,
   mandateVaultAbi,
   mandateVaultFactoryAbi,
   testTokenAbi,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { type Abi, type Address, parseUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
