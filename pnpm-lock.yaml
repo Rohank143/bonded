@@ -24,7 +24,7 @@ importers:
         specifier: ^3.9.9
         version: 3.9.9
       railway:
-        specifier: 3.11.0
+        specifier: ^3.11.0
         version: 3.11.0
       turbo:
         specifier: ^2.11.4
