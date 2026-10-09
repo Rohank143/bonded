@@ -66,7 +66,13 @@ export interface CheckResult {
    * The code version, when the transport reported one: the runner's computed code hash, or
    * keccak256("url:" + version) from an agent URL's verify answer.
    */
-  code?: { hash: `0x${string}`; source: string; version?: string };
+  code?: {
+    hash: `0x${string}`;
+    source: string;
+    version?: string;
+    /** Who said so: the runner or the agent URL. Never verified; show it as reported. */
+    reportedBy: "runner" | "agent";
+  };
 }
 
 export interface ConnectionCheckOptions {
@@ -136,7 +142,12 @@ export async function runConnectionCheck(options: ConnectionCheckOptions): Promi
     const verified = await gateway.agentUrls.verify(transport.url, transport.secret);
     if (!verified.ok) return early(verified.problem);
     if (verified.codeHash && verified.version)
-      code = { hash: verified.codeHash, source: "url", version: verified.version };
+      code = {
+        hash: verified.codeHash,
+        source: "url",
+        version: verified.version,
+        reportedBy: "agent",
+      };
   }
 
   const tally = {
@@ -203,11 +214,13 @@ export async function runConnectionCheck(options: ConnectionCheckOptions): Promi
   const warnings: string[] = [];
   const seconds = Math.round(timeoutMs / 1000);
 
-  // How it ended. A URL that refused the episode is the only problem: nothing else ran.
-  if (record?.urlProblem)
+  // How it ended. A URL that refused the episode (or that Bonded couldn't call) is the only
+  // problem: nothing else ran.
+  const notRun = record?.urlProblem ?? record?.bondedProblem;
+  if (notRun)
     return finish({
       passed: false,
-      problems: [record.urlProblem],
+      problems: [notRun],
       warnings: [],
       taskCompleted: null,
       toolsCalled: tally.tools,

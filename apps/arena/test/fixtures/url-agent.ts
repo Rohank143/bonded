@@ -2,6 +2,7 @@ import { createServer, type Server } from "node:http";
 import {
   type AgentUrlMessage,
   AgentUrlReplayGuard,
+  answerAgentUrlVerify,
   type ArenaAgent,
   type DoneRequest,
   type EpisodeMessage,
@@ -27,6 +28,8 @@ export interface UrlAgentOptions {
   version?: string;
   /** Answer episodes with this status instead of 202 (and run nothing). */
   episodeStatus?: number;
+  /** Wait this long before answering an episode (the work starts after the answer). */
+  answerDelayMs?: number;
 }
 
 export interface UrlAgent {
@@ -85,13 +88,10 @@ export async function urlAgent(options: UrlAgentOptions): Promise<UrlAgent> {
         const message = checked.message;
         state.received.push(message);
         if (message.type === "verify") {
-          res.writeHead(200, { "content-type": "application/json" });
-          res.end(
-            JSON.stringify({
-              challenge: message.challenge,
-              ...(options.version ? { version: options.version } : {}),
-            }),
-          );
+          void answerAgentUrlVerify(options.secret, message, options.version).then((answer) => {
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(JSON.stringify(answer));
+          });
           return;
         }
         if (message.type === "cancel") {
@@ -103,8 +103,10 @@ export async function urlAgent(options: UrlAgentOptions): Promise<UrlAgent> {
           res.writeHead(options.episodeStatus).end();
           return;
         }
-        res.writeHead(202).end();
-        void Promise.resolve(run(message)).catch(() => {});
+        setTimeout(() => {
+          res.writeHead(202).end();
+          void Promise.resolve(run(message)).catch(() => {});
+        }, options.answerDelayMs ?? 0);
       });
     });
   });
