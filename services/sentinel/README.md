@@ -7,7 +7,7 @@ Laya's own HTTP server (`laya.serve`, pinned `laya[serve]==0.3.21`) serving Bond
 - `GET /health`: status, loaded checkpoint and revision, and whether it computes on CPU or GPU.
 - `POST /v1/systemone`: `{"state": …, "questions": …, "model": "typed-decisions"}` with `Authorization: Bearer <LAYA_API_KEY>`. Returns one typed answer with probabilities for each question.
 
-Callers don't build requests by hand. `LayaSentinel` in `@bonded/demo-agents` sends the exact state and questions the model trained on (`sentinelState` and `sentinelQuestions` in `@bonded/shared`).
+Callers don't build requests by hand. `LayaSentinel` in `@bonded/demo-agents` sends the exact state and questions the model trained on (`sentinelState` and `sentinelQuestions` in `@bondedhq/shared`).
 
 ## Configuration
 

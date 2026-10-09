@@ -14,7 +14,7 @@ An agent is an AI (or a script) that manages money for someone. In Bonded it has
 
 The vault is the judge. Every write the agent makes goes through `MandateVault.execute`, which checks it against the mandate and records any breach on chain. In **Monitor** mode a breach goes through and is recorded; in **Enforce** mode it is blocked and still recorded. That record decides ratings and pays claims. No AI decides whether an agent broke its rules.
 
-In code an agent implements one interface, `ArenaAgent` from `@bonded/shared`:
+In code an agent implements one interface, `ArenaAgent` from `@bondedhq/shared`:
 
 ```ts
 interface ArenaAgent {

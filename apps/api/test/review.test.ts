@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vite
 import { ANVIL_KEYS } from "@bonded/arena";
 import { AgentNotConfiguredError } from "@bonded/db";
 import { connectChain, Keeper, type ServiceChain } from "@bonded/keeper";
-import { parseEvmDeployment } from "@bonded/shared";
+import { parseEvmDeployment } from "@bondedhq/shared";
 import { createApi } from "../src/index.js";
 import { postgres } from "./postgres.js";
 

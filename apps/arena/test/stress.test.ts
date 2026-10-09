@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SentinelModel } from "@bonded/demo-agents";
-import { AGENT_TOOLS } from "@bonded/shared";
+import { AGENT_TOOLS } from "@bondedhq/shared";
 import {
   actionRisk,
   buildStressSuite,

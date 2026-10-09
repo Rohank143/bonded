@@ -6,7 +6,7 @@ import {
   teeMeasurement,
   teeReportData,
   toHex32,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 
 /**
  * Checks a TEE-hosted agent's evidence and turns it into the attestation's `teeMeasurement`.

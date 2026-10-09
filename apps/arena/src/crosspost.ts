@@ -6,7 +6,7 @@ import {
   postScoreInstructions,
   registerInstruction,
   type SolanaAttestation,
-} from "@bonded/solana";
+} from "@bondedhq/solana";
 import {
   type Attestation,
   attestationMessage,
@@ -18,7 +18,7 @@ import {
   MODEL_FAMILY_CODE,
   type ModelFamily,
   parseEvmDeployment,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { Connection, type Keypair, sendAndConfirmTransaction, Transaction } from "@solana/web3.js";
 import {
   createPublicClient,

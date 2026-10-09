@@ -1,7 +1,7 @@
 import { useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useReadContracts } from "wagmi";
-import { bondedRegistryAbi, operatorBondAbi, tierForScore } from "@bonded/shared";
+import { bondedRegistryAbi, operatorBondAbi, tierForScore } from "@bondedhq/shared";
 import { apiUrl, deployment } from "../config";
 import { ApiError, api } from "../lib/api";
 import { liveCheckView, teeView } from "../lib/tee";

@@ -1,4 +1,4 @@
-import type { AgentRunSummary, AgentTask, AgentToolbox, ArenaAgent } from "@bonded/shared";
+import type { AgentRunSummary, AgentTask, AgentToolbox, ArenaAgent } from "@bondedhq/shared";
 import { type ActionGuard, GuardedToolbox } from "./hardened/guard.js";
 import { mergeUsage, trackUsage } from "./usage.js";
 
