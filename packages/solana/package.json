@@ -3,6 +3,16 @@
   "version": "0.1.0",
   "description": "TypeScript client for the Bonded Solana programs: IDLs, addresses, account decoding and instructions.",
   "license": "MIT",
+  "keywords": [
+    "bonded",
+    "solana",
+    "anchor",
+    "mandate-vault"
+  ],
+  "homepage": "https://github.com/ddboy19912/bonded/tree/main/packages/solana#readme",
+  "bugs": {
+    "url": "https://github.com/ddboy19912/bonded/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ddboy19912/bonded.git",
@@ -18,8 +28,14 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/**/*.map",
+    "README.md",
+    "LICENSE"
   ],
+  "engines": {
+    "node": ">=22"
+  },
   "publishConfig": {
     "access": "public"
   },
@@ -29,7 +45,8 @@
     "lint": "eslint src test",
     "test": "vitest run",
     "idls": "node scripts/gen-idls.mjs",
-    "idls:check": "node scripts/gen-idls.mjs --check"
+    "idls:check": "node scripts/gen-idls.mjs --check",
+    "prepack": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
     "@anchor-lang/core": "^1.2.0",
