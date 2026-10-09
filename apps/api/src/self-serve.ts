@@ -36,6 +36,7 @@ import {
 } from "viem";
 import { RateLimiter, clientAddress } from "./rate-limit.js";
 import { Refused, handle } from "./refused.js";
+import type { AgentStatusReader } from "./agent-status.js";
 import { SECRET_KEY_MISSING } from "./secrets.js";
 import { NEEDS_CHECK, codeInfo, publicCheckSummary } from "./connections.js";
 import {
@@ -153,6 +154,8 @@ export function selfServeRoutes(
      * registry is still asked who owns the agent, each time.
      */
     wallet?: (c: Context) => Promise<string>;
+    /** Reads the registered vault's trading, gas and cover from the chain (agent-status.ts). */
+    status?: AgentStatusReader;
   },
 ) {
   const { db, chain } = options;
@@ -334,8 +337,18 @@ export function selfServeRoutes(
       const fromPreview =
         config.kind === REMOTE_KIND ? await db.previewUpgradedTo(rowId(agentId)) : undefined;
       const last = record.last_rating_at?.getTime();
+      const vault = (record.config as { vault?: string }).vault;
+      // Public chain data about the registered vault (cached briefly): never fails the page.
+      const onchain =
+        vault && options.status ? await options.status.read(vault).catch(() => null) : null;
       return c.json({
         registered: true,
+        // The vault's (or module's) trades through execute, the agent key's gas and the cover.
+        vaultActivity: onchain?.vaultActivity ?? null,
+        coverWithoutVaultTrades: onchain?.coverWithoutVaultTrades ?? false,
+        agentGas: onchain?.agentGas ?? null,
+        cover: onchain?.cover ?? null,
+        frozen: onchain?.frozen ?? null,
         source: record.source,
         kind: config.kind,
         sentinel: config.sentinel === true,

@@ -4,7 +4,12 @@ import {
   type AgentUrlClient,
   type ArenaGateway,
 } from "@bonded/arena";
-import { agentUrlCodeHash, type AgentMode } from "@bondedhq/shared";
+import {
+  agentUrlCodeHash,
+  problemCode,
+  type AgentMode,
+  type TradingSummary,
+} from "@bondedhq/shared";
 import type { ConnectionCheckRecord, RatedCode } from "@bonded/db";
 import type { Hex } from "viem";
 
@@ -57,6 +62,34 @@ export interface ConnectionCheckResult {
   /** The code hash the runner or URL reported during the check, when it did. */
   codeHash?: string;
   codeSource?: string;
+  /** Problems and warnings with their troubleshooting codes. */
+  issues?: CheckIssue[];
+  /** What the agent traded without breaking a rule (for the suggested mandate). */
+  trading?: TradingSummary;
+}
+
+/** A check's problem or warning with its stable code (`PROBLEMS` in @bondedhq/shared). */
+export interface CheckIssue {
+  code: string;
+  severity: "problem" | "warning";
+  message: string;
+}
+
+/** The coded problems and warnings of a check result (older results have none stored). */
+export function checkIssuesOf(result: Partial<ConnectionCheckResult> | null): CheckIssue[] {
+  if (result?.issues) return result.issues;
+  return [
+    ...(result?.problems ?? []).map((text) => ({
+      code: problemCode(text),
+      severity: "problem" as const,
+      message: text,
+    })),
+    ...(result?.warnings ?? []).map((text) => ({
+      code: problemCode(text),
+      severity: "warning" as const,
+      message: text,
+    })),
+  ];
 }
 
 /** One check to run: the connection, the mode, its time budget, and where its events go. */
@@ -118,6 +151,8 @@ export function gatewayCheckRunner(gateway: ArenaGateway): ConnectionCheckRunner
       surfacesRead: [...result.surfacesRead],
       ...(result.usage ? { usage: result.usage } : {}),
       ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
+      ...(result.issues ? { issues: result.issues } : {}),
+      ...(result.trading ? { trading: result.trading } : {}),
       ...(result.code
         ? {
             codeHash: result.code.hash,
@@ -207,6 +242,7 @@ export function checkSummary(k: ConnectionCheckRecord) {
         : null,
     problems: result?.problems ?? [],
     warnings: result?.warnings ?? [],
+    issues: checkIssuesOf(result),
   };
 }
 

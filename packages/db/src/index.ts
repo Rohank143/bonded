@@ -427,7 +427,42 @@ export interface NotificationSettingsRecord {
   webhookUrl: string | null;
   webhookSecretCiphertext: string | null;
   email: string | null;
+  /** Notification types the owner turned off (0022). */
+  muted: string[];
   updatedAt: Date;
+}
+
+/** Steps of the funnel counted per day (0022, `GET /stats/funnel`). */
+export const FUNNEL_STEPS = [
+  "preview_started",
+  "check_passed",
+  "preview_done",
+  "onboarded",
+  "first_vault_trade",
+  "cover_bought",
+] as const;
+export type FunnelStep = (typeof FUNNEL_STEPS)[number];
+
+/** A vault's trades through `execute`, as the keeper indexed them (0022). */
+export interface VaultActivity {
+  firstTradeAt: Date | null;
+  lastTradeAt: Date | null;
+  trades24h: number;
+  trades7d: number;
+  total: number;
+  lastTxHash: string | null;
+  /** Median gas of its last 20 trades, when any recorded it. */
+  medianGas: bigint | null;
+}
+
+/** One notification in an owner's in-app list (0022). */
+export interface InboxItem {
+  id: string;
+  type: string;
+  subject: string | null;
+  payload: Record<string, unknown>;
+  createdAt: Date;
+  readAt: Date | null;
 }
 
 /** Limits on preview ratings, counted over the last 24 hours. */
@@ -557,6 +592,7 @@ export class Database {
       "0019_sentinel_cascade.sql",
       "0020_previews_and_checks.sql",
       "0021_notifications.sql",
+      "0022_launch_round.sql",
     ];
     await this.transaction(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(7001)");
@@ -746,9 +782,10 @@ export class Database {
     const r = await this.pool.query(
       `INSERT INTO agents(id,chain_id,agent_id,config,enabled,source,owner) VALUES($1,$2,$3,$4,true,'user',$5)
        ON CONFLICT(id) DO UPDATE SET config=$4,enabled=true,owner=$5 WHERE agents.source='user'
-       RETURNING id`,
+       RETURNING (xmax = 0) AS inserted`,
       [`${chainId}:${agentId}`, chainId, agentId, json(config), owner.toLowerCase()],
     );
+    if (r.rows[0]?.inserted) await this.countFunnel("onboarded");
     return r.rowCount === 1;
   }
   /** An agent's row: where its config came from, its owner and config, and its latest rating. */
@@ -2253,6 +2290,7 @@ export class Database {
           new Date(quota.nowMs),
         ],
       );
+      await this.countFunnel("preview_started", c);
       return previewRow(r.rows[0]);
     });
   }
@@ -2492,6 +2530,7 @@ export class Database {
         status === "queued" ? "queued" : outcome.status,
         outcome.error ?? null,
       ]);
+      if (status === "done") await this.countFunnel("preview_done", c);
       return status;
     });
   }
@@ -2792,7 +2831,9 @@ export class Database {
         code?.source ?? null,
       ],
     );
-    return (r.rowCount ?? 0) > 0;
+    const finished = (r.rowCount ?? 0) > 0;
+    if (finished && result.passed) await this.countFunnel("check_passed");
+    return finished;
   }
 
   /** An owner's notification settings, if they saved any. */
@@ -2808,6 +2849,7 @@ export class Database {
           webhookUrl: row.webhook_url,
           webhookSecretCiphertext: row.webhook_secret_ciphertext,
           email: row.email,
+          muted: row.muted ?? [],
           updatedAt: row.updated_at,
         }
       : undefined;
@@ -2819,17 +2861,19 @@ export class Database {
       webhookUrl?: string | null;
       webhookSecretCiphertext?: string | null;
       email?: string | null;
+      muted?: string[];
     },
   ): Promise<NotificationSettingsRecord> {
     const has = (k: keyof typeof patch) => Object.hasOwn(patch, k);
     await this.pool.query(
-      `INSERT INTO notification_settings(owner,webhook_url,webhook_secret_ciphertext,email)
-       VALUES($1,$2,$3,$4)
+      `INSERT INTO notification_settings(owner,webhook_url,webhook_secret_ciphertext,email,muted)
+       VALUES($1,$2,$3,$4,$9)
        ON CONFLICT(owner) DO UPDATE SET
          webhook_url=CASE WHEN $5 THEN EXCLUDED.webhook_url ELSE notification_settings.webhook_url END,
          webhook_secret_ciphertext=CASE WHEN $6 THEN EXCLUDED.webhook_secret_ciphertext
                                         ELSE notification_settings.webhook_secret_ciphertext END,
          email=CASE WHEN $7 THEN EXCLUDED.email ELSE notification_settings.email END,
+         muted=CASE WHEN $8 THEN EXCLUDED.muted ELSE notification_settings.muted END,
          updated_at=now()`,
       [
         owner.toLowerCase(),
@@ -2839,6 +2883,8 @@ export class Database {
         has("webhookUrl"),
         has("webhookSecretCiphertext"),
         has("email"),
+        has("muted"),
+        patch.muted ?? [],
       ],
     );
     return (await this.notificationSettings(owner))!;
@@ -2851,6 +2897,155 @@ export class Database {
     );
     return (r.rowCount ?? 0) > 0;
   }
+  /**
+   * Record a notification for an owner's in-app list. Returns its id the first time its
+   * `dedupeKey` is seen, undefined after (so it is sent once).
+   */
+  async addNotification(n: {
+    owner: string;
+    type: string;
+    dedupeKey: string;
+    subject?: string | null;
+    payload: unknown;
+  }): Promise<string | undefined> {
+    const r = await this.pool.query(
+      `INSERT INTO owner_notifications(owner,type,dedupe_key,subject,payload) VALUES($1,$2,$3,$4,$5)
+       ON CONFLICT(dedupe_key) DO NOTHING RETURNING id`,
+      [n.owner.toLowerCase(), n.type, n.dedupeKey, n.subject ?? null, json(n.payload)],
+    );
+    return r.rows[0]?.id as string | undefined;
+  }
+  /** Whether a notification with this key was recorded. */
+  async notified(dedupeKey: string): Promise<boolean> {
+    const r = await this.pool.query("SELECT 1 FROM owner_notifications WHERE dedupe_key=$1", [
+      dedupeKey,
+    ]);
+    return (r.rowCount ?? 0) > 0;
+  }
+  /** An owner's notifications, newest first, `before` an id for the next page. */
+  async inbox(
+    owner: string,
+    options: { limit?: number; before?: string; unread?: boolean } = {},
+  ): Promise<{ items: InboxItem[]; unread: number }> {
+    const limit = Math.min(Math.max(options.limit ?? 25, 1), 100);
+    const [items, unread] = await Promise.all([
+      this.pool.query(
+        `SELECT * FROM owner_notifications WHERE owner=$1 AND ($2::bigint IS NULL OR id<$2)
+           AND (NOT $4 OR read_at IS NULL)
+         ORDER BY id DESC LIMIT $3`,
+        [owner.toLowerCase(), options.before ?? null, limit, options.unread === true],
+      ),
+      this.pool.query(
+        "SELECT count(*)::int AS n FROM owner_notifications WHERE owner=$1 AND read_at IS NULL",
+        [owner.toLowerCase()],
+      ),
+    ]);
+    return {
+      items: items.rows.map((row) => ({
+        id: String(row.id),
+        type: row.type,
+        subject: row.subject,
+        payload: row.payload,
+        createdAt: row.created_at,
+        readAt: row.read_at,
+      })),
+      unread: unread.rows[0].n,
+    };
+  }
+  /** Mark an owner's notifications read: these ids, or all of them up to `through`. */
+  async markInboxRead(owner: string, ids: readonly string[] | { through: string }) {
+    const r = Array.isArray(ids)
+      ? await this.pool.query(
+          "UPDATE owner_notifications SET read_at=now() WHERE owner=$1 AND id=ANY($2::bigint[]) AND read_at IS NULL",
+          [owner.toLowerCase(), ids],
+        )
+      : await this.pool.query(
+          "UPDATE owner_notifications SET read_at=now() WHERE owner=$1 AND id<=$2 AND read_at IS NULL",
+          [owner.toLowerCase(), (ids as { through: string }).through],
+        );
+    return r.rowCount ?? 0;
+  }
+  /** Drop notifications older than `before`. */
+  async pruneNotifications(before: Date): Promise<number> {
+    const r = await this.pool.query("DELETE FROM owner_notifications WHERE created_at<$1", [
+      before,
+    ]);
+    return r.rowCount ?? 0;
+  }
+
+  /** Count one funnel step today (UTC). Counters only: nothing about who. */
+  async countFunnel(step: FunnelStep, c: pg.Pool | Connection = this.pool, at = new Date()) {
+    await c.query(
+      `INSERT INTO funnel_daily(day,step,count) VALUES(($1::timestamptz AT TIME ZONE 'UTC')::date,$2,1)
+       ON CONFLICT(day,step) DO UPDATE SET count=funnel_daily.count+1`,
+      [at, step],
+    );
+  }
+  /** Daily funnel counts for the last `days` days (UTC), oldest first; missing days are zeros. */
+  async funnel(days: number, now = new Date()) {
+    const r = await this.pool.query(
+      `SELECT to_char(d.day,'YYYY-MM-DD') AS day, s.step, coalesce(f.count,0)::int AS count
+       FROM generate_series((($2::timestamptz AT TIME ZONE 'UTC')::date - ($1::int - 1)),
+                            ($2::timestamptz AT TIME ZONE 'UTC')::date, interval '1 day') AS d(day)
+       CROSS JOIN unnest($3::text[]) AS s(step)
+       LEFT JOIN funnel_daily f ON f.day=d.day::date AND f.step=s.step
+       ORDER BY d.day, s.step`,
+      [days, now, [...FUNNEL_STEPS]],
+    );
+    const byDay = new Map<string, Record<FunnelStep, number>>();
+    for (const row of r.rows) {
+      const counts =
+        byDay.get(row.day) ??
+        (Object.fromEntries(FUNNEL_STEPS.map((s) => [s, 0])) as Record<FunnelStep, number>);
+      counts[row.step as FunnelStep] = row.count;
+      byDay.set(row.day, counts);
+    }
+    return [...byDay.entries()].map(([day, counts]) => ({ day, ...counts }));
+  }
+
+  /** A vault's (or module's) trades through `execute`, from the keeper's index. */
+  async vaultActivity(chainId: number, vault: string, now = new Date()): Promise<VaultActivity> {
+    const r = await this.pool.query(
+      `SELECT min(occurred_at) AS first, max(occurred_at) AS last, count(*)::int AS total,
+         count(*) FILTER (WHERE occurred_at > $3::timestamptz - interval '24 hours')::int AS day,
+         count(*) FILTER (WHERE occurred_at > $3::timestamptz - interval '7 days')::int AS week,
+         (SELECT tx_hash FROM vault_trades WHERE chain_id=$1 AND vault=$2 ORDER BY occurred_at DESC, id DESC LIMIT 1) AS tx,
+         (SELECT percentile_disc(0.5) WITHIN GROUP (ORDER BY g.gas_used) FROM
+            (SELECT gas_used FROM vault_trades WHERE chain_id=$1 AND vault=$2 AND gas_used IS NOT NULL
+             ORDER BY occurred_at DESC LIMIT 20) g) AS gas
+       FROM vault_trades WHERE chain_id=$1 AND vault=$2`,
+      [chainId, vault.toLowerCase(), now],
+    );
+    const row = r.rows[0];
+    return {
+      firstTradeAt: row.first,
+      lastTradeAt: row.last,
+      trades24h: row.day,
+      trades7d: row.week,
+      total: row.total,
+      lastTxHash: row.tx,
+      medianGas: row.gas === null || row.gas === undefined ? null : BigInt(row.gas),
+    };
+  }
+  /** The keeper's breaches for a vault (newest first), with their claim state. */
+  async vaultBreaches(chainId: number, vault: string, limit = 20) {
+    const r = await this.pool.query(
+      `SELECT id,breach_id,breach_type,blocked,occurred_at,status,tx_hash,claim_filed_at
+       FROM handled_events WHERE chain_id=$1 AND vault=$2 ORDER BY occurred_at DESC NULLS LAST, id DESC LIMIT $3`,
+      [chainId, vault.toLowerCase(), limit],
+    );
+    return r.rows.map((row) => ({
+      key: row.id as string,
+      breachId: String(row.breach_id),
+      breachType: row.breach_type as number | null,
+      blocked: row.blocked as boolean | null,
+      occurredAt: row.occurred_at as Date | null,
+      status: row.status as string,
+      claimTxHash: row.tx_hash as string | null,
+      claimFiledAt: row.claim_filed_at as Date | null,
+    }));
+  }
+
   /** Close idle clients and wait for borrowed clients to return. Drain streams first. */
   async close() {
     await this.pool.end();

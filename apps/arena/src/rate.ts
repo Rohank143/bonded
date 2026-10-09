@@ -8,7 +8,12 @@ import {
   type AttackSpec,
   AttackSurface,
   type ClassObservation,
+  type BreachEvidence,
   mandateHash,
+  type ReportFix,
+  topFixIds,
+  rankFixes,
+  type TradingSummary,
   type ModelFamily,
   type Scoring,
   type Severity,
@@ -28,10 +33,11 @@ import { SpendingCap } from "./budget.js";
 import { datasetRows, type SentinelRow, writeDataset } from "./dataset.js";
 import { BENIGN_GOALS, type EpisodeResult, runEpisode, saveEpisode } from "./episode.js";
 import { AgentUrlUnavailableError, bondedFailure, RemoteAgent } from "./gateway/remote-agent.js";
-import { episodeOutcome, sawAttack } from "./report.js";
+import { episodeEvidence, episodeOutcome, sawAttack } from "./report.js";
+import { tradingSummary } from "./trades.js";
 import type { Sandbox } from "./sandbox.js";
 import type { VerifiedTee } from "./tee.js";
-import { type AgentVaultOptions, createAgentVault } from "./vault.js";
+import { type AgentVaultOptions, createAgentVault, marketTokens } from "./vault.js";
 
 /**
  * A full rating (docs/SPECIFICATION.md Sections 8 and 9): run the attack library against an agent, plus
@@ -99,6 +105,12 @@ export interface RatingOptions {
    * Sentinel on is never read as the agent's score alone.
    */
   sentinel?: RatingSentinel;
+  /**
+   * Put the planted text of unpublished attacks in the report's evidence. Only for a held-out set
+   * made for this rating alone (each payload is used once): accepted bounties and the shared
+   * held-out set are reused, so their text stays out (the default).
+   */
+  revealUnpublished?: boolean;
   /** Called after each episode, e.g. for progress output. */
   onEpisode?: (result: EpisodeResult, index: number, total: number) => void | Promise<void>;
   /**
@@ -201,7 +213,23 @@ export interface RatingReport {
   tee: RatingTee | null;
   /** Sentinel in front of the agent, or null without it. Older reports don't have it. */
   sentinel?: RatingSentinel | null;
+  /**
+   * Each breach (worst episodes first, at most EVIDENCE_LIMIT): the attack and the exact planted
+   * text (published attacks and a held-out set made for this rating alone), the agent's action,
+   * the breach type and loss, and fix ids from the shared table (`fixesFor` in @bondedhq/shared).
+   * The report is written only once the rating is over. Older reports don't have it.
+   */
+  evidence?: BreachEvidence[];
+  /** Every fix the evidence lists, with how many breaches it addresses (`rankFixes`). */
+  fixes?: ReportFix[];
+  /** The ids of the three fixes that address the most breaches. */
+  topFixes?: string[];
+  /** What the agent did without breaching, over every episode: for a suggested mandate. */
+  trading?: TradingSummary;
 }
+
+/** Breaches a report gives evidence for. */
+export const EVIDENCE_LIMIT = 50;
 
 /** Per attack surface: how often it was attacked, and how often the agent read it. */
 export interface RatingCoverage {
@@ -513,6 +541,24 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
       : {}),
   });
   const modelFamily = options.modelFamily ?? modelFamilyOf(options.agent.name);
+  const market = { tokens: marketTokens(sandbox), router: sandbox.deployment.router };
+  const evidence = episodes
+    .filter((e) => e.verdict.breached)
+    .sort((a, b) => b.verdict.totalLossUsd - a.verdict.totalLossUsd)
+    .flatMap((e) =>
+      episodeEvidence(e, {
+        showText:
+          e.attackId === null ||
+          !options.unpublished?.has(e.attackId) ||
+          options.revealUnpublished === true,
+        unpublished: e.attackId !== null && options.unpublished?.has(e.attackId) === true,
+        market,
+        mode,
+        sentinel: Boolean(options.sentinel),
+      }),
+    )
+    .slice(0, EVIDENCE_LIMIT);
+  const fixes = rankFixes(evidence);
   const controlEpisodes = episodes.filter((e) => e.attackId === null);
   const report: RatingReport = {
     version: 1,
@@ -576,6 +622,10 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
         }
       : null,
     sentinel: options.sentinel ?? null,
+    evidence,
+    fixes,
+    topFixes: topFixIds(fixes),
+    trading: tradingSummary(episodes.flatMap((e) => e.trades ?? [])),
   };
 
   const reportJson = `${JSON.stringify(report, null, 2)}\n`;
@@ -885,6 +935,22 @@ export function renderReportMarkdown(
       ? ["None: no class breached."]
       : report.mitigations.map((m) => `- ${m}`)),
     "",
+    ...(report.fixes?.length
+      ? [
+          "## Top fixes",
+          "",
+          ...report.fixes
+            .slice(0, 3)
+            .map(
+              (f) =>
+                `- ${f.title} (addresses ${f.prevents} breach${f.prevents === 1 ? "" : "es"}): ${f.detail}` +
+                (f.promptLine ? ` Line to add: "${f.promptLine}"` : ""),
+            ),
+          "",
+          "Fixes come from a fixed table by attack class and breach type, not from a model. Rate again to see whether they work.",
+          "",
+        ]
+      : []),
     "## Attestation",
     "",
     `- Report hash: \`${reportHash}\``,

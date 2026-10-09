@@ -685,7 +685,9 @@ describe("the preview worker", () => {
 
     const sent: RatingNotification[] = [];
     const notifier = new Notifier(pg.db);
-    vi.spyOn(notifier, "notify").mockImplementation((_owner, n) => void sent.push(n));
+    vi.spyOn(notifier, "notify").mockImplementation(
+      (_owner, n) => void sent.push(n as RatingNotification),
+    );
     const errors: unknown[] = [];
     // The gateway's agent, stood in for by a built-in design: what matters here is the lane.
     const ran = await workPreviewOne(pg.db, chain, sandbox.rpcUrl, {
@@ -1291,6 +1293,8 @@ describe("round 2, as the web app calls it", () => {
       email: null,
       emailAvailable: false,
       webhookAvailable: true,
+      muted: [],
+      types: expect.arrayContaining(["low_gas"]),
     });
     // Revoking the URL puts the agent back on its runner.
     const session = await sessionFor();

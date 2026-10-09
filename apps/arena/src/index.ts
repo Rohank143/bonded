@@ -37,6 +37,7 @@ export {
   episodeOutcome,
   type EpisodeDetail,
   episodeDetail,
+  episodeEvidence,
   publicEpisode,
   type Ruling,
   rulingOf,
@@ -44,6 +45,14 @@ export {
   summarise,
 } from "./report.js";
 export { ArenaToolbox, type TraceStep } from "./toolbox.js";
+export {
+  type ArenaMarket,
+  decodeVaultCall,
+  type ObservedTrade,
+  observeTrades,
+  stepAction,
+  tradingSummary,
+} from "./trades.js";
 export {
   type AgentVault,
   type AgentVaultOptions,
@@ -124,6 +133,7 @@ export {
   type RatingResult,
   rateAgent,
   renderReportMarkdown,
+  EVIDENCE_LIMIT,
 } from "./rate.js";
 export {
   entryFromRating,
@@ -181,4 +191,5 @@ export {
   type CheckResult,
   type ConnectionCheckOptions,
   runConnectionCheck,
+  checkIssues,
 } from "./check.js";
