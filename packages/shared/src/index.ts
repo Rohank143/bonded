@@ -29,3 +29,4 @@ export * from "./problems.js";
 export * from "./report-fixes.js";
 export * from "./suggested-mandate.js";
 export * from "./notifications.js";
+export * from "./troubleshooting-doc.js";

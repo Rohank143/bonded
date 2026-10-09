@@ -15,6 +15,7 @@
     "test": "turbo run test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "docs:troubleshooting": "pnpm --filter @bondedhq/shared docs:troubleshooting",
     "contracts:build": "cd contracts/evm && forge build",
     "contracts:test": "cd contracts/evm && forge test -vvv",
     "contracts:deploy": "contracts/evm/script/deploy.sh",
