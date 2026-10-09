@@ -1,4 +1,9 @@
-import { EvmMandate, demoRouterAbi, type EvmDeployment, type SelfServeKind } from "@bondedhq/shared";
+import {
+  EvmMandate,
+  demoRouterAbi,
+  type EvmDeployment,
+  type SelfServeKind,
+} from "@bondedhq/shared";
 import { getAbiItem, isAddress, toFunctionSelector } from "viem";
 import { parseUsd } from "./format";
 
