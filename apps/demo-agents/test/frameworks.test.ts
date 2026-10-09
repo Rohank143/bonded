@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { AIMessage, type BaseMessage } from "@langchain/core/messages";
 import type { ChatResult } from "@langchain/core/outputs";
-import { AGENT_TOOL_NAMES, AGENT_TOOLS, type AgentTask, type AgentToolbox } from "@bonded/shared";
+import { AGENT_TOOL_NAMES, AGENT_TOOLS, type AgentTask, type AgentToolbox } from "@bondedhq/shared";
 import {
   AGENTKIT_ANALYTICS_HOST,
   AGENTKIT_TEMPLATE_PROMPT,

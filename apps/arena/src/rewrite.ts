@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { ChatClient } from "@bonded/shared";
+import type { ChatClient } from "@bondedhq/shared";
 import { SpendingCap } from "./budget.js";
 import { type ContrastRow, hasUntrainedMarker } from "./contrast.js";
 import { plantedOrders } from "./dataset.js";

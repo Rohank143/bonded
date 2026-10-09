@@ -6,7 +6,7 @@ import {
   type ChatClient,
   llmConfigFromEnv,
   OpenAICompatibleClient,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { runToolLoop } from "../llm-loop.js";
 
 /**

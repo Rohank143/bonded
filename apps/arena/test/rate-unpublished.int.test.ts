@@ -1,4 +1,4 @@
-import type { AgentRunSummary, ArenaAgent } from "@bonded/shared";
+import type { AgentRunSummary, ArenaAgent } from "@bondedhq/shared";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { loadAttackLibrary, rateAgent, Sandbox } from "../src/index.js";
 

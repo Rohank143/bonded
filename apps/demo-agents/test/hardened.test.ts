@@ -1,4 +1,4 @@
-import type { ChatClient, ChatResponse, ToolCall } from "@bonded/shared";
+import type { ChatClient, ChatResponse, ToolCall } from "@bondedhq/shared";
 import { describe, expect, it } from "vitest";
 import {
   type ActionGuard,

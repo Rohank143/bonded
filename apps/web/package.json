@@ -12,7 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@bonded/shared": "workspace:*",
+    "@bondedhq/shared": "workspace:*",
     "@fontsource-variable/inter": "5.3.0",
     "@fontsource-variable/jetbrains-mono": "5.3.0",
     "@rainbow-me/rainbowkit": "2.2.11",

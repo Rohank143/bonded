@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BountySpecError } from "@bonded/shared";
+import { BountySpecError } from "@bondedhq/shared";
 import { loadAttackLibrary } from "../src/attacks.js";
 import { draftPrompt, heldOutId, isHeldOutId, specFromDraft } from "../src/held-out.js";
 

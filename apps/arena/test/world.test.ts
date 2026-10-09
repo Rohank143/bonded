@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ATTACK_CLASSES } from "@bonded/shared";
+import { ATTACK_CLASSES } from "@bondedhq/shared";
 import {
   ATTACK_PLACEHOLDERS,
   loadAttackLibrary,

@@ -58,7 +58,7 @@ The runs on Bonded's side use a different benign task each time, so a local brea
 
 ## Flow
 
-1. **Write the attack** in the library's YAML format (`attacks/<class>/*.yaml`, schema `AttackSpec` in `@bonded/shared`).
+1. **Write the attack** in the library's YAML format (`attacks/<class>/*.yaml`, schema `AttackSpec` in `@bondedhq/shared`).
 2. **Commit** on `BountyBoard`: `commit(keccak256(abi.encode(hunter, specURI, salt)))`. Here `specURI` is `sha256:<hex>`, the hash of the exact YAML text. The commitment timestamps the attack without revealing it, and the hunter's address is part of it, so nobody else can reveal a copied commitment.
 3. **Reveal** on `BountyBoard`: `reveal(id, specURI, salt)`, from the hunter's address.
 4. **Send the YAML** to `POST /bounties/:id/reveal`. No operator token is needed. The API takes the spec only if the submission is revealed on chain and the body's sha256 matches the revealed `specURI`. Posting the same submission again just returns its status.

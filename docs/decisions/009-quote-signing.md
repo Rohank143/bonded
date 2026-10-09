@@ -6,7 +6,7 @@
 
 ## Context
 
-Day 6 produced a signed attestation: score, expected loss, report hash. To bind cover, `CoverManager.buyCover(quote, signature)` needs a second signed message, the quote (plan Section 6.4). Quote signing was deferred from Day 6 to Day 7. The API (`POST /quotes`), the Arena worker and the Gate 1 end-to-end run all need it, so it lives in `@bonded/shared` next to the EIP-712 types.
+Day 6 produced a signed attestation: score, expected loss, report hash. To bind cover, `CoverManager.buyCover(quote, signature)` needs a second signed message, the quote (plan Section 6.4). Quote signing was deferred from Day 6 to Day 7. The API (`POST /quotes`), the Arena worker and the Gate 1 end-to-end run all need it, so it lives in `@bondedhq/shared` next to the EIP-712 types.
 
 ## Decisions
 

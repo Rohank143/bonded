@@ -4,7 +4,7 @@ Plan reference: docs/PLAN.md Section 20, Day 6. Design record: `docs/decisions/0
 
 ## Done
 
-- **Actuarial model** (`@bonded/shared`, `scoreRating`): Section 9 exactly.
+- **Actuarial model** (`@bondedhq/shared`, `scoreRating`): Section 9 exactly.
   - **Breach rate:** the 90% upper credible bound, solved exactly.
   - **Groups:** λ per class group.
   - **Severity:** measured or prior, whichever is larger, with the prior capped in Enforce mode.
@@ -51,7 +51,7 @@ The reports render as Markdown with per-group λ, b, s and expected loss, per-cl
 
 On a fresh clone: format check, `abis:check`, typecheck, lint, all tests, `forge fmt --check` and `forge test` all pass.
 
-- **`@bonded/shared`:** 80 (14 new). They cover the Beta bound against closed forms, the worked example, grouping, severity rules including the Enforce cap, untested groups priced as CCC, and the bond discount.
+- **`@bondedhq/shared`:** 80 (14 new). They cover the Beta bound against closed forms, the worked example, grouping, severity rules including the Enforce cap, untested groups priced as CCC, and the bond discount.
 - **`@bonded/demo-agents`:** 45 (30 new):
   - the policy guard's allowlists, caps and tokens
   - the guard sees untrusted inputs
