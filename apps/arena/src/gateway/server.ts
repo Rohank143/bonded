@@ -22,7 +22,9 @@ import {
   toolSurface,
 } from "@bonded/shared";
 import { type WebSocket, WebSocketServer } from "ws";
+import { publicAddress } from "../safe-fetch.js";
 import type { ArenaToolbox } from "../toolbox.js";
+import { AgentUrlClient, type AgentUrlClientOptions } from "./agent-url.js";
 import { serveMcp } from "./mcp.js";
 import { handleRpc, type RpcBinding, RpcBudget } from "./rpc.js";
 import {
@@ -179,6 +181,11 @@ export interface GatewayOptions {
   clientVersion?: string;
   log?: (message: string) => void;
   limits?: Partial<GatewayLimits>;
+  /**
+   * Agent URL mode: how the gateway calls agents' own endpoints (gateway/agent-url.ts). The
+   * gateway's own URL is always refused as an agent URL.
+   */
+  agentUrl?: AgentUrlClientOptions;
 }
 
 /** One tool call as the gateway saw it. */
@@ -189,6 +196,22 @@ export interface ToolRead {
   ok: boolean;
   at: number;
 }
+
+/**
+ * What an episode's agent did, as it happens: each tool call, and in chain mode each transaction
+ * it sent (or tried to). For a connection check's live view; a rating never shows these while it
+ * runs.
+ */
+export type EpisodeActivity =
+  | {
+      type: "tool";
+      name: string;
+      /** The attack surface the tool reads, or null for a write or a lookup. */
+      surface: AttackSurface | null;
+      ok: boolean;
+      error?: string;
+    }
+  | { type: "tx"; ok: boolean; reason?: string };
 
 type RunnerMessageListener = (message: RunnerToServer) => void;
 
@@ -218,6 +241,14 @@ export class RunnerSession {
 
   get closed(): string | undefined {
     return this.closedReason;
+  }
+
+  /** The code hash the runner worked out and its source, when it reported one in hello. */
+  get code(): { hash: `0x${string}`; source: NonNullable<HelloMessage["codeSource"]> } | undefined {
+    const hello = this.hello;
+    return hello?.codeHash
+      ? { hash: hello.codeHash, source: hello.codeSource ?? "unpinned" }
+      : undefined;
   }
 
   send(message: ServerToRunner): boolean {
@@ -278,6 +309,7 @@ export class GatewayEpisode {
   private gas: RpcBudget | undefined;
   private requests: RpcBudget | undefined;
   private finish!: (body: DoneRequest) => void;
+  private readonly activityListeners = new Set<(activity: EpisodeActivity) => void>();
   private openGate!: () => void;
   private readonly gate: Promise<void>;
 
@@ -366,14 +398,45 @@ export class GatewayEpisode {
     return this.budget;
   }
 
+  /** Listens to the episode's tool calls and transactions as they happen. */
+  onActivity(listener: (activity: EpisodeActivity) => void): () => void {
+    this.activityListeners.add(listener);
+    return () => this.activityListeners.delete(listener);
+  }
+
+  /** @internal */
+  emitActivity(activity: EpisodeActivity): void {
+    for (const listener of [...this.activityListeners]) {
+      try {
+        listener(activity);
+      } catch {
+        // A listener's failure is its own.
+      }
+    }
+  }
+
   /** A tool call from MCP or HTTP: logged with its surface, then run by the toolbox. */
   async callTool(name: string, args: unknown): Promise<ToolResult> {
     if (this.closed || this.finished) return { ok: false, error: "the episode is over" };
-    if (this.mode === "chain" && isAgentToolName(name) && AGENT_TOOLS[name].writes)
+    const surface = toolSurface(name) ?? null;
+    if (this.mode === "chain" && isAgentToolName(name) && AGENT_TOOLS[name].writes) {
+      this.emitActivity({ type: "tool", name, surface, ok: false, error: CHAIN_MODE_WRITE });
       return { ok: false, error: CHAIN_MODE_WRITE };
+    }
     const result = await this.spec.toolbox.call(name, args);
-    const surface = toolSurface(name);
-    this.reads.push({ tool: name, ...(surface ? { surface } : {}), ok: result.ok, at: Date.now() });
+    this.reads.push({
+      tool: name,
+      ...(surface ? { surface } : {}),
+      ok: result.ok,
+      at: Date.now(),
+    });
+    this.emitActivity({
+      type: "tool",
+      name,
+      surface,
+      ok: result.ok,
+      ...(result.ok ? {} : { error: result.error.slice(0, 500) }),
+    });
     return result;
   }
 }
@@ -410,11 +473,24 @@ export class ArenaGateway {
   /** Token hashes that passed a check, with when (oldest first, bounded). */
   private readonly validTokens = new Map<string, number>();
   private readonly log: (message: string) => void;
+  /** Calls agents' own URLs (Agent URL mode), with one rate limit per host for everyone. */
+  readonly agentUrls: AgentUrlClient;
 
   constructor(private readonly options: GatewayOptions) {
     this.limits = { ...DEFAULT_GATEWAY_LIMITS, ...options.limits };
     this.log = options.log ?? (() => {});
     this.base = options.publicUrl?.replace(/\/+$/, "");
+    this.agentUrls = new AgentUrlClient(options.agentUrl);
+    if (this.base) this.refuseOwnUrl(this.base);
+  }
+
+  /** The gateway's own URL is never an agent URL: the whole host, unless it is this machine. */
+  private refuseOwnUrl(base: string): void {
+    const url = new URL(base);
+    const bare = url.hostname.replace(/^\[|\]$/g, "");
+    const local = url.hostname === "localhost" || (isIP(bare) !== 0 && !publicAddress(bare));
+    if (local) this.agentUrls.refuseOrigin(url.origin);
+    else this.agentUrls.refuseHost(url.hostname);
   }
 
   /** Starts listening. Returns the base URL (the public URL when one was given). */
@@ -434,6 +510,7 @@ export class ArenaGateway {
     const address = server.address();
     const port = typeof address === "object" && address ? address.port : options.port;
     this.base ??= `http://${host.includes(":") ? `[${host}]` : host}:${port}`;
+    this.refuseOwnUrl(this.base);
     return this.base;
   }
 
@@ -589,6 +666,7 @@ export class ArenaGateway {
           budget: episode.rpcBudget(this.limits),
           gas: episode.gasBudget(this.limits),
           signal: episode.signal,
+          onTransaction: (outcome) => episode.emitActivity({ type: "tx", ...outcome }),
         },
         {
           batch: this.limits.rpcBatch,
@@ -603,6 +681,13 @@ export class ArenaGateway {
       );
       return reply(res, 200, response);
     }
+    if (route === "rpc" && !episode.spec.chain)
+      // An agent set up for chain mode in a tool-mode episode: say so to a live view.
+      episode.emitActivity({
+        type: "tx",
+        ok: false,
+        reason: "this episode is in tools mode, which has no RPC endpoint: trades are tool calls",
+      });
     if (route === "done" && method === "POST") {
       const parsed = DoneRequest.safeParse(await readJson(req, this.limits.bodyBytes, {}));
       if (!parsed.success) throw new HttpError(400, "body must be { finalMessage?, usage? }");

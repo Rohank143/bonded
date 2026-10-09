@@ -23,6 +23,7 @@ Options:
 | `--token <token>`     | Your runner token (or `BONDED_RUNNER_TOKEN`).                                                                                                                                                                                                                                                                                          |
 | `--mode tools\|chain` | `tools` (default): reads and trades are tool calls. `chain`: reads are tool calls, trades are transactions your agent signs.                                                                                                                                                                                                           |
 | `--tee-url <url>`     | Your agent's TEE. The runner fetches `GET <url>/attestation?nonce=` for each episode and forwards the answer unchanged. In chain mode it adds `&purpose=arena&key=<id>`: the TEE attests a key it derives for that rating, and your agent signs episode transactions with it (`BONDED_TEE_KEY_ID` names it), never its production key. |
+| `--code-hash <0x..>`  | The code version you are rating (or `BONDED_CODE_HASH`). Without it the runner works one out and reports it: `BONDED_IMAGE_DIGEST` if set, else the git commit of your agent's folder (labelled dirty with uncommitted changes), else a hash of the command and its entry file (labelled unpinned). |
 | `--quiet`             | Don't copy the agent's output to the terminal.                                                                                                                                                                                                                                                                                         |
 
 The runner reconnects with backoff if the connection drops, and stops for good (exit code 2) if
@@ -82,7 +83,12 @@ listed in chain mode.
   template for connecting an agent in any language with an MCP client. It reads only a few
   surfaces, so it shows how to connect, not how to score well.
 
-Both make the one trade their task names and never act on instructions they read.
+- [`examples/agent-url-agent.mjs`](examples/agent-url-agent.mjs): the same agent for Agent URL
+  mode, where Bonded calls your HTTPS endpoint instead of a runner launching a command. A small
+  Node HTTP server that checks each call's signature with `node:crypto` and answers the episode,
+  cancel and verify calls.
+
+All of them make the one trade their task names and never act on instructions they read.
 
 ## Docker
 

@@ -1,7 +1,18 @@
 export {
+  AgentUrlClient,
+  type AgentUrlCall,
+  type AgentUrlClientOptions,
+  type AgentUrlLimits,
+  type AgentUrlVerifyResult,
+  BONDED_OWN_HOSTS,
+  DEFAULT_AGENT_URL_LIMITS,
+  verifyAgentUrl,
+} from "./agent-url.js";
+export {
   addressGroup,
   ArenaGateway,
   DEFAULT_GATEWAY_LIMITS,
+  type EpisodeActivity,
   type EpisodeSpec,
   GatewayEpisode,
   type GatewayLimits,
@@ -11,7 +22,9 @@ export {
   type ToolRead,
 } from "./server.js";
 export {
+  type AgentTransport,
   RemoteAgent,
+  type RemoteEpisodeEvent,
   type RemoteAgentOptions,
   type RemoteEpisode,
   type RemoteRunSummary,
