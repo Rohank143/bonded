@@ -59,7 +59,7 @@ python3 selfcheck.py
 starts a stand-in gateway and the agent, and sends what Bonded sends: a verify challenge (and
 checks the proof), an
 episode and a cancel, plus bad, stale and replayed signatures. The repository's tests also run it
-against a real Arena Gateway episode, with requests signed by `@bonded/sdk`
+against a real Arena Gateway episode, with requests signed by `@bondedhq/sdk`
 (`examples/frameworks/test/agent-url.int.test.ts`).
 
 Only the standard library, so it runs on Python 3.9 or later with nothing to install. With

@@ -6,13 +6,13 @@ import {
   type AgentUrlMessage,
   answerAgentUrlVerify,
   verifyAgentUrlRequest,
-} from "@bonded/shared/agent-url";
+} from "@bondedhq/shared/agent-url";
 import type { BondedEpisode } from "./episode.js";
 import { finishEpisode } from "./done.js";
 import type { EpisodeUsage } from "./mcp.js";
 
 /** For your own handler: the proof a verify answer carries, and the whole answer. */
-export { agentUrlVerifyProof, answerAgentUrlVerify } from "@bonded/shared/agent-url";
+export { agentUrlVerifyProof, answerAgentUrlVerify } from "@bondedhq/shared/agent-url";
 export {
   SIGNATURE_HEADER,
   SIGNATURE_TOLERANCE_SECONDS,
@@ -107,7 +107,7 @@ export type BondedHandler = (
  *     return { usage: { inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0 } };
  *   },
  * });
- * export const POST = handler; // Next.js; or app.post("/bonded", handler) in Hono
+ * export const POST = handler; // Next.js; or app.post("/bonded", (c) => handler(c.req.raw)) in Hono
  * ```
  */
 export function createBondedHandler(options: BondedHandlerOptions): BondedHandler {

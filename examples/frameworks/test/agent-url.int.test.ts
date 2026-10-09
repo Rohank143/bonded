@@ -8,8 +8,8 @@ import {
   runEpisode,
   verifyAgentUrl,
 } from "@bonded/arena";
-import { signBondedRequest } from "@bonded/sdk/agent-url";
-import { agentUrlCodeHash, agentUrlVerifyProof } from "@bonded/shared/agent-url";
+import { signBondedRequest } from "@bondedhq/sdk/agent-url";
+import { agentUrlCodeHash, agentUrlVerifyProof } from "@bondedhq/shared/agent-url";
 import { createServer } from "node:http";
 import { MockLanguageModelV4 } from "ai/test";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";

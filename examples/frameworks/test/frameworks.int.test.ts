@@ -6,10 +6,10 @@ import { AIMessage, type BaseMessage, ToolMessage } from "@langchain/core/messag
 import type { ChatResult } from "@langchain/core/outputs";
 import { DynamicStructuredTool } from "@langchain/core/tools";
 import { MockLanguageModelV4 } from "ai/test";
-import { bondedPlugin, bondedEpisodePlugin, type ElizaRuntime } from "@bonded/sdk/eliza";
-import { connectEpisodeTools, isBondedEpisode, mcpConfig } from "@bonded/sdk/mcp";
-import { bondedLangChainTools } from "@bonded/sdk/langchain";
-import { BondedVault } from "@bonded/sdk";
+import { bondedPlugin, bondedEpisodePlugin, type ElizaRuntime } from "@bondedhq/sdk/eliza";
+import { connectEpisodeTools, isBondedEpisode, mcpConfig } from "@bondedhq/sdk/mcp";
+import { bondedLangChainTools } from "@bondedhq/sdk/langchain";
+import { BondedVault } from "@bondedhq/sdk";
 import { createWalletClient, http, parseUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -42,7 +42,7 @@ afterAll(async () => {
 
 const SWAP = { tokenIn: "tUSDG", tokenOut: "tNVDA", amountIn: "300" };
 
-describe("@bonded/sdk/mcp", () => {
+describe("@bondedhq/sdk/mcp", () => {
   it("connects to the episode's MCP endpoint and calls its tools", async () => {
     const { episode, toolbox, gatewayEpisode } = await arena.episode();
     const tools = await connectEpisodeTools(episode);
@@ -88,7 +88,7 @@ describe("@bonded/sdk/mcp", () => {
     // The CLI prints the same block from the environment, for agents that read a config file.
     const cli = fileURLToPath(
       import.meta
-        .resolve("@bonded/sdk/package.json")
+        .resolve("@bondedhq/sdk/package.json")
         .replace("package.json", "dist/mcp-config-cli.js"),
     );
     const printed = spawnSync(process.execPath, [cli], {
@@ -132,7 +132,7 @@ class ScriptedChatModel extends BaseChatModel {
 
 const usage = { input_tokens: 100, output_tokens: 20, total_tokens: 120 };
 
-describe("@bonded/sdk/langchain", () => {
+describe("@bondedhq/sdk/langchain", () => {
   it("a LangGraph ReAct agent reads and trades through the episode's tools", async () => {
     const { episode, toolbox, gatewayEpisode, balance } = await arena.episode();
     const llm = new ScriptedChatModel([
@@ -209,7 +209,7 @@ const toolCalls = (...list: [string, Record<string, unknown>][]) => ({
   warnings: [],
 });
 
-describe("@bonded/sdk/ai-sdk", () => {
+describe("@bondedhq/sdk/ai-sdk", () => {
   it("generateText with the episode's tools reads and trades, and reports usage", async () => {
     const { episode, toolbox, gatewayEpisode, balance } = await arena.episode();
     const model = new MockLanguageModelV4({
@@ -239,7 +239,7 @@ describe("@bonded/sdk/ai-sdk", () => {
   });
 });
 
-describe("@bonded/sdk/agentkit", () => {
+describe("@bondedhq/sdk/agentkit", () => {
   it("an AgentKit action provider exposes the episode's tools", async () => {
     const { episode, toolbox, balance } = await arena.episode();
     const walletProvider = new ViemWalletProvider(
@@ -271,7 +271,7 @@ describe("@bonded/sdk/agentkit", () => {
   });
 });
 
-describe("@bonded/sdk/eliza rating mode", () => {
+describe("@bondedhq/sdk/eliza rating mode", () => {
   /** An Eliza runtime whose OBJECT_SMALL model reads parameters from a script. */
   const runtime = (answers: Record<string, unknown>[]): ElizaRuntime => ({
     useModel: async () => answers.shift() ?? {},

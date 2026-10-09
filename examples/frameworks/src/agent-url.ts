@@ -1,6 +1,6 @@
 import { createServer, type Server } from "node:http";
 import type { LanguageModel } from "ai";
-import { createBondedHandler, toNodeHandler } from "@bonded/sdk/agent-url";
+import { createBondedHandler, toNodeHandler } from "@bondedhq/sdk/agent-url";
 import { runAiSdkAgent } from "./ai-sdk.js";
 
 /**

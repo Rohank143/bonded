@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * pnpm release:packages: publishes @bonded/shared, @bonded/solana, @bonded/sdk and @bonded/runner
+ * pnpm release:packages: publishes @bondedhq/shared, @bondedhq/solana, @bondedhq/sdk and @bondedhq/runner
  * to npm, in that order, with public access.
  *
  * 1. Refuses unless the tree is clean and on main, level with origin/main (what was reviewed).

@@ -1,7 +1,7 @@
 import { generateText, type LanguageModel, stepCountIs, type ToolSet } from "ai";
-import { type BondedEpisode, isBondedEpisode } from "@bonded/sdk";
-import { bondedAiSdkTools } from "@bonded/sdk/ai-sdk";
-import { finishEpisode } from "@bonded/sdk/mcp";
+import { type BondedEpisode, isBondedEpisode } from "@bondedhq/sdk";
+import { bondedAiSdkTools } from "@bondedhq/sdk/ai-sdk";
+import { finishEpisode } from "@bondedhq/sdk/mcp";
 
 /**
  * A Vercel AI SDK agent, rated by Bonded with the code it runs in production. The only

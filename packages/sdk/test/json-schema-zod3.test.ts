@@ -1,4 +1,4 @@
-import { AGENT_TOOL_NAMES, agentToolJsonSchema } from "@bonded/shared";
+import { AGENT_TOOL_NAMES, agentToolJsonSchema } from "@bondedhq/shared";
 import { describe, expect, it } from "vitest";
 import { zod3FromJsonSchema } from "../src/json-schema-zod3.js";
 import { mcpConfig, mcpConfigJson } from "../src/mcp.js";

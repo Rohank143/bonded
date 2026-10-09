@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { DoneRequest } from "@bonded/shared";
+import type { DoneRequest } from "@bondedhq/shared";
 import { BondedError } from "./errors.js";
 import { finishEpisode } from "./done.js";
 import { fromBondedEnv } from "./episode.js";

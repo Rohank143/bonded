@@ -1,4 +1,4 @@
-import type { DoneRequest } from "@bonded/shared";
+import type { DoneRequest } from "@bondedhq/shared";
 import { BondedError } from "./errors.js";
 
 /**

@@ -8,8 +8,8 @@ import {
   StaticRunnerTokens,
   World,
 } from "@bonded/arena";
-import { type EpisodeMessage, episodeEnv } from "@bonded/shared";
-import type { BondedEpisode } from "@bonded/sdk";
+import { type EpisodeMessage, episodeEnv } from "@bondedhq/shared";
+import type { BondedEpisode } from "@bondedhq/sdk";
 import { erc20Abi, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
