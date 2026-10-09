@@ -1,4 +1,4 @@
-import { SENTINEL_SERVING } from "@bonded/shared";
+import { SENTINEL_SERVING } from "@bondedhq/shared";
 import {
   type ActionGuard,
   type GuardContext,

@@ -10,7 +10,7 @@ import {
   operatorBondAbi,
   testTokenAbi,
   tierForScore,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import type { Address } from "viem";
 import { deployment } from "../config";
 import { downloadReportJson, downloadReportPdf, type ReportContext } from "../lib/report";

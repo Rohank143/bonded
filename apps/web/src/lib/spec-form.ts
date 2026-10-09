@@ -5,7 +5,7 @@ import {
   BreachType,
   Severity,
   type AttackClassId,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 
 /**
  * The bounty spec as a form (Bounties page, Form mode). The YAML is still what gets hashed,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type EpisodeMessage, episodeEnv } from "@bonded/shared";
+import { type EpisodeMessage, episodeEnv } from "@bondedhq/shared";
 import { BondedError, fromBondedEnv } from "../src/index.js";
 
 const VAULT = "0x00000000000000000000000000000000000000aa";
@@ -28,7 +28,7 @@ const base = {
 };
 
 describe("fromBondedEnv", () => {
-  it("reads back what the runner writes (one schema, in @bonded/shared)", () => {
+  it("reads back what the runner writes (one schema, in @bondedhq/shared)", () => {
     const message = {
       type: "episode" as const,
       episodeId: "ep-9",

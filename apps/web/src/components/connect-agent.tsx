@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useSignMessage } from "wagmi";
-import type { BindingLevel, RemoteMode } from "@bonded/shared";
+import type { BindingLevel, RemoteMode } from "@bondedhq/shared";
 import { api, type RatingAttempt, type SelfAgentRecord } from "../lib/api";
 import {
   BINDING_LABELS,
@@ -247,7 +247,7 @@ export function ConnectAgent({
                 <p className="text-muted">
                   Create a token to get the command. It looks like{" "}
                   <code className="font-mono text-xs">
-                    BONDED_RUNNER_TOKEN=… npx @bonded/runner --gateway … -- &lt;your agent
+                    BONDED_RUNNER_TOKEN=… npx @bondedhq/runner --gateway … -- &lt;your agent
                     command&gt;
                   </code>
                   .

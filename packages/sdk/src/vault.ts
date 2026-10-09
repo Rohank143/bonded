@@ -1,4 +1,4 @@
-import { breachTypeFromCode, mandateModuleAbi, mandateVaultAbi } from "@bonded/shared";
+import { breachTypeFromCode, mandateModuleAbi, mandateVaultAbi } from "@bondedhq/shared";
 import {
   type Account,
   type Address,

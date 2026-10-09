@@ -12,7 +12,7 @@ import {
   mandateVaultAbi,
   mockOracleAbi,
   testTokenAbi,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { formatUnits } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { lookalikeOf, renderPayload } from "./attacks.js";

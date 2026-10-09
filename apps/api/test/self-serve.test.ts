@@ -9,7 +9,7 @@ import {
   toEvmMandateParams,
   type EvmMandate,
   type SelfServeRequest,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { parseEventLogs } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { createApi } from "../src/index.js";

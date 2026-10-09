@@ -21,8 +21,8 @@ import {
   mandateVaultFactoryAbi,
   sentinelCheckDigest,
   sentinelCheckMessage,
-} from "@bonded/shared";
-import type { ArenaAgent } from "@bonded/shared";
+} from "@bondedhq/shared";
+import type { ArenaAgent } from "@bondedhq/shared";
 import type { ServiceChain } from "@bonded/keeper";
 import { RateLimiter, clientAddress } from "./rate-limit.js";
 

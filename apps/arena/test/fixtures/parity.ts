@@ -3,7 +3,7 @@ import {
   ScriptedHardenedAgent,
   ScriptedVulnerableAgent,
 } from "@bonded/demo-agents";
-import type { ArenaAgent, AttackSpec } from "@bonded/shared";
+import type { ArenaAgent, AttackSpec } from "@bondedhq/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   type AgentVaultOptions,

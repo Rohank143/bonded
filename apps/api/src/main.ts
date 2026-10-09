@@ -4,7 +4,7 @@ import { serve } from "@hono/node-server";
 import { ArenaGateway, loadDotEnv } from "@bonded/arena";
 import { Database } from "@bonded/db";
 import { Keeper, SolanaKeeper, connectChain, connectSolana, parseSolanaKey } from "@bonded/keeper";
-import { parseEvmDeployment } from "@bonded/shared";
+import { parseEvmDeployment } from "@bondedhq/shared";
 import { z } from "zod";
 import { createApi } from "./index.js";
 import { runTeeChecks, teeCheckInterval } from "./tee-watch.js";
@@ -20,7 +20,7 @@ import {
   bondedRegistryAbi,
   UNDERWRITING_COVER_CAP_USD,
   llmConfigFromEnv,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { REMOTE_EPISODE_TIMEOUT_MS, gatewayAgents } from "./remote-agent.js";
 import { DbRunnerAuth, RunnerPresenceWriter } from "./runners.js";
 

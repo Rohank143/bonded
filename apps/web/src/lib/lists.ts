@@ -1,4 +1,4 @@
-import { tierForScore } from "@bonded/shared";
+import { tierForScore } from "@bondedhq/shared";
 import type { Address } from "viem";
 import type { AgentRow, PaidClaim } from "./chain";
 import { waterfall } from "./chain";

@@ -21,7 +21,7 @@ import { paginate, useListParams } from "../lib/pages";
 import { filterAgents, type AgentFilters } from "../lib/lists";
 import { Select } from "../components/select";
 import { Pagination } from "../components/pagination";
-import { TIER_RULES } from "@bonded/shared";
+import { TIER_RULES } from "@bondedhq/shared";
 
 type Show = "all" | "rated" | "mine";
 

@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findInstructions } from "@bonded/demo-agents";
-import { ATTACK_CLASSES, AttackSpec } from "@bonded/shared";
+import { ATTACK_CLASSES, AttackSpec } from "@bondedhq/shared";
 import { describe, expect, it } from "vitest";
 import {
   FileHeldOutLedger,

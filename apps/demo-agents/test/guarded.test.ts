@@ -1,4 +1,4 @@
-import type { AgentRunSummary, AgentTask, AgentToolbox, ArenaAgent } from "@bonded/shared";
+import type { AgentRunSummary, AgentTask, AgentToolbox, ArenaAgent } from "@bondedhq/shared";
 import { expect, it } from "vitest";
 import { GuardedAgent } from "../src/guarded.js";
 import type { ActionGuard } from "../src/hardened/guard.js";

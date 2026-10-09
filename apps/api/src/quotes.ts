@@ -17,7 +17,7 @@ import {
   tierForScore,
   type BindingLevel,
   type SignedQuote,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import type { ServiceChain } from "@bonded/keeper";
 import type { Address, Hex } from "viem";
 

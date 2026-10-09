@@ -20,7 +20,7 @@ import {
   bountyBoardAbi,
   leaderboardHeadline,
   type BindingLevel,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import {
   readLeaderboard,
   BountySpecError,

@@ -6,7 +6,7 @@ import {
   TOKEN_PROGRAM,
   type VaultAccount,
   vaultError,
-} from "@bonded/solana";
+} from "@bondedhq/solana";
 import {
   type AddressLookupTableAccount,
   type Connection,

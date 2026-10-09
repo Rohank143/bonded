@@ -31,7 +31,7 @@ import {
   mandateHash,
   selfServeMessage,
   type SelfServeRequest,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { privateKeyToAccount } from "viem/accounts";
 import { createApi } from "../src/index.js";
 import { gatewayAgents } from "../src/remote-agent.js";

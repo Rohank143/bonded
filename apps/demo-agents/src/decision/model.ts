@@ -1,4 +1,4 @@
-import { type ChatClient, llmConfigFromEnv, OpenAICompatibleClient } from "@bonded/shared";
+import { type ChatClient, llmConfigFromEnv, OpenAICompatibleClient } from "@bondedhq/shared";
 import type { ModelUsage } from "../usage.js";
 
 /**

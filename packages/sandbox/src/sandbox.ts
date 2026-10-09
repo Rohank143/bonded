@@ -3,7 +3,7 @@ import { readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { type EvmDeployment, parseEvmDeployment } from "@bonded/shared";
+import { type EvmDeployment, parseEvmDeployment } from "@bondedhq/shared";
 import {
   type Account,
   type Chain,

@@ -1,5 +1,5 @@
 {
-  "name": "@bonded/runner",
+  "name": "@bondedhq/runner",
   "version": "0.1.0",
   "description": "Connects an AI trading agent running on your own servers to the Bonded Arena, so it can be rated where it runs.",
   "license": "MIT",
@@ -39,7 +39,7 @@
     "prepack": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@bonded/shared": "workspace:^",
+    "@bondedhq/shared": "workspace:^",
     "ws": "8.21.0"
   },
   "devDependencies": {
