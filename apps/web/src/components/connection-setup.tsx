@@ -205,6 +205,8 @@ export function ConnectRunner({
           <InitCommand
             framework={framework}
             connection="runner"
+            mode={input.mode}
+            teeUrl={input.teeUrl}
             token={input.token}
             gatewayUrl={input.gatewayUrl}
           />
@@ -489,7 +491,7 @@ export function ConnectUrl({
       ) : (
         <ErrorText error={error} />
       )}
-      {!isVerified && <InitCommand framework={framework} connection="url" />}
+      {!isVerified && <InitCommand framework={framework} connection="url" mode={status.mode} />}
       <Snippets connection="url" mode={status.mode} framework={framework} />
     </div>
   );
