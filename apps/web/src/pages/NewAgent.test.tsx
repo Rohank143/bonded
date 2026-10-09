@@ -2,8 +2,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
-import { encodeAbiParameters, encodeEventTopics, getAbiItem, type Abi, type AbiEvent } from "viem";
-import { bondedRegistryAbi, mandateVaultFactoryAbi } from "@bondedhq/shared";
+import {
+  decodeFunctionData,
+  encodeAbiParameters,
+  encodeEventTopics,
+  getAbiItem,
+  type Abi,
+  type AbiEvent,
+  type Hex,
+} from "viem";
+import { bondedRegistryAbi, mandateVaultFactoryAbi, suggestMandate } from "@bondedhq/shared";
 import type { OfficialPrefill } from "../components/preview-report";
 import { deployment } from "../config";
 import { byoaApi } from "../lib/byoa-api";
@@ -436,5 +444,104 @@ describe("Onboarding, the wallet side", () => {
     expect((screen.getByLabelText("Per-trade limit") as HTMLInputElement).value).toBe("1200");
     fireEvent.change(screen.getByLabelText("Per-trade limit"), { target: { value: "2000" } });
     expect(screen.getByRole("radio", { name: /^Custom/ })).toHaveProperty("checked", true);
+  });
+});
+
+describe("a mandate preset is the mandate that is submitted", () => {
+  // The suggestion exactly as the API builds it (Conservative: no destinations, 1% slippage,
+  // 10% drawdown), for an agent seen trading tTSLA up to 900 USD.
+  const suggestion = () =>
+    suggestMandate({
+      chainId: deployment.chainId,
+      market: {
+        usdg: deployment.usdg,
+        router: deployment.router,
+        tokens: { tTSLA: deployment.tsla, tAMZN: deployment.amzn, tNVDA: deployment.nvda },
+      },
+      trading: {
+        trades: 3,
+        tokens: ["tTSLA", "tUSDG"],
+        usedRouter: true,
+        transfers: 0,
+        approvals: 0,
+        largestTradeUsd: 900,
+        totalOutflowUsd: 2_000,
+      },
+      sources: ["preview"],
+    });
+  /** The params of the createVault call the wallet was actually sent, decoded. */
+  const createVaultParams = () => {
+    const call = (chain.sendCalls[1] as { calls: { data: Hex }[] }).calls[0]!;
+    const decoded = decodeFunctionData({ abi: mandateVaultFactoryAbi as Abi, data: call.data });
+    expect(decoded.functionName).toBe("createVault");
+    return (decoded.args as unknown[])[0] as {
+      mode: number;
+      assets: string[];
+      targets: string[];
+      destinations: string[];
+      maxTxNotionalUsd6: bigint;
+      maxDailyNotionalUsd6: bigint;
+      maxDrawdownBps: number;
+      maxSlippageBps: number;
+    };
+  };
+  async function onboardFromPreset(edit?: () => void) {
+    chain.capabilities = { 46630: { atomic: { status: "supported" } } };
+    chain.receipts = [[registered()], [vaultCreated()]];
+    saveSession(deployment.chainId, {
+      session: "sess",
+      wallet: WALLET,
+      expiresAt: iso(3_600_000),
+    });
+    vi.spyOn(byoaApi, "suggestedMandate").mockResolvedValue(suggestion());
+    show({
+      previewId: "p1",
+      mode: "tools",
+      connection: "url",
+      agentUrl: "https://agent.example/bonded",
+      codeHash: null,
+    });
+    await screen.findByText(/^3 wallet confirmations/);
+    await waitFor(() =>
+      expect(screen.getByRole("radio", { name: /^Conservative trader/ })).toHaveProperty(
+        "checked",
+        true,
+      ),
+    );
+    edit?.();
+    fireEvent.click(screen.getByRole("button", { name: "Onboard the agent" }));
+    await waitFor(() => expect(chain.sendCalls.length).toBeGreaterThanOrEqual(2));
+    return createVaultParams();
+  }
+
+  it("Conservative: its destinations, slippage and drawdown, not the form's defaults", async () => {
+    const params = await onboardFromPreset();
+    expect((screen.getByLabelText(/^Maximum slippage/) as HTMLInputElement).value).toBe("1");
+    expect((screen.getByLabelText(/^Maximum drawdown/) as HTMLInputElement).value).toBe("10");
+    expect(params.destinations).toEqual([]);
+    expect(params.maxSlippageBps).toBe(100);
+    expect(params.maxDrawdownBps).toBe(1000);
+    expect(params.mode).toBe(1);
+    expect(params.assets.map((a) => a.toLowerCase())).toEqual(
+      [deployment.usdg, deployment.tsla].map((a) => a.toLowerCase()),
+    );
+    expect(params.targets.map((a) => a.toLowerCase())).toEqual([deployment.router.toLowerCase()]);
+    // 900 USD with 1.25x headroom, rounded up to a hundred; four times that a day.
+    expect(params.maxTxNotionalUsd6).toBe(1_200n * 1_000_000n);
+    expect(params.maxDailyNotionalUsd6).toBe(4_800n * 1_000_000n);
+  });
+
+  it("an edit makes it Custom, marks the field, and changes only that rule", async () => {
+    const params = await onboardFromPreset(() => {
+      fireEvent.change(screen.getByLabelText(/^Maximum slippage/), { target: { value: "2" } });
+      expect(screen.getByRole("radio", { name: /^Custom/ })).toHaveProperty("checked", true);
+      expect(screen.getByLabelText("Maximum slippage(edited)")).toBeTruthy();
+      expect(screen.getByText("Conservative trader, edited: maximum slippage.")).toBeTruthy();
+    });
+    expect(params.maxSlippageBps).toBe(200);
+    // The rest is still the preset's.
+    expect(params.maxDrawdownBps).toBe(1000);
+    expect(params.destinations).toEqual([]);
+    expect(params.maxTxNotionalUsd6).toBe(1_200n * 1_000_000n);
   });
 });

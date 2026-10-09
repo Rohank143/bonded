@@ -50,6 +50,7 @@ import {
 import {
   addressError,
   amountOrZeroError,
+  percentError,
   dailyLimitError,
   descriptionError,
   limitError,
@@ -92,6 +93,7 @@ import {
   PRESET_LABELS,
   applyPreset,
   basisLine,
+  type PresetFields,
   bondTable,
   recommendedBond,
   type PresetChoice,
@@ -112,6 +114,17 @@ import {
 } from "../components/ui";
 
 type Step = { label: string; state: "waiting" | "active" | "done"; hash?: Hex };
+/** The mandate's fields an owner can edit after choosing a preset, and their names. */
+type MandateField = "mode" | "tokens" | "maxTx" | "maxDaily" | "drawdown" | "slippage" | "refund";
+const MANDATE_FIELD_LABELS: Record<MandateField, string> = {
+  mode: "mode",
+  tokens: "tokens",
+  maxTx: "per-trade limit",
+  maxDaily: "daily limit",
+  drawdown: "maximum drawdown",
+  slippage: "maximum slippage",
+  refund: "refund address",
+};
 /** An onboarding call that is a transaction (finding a module is a read). */
 type TxCall = Exclude<OnboardingCall, "findModule">;
 
@@ -192,6 +205,8 @@ export function NewAgent() {
   const [agentKey, setAgentKey] = useState("");
   const [maxTx, setMaxTx] = useState("5000");
   const [maxDaily, setMaxDaily] = useState("25000");
+  const [drawdown, setDrawdown] = useState("15");
+  const [slippage, setSlippage] = useState("3");
   const [bond, setBond] = useState("4000");
   const [deposit, setDeposit] = useState("50000");
   const [description, setDescription] = useState("An agent onboarded from the Bonded web app.");
@@ -203,15 +218,32 @@ export function NewAgent() {
     retry: false,
   });
   const [preset, setPreset] = useState<PresetChoice>("custom");
+  // The preset the form started from, and what has been edited by hand since.
+  const [base, setBase] = useState<Exclude<PresetChoice, "custom">>();
+  const [edited, setEdited] = useState<MandateField[]>([]);
+  // A preset's own rules with no field of their own here (or set exactly as it says them).
+  const [presetRules, setPresetRules] = useState<
+    Pick<PresetFields, "assets" | "targets" | "destinations">
+  >({});
   const choosePreset = (id: PresetChoice) => {
     setPreset(id);
     const p = suggested.data?.presets.find((x) => x.id === id);
     if (!p) return;
     const f = applyPreset(p);
+    setBase(p.id);
+    setEdited([]);
     setMode(f.mode);
     setTokens(f.tokens);
     setMaxTx(f.maxTx);
     setMaxDaily(f.maxDaily);
+    if (f.drawdown !== undefined) setDrawdown(f.drawdown);
+    if (f.slippage !== undefined) setSlippage(f.slippage);
+    setPresetRules({
+      ...(f.assets ? { assets: f.assets } : {}),
+      ...(f.targets ? { targets: f.targets } : {}),
+      ...(f.destinations ? { destinations: f.destinations } : {}),
+    });
+    if (f.destinations) setRefund(f.destinations[0] ?? "");
   };
   const presetApplied = useRef(false);
   useEffect(() => {
@@ -225,13 +257,18 @@ export function NewAgent() {
     );
     // Once, when the suggestion arrives.
   }, [suggested.data]);
-  // Editing a field by hand makes the mandate custom.
+  // Editing a field by hand makes the mandate custom, and marks the field edited.
   const custom =
-    <T,>(set: (v: T) => void) =>
+    <T,>(field: MandateField, set: (v: T) => void) =>
     (v: T) => {
       setPreset("custom");
+      setEdited((e) => (e.includes(field) ? e : [...e, field]));
       set(v);
     };
+  const isEdited = (field: MandateField) =>
+    preset === "custom" && base !== undefined && edited.includes(field);
+  const editedMark = (field: MandateField) =>
+    isEdited(field) ? <span className="ml-1.5 text-xs font-normal text-warn">(edited)</span> : null;
   const [wantedCover, setWantedCover] = useState("");
   const [steps, setSteps] = useState<Step[]>([]);
   const [error, setError] = useState<unknown>(null);
@@ -248,12 +285,14 @@ export function NewAgent() {
   const form: MandateForm = {
     mode,
     tokens,
-    destinations: refundAddress ? [refundAddress] : [],
+    destinations: presetRules.destinations ?? (refundAddress ? [refundAddress] : []),
     maxTxUsd: Number(maxTx),
     maxDailyUsd: Number(maxDaily),
-    maxDrawdownPct: 15,
-    maxSlippagePct: 3,
+    maxDrawdownPct: Number(drawdown),
+    maxSlippagePct: Number(slippage),
     description: description.trim(),
+    ...(presetRules.assets ? { assets: presetRules.assets } : {}),
+    ...(presetRules.targets ? { targets: presetRules.targets } : {}),
   };
   // Everything is checked before the first transaction, so a bad field can't leave a half-made
   // agent behind or silently skip a funding step.
@@ -892,10 +931,12 @@ export function NewAgent() {
                             onChange={() => choosePreset(id)}
                             title={p?.label ?? PRESET_LABELS[id]}
                           >
-                            {p
-                              ? (p.line ??
-                                `${p.mode === "enforce" ? "Enforce" : "Monitor"}, up to ${p.maxTxUsd.toLocaleString("en-US")} USD a trade and ${p.maxDailyUsd.toLocaleString("en-US")} a day`)
-                              : "Set every field yourself."}
+                            {id === "custom" && base && edited.length
+                              ? `${PRESET_LABELS[base]}, edited: ${edited.map((f) => MANDATE_FIELD_LABELS[f]).join(", ")}.`
+                              : p
+                                ? (p.line ??
+                                  `${p.mode === "enforce" ? "Enforce" : "Monitor"}, up to ${p.maxTxUsd.toLocaleString("en-US")} USD a trade and ${p.maxDailyUsd.toLocaleString("en-US")} a day`)
+                                : "Set every field yourself."}
                           </Choice>
                         );
                       })}
@@ -905,12 +946,13 @@ export function NewAgent() {
               <fieldset className="flex flex-col gap-2">
                 <legend className="mb-2 font-medium">
                   {onModule ? "Module mode" : "Vault mode"}
+                  {editedMark("mode")}
                 </legend>
                 <div className="grid gap-2 sm:grid-cols-2">
                   <Choice
                     name="mode"
                     checked={mode === "monitor"}
-                    onChange={() => custom(setMode)("monitor")}
+                    onChange={() => custom("mode", setMode)("monitor")}
                     title="Monitor"
                     disabled={onModule}
                   >
@@ -921,7 +963,7 @@ export function NewAgent() {
                   <Choice
                     name="mode"
                     checked={mode === "enforce"}
-                    onChange={() => custom(setMode)("enforce")}
+                    onChange={() => custom("mode", setMode)("enforce")}
                     title="Enforce"
                   >
                     {onModule
@@ -933,6 +975,7 @@ export function NewAgent() {
               <fieldset>
                 <legend className="mb-2 font-medium">
                   Tokens it may hold (<Token symbol="tUSDG" /> always)
+                  {editedMark("tokens")}
                 </legend>
                 <div className="flex flex-wrap gap-2">
                   {MANDATE_TOKENS.map((t) => (
@@ -944,7 +987,11 @@ export function NewAgent() {
                         type="checkbox"
                         className="sr-only"
                         checked={tokens.includes(t)}
-                        onChange={() => (setPreset("custom"), toggle(t))}
+                        onChange={() => {
+                          // The token list is the owner's now, not the preset's addresses.
+                          setPresetRules((r) => ({ ...r, assets: undefined }));
+                          custom("tokens", toggle)(t);
+                        }}
                       />
                       <TokenLogo symbol={t} size={22} />
                       {t}
@@ -955,28 +1002,60 @@ export function NewAgent() {
               </fieldset>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Input
-                  label="Per-trade limit"
+                  label={<>Per-trade limit{editedMark("maxTx")}</>}
                   value={maxTx}
-                  onChange={custom(setMaxTx)}
+                  onChange={custom("maxTx", setMaxTx)}
                   inputMode="decimal"
                   suffix="USD"
                   error={limitError(maxTx)}
                 />
                 <Input
-                  label="Daily limit"
+                  label={<>Daily limit{editedMark("maxDaily")}</>}
                   value={maxDaily}
-                  onChange={custom(setMaxDaily)}
+                  onChange={custom("maxDaily", setMaxDaily)}
                   inputMode="decimal"
                   suffix="USD"
                   error={dailyLimitError(maxDaily, maxTx)}
                 />
               </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Input
+                  label={<>Maximum drawdown{editedMark("drawdown")}</>}
+                  hint="The largest fall in the vault's value over 24 hours. Used for disputes."
+                  value={drawdown}
+                  onChange={custom("drawdown", setDrawdown)}
+                  inputMode="decimal"
+                  suffix="%"
+                  error={percentError(drawdown, { min: 0.01 })}
+                />
+                <Input
+                  label={<>Maximum slippage{editedMark("slippage")}</>}
+                  hint="The largest loss one trade may cause, as a share of what it sends out."
+                  value={slippage}
+                  onChange={custom("slippage", setSlippage)}
+                  inputMode="decimal"
+                  suffix="%"
+                  error={percentError(slippage, { min: 0 })}
+                />
+              </div>
               <Input
-                label="Refund address"
-                hint="The one address the agent may send funds to. Defaults to your wallet."
+                label={<>Refund address{editedMark("refund")}</>}
+                hint={
+                  presetRules.destinations && presetRules.destinations.length === 0
+                    ? "This preset allows no refund address: the agent may not send funds anywhere. Type one to allow it."
+                    : "The one address the agent may send funds to. Defaults to your wallet."
+                }
                 value={refund}
-                onChange={setRefund}
-                placeholder={user ?? "0x…"}
+                onChange={(v) => {
+                  // A typed address is the owner's, not the preset's.
+                  setPresetRules((r) => ({ ...r, destinations: undefined }));
+                  custom("refund", setRefund)(v);
+                }}
+                placeholder={
+                  presetRules.destinations && presetRules.destinations.length === 0
+                    ? "None"
+                    : (user ?? "0x…")
+                }
                 error={addressError(refund, true)}
               />
               <Input

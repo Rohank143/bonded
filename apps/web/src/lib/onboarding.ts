@@ -27,6 +27,10 @@ export interface MandateForm {
   maxDrawdownPct: number;
   maxSlippagePct: number;
   description: string;
+  /** A preset's own asset addresses, used instead of `tokens` until the tokens are edited. */
+  assets?: string[];
+  /** A preset's own allowed contracts, used instead of the exchange's swap. */
+  targets?: { address: string; functions?: string[] }[];
 }
 
 /**
@@ -49,8 +53,8 @@ export function buildMandate(
     agentId,
     mode: form.mode,
     baseAsset: deployment.usdg,
-    assets: form.tokens.map((t) => address[t]),
-    targets: [
+    assets: form.assets ?? form.tokens.map((t) => address[t]),
+    targets: form.targets ?? [
       {
         address: deployment.router,
         functions: [toFunctionSelector(getAbiItem({ abi: demoRouterAbi, name: "swap" }))],

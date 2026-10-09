@@ -1,4 +1,4 @@
-import { TIER_RULES, tierForScore, type Tier } from "@bondedhq/shared";
+import { TIER_RULES, tierForScore, type EvmMandateRules, type Tier } from "@bondedhq/shared";
 import type { MandateForm, MandateToken } from "./onboarding";
 import { MANDATE_TOKENS } from "./onboarding";
 
@@ -114,8 +114,11 @@ export interface MandatePreset {
   maxTxUsd: number;
   maxDailyUsd: number;
   /** The whole draft with addresses (`rules.assets` etc.), for building the mandate. */
-  rules?: Record<string, unknown>;
+  rules?: PresetRules;
 }
+
+/** A preset's whole draft: `MandateDraft` in @bondedhq/shared (the mandate's rules, no agent id). */
+export type PresetRules = Partial<Omit<EvmMandateRules, "agentId">>;
 
 export interface SuggestionBasis {
   sources: ("check" | "preview" | "rating")[];
@@ -160,17 +163,45 @@ export const PRESET_LABELS = {
 } as const;
 export type PresetChoice = keyof typeof PRESET_LABELS;
 
-/** A preset's fields for the onboarding form; tokens the vault can't hold are dropped. */
-export function applyPreset(p: MandatePreset): {
+/** What a preset sets in the onboarding form, and in the mandate it submits. */
+export interface PresetFields {
   mode: MandateForm["mode"];
+  /** The tokens shown; tokens the vault can't hold are dropped. */
   tokens: MandateToken[];
   maxTx: string;
   maxDaily: string;
-} {
+  /** In percent; undefined when the preset doesn't say (the form keeps its own). */
+  drawdown?: string;
+  slippage?: string;
+  /** The preset's own rules, carried into the mandate as they are (the form has no field for
+   *  targets, and `assets` are the addresses the API chose, not looked up from symbols). */
+  destinations?: string[];
+  assets?: string[];
+  targets?: NonNullable<MandateForm["targets"]>;
+}
+
+/**
+ * A preset for the onboarding form: everything its rules set (assets, targets, destinations, the
+ * limits, slippage, drawdown and mode), so the mandate submitted is the one the preset shows.
+ */
+export function applyPreset(p: MandatePreset): PresetFields {
+  const r = p.rules ?? {};
   return {
-    mode: p.mode,
+    mode: r.mode ?? p.mode,
     tokens: MANDATE_TOKENS.filter((t) => p.tokens.includes(t)),
-    maxTx: String(p.maxTxUsd),
-    maxDaily: String(p.maxDailyUsd),
+    maxTx: String(r.maxTradeUsd ?? p.maxTxUsd),
+    maxDaily: String(r.maxDailyUsd ?? p.maxDailyUsd),
+    ...(r.maxDrawdownPct !== undefined ? { drawdown: String(r.maxDrawdownPct) } : {}),
+    ...(r.maxSlippagePct !== undefined ? { slippage: String(r.maxSlippagePct) } : {}),
+    ...(r.destinations ? { destinations: [...r.destinations] } : {}),
+    ...(r.assets ? { assets: [...r.assets] } : {}),
+    ...(r.targets
+      ? {
+          targets: r.targets.map((t) => ({
+            address: t.address,
+            ...(t.functions ? { functions: [...t.functions] } : {}),
+          })),
+        }
+      : {}),
   };
 }

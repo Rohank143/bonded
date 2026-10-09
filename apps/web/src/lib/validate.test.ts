@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addressError,
   amountOrZeroError,
+  percentError,
   dailyLimitError,
   descriptionError,
   limitError,
@@ -19,6 +20,16 @@ describe("field checks", () => {
     expect(dailyLimitError("1000", "5000")).toMatch(/at least the per-trade/);
     // A broken per-trade limit is its own field's problem, not the daily one's.
     expect(dailyLimitError("1000", "abc")).toBeNull();
+  });
+
+  it("mandate percentages fit in basis points, from the minimum to 100", () => {
+    expect(percentError("3", { min: 0 })).toBeNull();
+    expect(percentError("0.5", { min: 0.01 })).toBeNull();
+    expect(percentError("0", { min: 0 })).toBeNull();
+    expect(percentError("0", { min: 0.01 })).toBe("Must be more than 0.");
+    expect(percentError("0.125", { min: 0 })).toMatch(/at most 2 decimals/);
+    expect(percentError("101", { min: 0 })).toBe("At most 100%.");
+    expect(percentError("", { min: 0 })).toBe("Enter a percentage.");
   });
 
   it("addresses, with an optional field allowed to stay empty", () => {
