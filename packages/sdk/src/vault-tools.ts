@@ -157,7 +157,12 @@ export function bondedVaultTools(options: BondedVaultToolsOptions): BondedVaultT
     return guarded;
   };
 
-  const write = async (action: VaultAction, given?: GuardContext): Promise<ActionResult> => {
+  /** One tool call: the write it confirmed, once it has. */
+  interface Call {
+    confirmed?: ActionResult;
+  }
+
+  const send = async (action: VaultAction, given?: GuardContext): Promise<ActionResult> => {
     if (!guard && !options.sentinel) return options.vault.execute(action);
     const context = given ?? (options.sentinel && options.context ? await options.context() : {});
     return (await guardedVault()).execute(action, context);
@@ -166,8 +171,11 @@ export function bondedVaultTools(options: BondedVaultToolsOptions): BondedVaultT
   const run = async (
     name: BondedVaultToolName,
     raw: Record<string, unknown>,
-    context?: GuardContext,
+    context: GuardContext | undefined,
+    call: Call,
   ): Promise<unknown> => {
+    const write = async (action: VaultAction, given?: GuardContext) =>
+      (call.confirmed = await send(action, given));
     const parsed = ARGS[name].safeParse(raw);
     if (!parsed.success)
       throw new BondedError(
@@ -191,11 +199,22 @@ export function bondedVaultTools(options: BondedVaultToolsOptions): BondedVaultT
           },
           context,
         );
-        const after = await balance(options.vault, tokenOut.address as Address, holder);
-        return outcome(result, {
-          sold: `${args.amountIn} ${tokenIn.symbol}`,
-          received: `${formatUnits(after - before, tokenOut.decimals)} ${tokenOut.symbol}`,
-        });
+        // The trade is confirmed: reading what it bought is best-effort. Failing here would hide
+        // the transactions and invite the model to trade again.
+        const after = await balance(options.vault, tokenOut.address as Address, holder).catch(
+          () => undefined,
+        );
+        return outcome(
+          result,
+          {
+            sold: `${args.amountIn} ${tokenIn.symbol}`,
+            received:
+              after === undefined
+                ? null
+                : `${formatUnits(after - before, tokenOut.decimals)} ${tokenOut.symbol}`,
+          },
+          after === undefined ? BALANCE_UNREAD : undefined,
+        );
       }
       case "transfer": {
         const t = await tokens.resolve(args.token!);
@@ -257,30 +276,50 @@ export function bondedVaultTools(options: BondedVaultToolsOptions): BondedVaultT
     description: DESCRIPTIONS[name],
     inputSchema: SCHEMAS[name],
     call: async (args = {}, context) => {
+      const call: Call = {};
       try {
         refuseProductionVaultWhileRated(options.vault, name);
-        const output = await run(name, args, context);
+        const output = await run(name, args, context, call);
         return { ok: true, output, text: JSON.stringify(output) };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        // Anything that fails after the write confirmed is a read: report the write, never a
+        // failure the model would retry (a second trade).
+        if (call.confirmed) {
+          const output = outcome(
+            call.confirmed,
+            {},
+            `The ${name} is confirmed (see transactions), but reading its result failed (${message}). Don't repeat it: check vault_status.`,
+          );
+          return { ok: true, output, text: JSON.stringify(output) };
+        }
         return { ok: false, error: message, text: message };
       }
     },
   }));
 }
 
-/** A write's result as the model reads it: what moved, and any breach the vault recorded. */
-function outcome(result: ActionResult, moved: Record<string, string>) {
+const BALANCE_UNREAD =
+  "Trade confirmed (see transactions); couldn't read the new balance, so what it received is unknown. Don't repeat the trade: check vault_status.";
+
+/**
+ * A write's result as the model reads it: what moved, the transactions, and any breach the vault
+ * recorded or anything the tool couldn't read afterwards.
+ */
+function outcome(result: ActionResult, moved: Record<string, string | null>, unread?: string) {
+  const warnings = [
+    ...(result.breaches.length
+      ? [
+          "The vault ran this action but recorded a breach of the mandate. The vault may have frozen the agent.",
+        ]
+      : []),
+    ...(unread ? [unread] : []),
+  ];
   return {
     ...moved,
     transactions: result.hashes,
-    ...(result.breaches.length
-      ? {
-          breaches: result.breaches.map(breachView),
-          warning:
-            "The vault ran this action but recorded a breach of the mandate. The vault may have frozen the agent.",
-        }
-      : {}),
+    ...(result.breaches.length ? { breaches: result.breaches.map(breachView) } : {}),
+    ...(warnings.length ? { warning: warnings.join(" ") } : {}),
   };
 }
 
