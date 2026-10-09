@@ -157,7 +157,7 @@ describe("Test your agent", () => {
     expect(screen.getByText("Runner waiting")).toBeTruthy();
     // Framework snippets, in tabs.
     fireEvent.click(screen.getByText("Code for your agent, by framework"));
-    expect(screen.getByRole("tab", { name: "ElizaOS", selected: true })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "LangChain", selected: true })).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Python" }));
     expect(screen.getByText(/BONDED_TOOLS_URL/)).toBeTruthy();
   });

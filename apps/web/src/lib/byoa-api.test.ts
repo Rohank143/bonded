@@ -179,25 +179,55 @@ describe("snippets", () => {
   it("offers every framework, and the handler first for an Agent URL", () => {
     const labels = (c: "url" | "runner") => snippets(c, "tools").map((s) => s.label);
     expect(labels("runner")).toEqual([
-      "ElizaOS",
-      "AgentKit",
       "LangChain",
       "Vercel AI SDK",
-      "MCP config",
+      "ElizaOS",
+      "AgentKit",
+      "Any MCP agent",
       "Python",
     ]);
-    expect(labels("url")[0]).toBe("Agent URL handler");
+    expect(labels("url")).toEqual([
+      "Agent URL handler",
+      "LangChain",
+      "Vercel AI SDK",
+      "ElizaOS",
+      "AgentKit",
+      "Python",
+    ]);
   });
   it("reads the episode where the connection puts it", () => {
     const runner = snippets("runner", "tools");
     const url = snippets("url", "tools");
-    expect(runner.find((s) => s.id === "langchain")!.code).toMatch(/fromBondedEnv\(\)/);
-    expect(url.find((s) => s.id === "langchain")!.code).not.toMatch(/fromBondedEnv/);
-    expect(runner.find((s) => s.id === "mcp")!.code).toMatch(/BONDED_MCP_URL/);
+    expect(runner.find((s) => s.id === "langchain")!.code).toMatch(
+      /isBondedEpisode\(\) \? await bondedLangChainTools\(\)/,
+    );
+    expect(url.find((s) => s.id === "langchain")!.code).toMatch(/bondedLangChainTools\(episode\)/);
     expect(runner.find((s) => s.id === "python")!.code).toMatch(/BONDED_TOOLS_URL/);
+    expect(url.find((s) => s.id === "python")!.code).toMatch(
+      /examples\/python-agent-url\/agent.py/,
+    );
+  });
+  it("puts the real gateway in the MCP runner line, and an install line above each package", () => {
+    const mcp = snippets("runner", "tools", "https://gw.example").find((s) => s.id === "mcp")!;
+    expect(mcp.code).toMatch(
+      /^npx @bonded\/runner --gateway https:\/\/gw.example -- sh -c 'bonded-mcp-config/,
+    );
+    expect(snippets("runner", "tools").find((s) => s.id === "mcp")!.code).toMatch(/<gateway>/);
+    expect(snippets("runner", "tools").find((s) => s.id === "eliza")!.install).toBe(
+      "npm i @bonded/sdk @elizaos/core",
+    );
   });
   it("says chain mode signs its own trades", () => {
-    expect(snippets("runner", "chain").find((s) => s.id === "eliza")!.note).toMatch(/sessionKey/);
-    expect(snippets("runner", "tools").find((s) => s.id === "eliza")!.note).toBeUndefined();
+    expect(snippets("runner", "chain").find((s) => s.id === "eliza")!.note).toMatch(/session key/);
+    expect(snippets("runner", "tools").find((s) => s.id === "langchain")!.note).toBeUndefined();
+  });
+  it("declares every @bonded/sdk import its code makes", () => {
+    for (const c of ["url", "runner"] as const)
+      for (const s of snippets(c, "tools"))
+        for (const m of s.code.matchAll(/import \{([^}]+)\} from "(@bonded\/sdk[^"]*)"/g)) {
+          const declared = s.imports.find((i) => i.from === m[2]);
+          for (const name of m[1]!.split(",").map((n) => n.trim()))
+            expect(declared?.names, `${s.label}: ${name} from ${m[2]}`).toContain(name);
+        }
   });
 });

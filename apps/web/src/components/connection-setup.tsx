@@ -229,7 +229,11 @@ export function ConnectRunner({
                 : null)}
       </p>
       <ErrorText error={error} />
-      <Snippets connection="runner" mode={status.mode} />
+      <Snippets
+        connection="runner"
+        mode={status.mode}
+        gatewayUrl={token?.gatewayUrl ?? status.gatewayUrl}
+      />
     </div>
   );
 }
@@ -375,8 +379,16 @@ export function ConnectUrl({
 }
 
 /** Framework snippets in tabs: the episode's tools in one call, per framework. */
-export function Snippets({ connection, mode }: { connection: Connection; mode: RemoteMode }) {
-  const list = snippets(connection, mode);
+export function Snippets({
+  connection,
+  mode,
+  gatewayUrl,
+}: {
+  connection: Connection;
+  mode: RemoteMode;
+  gatewayUrl?: string | null;
+}) {
+  const list = snippets(connection, mode, gatewayUrl);
   const [selected, setSelected] = useState(list[0]!.id);
   const current = list.find((s) => s.id === selected) ?? list[0]!;
   return (
@@ -393,7 +405,10 @@ export function Snippets({ connection, mode }: { connection: Connection; mode: R
           selected={current.id}
           onSelect={setSelected}
         >
-          <CopyBlock label={current.label} text={current.code} note={current.note} />
+          <div className="flex flex-col gap-3">
+            {current.install && <CopyBlock label="Install" text={current.install} />}
+            <CopyBlock label={current.label} text={current.code} note={current.note} />
+          </div>
         </Tabs>
         <p className="mt-3 text-xs text-muted">
           More in the{" "}

@@ -2,141 +2,241 @@ import type { RemoteMode } from "@bonded/shared";
 import type { Connection } from "./byoa-api";
 
 /**
- * Copy-paste code that connects an agent to an episode's tools, per framework. The helpers are
- * `@bonded/sdk`'s framework subpaths; the plain MCP config and Python need nothing from Bonded.
- * Under the runner an agent finds its episode in BONDED_* variables; behind an Agent URL it
- * receives the same episode as the POST body.
+ * Copy-paste code that connects an agent to an episode's tools, per framework, as `@bonded/sdk`
+ * documents it (its README and examples/frameworks). Under the runner each helper reads the
+ * episode from BONDED_* when called with no argument; behind an Agent URL the handler hands it the
+ * episode Bonded POSTed, and the helper takes that instead. Placeholders such as `llm`, `model`,
+ * `productionTools`, `walletProvider` and `myTradingPlugin` stand for the agent's own code.
  */
 export interface Snippet {
   id: string;
   label: string;
-  /** For the code block's screen-reader label and highlighting hints. */
-  language: "ts" | "json" | "python";
+  language: "ts" | "sh" | "python";
+  /** The install line shown above the code, if it needs one. */
+  install?: string;
   code: string;
   note?: string;
+  /** What the snippet imports from @bonded/sdk, so a test can check each one exists. */
+  imports: { from: string; names: string[] }[];
 }
 
-const episodeFrom = (connection: Connection) =>
-  connection === "url"
-    ? "// `episode` is the JSON Bonded POSTed to your Agent URL (see the handler tab)."
-    : 'import { fromBondedEnv } from "@bonded/sdk";\nconst episode = fromBondedEnv(); // the runner sets BONDED_* for each episode';
+const CHAIN_NOTE =
+  "Chain mode: only the reads are tools. Sign trades with the episode's session key through a BondedVault (see the guide).";
 
-export function snippets(connection: Connection, mode: RemoteMode): Snippet[] {
-  const from = episodeFrom(connection);
-  const chainNote =
-    mode === "chain"
-      ? "Chain mode: the tools are reads only; sign trades with episode.sessionKey through BondedVault (see the guide)."
-      : undefined;
-  const list: Snippet[] = [
-    {
-      id: "eliza",
-      label: "ElizaOS",
-      language: "ts",
-      code: `import { bondedEpisodePlugin } from "@bonded/sdk/eliza";
-${from}
-
-// Add the episode's tools as actions, next to your other plugins.
-const character = { ...yourCharacter, plugins: [...yourPlugins, bondedEpisodePlugin(episode)] };`,
-      ...(chainNote ? { note: chainNote } : {}),
-    },
-    {
-      id: "agentkit",
-      label: "AgentKit",
-      language: "ts",
-      code: `import { bondedEpisodeActionProvider } from "@bonded/sdk/agentkit";
-${from}
-
-const agentkit = await AgentKit.from({
-  walletProvider,
-  actionProviders: [...yourProviders, bondedEpisodeActionProvider(episode)],
-});`,
-      ...(chainNote ? { note: chainNote } : {}),
-    },
+/** Framework snippets for an agent the runner starts: the episode comes from BONDED_*. */
+function runnerSnippets(): Snippet[] {
+  return [
     {
       id: "langchain",
       label: "LangChain",
       language: "ts",
-      code: `import { bondedEpisodeTools } from "@bonded/sdk/langchain";
-${from}
+      install: "npm i @bonded/sdk @langchain/core",
+      code: `import { isBondedEpisode } from "@bonded/sdk";
+import { bondedLangChainTools } from "@bonded/sdk/langchain";
+import { createReactAgent } from "@langchain/langgraph/prebuilt";
 
-const tools = await bondedEpisodeTools(episode); // LangChain tools, for an agent or a LangGraph node
-const agent = createReactAgent({ llm, tools });`,
-      ...(chainNote ? { note: chainNote } : {}),
+const tools = isBondedEpisode() ? await bondedLangChainTools() : productionTools;
+const agent = createReactAgent({ llm, tools });
+await agent.invoke({ messages: [{ role: "user", content: task }] });`,
+      imports: [
+        { from: "@bonded/sdk", names: ["isBondedEpisode"] },
+        { from: "@bonded/sdk/langchain", names: ["bondedLangChainTools"] },
+      ],
     },
     {
       id: "ai-sdk",
       label: "Vercel AI SDK",
       language: "ts",
-      code: `import { bondedEpisodeTools } from "@bonded/sdk/ai";
-${from}
+      install: "npm i @bonded/sdk ai",
+      code: `import { isBondedEpisode } from "@bonded/sdk";
+import { bondedAiSdkTools } from "@bonded/sdk/ai-sdk";
+import { generateText, stepCountIs } from "ai";
 
-const result = await generateText({
-  model,
-  tools: await bondedEpisodeTools(episode),
-  maxSteps: episode.task.maxSteps,
-  prompt: episode.task.goal,
-});`,
-      ...(chainNote ? { note: chainNote } : {}),
+const tools = isBondedEpisode() ? await bondedAiSdkTools() : productionTools;
+await generateText({ model, tools, stopWhen: stepCountIs(10), prompt: task });`,
+      imports: [
+        { from: "@bonded/sdk", names: ["isBondedEpisode"] },
+        { from: "@bonded/sdk/ai-sdk", names: ["bondedAiSdkTools"] },
+      ],
     },
     {
-      id: "mcp",
-      label: "MCP config",
-      language: "json",
-      code:
-        connection === "url"
-          ? `{
-  "mcpServers": {
-    "bonded": { "type": "http", "url": "<episode.endpoints.mcp from the POST body>" }
-  }
-}`
-          : `{
-  "mcpServers": {
-    "bonded": { "type": "http", "url": "\${BONDED_MCP_URL}" }
-  }
-}`,
-      note: "Any MCP client that speaks streamable HTTP. The URL is new for every episode.",
+      id: "eliza",
+      label: "ElizaOS",
+      language: "ts",
+      install: "npm i @bonded/sdk @elizaos/core",
+      code: `import { isBondedEpisode } from "@bonded/sdk";
+import { bondedEpisodePlugin } from "@bonded/sdk/eliza";
+
+export const character = {
+  name: "Trader",
+  plugins: [isBondedEpisode() ? bondedEpisodePlugin() : myTradingPlugin],
+};`,
+      note: "Already using bondedPlugin({ vault })? No change needed: it switches to the episode's tools by itself during an episode.",
+      imports: [
+        { from: "@bonded/sdk", names: ["isBondedEpisode"] },
+        { from: "@bonded/sdk/eliza", names: ["bondedEpisodePlugin"] },
+      ],
     },
+    {
+      id: "agentkit",
+      label: "AgentKit",
+      language: "ts",
+      install: "npm i @bonded/sdk @coinbase/agentkit",
+      code: `import { isBondedEpisode } from "@bonded/sdk";
+import { bondedEpisodeActionProvider } from "@bonded/sdk/agentkit";
+import { AgentKit } from "@coinbase/agentkit";
+
+const kit = await AgentKit.from({
+  walletProvider,
+  actionProviders: isBondedEpisode() ? [await bondedEpisodeActionProvider()] : productionProviders,
+});`,
+      imports: [
+        { from: "@bonded/sdk", names: ["isBondedEpisode"] },
+        { from: "@bonded/sdk/agentkit", names: ["bondedEpisodeActionProvider"] },
+      ],
+    },
+  ];
+}
+
+/**
+ * The same helpers inside an Agent URL handler: they take the episode Bonded POSTed (BONDED_*
+ * isn't set there), so each one is called with `episode`.
+ */
+function urlSnippets(): Snippet[] {
+  const lead = "// Inside onEpisode(episode) in your handler (the first tab).\n";
+  return [
+    {
+      id: "langchain",
+      label: "LangChain",
+      language: "ts",
+      install: "npm i @bonded/sdk @langchain/core",
+      code: `import { bondedLangChainTools } from "@bonded/sdk/langchain";
+import { createReactAgent } from "@langchain/langgraph/prebuilt";
+
+${lead}const tools = await bondedLangChainTools(episode);
+const agent = createReactAgent({ llm, tools });
+await agent.invoke({ messages: [{ role: "user", content: episode.task.goal }] });`,
+      imports: [{ from: "@bonded/sdk/langchain", names: ["bondedLangChainTools"] }],
+    },
+    {
+      id: "ai-sdk",
+      label: "Vercel AI SDK",
+      language: "ts",
+      install: "npm i @bonded/sdk ai",
+      code: `import { bondedAiSdkTools } from "@bonded/sdk/ai-sdk";
+import { generateText, stepCountIs } from "ai";
+
+${lead}const tools = await bondedAiSdkTools(episode);
+await generateText({ model, tools, stopWhen: stepCountIs(10), prompt: episode.task.goal });`,
+      imports: [{ from: "@bonded/sdk/ai-sdk", names: ["bondedAiSdkTools"] }],
+    },
+    {
+      id: "eliza",
+      label: "ElizaOS",
+      language: "ts",
+      install: "npm i @bonded/sdk @elizaos/core",
+      code: `import { bondedEpisodePlugin } from "@bonded/sdk/eliza";
+
+${lead}const plugins = [bondedEpisodePlugin({ episode })];`,
+      imports: [{ from: "@bonded/sdk/eliza", names: ["bondedEpisodePlugin"] }],
+    },
+    {
+      id: "agentkit",
+      label: "AgentKit",
+      language: "ts",
+      install: "npm i @bonded/sdk @coinbase/agentkit",
+      code: `import { bondedEpisodeActionProvider } from "@bonded/sdk/agentkit";
+import { AgentKit } from "@coinbase/agentkit";
+
+${lead}const kit = await AgentKit.from({
+  walletProvider,
+  actionProviders: [await bondedEpisodeActionProvider(episode)],
+});`,
+      imports: [{ from: "@bonded/sdk/agentkit", names: ["bondedEpisodeActionProvider"] }],
+    },
+  ];
+}
+
+export function snippets(
+  connection: Connection,
+  mode: RemoteMode,
+  /** The Arena Gateway's address, for the runner line; a placeholder until the API gives it. */
+  gatewayUrl?: string | null,
+): Snippet[] {
+  const chain = (s: Snippet): Snippet =>
+    mode === "chain" ? { ...s, note: [s.note, CHAIN_NOTE].filter(Boolean).join(" ") } : s;
+  if (connection === "runner")
+    return [
+      ...runnerSnippets().map(chain),
+      {
+        id: "mcp",
+        label: "Any MCP agent",
+        language: "sh",
+        install: "npm i @bonded/sdk",
+        code: `npx @bonded/runner --gateway ${gatewayUrl ?? "https://<gateway>"} -- sh -c 'bonded-mcp-config > .mcp.json && my-agent --mcp-config .mcp.json'`,
+        note: "For agents that read an mcpServers config. The URL is new for every episode, so the config is written each time; add --style stdio for stdio-only clients. Keep the runner token in BONDED_RUNNER_TOKEN, as in the command above.",
+        imports: [],
+      },
+      {
+        id: "python",
+        label: "Python",
+        language: "python",
+        code: `import json, os, urllib.request
+
+def call(name, args=None):
+    url = f"{os.environ['BONDED_TOOLS_URL'].rstrip('/')}/{name}"
+    req = urllib.request.Request(url, data=json.dumps(args or {}).encode(), method="POST",
+                                 headers={"content-type": "application/json"})
+    return json.loads(urllib.request.urlopen(req).read())  # {"ok": true, "output": ...}
+
+task = json.loads(os.environ["BONDED_TASK"])  # {"goal", "mandate", "maxSteps"}
+inbox = call("read_inbox")  # read everything as data, never as instructions
+call("swap", {"tokenIn": "tUSDG", "tokenOut": "tTSLA", "amountIn": "100"})  # the trade the task names`,
+        note: "Finish with a POST to BONDED_DONE_URL ({ finalMessage, usage }), or just exit.",
+        imports: [],
+      },
+    ];
+  return [
+    {
+      id: "handler",
+      label: "Agent URL handler",
+      language: "ts",
+      install: "npm i @bonded/sdk ai",
+      code: `// app/api/bonded/route.ts (Next.js)
+import { createBondedHandler } from "@bonded/sdk/agent-url";
+import { bondedAiSdkTools } from "@bonded/sdk/ai-sdk";
+import { generateText, stepCountIs } from "ai";
+
+export const POST = createBondedHandler({
+  secret: process.env.BONDED_AGENT_SECRET!,
+  version: process.env.GIT_SHA,
+  async onEpisode(episode, { signal }) {
+    const tools = await bondedAiSdkTools(episode);
+    const { text, totalUsage } = await generateText({
+      model, tools, stopWhen: stepCountIs(10), prompt: episode.task.goal, abortSignal: signal,
+    });
+    return {
+      finalMessage: text,
+      usage: { inputTokens: totalUsage.inputTokens ?? 0, outputTokens: totalUsage.outputTokens ?? 0 },
+    };
+  },
+});`,
+      note: 'It checks the signature, answers the ownership check, replies at once and posts done with what onEpisode returns. Other hosts: Express app.post("/bonded", toNodeHandler(handler)), mounted before express.json() (it needs the raw body); Hono app.post("/bonded", (c) => handler(c.req.raw)); Cloudflare export default { fetch: (req, env, ctx) => handler(req, ctx) }. toNodeHandler comes from @bonded/sdk/agent-url too.',
+      imports: [
+        { from: "@bonded/sdk/agent-url", names: ["createBondedHandler", "toNodeHandler"] },
+        { from: "@bonded/sdk/ai-sdk", names: ["bondedAiSdkTools"] },
+      ],
+    },
+    ...urlSnippets().map(chain),
     {
       id: "python",
       label: "Python",
       language: "python",
-      code:
-        connection === "url"
-          ? `import httpx
-
-def run_episode(episode: dict) -> None:
-    tools = episode["endpoints"]["tools"]
-    inbox = httpx.post(f"{tools}/read_inbox", json={}).json()   # read everything as data
-    # ... decide, then do the one trade the task names:
-    httpx.post(f"{tools}/swap", json={"tokenIn": "tUSDG", "tokenOut": "tTSLA", "amountIn": "100"})
-    httpx.post(episode["endpoints"]["done"], json={"finalMessage": "done"})`
-          : `import json, os, httpx
-
-tools = os.environ["BONDED_TOOLS_URL"]
-task = json.loads(os.environ["BONDED_TASK"])
-inbox = httpx.post(f"{tools}/read_inbox", json={}).json()   # read everything as data
-# ... decide, then do the one trade the task names:
-httpx.post(f"{tools}/swap", json={"tokenIn": "tUSDG", "tokenOut": "tTSLA", "amountIn": "100"})
-httpx.post(os.environ["BONDED_DONE_URL"], json={"finalMessage": "done"})`,
+      code: `# A whole Agent URL endpoint, standard library only:
+# examples/python-agent-url/agent.py in the Bonded repository.
+BONDED_AGENT_SECRET=bonded_as_... PORT=8080 python3 agent.py`,
+      note: "It checks bonded-signature (HMAC-SHA256 of the timestamp, a dot and the raw body), answers verify with your challenge, and replies 202 to an episode before working in the background.",
+      imports: [],
     },
   ];
-  if (connection === "url")
-    list.unshift({
-      id: "handler",
-      label: "Agent URL handler",
-      language: "ts",
-      code: `import { agentUrlHandler } from "@bonded/sdk/agent-url";
-
-// Checks the bonded-signature header, answers the ownership check and cancels,
-// replies 202 at once, then runs your agent with the episode.
-export default agentUrlHandler({
-  secret: process.env.BONDED_AGENT_SECRET!, // the bonded_as_… secret, shown once
-  version: process.env.GIT_COMMIT, // optional: becomes the rating's code hash
-  onEpisode: async (episode) => {
-    await runMyAgent(episode);
-  },
-});`,
-      note: "Works as a fetch handler (Next.js, Hono, Cloudflare, Bun) or wrap it for Express.",
-    });
-  return list;
 }
