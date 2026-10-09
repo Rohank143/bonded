@@ -90,6 +90,9 @@ export class LlmDecisionModel implements DecisionModel {
         model: this.model,
         temperature: 0,
         max_tokens: 200,
+        // Hidden reasoning counts against max_tokens; with it on, a thinking model can spend all
+        // 200 tokens before answering and return an empty reply.
+        reasoning: { enabled: false },
         messages: [
           {
             role: "system",
