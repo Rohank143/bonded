@@ -8,7 +8,10 @@ import type { Database } from "@bonded/db";
  * (operator token): how many times each onboarding step happened per day, counters only.
  */
 
-/** A lane is healthy when nothing is waiting, or it started (or finished) a job this recently. */
+/**
+ * A lane is healthy when no running job has lost its lease (its worker stopped renewing it), and
+ * nothing is waiting or it started (or finished) a job this recently.
+ */
 export const LANE_STALL_MS = { checks: 10 * 60_000, remote: 30 * 60_000 } as const;
 
 export interface StatusOptions {
@@ -32,6 +35,9 @@ export async function serviceStatus(options: StatusOptions) {
     db.pool.query(
       `SELECT count(*) FILTER (WHERE status='queued')::int AS queued,
          min(created_at) FILTER (WHERE status='queued') AS oldest,
+         count(*) FILTER (WHERE status='running')::int AS running,
+         min(coalesce(started_at, created_at)) FILTER (WHERE status='running') AS oldest_running,
+         count(*) FILTER (WHERE status='running' AND (lease_until IS NULL OR lease_until<now()))::int AS stale,
          max(coalesce(finished_at, started_at)) AS last
        FROM connection_checks WHERE created_at > now() - interval '1 day'`,
     ),
@@ -39,6 +45,10 @@ export async function serviceStatus(options: StatusOptions) {
       `SELECT count(*) FILTER (WHERE j.status='queued')::int AS queued,
          count(*) FILTER (WHERE j.status='queued' AND r.preview_id IS NOT NULL)::int AS previews,
          min(r.created_at) FILTER (WHERE j.status='queued') AS oldest,
+         count(*) FILTER (WHERE j.status='running')::int AS running,
+         min(coalesce((r.progress->>'startedAt')::timestamptz, r.created_at))
+           FILTER (WHERE j.status='running') AS oldest_running,
+         count(*) FILTER (WHERE j.status='running' AND (j.lease_until IS NULL OR j.lease_until<now()))::int AS stale,
          max((r.progress->>'startedAt')::timestamptz) AS last
        FROM ratings r JOIN jobs j ON j.id=r.id
        WHERE (r.kind='remote' OR r.preview_id IS NOT NULL) AND r.created_at > now() - interval '7 days'`,
@@ -46,14 +56,25 @@ export async function serviceStatus(options: StatusOptions) {
     gatewayUp(options),
   ]);
   const lane = (
-    row: { queued: number; oldest: Date | null; last: Date | null },
+    row: {
+      queued: number;
+      oldest: Date | null;
+      running: number;
+      oldest_running: Date | null;
+      stale: number;
+      last: Date | null;
+    },
     stallMs: number,
   ) => {
     const last = ageSeconds(row.last, now);
     return {
-      healthy: row.queued === 0 || (last !== null && last * 1000 <= stallMs),
+      healthy: row.stale === 0 && (row.queued === 0 || (last !== null && last * 1000 <= stallMs)),
       queued: row.queued,
       oldestQueuedSeconds: ageSeconds(row.oldest, now),
+      running: row.running,
+      oldestRunningSeconds: ageSeconds(row.oldest_running, now),
+      /** Running jobs whose lease ran out: their worker stopped (or hung) without finishing. */
+      staleRunning: row.stale,
       lastJobAgeSeconds: last,
     };
   };

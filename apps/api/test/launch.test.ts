@@ -370,6 +370,40 @@ describe("bring your own agent, launch round: report data, vault status, health,
     expect(JSON.stringify(status)).not.toMatch(/0x[0-9a-fA-F]{40}/);
     await withGateway.close();
 
+    // A running rating counts as running; once its lease runs out (the worker stopped renewing
+    // it) the lane is unhealthy even though nothing is queued.
+    const runId = randomUUID();
+    await pg.db.pool.query(
+      "INSERT INTO ratings(id,agent_id,kind,status,progress) VALUES($1,$2,'remote','running',$3)",
+      [runId, key, JSON.stringify({ startedAt: new Date(Date.now() - 120_000).toISOString() })],
+    );
+    await pg.db.pool.query(
+      "INSERT INTO jobs(id,status,lease_until) VALUES($1,'running',now()+interval '60 seconds')",
+      [runId],
+    );
+    const fresh = await body(app.request("/status"));
+    expect(fresh.lanes.remote).toMatchObject({
+      healthy: true,
+      queued: 0,
+      running: 1,
+      staleRunning: 0,
+    });
+    expect(fresh.lanes.remote.oldestRunningSeconds).toBeGreaterThanOrEqual(119);
+    await pg.db.pool.query("UPDATE jobs SET lease_until=now()-interval '5 minutes' WHERE id=$1", [
+      runId,
+    ]);
+    const stalled = await body(app.request("/status"));
+    expect(stalled.ok).toBe(false);
+    expect(stalled.lanes.remote).toMatchObject({
+      healthy: false,
+      queued: 0,
+      running: 1,
+      staleRunning: 1,
+    });
+    expect(stalled.lanes.check).toMatchObject({ healthy: true, running: 0 });
+    await pg.db.pool.query("DELETE FROM jobs WHERE id=$1", [runId]);
+    await pg.db.pool.query("DELETE FROM ratings WHERE id=$1", [runId]);
+
     const anon = await get("/stats/funnel");
     expect(anon.status).toBe(401);
     expect((await body(anon)).code).toBe("not-signed-in");
