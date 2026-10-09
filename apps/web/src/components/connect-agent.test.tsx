@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
-import { api, type RunnerRecord, type SelfAgentRecord } from "../lib/api";
-import { ConnectAgent } from "./connect-agent";
+import { ApiError, api, type RunnerRecord, type SelfAgentRecord } from "../lib/api";
+import { byoaApi } from "../lib/byoa-api";
+import { ConnectAgent, NewAgentConnection } from "./connect-agent";
 
 vi.mock("wagmi", () => ({
   useSignMessage: () => ({ signMessageAsync: async () => "0x5151" }),
@@ -48,6 +49,22 @@ function show(props: Partial<Parameters<typeof ConnectAgent>[0]> = {}) {
     </MemoryRouter>,
   );
 }
+const passed = {
+  id: "chk-1",
+  status: "passed" as const,
+  createdAt: new Date().toISOString(),
+  connection: "runner" as const,
+};
+beforeEach(() => {
+  // The panel's other reads, none of them under test here unless a test says so.
+  vi.spyOn(byoaApi, "notifications").mockResolvedValue({
+    webhook: null,
+    email: null,
+    emailAvailable: false,
+  });
+  vi.spyOn(byoaApi, "estimate").mockRejectedValue(new ApiError(409, "no passing check"));
+  vi.spyOn(byoaApi, "ratingProgress").mockReturnValue(() => {});
+});
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -69,7 +86,7 @@ describe("ConnectAgent", () => {
     runner.mockResolvedValue(
       runnerRecord({ token: { id: "t", createdAt: "2026-10-07T00:00:00Z" } }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Create a runner token" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create a runner token" }));
     await waitFor(() => expect(create).toHaveBeenCalledWith("12", expect.anything()));
     expect(
       await screen.findByText(
@@ -83,10 +100,16 @@ describe("ConnectAgent", () => {
     expect(screen.getByText(/capped|Cover limit/)).toBeTruthy();
   });
 
-  it("rates the agent once its runner is connected, and follows the rating", async () => {
+  it("rates the agent once its runner is connected and checked, and follows the rating", async () => {
     vi.spyOn(api, "runner").mockResolvedValue(
-      runnerRecord({ token: { id: "t", createdAt: "" }, runner: connected }),
+      runnerRecord({ token: { id: "t", createdAt: "" }, runner: connected, lastCheck: passed }),
     );
+    vi.mocked(byoaApi.estimate).mockResolvedValue({
+      episodes: 56,
+      perEpisode: { toolCalls: 9, seconds: 20, costUsd: 0.01 },
+      total: { seconds: 1120, costUsd: 0.56 },
+      basis: "connection check chk-1",
+    });
     const rate = vi.spyOn(api, "rateSelfAgent").mockResolvedValue({ runId: "run-1" });
     vi.spyOn(api, "run").mockResolvedValue({
       id: "run-1",
@@ -103,6 +126,91 @@ describe("ConnectAgent", () => {
     fireEvent.click(button);
     await waitFor(() => expect(rate).toHaveBeenCalled());
     expect(await screen.findByText(/7 of 20 episodes, about 5 min left/)).toBeTruthy();
+    // The estimate came first, from the check; and no verdict shows while it runs.
+    expect(screen.getByText(/About 19 min for 56 episodes/)).toBeTruthy();
+    expect(screen.getByText(/about \$0.56 in all/)).toBeTruthy();
+    expect(screen.getByText(/Results appear when it finishes/)).toBeTruthy();
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("7");
+  });
+
+  it("won't rate a connected agent until a connection check passes", async () => {
+    vi.spyOn(api, "runner").mockResolvedValue(
+      runnerRecord({ token: { id: "t", createdAt: "" }, runner: connected }),
+    );
+    show();
+    expect(await screen.findByText("Pass a connection check first.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Rate my agent" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "Run the connection check" })).toHaveProperty(
+      "disabled",
+      false,
+    );
+  });
+
+  it("doesn't count a check that passed over 24 hours ago", async () => {
+    const old = new Date(Date.now() - 25 * 3_600_000).toISOString();
+    vi.spyOn(api, "runner").mockResolvedValue(
+      runnerRecord({
+        token: { id: "t", createdAt: "" },
+        runner: connected,
+        lastCheck: { ...passed, createdAt: old },
+      }),
+    );
+    show();
+    expect(await screen.findByText(/passed over 24 hours ago/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Rate my agent" })).toHaveProperty("disabled", true);
+  });
+
+  it("connects by URL: verifies it, shows the secret once and where the code hash came from", async () => {
+    const runner = vi.spyOn(api, "runner").mockResolvedValue(runnerRecord());
+    const register = vi.spyOn(byoaApi, "registerAgentUrl").mockResolvedValue({
+      url: "https://agent.example/bonded",
+      verifiedAt: new Date().toISOString(),
+      version: "v1.4.2",
+      secret: "bonded_as_secret",
+      codeHash: { value: `0x${"a".repeat(64)}`, source: "url-version", detail: "v1.4.2" },
+    });
+    show();
+    fireEvent.click(await screen.findByRole("radio", { name: /It's online/ }));
+    const field = screen.getByLabelText("Your agent's URL");
+    fireEvent.change(field, { target: { value: "http://agent.example" } });
+    expect(screen.getByText("It must start with https://.")).toBeTruthy();
+    fireEvent.change(field, { target: { value: "https://agent.example/bonded" } });
+    runner.mockResolvedValue(
+      runnerRecord({
+        connection: "url",
+        agentUrl: {
+          url: "https://agent.example/bonded",
+          verifiedAt: new Date().toISOString(),
+          version: "v1.4.2",
+        },
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Verify it" }));
+    await waitFor(() =>
+      expect(register).toHaveBeenCalledWith(
+        { kind: "agent", agentId: "12" },
+        expect.anything(),
+        "https://agent.example/bonded",
+      ),
+    );
+    expect(await screen.findByText("bonded_as_secret")).toBeTruthy();
+    expect(screen.getByText(/won't be shown again/)).toBeTruthy();
+    expect(screen.getAllByText(/reporting version v1.4.2/).length).toBeGreaterThan(0);
+    expect(await screen.findByText("URL verified")).toBeTruthy();
+  });
+
+  it("says plainly why a URL failed to verify, and what to do", async () => {
+    vi.spyOn(api, "runner").mockResolvedValue(runnerRecord({ connection: "url" }));
+    vi.spyOn(byoaApi, "registerAgentUrl").mockRejectedValue(
+      new ApiError(422, "Your URL answered 404"),
+    );
+    show();
+    const field = await screen.findByLabelText("Your agent's URL");
+    fireEvent.change(field, { target: { value: "https://agent.example/bonded" } });
+    fireEvent.click(screen.getByRole("button", { name: "Verify it" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/Your URL answered 404/);
+    expect(alert.textContent).toMatch(/answer the episode POST with a 2xx within 10 seconds/);
   });
 
   it("says why an expired score lapsed when the runner is away", async () => {
@@ -219,7 +327,7 @@ describe("ConnectAgent", () => {
       expect(await screen.findByText(/BONDED_RUNNER_TOKEN=bonded_rt_secret_12 npx/)).toBeTruthy();
       show13("13");
       await waitFor(() => expect(screen.queryByText(/bonded_rt_secret_12/)).toBeNull());
-      expect(screen.getByText(/Create a token to get the command/)).toBeTruthy();
+      expect(await screen.findByText(/The command needs a runner token/)).toBeTruthy();
     });
 
     it("ignores agent 12's token when it arrives after the page moved to agent 13", async () => {
@@ -236,10 +344,45 @@ describe("ConnectAgent", () => {
       // Give the late result time to land, then check it didn't.
       await new Promise((r) => setTimeout(r, 50));
       expect(screen.queryByText(/bonded_rt_secret_12/)).toBeNull();
-      expect(screen.getByRole("button", { name: "Create a runner token" })).toHaveProperty(
+      expect(await screen.findByRole("button", { name: "Create a runner token" })).toHaveProperty(
         "disabled",
         false,
       );
+    });
+  });
+
+  describe("right after onboarding", () => {
+    function mountNew(props: Parameters<typeof NewAgentConnection>[0]) {
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(
+        <MemoryRouter>
+          <QueryClientProvider client={client}>
+            <NewAgentConnection {...props} />
+          </QueryClientProvider>
+        </MemoryRouter>,
+      );
+    }
+    it("starts with the URL carried over from onboarding, then the check", async () => {
+      vi.spyOn(api, "runner").mockResolvedValue(runnerRecord());
+      mountNew({
+        agentId: "21",
+        mode: "tools",
+        initialConnection: "url",
+        initialUrl: "https://agent.example/bonded",
+      });
+      const field = (await screen.findByLabelText("Your agent's URL")) as HTMLInputElement;
+      expect(field.value).toBe("https://agent.example/bonded");
+      expect(screen.getByRole("heading", { name: "3. Check the connection" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Run the connection check" })).toHaveProperty(
+        "disabled",
+        true,
+      );
+      expect(screen.getByText("Verify its URL first.")).toBeTruthy();
+    });
+    it("says when its connection can't be read, with a retry", async () => {
+      vi.spyOn(api, "runner").mockRejectedValue(new ApiError(503, "down"));
+      mountNew({ agentId: "21", mode: "tools" });
+      expect(await screen.findByRole("button", { name: "Try again" })).toBeTruthy();
     });
   });
 });

@@ -10,6 +10,7 @@ import {
 } from "@bonded/shared";
 import { getAbiItem, isAddress, toFunctionSelector } from "viem";
 import { parseUsd } from "./format";
+import type { Connection } from "./byoa-api";
 
 /** Mandate tokens a self-serve vault can hold; tUSDG is the base asset and always included. */
 export const MANDATE_TOKENS = ["tTSLA", "tAMZN", "tNVDA"] as const;
@@ -192,6 +193,8 @@ export interface OnboardingProgress {
   sentinel?: boolean;
   /** The owner's own agent: what they declared about it. */
   remote?: RemoteAgentSpec;
+  /** The owner's own agent: how it will connect, set up once it's registered. */
+  connect?: { connection: Connection; agentUrl?: string; previewId?: string };
   /** Protect a smart account the owner already uses, with a module, instead of a new vault. */
   protection?: Protection;
   /** That smart account, and what kind it is (how the module is installed on it). */

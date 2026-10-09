@@ -8,7 +8,7 @@ import { explorerUrl, networkName } from "./config";
 import { useAgents, useClaims } from "./lib/chain";
 import { searchTarget } from "./lib/search";
 import { isNavActive } from "./lib/nav";
-import { APP_HOME, DOCS_HOME, DOCS_SECURITY } from "./lib/routes";
+import { APP_HOME, DOCS_HOME, DOCS_SECURITY, TEST_AGENT } from "./lib/routes";
 
 /** Stroke icons for the sidebar, drawn on a 24-unit grid. */
 const ICONS = {
@@ -153,8 +153,11 @@ function Sidebar() {
         </Group>
       </nav>
       <div className="mt-auto flex flex-col gap-1">
-        <Link to="/agents/new" className={`${buttonClass("primary")} mb-2`}>
+        <Link to="/agents/new" className={buttonClass("primary")}>
           Onboard an agent
+        </Link>
+        <Link to={TEST_AGENT} className={`${buttonClass("ghost", "sm")} mb-2`}>
+          Test your agent, free
         </Link>
         <a
           href={DOCS_HOME}

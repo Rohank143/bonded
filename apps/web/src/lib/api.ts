@@ -2,18 +2,23 @@ import type { BindingLevel, RemoteMode, SelfServeAgentKind, SelfServeKind } from
 import type { AttackSpec } from "@bonded/shared";
 import { apiUrl } from "../config";
 import type { EpisodeCard, EpisodeCounts, Outcome } from "./events";
+import type { AgentUrlInfo, CheckSummary, CodeHashInfo, Connection } from "./byoa-api";
 
-/** Error from the Bonded API, carrying its HTTP status and the API's error message. */
+/**
+ * Error from the Bonded API, carrying its HTTP status, the API's error message and the rest of
+ * its error body (for example when a refused request can be tried again).
+ */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly details: Record<string, unknown> = {},
   ) {
     super(message);
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiUrl}${path}`, init);
   const body: unknown = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -21,7 +26,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       typeof body === "object" && body && "error" in body
         ? String(body.error)
         : response.statusText;
-    throw new ApiError(response.status, message || `request failed (${response.status})`);
+    throw new ApiError(
+      response.status,
+      message || `request failed (${response.status})`,
+      typeof body === "object" && body ? (body as Record<string, unknown>) : {},
+    );
   }
   return body as T;
 }
@@ -400,6 +409,14 @@ export interface RunnerRecord {
   attempts?: RatingAttempt[];
   /** The Arena Gateway's public URL, for the runner command; null when it isn't configured. */
   gatewayUrl: string | null;
+  /** How the agent is connected: its runner, or Bonded calling its Agent URL. Runner if absent. */
+  connection?: Connection;
+  /** The registered Agent URL and its last ownership check, when it has one. */
+  agentUrl?: AgentUrlInfo | null;
+  /** The latest connection check of the current connection, if any. */
+  lastCheck?: CheckSummary | null;
+  /** The code hash ratings will record: declared, or reported by the runner or the URL. */
+  codeHash?: CodeHashInfo | null;
 }
 
 /** One rating of an agent, as its history shows it. */

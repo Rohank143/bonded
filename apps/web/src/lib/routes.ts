@@ -1,3 +1,5 @@
+/** "Test your agent": a preview rating with nothing to commit (no vault, bond or tokens). */
+export const TEST_AGENT = "/agents/test";
 /** Where "Launch app" goes from the public site. */
 export const APP_HOME = "/overview";
 

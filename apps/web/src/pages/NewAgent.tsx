@@ -1,6 +1,7 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Token, TokenLogo } from "../components/token";
-import { Link } from "react-router";
+import { Link, useLocation, useSearchParams } from "react-router";
+import { useQuery } from "@tanstack/react-query";
 import { useAccount, useSignMessage, useWriteContract } from "wagmi";
 import { getPublicClient, readContract, waitForTransactionReceipt } from "wagmi/actions";
 import { isAddress, parseEventLogs, type Abi, type Address, type Hex } from "viem";
@@ -56,10 +57,16 @@ import {
   installSteps,
   type ModuleCall,
 } from "../lib/module";
-import { DOCS_BYOA } from "../lib/routes";
+import { DOCS_BYOA, TEST_AGENT } from "../lib/routes";
 import { codeHashError, composeHashError, normaliseCodeHash, teeUrlError } from "../lib/byoa";
+import { byoaApi, type Connection } from "../lib/byoa-api";
+import { agentUrlError, codeSourceLabel, loadSession } from "../lib/connect";
+import { ConnectionChoice } from "../components/connection-setup";
+import { NewAgentConnection } from "../components/connect-agent";
+import { prefillFrom, type OfficialPrefill } from "../components/preview-report";
 import {
   Button,
+  Callout,
   Card,
   Choice,
   ErrorText,
@@ -105,6 +112,36 @@ export function NewAgent() {
   const [codeHash, setCodeHash] = useState("");
   const [teeUrl, setTeeUrl] = useState("");
   const [composeHash, setComposeHash] = useState("");
+  // How it will connect: its URL (verified once it's registered) or the runner.
+  const [connection, setConnection] = useState<Connection>("url");
+  const [agentUrl, setAgentUrl] = useState("");
+  const [advanced, setAdvanced] = useState(false);
+  // "Make it official" from a preview: its choices fill the form in, once.
+  const location = useLocation();
+  const [params] = useSearchParams();
+  const fromState = (location.state as { prefill?: OfficialPrefill } | null)?.prefill;
+  const previewId = fromState?.previewId ?? params.get("preview") ?? undefined;
+  const session = loadSession(deployment.chainId, user);
+  const fetched = useQuery({
+    queryKey: ["preview", previewId, session?.session],
+    queryFn: () => byoaApi.preview(session!.session, previewId!),
+    enabled: Boolean(previewId && !fromState && session),
+    retry: false,
+  });
+  const prefill = fromState ?? (fetched.data ? prefillFrom(fetched.data) : undefined);
+  const applied = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!prefill || applied.current === prefill.previewId) return;
+    applied.current = prefill.previewId;
+    setKind(REMOTE_KIND);
+    setRemoteMode(prefill.mode);
+    setConnection(prefill.connection);
+    if (prefill.agentUrl) setAgentUrl(prefill.agentUrl);
+    if (prefill.codeHash?.source === "declared") {
+      setCodeHash(prefill.codeHash.value);
+      setAdvanced(true);
+    }
+  }, [prefill]);
   // Where the funds are protected: a new Bonded vault, or a module on a smart account in use.
   const [protection, setProtection] = useState<Protection>("vault");
   const [account, setAccount] = useState("");
@@ -122,7 +159,12 @@ export function NewAgent() {
   const [description, setDescription] = useState("An agent onboarded from the Bonded web app.");
   const [steps, setSteps] = useState<Step[]>([]);
   const [error, setError] = useState<unknown>(null);
-  const [created, setCreated] = useState<{ agentId: bigint; vault: Address }>();
+  const [created, setCreated] = useState<{
+    agentId: bigint;
+    vault: Address;
+    connect?: OnboardingProgress["connect"];
+    mode?: RemoteMode;
+  }>();
   const [busy, setBusy] = useState(false);
 
   const refundAddress = refund.trim() || user || "";
@@ -142,7 +184,8 @@ export function NewAgent() {
   const own = kind === REMOTE_KIND;
   const remoteErrors = own
     ? [
-        codeHashError(codeHash),
+        codeHash.trim() ? codeHashError(codeHash) : null,
+        connection === "url" ? agentUrlError(agentUrl) : null,
         ...(remoteMode === "chain"
           ? [teeUrlError(teeUrl), composeHashError(composeHash, teeUrl)]
           : []),
@@ -150,7 +193,7 @@ export function NewAgent() {
     : [];
   const remote: RemoteAgentSpec | undefined = own
     ? {
-        codeHash: normaliseCodeHash(codeHash),
+        ...(codeHash.trim() ? { codeHash: normaliseCodeHash(codeHash) } : {}),
         mode: remoteMode,
         ...(teeUrl.trim() && remoteMode === "chain"
           ? {
@@ -195,8 +238,12 @@ export function NewAgent() {
     (depositUnits > 0n ? 2 : 0); // approve and deposit
   const confirmationsLine = `${confirmations} wallet confirmation${confirmations === 1 ? "" : "s"}${
     onModule ? ", the module's install sent from your smart account," : ","
-  } then one signature${kind === REMOTE_KIND ? "; the runner token is made on the agent's page" : ""}.`;
+  } then one signature${kind === REMOTE_KIND ? ". Then you connect it and check the connection, here" : ""}.`;
   const stepLabels = onModule ? MODULE_STEPS : STEPS;
+  // The owner's own agent, registered: connect it and check it here, before its first rating.
+  const connectNow = Boolean(
+    created?.mode && steps.length > 0 && steps.every((s) => s.state === "done"),
+  );
   const saved = user ? loadProgress(deployment.chainId, user) : undefined;
   const unfinished = saved && nextStep(saved) ? saved : undefined;
 
@@ -361,7 +408,12 @@ export function NewAgent() {
         finish("vault");
       }
       const vault = progress.vault as Address;
-      setCreated({ agentId, vault });
+      setCreated({
+        agentId,
+        vault,
+        ...(progress.connect ? { connect: progress.connect } : {}),
+        ...(progress.remote ? { mode: progress.remote.mode } : {}),
+      });
       if (!progress.done.includes("faucet")) {
         const needed = (progress.done.includes("bond") ? 0n : bondValue) + depositValue;
         if (needed > 0n)
@@ -432,6 +484,15 @@ export function NewAgent() {
       kind,
       ...(sentinel && !own ? { sentinel: true } : {}),
       ...(remote ? { remote } : {}),
+      ...(own
+        ? {
+            connect: {
+              connection,
+              ...(connection === "url" ? { agentUrl: agentUrl.trim() } : {}),
+              ...(previewId ? { previewId } : {}),
+            },
+          }
+        : {}),
       ...(onModule ? { protection: "module" as const, account: account.trim(), accountType } : {}),
       form,
       agentKey: key,
@@ -461,7 +522,7 @@ export function NewAgent() {
           <StepCard n={1} title="What gets rated">
             <p className="mb-4 text-sm text-muted">
               One of Bonded's built-in agent designs, run against your vault and mandate, or your
-              own agent, running on your servers and connected to the Arena by a small runner (
+              own agent, running where it runs and reached at its URL or through a small runner (
               <a className={linkClass} href={DOCS_BYOA}>
                 how
               </a>
@@ -483,74 +544,108 @@ export function NewAgent() {
                 onChange={() => setKind(REMOTE_KIND)}
                 title="My own agent: any framework or language, where it already runs"
               >
-                After onboarding, its page gives you a runner token and the command that connects
-                your agent to the Arena.
+                Connect it at its URL or with a small runner, right after onboarding, and check the
+                connection before its first rating.
               </Choice>
             </div>
             {own ? (
               <div className="mt-5 flex flex-col gap-5 text-sm">
-                <fieldset className="flex flex-col gap-2">
-                  <legend className="mb-2 font-medium">How your agent acts</legend>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <Choice
-                      name="remote-mode"
-                      checked={remoteMode === "tools"}
-                      onChange={() => setRemoteMode("tools")}
-                      title="Tools (MCP or HTTP)"
-                    >
-                      It reads and trades through tool calls. The easiest to connect.
-                    </Choice>
-                    <Choice
-                      name="remote-mode"
-                      checked={remoteMode === "chain"}
-                      onChange={() => setRemoteMode("chain")}
-                      title="Chain"
-                    >
-                      It reads through tools and signs its own transactions to its vault, as in
-                      production.
-                    </Choice>
-                  </div>
-                </fieldset>
-                <Input
-                  label="Code hash"
-                  hint="Your own fingerprint of the code that runs: an image digest (sha256:…) or a commit, as 0x and 64 hex digits. The score is about this code."
-                  value={codeHash}
-                  onChange={setCodeHash}
-                  placeholder="0x…"
-                  error={codeHash ? codeHashError(codeHash) : null}
-                />
-                {remoteMode === "chain" ? (
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Input
-                      label="TEE URL (optional)"
-                      hint="If it runs in a Phala dstack TEE: every episode must then prove the code."
-                      value={teeUrl}
-                      onChange={setTeeUrl}
-                      placeholder="https://…"
-                      error={teeUrlError(teeUrl)}
-                    />
-                    <Input
-                      label="Compose hash"
-                      hint="Published for that deployment. Needed with a TEE URL."
-                      value={composeHash}
-                      onChange={setComposeHash}
-                      placeholder="0x…"
-                      error={composeHash || teeUrl ? composeHashError(composeHash, teeUrl) : null}
-                    />
-                  </div>
+                {prefill ? (
+                  <Callout tone="safe" title="Filled in from your preview">
+                    Its mode and connection are set as you tested them. The official rating runs
+                    again from scratch, attested on chain; your preview stays linked to it.
+                  </Callout>
                 ) : (
-                  <p className="text-xs text-muted">
-                    A TEE can bind only a chain-mode agent: in tool mode the tool calls come from
-                    the runner, outside the TEE, so it would prove nothing about how the agent acts.
+                  <p className="text-muted">
+                    Not ready to commit a vault and a bond?{" "}
+                    <Link className={linkClass} to={TEST_AGENT}>
+                      Test your agent first
+                    </Link>
+                    : a free preview rating, no tokens needed.
                   </p>
                 )}
-                <p className="text-xs text-muted">
-                  Without a TEE the score's binding is declared, and cover is capped lower
-                  (underwriting policy, not the score). With one (chain mode only), every episode
-                  must prove it, the vault's agent key must be the TEE's own key for cover, and the
-                  compose hash is what's bound: the compose file decides what runs in the TEE, so
-                  publish it for review.
-                </p>
+                <ConnectionChoice
+                  connection={connection}
+                  mode={remoteMode}
+                  onConnection={setConnection}
+                  onMode={setRemoteMode}
+                  name="onboard"
+                />
+                {connection === "url" ? (
+                  <Input
+                    label="Your agent's URL"
+                    hint="Public https. Bonded verifies it right after onboarding, when the agent exists, and gives you its secret then."
+                    value={agentUrl}
+                    onChange={setAgentUrl}
+                    placeholder="https://my-agent.example.com/bonded"
+                    error={agentUrl ? agentUrlError(agentUrl) : null}
+                  />
+                ) : (
+                  <p className="text-xs text-muted">
+                    Right after onboarding you get the runner's command, with its token filled in.
+                  </p>
+                )}
+                <details
+                  open={advanced}
+                  onToggle={(e) => setAdvanced((e.currentTarget as HTMLDetailsElement).open)}
+                  className="rounded-2xl border border-line-strong p-4"
+                >
+                  <summary className="cursor-pointer font-medium">Advanced (optional)</summary>
+                  <div className="mt-4 flex flex-col gap-4">
+                    <Input
+                      label="Code hash"
+                      hint={
+                        connection === "url"
+                          ? "Leave it empty: it fills itself in from the version your Agent URL reports. Enter one (an image digest sha256:… or a commit, as 0x and 64 hex digits) only to pin a build."
+                          : "Leave it empty: the runner fills it in from your agent's git commit or Docker image. Enter one (sha256:… or 0x and 64 hex digits) only to pin a build."
+                      }
+                      value={codeHash}
+                      onChange={setCodeHash}
+                      placeholder="Filled in automatically"
+                      error={codeHash ? codeHashError(codeHash) : null}
+                    />
+                    {prefill?.codeHash && prefill.codeHash.source !== "declared" && (
+                      <p className="text-xs text-muted">
+                        In your preview it came from {codeSourceLabel(prefill.codeHash)}. It will be
+                        reported again the same way.
+                      </p>
+                    )}
+                    {remoteMode === "chain" ? (
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <Input
+                          label="TEE URL"
+                          hint="If it runs in a Phala dstack TEE: every episode must then prove the code."
+                          value={teeUrl}
+                          onChange={setTeeUrl}
+                          placeholder="https://…"
+                          error={teeUrlError(teeUrl)}
+                        />
+                        <Input
+                          label="Compose hash"
+                          hint="Published for that deployment. Needed with a TEE URL."
+                          value={composeHash}
+                          onChange={setComposeHash}
+                          placeholder="0x…"
+                          error={
+                            composeHash || teeUrl ? composeHashError(composeHash, teeUrl) : null
+                          }
+                        />
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted">
+                        A TEE can bind only a chain-mode agent: in tool mode the tool calls come
+                        from outside the TEE, so it would prove nothing about how the agent acts.
+                      </p>
+                    )}
+                    <p className="text-xs text-muted">
+                      Without a TEE the score's binding is declared, and cover is capped lower
+                      (underwriting policy, not the score). With one (chain mode only), every
+                      episode must prove it, the vault's agent key must be the TEE's own key for
+                      cover, and the compose hash is what's bound: the compose file decides what
+                      runs in the TEE, so publish it for review.
+                    </p>
+                  </div>
+                </details>
               </div>
             ) : (
               <div className="mt-4">
@@ -799,6 +894,25 @@ export function NewAgent() {
               </p>
             </div>
           </StepCard>
+          {connectNow && (
+            <StepCard n={5} title="Connect it and check the connection">
+              <NewAgentConnection
+                agentId={created!.agentId.toString()}
+                mode={created!.mode!}
+                {...(created!.connect?.connection
+                  ? { initialConnection: created!.connect.connection }
+                  : {})}
+                {...(created!.connect?.agentUrl ? { initialUrl: created!.connect.agentUrl } : {})}
+              />
+              <p className="mt-5 border-t border-line pt-4 text-sm text-muted">
+                Once the check passes,{" "}
+                <Link className={linkClass} to={`/agents/${created!.agentId}`}>
+                  rate it from its page
+                </Link>
+                . The page shows the estimate first, then the rating's progress.
+              </p>
+            </StepCard>
+          )}
         </div>
 
         <div className="min-w-0 lg:sticky lg:top-24">
@@ -895,9 +1009,13 @@ export function NewAgent() {
               <div className="mt-4 rounded-lg border border-safe/30 bg-safe-soft p-4 text-sm">
                 <p className="font-medium">Agent {created.agentId.toString()} is set up.</p>
                 <p className="mt-1">
-                  <Link className={linkClass} to={`/agents/${created.agentId}`}>
-                    {own ? "Connect and rate it" : "Rate it"}
-                  </Link>{" "}
+                  {connectNow ? (
+                    <span>Next: connect it and check the connection, below</span>
+                  ) : (
+                    <Link className={linkClass} to={`/agents/${created.agentId}`}>
+                      {own ? "Connect and rate it" : "Rate it"}
+                    </Link>
+                  )}{" "}
                   ·{" "}
                   {onModule ? (
                     <span>Buy cover for its module from the agent's page</span>

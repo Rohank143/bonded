@@ -35,8 +35,11 @@ export type RemoteMode = AgentMode;
 
 /** What the operator declares about their agent when registering it. */
 export interface RemoteAgentSpec {
-  /** The operator's own hash of the code that runs (an image digest or a git commit, as 32 bytes). */
-  codeHash: string;
+  /**
+   * The operator's own hash of the code that runs (an image digest or a git commit, as 32 bytes).
+   * Optional: without it, ratings record the hash the runner or the Agent URL reports.
+   */
+  codeHash?: string;
   mode: RemoteMode;
   /** Where the agent runs in a TEE, and the compose hash published for that deployment. */
   tee?: { url: string; composeHash: string };
@@ -113,7 +116,9 @@ export function selfServeMessage(request: SelfServeRequest): string {
     if (request.protection === "module") lines.push("protection module");
     if (request.kind === REMOTE_KIND) {
       const { codeHash, mode, tee } = request.remote;
-      lines.push(`code ${codeHash.toLowerCase()}`, `mode ${mode}`);
+      // Only when declared, so a registration signed with a code hash reads as it always has.
+      if (codeHash) lines.push(`code ${codeHash.toLowerCase()}`);
+      lines.push(`mode ${mode}`);
       // The TEE's URL is signed exactly as sent; only its compose hash is lowercased.
       if (tee) lines.push(`tee ${tee.url}`, `compose ${tee.composeHash.toLowerCase()}`);
     }

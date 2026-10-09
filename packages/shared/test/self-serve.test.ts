@@ -57,6 +57,10 @@ describe("selfServeMessage", () => {
       `mode chain\ntee https://Agent.example/x\ncompose 0x${"d".repeat(64)}\ntime 7`,
     );
     expect(REMOTE_MODES).toEqual(["tools", "chain"]);
+    // No declared code: the line is left out, and the reported hash is used instead.
+    expect(selfServeMessage({ ...base, remote: { mode: "tools" } })).toBe(
+      `Bonded: register agent for ratings\nchain 46630\nagent 12\nvault 0x0000000000000000000000000000000000000001\ndesign remote\nmandate 0xab\nmode tools\ntime 7`,
+    );
   });
   it("names the runner token actions so one signature can't stand for the other", () => {
     const req = { chainId: 46630, agentId: "12", timestamp: 9 };

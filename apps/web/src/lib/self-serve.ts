@@ -26,7 +26,7 @@ export async function registerForRatings(sign: Signer, agentId: string, agent: O
   };
   const protection = agent.protection === "module" ? { protection: "module" as const } : {};
   if (agent.kind === REMOTE_KIND) {
-    if (!agent.remote) throw new Error("your agent's code hash and mode are missing");
+    if (!agent.remote) throw new Error("your agent's mode is missing");
     const remote = agent.remote;
     const signature = await sign({
       message: selfServeMessage({ ...base, kind: REMOTE_KIND, remote }),
@@ -36,7 +36,7 @@ export async function registerForRatings(sign: Signer, agentId: string, agent: O
       vault: agent.vault,
       kind: REMOTE_KIND,
       mandate: agent.mandate,
-      codeHash: remote.codeHash,
+      ...(remote.codeHash ? { codeHash: remote.codeHash } : {}),
       mode: remote.mode,
       ...(remote.tee ? { tee: remote.tee } : {}),
       ...protection,
