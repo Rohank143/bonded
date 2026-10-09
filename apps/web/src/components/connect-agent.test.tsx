@@ -379,7 +379,11 @@ describe("ConnectAgent", () => {
       vi.spyOn(api, "createRunnerToken").mockResolvedValue(tokenFor(12));
       const show13 = mount("12");
       fireEvent.click(await screen.findByRole("button", { name: "Create a runner token" }));
-      expect(await screen.findByText(/BONDED_RUNNER_TOKEN=bonded_rt_secret_12 npx/)).toBeTruthy();
+      expect(
+        await screen.findByText(
+          /BONDED_RUNNER_TOKEN=bonded_rt_secret_12 npx @bondedhq\/runner --gateway/,
+        ),
+      ).toBeTruthy();
       show13("13");
       await waitFor(() => expect(screen.queryByText(/bonded_rt_secret_12/)).toBeNull());
       expect(await screen.findByText(/The command needs a runner token/)).toBeTruthy();
@@ -485,7 +489,7 @@ describe("ConnectAgent", () => {
     const revoke = vi.spyOn(byoaApi, "revokeAgentUrl").mockResolvedValue({ revoked: 1 });
     signedIn();
     show();
-    fireEvent.click(await screen.findByRole("radio", { name: /It runs on my machine/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /On my computer or server/ }));
     expect(screen.getByText("Stop using the URL first.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Stop using the URL" }));
     await waitFor(() =>

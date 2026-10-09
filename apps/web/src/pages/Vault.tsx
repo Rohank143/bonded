@@ -17,6 +17,14 @@ import { isRpcUnavailable } from "../lib/errors";
 import { BREACH_TYPES, POLICY_STATUS, bps, parseUsd, short, usd, when } from "../lib/format";
 import { positiveAmountError } from "../lib/validate";
 import { BINDING_LABELS, policyCoverCap } from "../lib/byoa";
+import {
+  COVER_COVERS,
+  COVER_EXCLUDES,
+  COVER_EXCLUDES_MODULE,
+  premiumPerYear,
+  recommendedCover,
+} from "../lib/bond-cover";
+import { CoverWithoutTradesWarning } from "../components/health-panel";
 import { tokenSymbol } from "../lib/tokens";
 import {
   AddressLink,
@@ -281,6 +289,7 @@ function VaultView({ vault }: { vault: Address }) {
             agentId={id}
             isGuardian={isGuardian}
             hasActive={Boolean(activeId?.result)}
+            {...(total?.result !== undefined ? { holdings: total.result } : {})}
           />
           {isGuardian && Boolean(frozen?.result) && <Unfreeze vault={vault} />}
           {isAgentKey && (
@@ -563,6 +572,10 @@ export function BuyCover(props: {
   agentId?: bigint;
   isGuardian: boolean;
   hasActive: boolean;
+  /** What the vault holds (6 decimals), for the recommended amount. */
+  holdings?: bigint;
+  /** Cover on a smart account's module, which doesn't pay deferred losses. */
+  module?: boolean;
 }) {
   const [amount, setAmount] = useState("");
   const [quote, setQuote] = useState<SignedQuoteResponse>();
@@ -592,6 +605,13 @@ export function BuyCover(props: {
       ? `Underwriting policy: this agent's cover is capped at ${policy.usd.toLocaleString("en-US")} tUSDG while its binding is ${BINDING_LABELS[policy.binding].label.toLowerCase()}.`
       : `Testnet cover is capped at ${SELF_SERVE_MAX_COVER_USD.toLocaleString("en-US")} tUSDG.`,
   });
+  const cap = policyBinds ? policy.usd : SELF_SERVE_MAX_COVER_USD;
+  const recommended = recommendedCover({
+    vaultBalanceUsd: props.holdings !== undefined ? Number(props.holdings / 1_000_000n) : undefined,
+    testnetCapUsd: SELF_SERVE_MAX_COVER_USD,
+    ...(policyBinds ? { policyCapUsd: policy.usd } : {}),
+  });
+  const own = self.data?.registered ? self.data : undefined;
   async function getQuote() {
     if (!cover || props.agentId === undefined) return;
     setQuoting(true);
@@ -630,6 +650,8 @@ export function BuyCover(props: {
         <ActiveCover vault={props.vault} />
       ) : (
         <div className="flex flex-col gap-3">
+          <CoverWithoutTradesWarning show={own?.coverWithoutVaultTrades} />
+          <CoverExplained module={Boolean(props.module)} />
           <p className="text-sm text-muted">
             Quotes are priced from the agent's on-chain score and bond, and the premium streams from
             the vault. Only the guardian, who must also own the agent, can buy. Testnet cover is
@@ -655,6 +677,24 @@ export function BuyCover(props: {
             suffix={<Token symbol="tUSDG" />}
             error={coverError}
           />
+          {recommended && (
+            <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
+              Recommended: {recommended.amount.toLocaleString("en-US")} <Token symbol="tUSDG" />,{" "}
+              {recommended.limitedBy === "vault"
+                ? "what the vault holds: cover can't pay out more than is in it"
+                : recommended.limitedBy === "policy"
+                  ? `the most this agent's binding allows (${cap.toLocaleString("en-US")})`
+                  : "the testnet cap"}
+              .
+              <button
+                type="button"
+                className={linkClass}
+                onClick={() => (setAmount(String(recommended.amount)), setQuote(undefined))}
+              >
+                Use it
+              </button>
+            </p>
+          )}
           <Button
             kind="secondary"
             disabled={!cover || Boolean(coverError)}
@@ -673,7 +713,12 @@ export function BuyCover(props: {
               </p>
               <p className="text-muted">
                 for ${usd(BigInt(quote.quote.coverAmount), 0)} of cover, priced at score{" "}
-                {quote.quote.score}.
+                {quote.quote.score}. That's about{" "}
+                {premiumPerYear(
+                  Number(BigInt(quote.quote.coverAmount) / 1_000_000n),
+                  quote.quote.premiumRateBps,
+                ).toLocaleString("en-US")}{" "}
+                <Token symbol="tUSDG" /> a year, streamed from the vault.
               </p>
               <Button disabled={!props.isGuardian || tx.busy} loading={tx.busy} onClick={buy}>
                 Buy cover
@@ -830,6 +875,38 @@ function SimulateBreach(props: {
         </div>
       )}
       {tx.view}
+    </details>
+  );
+}
+
+/** What cover pays and what it doesn't, before anyone pays for it. */
+function CoverExplained({ module }: { module: boolean }) {
+  return (
+    <details className="rounded-2xl border border-line-strong p-4 text-sm">
+      <summary className="cursor-pointer font-medium">What cover pays, and what it doesn't</summary>
+      <div className="mt-3 flex flex-col gap-3">
+        <div>
+          <p className="font-semibold text-safe">Covered</p>
+          <ul className="mt-1 flex list-disc flex-col gap-1 pl-5 text-muted">
+            {COVER_COVERS.map((c) => (
+              <li key={c}>{c}</li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <p className="font-semibold text-breach">Not covered</p>
+          <ul className="mt-1 flex list-disc flex-col gap-1 pl-5 text-muted">
+            {[...COVER_EXCLUDES, ...(module ? [COVER_EXCLUDES_MODULE] : [])].map((c) => (
+              <li key={c}>{c}</li>
+            ))}
+          </ul>
+        </div>
+        <p className="text-xs text-muted">
+          A claim is paid by the agent's operator bond first, then the cover pool, up to the cover
+          left. The binding cap: an agent its owner runs (not in a TEE) can only be covered up to a
+          lower limit, because nothing proves the code that trades is the code that was rated.
+        </p>
+      </div>
     </details>
   );
 }

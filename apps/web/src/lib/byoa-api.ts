@@ -3,6 +3,10 @@ import { apiUrl, deployment } from "../config";
 import { request, type RunnerRecord } from "./api";
 import { byoaMessage, type ByoaAction } from "./byoa-messages";
 import { createRunnerToken, requestRating, revokeRunnerToken, type Signer } from "./self-serve";
+import type { ApiMessage } from "./troubleshooting";
+import type { RatingCompare } from "./report-actions";
+import type { SuggestedMandate } from "./bond-cover";
+import type { AgentHealth, InboxItem, ServiceStatus, VaultActivity } from "./health";
 
 /**
  * The API calls behind "Test your agent", Agent URL mode, connection checks, progress, cost
@@ -80,10 +84,10 @@ export interface CheckSummary {
   connection: Connection;
   /** A passing check lets a rating start until then (24 hours). */
   expiresAt?: string | null;
-  /** Why it failed: a check passes only with none. */
-  problems?: string[];
+  /** Why it failed: a check passes only with none. Each with its code, where the API gives one. */
+  problems?: ApiMessage[];
   /** Advice only: a passing check can still carry these. */
-  warnings?: string[];
+  warnings?: ApiMessage[];
 }
 
 /** What the agent reported using at `/done` (optional, never trusted). */
@@ -109,9 +113,9 @@ export type CheckEvent =
       type: "result";
       /** True exactly when there are no problems. */
       passed: boolean;
-      problems: string[];
+      problems: ApiMessage[];
       /** Advice only, never a reason to fail (e.g. surfaces it didn't read). */
-      warnings?: string[];
+      warnings?: ApiMessage[];
       taskCompleted: boolean;
       toolsCalled: number;
       surfacesRead: string[];
@@ -560,6 +564,32 @@ export const byoaApi = {
       input,
       { webhook: input.webhookUrl ?? "none", email: input.email ?? "none" },
     ),
+  /**
+   * GET /ratings/compare?from=&to=: two ratings side by side (score, expected loss, breaches per
+   * class). With the session, so a preview's owner can compare their previews.
+   */
+  compareRatings: (from: string, to: string, session?: string) =>
+    request<RatingCompare>(
+      `/ratings/compare?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      maybeBearer(session),
+    ),
+  /**
+   * GET …/suggested-mandate: the tokens and contracts the agent used in its passing check and
+   * preview, its largest trade, and the presets built from them. Owner only (session).
+   */
+  suggestedMandate: (subject: Subject, session: string) =>
+    request<SuggestedMandate>(`${subjectPath(subject)}/suggested-mandate`, bearer(session)),
+  /** GET /self/agents/:id/vault-activity: trades through its vault from the agent key. Public. */
+  vaultActivity: (agentId: string) =>
+    request<VaultActivity>(`/self/agents/${agentId}/vault-activity`),
+  /** GET /self/agents/:id/health: everything the owner needs to know at a glance (session). */
+  agentHealth: (agentId: string, session: string) =>
+    request<AgentHealth>(`/self/agents/${agentId}/health`, bearer(session)),
+  /** GET /self/notifications/inbox: the signed-in wallet's in-app notifications, newest first. */
+  inbox: (session: string) =>
+    request<{ items: InboxItem[] }>("/self/notifications/inbox", bearer(session)),
+  /** GET /status: the public service status (cached by the API). */
+  status: () => request<ServiceStatus>("/status"),
 };
 
 /**

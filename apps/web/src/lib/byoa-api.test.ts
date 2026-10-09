@@ -324,3 +324,36 @@ describe("snippets", () => {
         }
   });
 });
+
+describe("byoaApi, launch endpoints", () => {
+  it("calls one path per endpoint, with the session where the data is the owner's", async () => {
+    const fetch = mockFetch(200, {});
+    await byoaApi.compareRatings("run a", "run-b", "sess");
+    await byoaApi.suggestedMandate({ kind: "preview", id: "p1" }, "sess");
+    await byoaApi.suggestedMandate({ kind: "agent", agentId: "12" }, "sess");
+    await byoaApi.vaultActivity("12");
+    await byoaApi.agentHealth("12", "sess");
+    await byoaApi.inbox("sess");
+    await byoaApi.status();
+    const calls = fetch.mock.calls.map((_, i) => sent(fetch, i));
+    expect(calls.map((c) => c.url.slice(apiUrl.length))).toEqual([
+      "/ratings/compare?from=run%20a&to=run-b",
+      "/previews/p1/suggested-mandate",
+      "/self/agents/12/suggested-mandate",
+      "/self/agents/12/vault-activity",
+      "/self/agents/12/health",
+      "/self/notifications/inbox",
+      "/status",
+    ]);
+    const authed = calls.map((c) => c.headers.Authorization);
+    expect(authed).toEqual([
+      "Bearer sess",
+      "Bearer sess",
+      "Bearer sess",
+      undefined,
+      "Bearer sess",
+      "Bearer sess",
+      undefined,
+    ]);
+  });
+});

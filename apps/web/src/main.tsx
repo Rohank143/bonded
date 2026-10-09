@@ -26,6 +26,8 @@ import { Agents } from "./pages/Agents";
 import { Overview } from "./pages/Overview";
 import { AttackDetail, Attacks } from "./pages/Attacks";
 import { Sentinel } from "./pages/Sentinel";
+import { Status } from "./pages/Status";
+import { Inbox } from "./pages/Inbox";
 import "./index.css";
 
 const router = createBrowserRouter([
@@ -49,6 +51,8 @@ const router = createBrowserRouter([
       { path: "/claims", element: <Claims /> },
       { path: "/leaderboard", element: <Leaderboard /> },
       { path: "/bounties", element: <Bounties /> },
+      { path: "/status", element: <Status /> },
+      { path: "/inbox", element: <Inbox /> },
       { path: "*", element: <NotFound /> },
     ],
   },

@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useReadContract, useReadContracts } from "wagmi";
+import { useAccount, useReadContract, useReadContracts } from "wagmi";
 import {
   bondedRegistryAbi,
   coverManagerAbi,
@@ -14,13 +14,18 @@ import {
 import type { Address } from "viem";
 import { deployment } from "../config";
 import { downloadReportJson, downloadReportPdf, type ReportContext } from "../lib/report";
-import { ApiError, api } from "../lib/api";
+import { ApiError, api, type SelfAgentRecord } from "../lib/api";
 import { liveCheckView, teeView } from "../lib/tee";
 import { isRpcUnavailable } from "../lib/errors";
 import { apiLookups, isRegistered } from "../lib/agent";
 import { moduleCoverNote, useAgents } from "../lib/chain";
 import { tierMeaning } from "../lib/glossary";
 import { OwnerTools } from "../components/owner-tools";
+import { CoverWithoutTradesWarning, HealthPanel, VaultTrading } from "../components/health-panel";
+import { UseYourVault } from "../components/framework-questions";
+import { byoaApi } from "../lib/byoa-api";
+import { BreachEvidenceList, TopFixes } from "../components/report-actions";
+import { evidenceOf, topFixes } from "../lib/report-actions";
 import { ModuleCover } from "../components/module-cover";
 import { BindingLine } from "../components/connect-agent";
 import { coverageRows, livenessLine, untestedClasses, untestedLine } from "../lib/byoa";
@@ -98,6 +103,13 @@ export function Agent() {
   const row = agents.data?.find((r) => r.agentId === agentId);
   const vault = row?.vault;
   const guarded = row?.protected;
+  const { address } = useAccount();
+  const self = useQuery({
+    queryKey: ["self-agent", id],
+    queryFn: () => api.selfAgent(id),
+    enabled: valid,
+  });
+  const ownRecord = self.data?.registered ? self.data : undefined;
 
   const back = { to: "/agents", label: "All agents" };
   if (!valid)
@@ -250,6 +262,10 @@ export function Agent() {
         </EmptyState>
       )}
 
+      {isOwnerOf(address, owner?.result) && ownRecord && (
+        <HealthPanel agentId={id} record={self.data} />
+      )}
+
       <OwnerTools
         // A new agent's page starts with fresh owner controls (its own token, rating, errors).
         key={`${deployment.chainId}:${id}`}
@@ -257,6 +273,10 @@ export function Agent() {
         owner={owner?.result}
         scoreExpired={Boolean(rated && fresh && fresh.result === false)}
       />
+
+      {isOwnerOf(address, owner?.result) && ownRecord?.kind === "remote" && (vault || guarded) && (
+        <UseYourVault vault={vault ?? guarded?.module ?? null} />
+      )}
 
       <div className="flex flex-wrap items-start gap-4">
         <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-4">
@@ -287,6 +307,12 @@ export function Agent() {
                       . Every other class held.
                     </span>
                   </span>
+                </div>
+              )}
+              {(topFixes(report).length > 0 || evidenceOf(report).length > 0) && (
+                <div className="mb-5 flex flex-col gap-4">
+                  <TopFixes report={report} />
+                  <BreachEvidenceList report={report} />
                 </div>
               )}
               <div className="flex flex-col">
@@ -376,7 +402,7 @@ export function Agent() {
         </div>
 
         <div className="flex min-w-0 flex-[1_1_320px] flex-col gap-4">
-          {vault && <VaultSummary vault={vault} />}
+          {vault && <VaultSummary vault={vault} agentId={id} record={ownRecord} />}
           {guarded && <AccountSummary module={guarded.module} account={guarded.account} />}
           {guarded && <ModuleCover agentId={agentId} module={guarded.module} />}
           <SentinelChecks agentId={id} ratedWith={Boolean(report?.sentinel)} />
@@ -486,8 +512,28 @@ function Tile({ label, value, hint }: { label: ReactNode; value: ReactNode; hint
   );
 }
 
-/** The agent's newest vault: what it holds and how much cover is left. */
-function VaultSummary({ vault }: { vault: Address }) {
+const isOwnerOf = (address?: string, owner?: string) =>
+  Boolean(address && owner && address.toLowerCase() === owner.toLowerCase());
+
+/** The agent's newest vault: what it holds, whether the agent trades through it, and its cover. */
+function VaultSummary({
+  vault,
+  agentId,
+  record,
+}: {
+  vault: Address;
+  agentId: string;
+  record?: Extract<SelfAgentRecord, { registered: true }> | undefined;
+}) {
+  // Whether the agent actually trades through it: from its record, or the chain's own events.
+  const activity = useQuery({
+    queryKey: ["vault-activity", agentId],
+    queryFn: () => byoaApi.vaultActivity(agentId),
+    enabled: record?.vaultActivity === undefined,
+    retry: false,
+    refetchInterval: 60_000,
+  });
+  const trades = record?.vaultActivity ?? activity.data;
   const reads = useReadContracts({
     contracts: [
       { address: vault, abi: mandateVaultAbi, functionName: "totalAssets" },
@@ -547,6 +593,16 @@ function VaultSummary({ vault }: { vault: Address }) {
         </>
       ) : (
         <p className="mt-4 text-xs text-muted">No active cover.</p>
+      )}
+      {trades && (
+        <div className="mt-4 border-t border-line pt-3">
+          <VaultTrading activity={trades} />
+        </div>
+      )}
+      {record?.coverWithoutVaultTrades && (
+        <div className="mt-3">
+          <CoverWithoutTradesWarning show />
+        </div>
       )}
     </Card>
   );
