@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { Context, Hono } from "hono";
 import { z } from "zod";
 import type { Database } from "@bonded/db";
-import { SELF_SERVE_MAX_AGE_SECONDS, selfServeMessage } from "@bonded/shared";
+import { SELF_SERVE_MAX_AGE_SECONDS, selfServeMessage } from "@bondedhq/shared";
 import { recoverMessageAddress, type Hex } from "viem";
 import { Refused, handle } from "./refused.js";
 import type { RateLimiter } from "./rate-limit.js";

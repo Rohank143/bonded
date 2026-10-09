@@ -314,7 +314,7 @@ async function runLocked(
         : undefined;
     if (config.kind === "remote" && !remoteCode)
       throw new RatingRefused(
-        "no code hash: the runner (or Agent URL) reported none when the rating was queued; update @bonded/runner or declare a code hash, then rate again",
+        "no code hash: the runner (or Agent URL) reported none when the rating was queued; update @bondedhq/runner or declare a code hash, then rate again",
         true,
       );
     const withSentinel = config.kind !== "remote" && config.sentinel === true;

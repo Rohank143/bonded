@@ -18,7 +18,7 @@ import {
   newAgentSecret,
   type AgentMode,
   type ByoaAction,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import type { ServiceChain } from "@bonded/keeper";
 import { recoverMessageAddress, type Hex } from "viem";
 import { Refused, handle } from "./refused.js";

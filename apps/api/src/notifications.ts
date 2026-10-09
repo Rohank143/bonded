@@ -13,7 +13,7 @@ import {
 } from "./secrets.js";
 import { outboundUrlProblem } from "./outbound.js";
 import { safeRequest } from "@bonded/arena";
-import { signAgentUrlRequest } from "@bonded/shared";
+import { signAgentUrlRequest } from "@bondedhq/shared";
 
 /**
  * Notifications (bring your own agent, round 2): when a preview or a rating of an owner's agent

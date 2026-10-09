@@ -34,7 +34,7 @@ export const REMOTE_MODES = AgentMode.options;
 export type RemoteMode = AgentMode;
 
 /**
- * How Bonded reaches the operator's agent for each episode: through `@bonded/runner`, which the
+ * How Bonded reaches the operator's agent for each episode: through `@bondedhq/runner`, which the
  * operator runs next to the agent (the default), or by calling the agent's own HTTPS endpoint
  * (Agent URL mode: no install).
  */

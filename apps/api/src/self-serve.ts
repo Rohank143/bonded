@@ -547,7 +547,7 @@ export function selfServeRoutes(
             409,
             connection === "url"
               ? "The Agent URL reported no version, so there is no code hash. Report a version when you answer the verify challenge, or register a code hash."
-              : "The runner reported no code hash. Update @bonded/runner, or register a code hash.",
+              : "The runner reported no code hash. Update @bondedhq/runner, or register a code hash.",
           );
         const passing = await db.passingCheck(rowId(agentId), {
           mode: config.mode,
