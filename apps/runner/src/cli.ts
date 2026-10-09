@@ -3,10 +3,14 @@ import { createRequire } from "node:module";
 import { parseArgs } from "node:util";
 import { AgentMode } from "@bondedhq/shared";
 import { codeIdentity } from "./code-hash.js";
+import { initCommand, terminalConfirm } from "./init/command.js";
+import { serviceCommand } from "./service.js";
 import { Runner } from "./runner.js";
 import { gatewayUrlProblem } from "./tail.js";
 
 const USAGE = `Usage: bonded-runner --gateway <url> [--token <runner token>] [options] -- <agent command...>
+       bonded-runner init [folder] [--print | --yes] [--url] ...   connect your agent's code (--help)
+       bonded-runner service --print systemd|pm2|docker ...        keep the runner running (--help)
 
 Connects your agent to the Bonded Arena so it can be rated where it runs. For each episode the
 Arena sends, the runner starts your agent command with the episode in its environment
@@ -31,6 +35,22 @@ Example:
   BONDED_RUNNER_TOKEN=... bonded-runner --gateway https://arena.example.com -- node my-agent.js`;
 
 async function main(): Promise<number> {
+  const sub = process.argv[2];
+  if (sub === "init")
+    return initCommand(process.argv.slice(3), {
+      cwd: process.cwd(),
+      env: process.env,
+      out: (line) => console.log(line),
+      err: (line) => console.error(line),
+      confirm: terminalConfirm(),
+    });
+  if (sub === "service")
+    return serviceCommand(process.argv.slice(3), {
+      cwd: process.cwd(),
+      env: process.env,
+      out: (text) => process.stdout.write(text.endsWith("\n") ? text : `${text}\n`),
+      err: (text) => console.error(text),
+    });
   const { values, positionals } = parseArgs({
     allowPositionals: true,
     options: {

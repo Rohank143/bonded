@@ -1,0 +1,14 @@
+{
+  "name": "agentkit-agent",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@coinbase/agentkit": "^0.10.4",
+    "@coinbase/agentkit-langchain": "^0.3.0",
+    "@langchain/langgraph": "^1.4.17",
+    "viem": "^2.56.9"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

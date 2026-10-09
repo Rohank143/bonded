@@ -61,6 +61,14 @@ export {
 } from "./errors.js";
 export type { BreachType } from "@bondedhq/shared";
 export {
+  BONDED_VAULT_TOOLS,
+  bondedVaultFromEnv,
+  bondedVaultTools,
+  type BondedVaultTool,
+  type BondedVaultToolName,
+  type BondedVaultToolsOptions,
+} from "./vault-tools.js";
+export {
   bondedEpisodeEnv,
   episodeVault,
   fromBondedEnv,

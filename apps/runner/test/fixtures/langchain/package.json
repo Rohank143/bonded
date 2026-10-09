@@ -1,0 +1,15 @@
+{
+  "name": "langchain-agent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/agent.ts"
+  },
+  "dependencies": {
+    "@langchain/core": "^1.2.12",
+    "@langchain/langgraph": "^1.4.17"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

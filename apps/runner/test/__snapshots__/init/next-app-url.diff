@@ -1,0 +1,87 @@
+--- /dev/null
++++ b/src/bonded.ts
+@@ -0,0 +1,19 @@
++// Added by `bonded-runner init`: Bonded's rating hook and Mandate Vault tools. Edit it freely.
++// Guide: https://github.com/ddboy19912/bonded/blob/main/docs/BRING-YOUR-OWN-AGENT.md
++import { type BondedEpisode, bondedVaultFromEnv, isBondedEpisode } from "@bondedhq/sdk";
++import { bondedLangChainTools, bondedVaultLangChainTools } from "@bondedhq/sdk/langchain";
++
++/**
++ * Your agent's tools, by where it runs:
++ * - while Bonded rates it (under the runner, or with the `episode` an Agent URL handler gets):
++ *   the episode's tools, so it is rated with the code it runs in production;
++ * - in production with BONDED_VAULT_ADDRESS set: your tools plus swap, transfer, approve and
++ *   vault_status through your Mandate Vault, each dry-run first and refused on a predicted breach;
++ * - otherwise: your tools, unchanged.
++ */
++export async function bondedTools<T>(productionTools: T[], episode?: BondedEpisode): Promise<T[]> {
++  if (episode || isBondedEpisode()) return (await bondedLangChainTools(episode)) as unknown as T[];
++  const vault = bondedVaultFromEnv();
++  if (!vault) return productionTools;
++  return [...productionTools, ...(bondedVaultLangChainTools({ vault }) as unknown as T[])];
++}
+
+--- a/src/agent.ts
++++ b/src/agent.ts
+@@ -1,6 +1,7 @@
+ import type { StructuredToolInterface } from "@langchain/core/tools";
++import { bondedTools } from "./bonded";
+ 
+ export async function runAgent(productionTools: StructuredToolInterface[]): Promise<number> {
+-  const tools: StructuredToolInterface[] = productionTools;
++  const tools: StructuredToolInterface[] = await bondedTools(productionTools);
+   return tools.length;
+ }
+
+--- /dev/null
++++ b/src/bonded-agent-url.ts
+@@ -0,0 +1,26 @@
++// Added by `bonded-runner init`: Bonded's Agent URL handler. Edit it freely.
++// Guide: https://github.com/ddboy19912/bonded/blob/main/docs/BRING-YOUR-OWN-AGENT.md
++import { type BondedHandler, createBondedHandler } from "@bondedhq/sdk/agent-url";
++
++let handler: BondedHandler | undefined;
++
++/**
++ * Bonded calls this once per episode, signed with your agent secret (BONDED_AGENT_SECRET). It
++ * answers Bonded's verify challenge, acknowledges an episode at once and runs onEpisode in the
++ * background, and posts /done when onEpisode resolves.
++ */
++export const bondedHandler: BondedHandler = (request, context) => {
++  handler ??= createBondedHandler({
++    secret: process.env.BONDED_AGENT_SECRET ?? "",
++    ...(process.env.GIT_SHA ? { version: process.env.GIT_SHA } : {}),
++    async onEpisode(episode, { signal }) {
++      // Run your agent on episode.task.goal with the episode's tools, and stop when signal aborts:
++      //   const tools = await bondedTools(productionTools, episode); // from ./bonded
++      //   const agent = createReactAgent({ llm, tools }); await agent.invoke(...);
++      // Return { finalMessage, usage } when it has finished.
++      void signal;
++      throw new Error("Connect your agent in src/bonded-agent-url.ts (onEpisode) to be rated over its Agent URL");
++    },
++  });
++  return handler(request, context);
++};
+
+--- /dev/null
++++ b/app/api/bonded/route.ts
+@@ -0,0 +1,11 @@
++// Added by `bonded-runner init`: Bonded's Agent URL route. Edit it freely.
++// Guide: https://github.com/ddboy19912/bonded/blob/main/docs/BRING-YOUR-OWN-AGENT.md
++import { after } from "next/server";
++import { bondedHandler } from "../../../src/bonded-agent-url";
++
++export const runtime = "nodejs";
++export const dynamic = "force-dynamic";
++
++export function POST(request: Request) {
++  return bondedHandler(request, { waitUntil: (work) => after(work) });
++}
+
+# By hand
+- Fill in onEpisode in src/bonded-agent-url.ts: run your agent on episode.task.goal with the episode's tools.
+
+# Variables
+BONDED_VAULT_ADDRESS, BONDED_AGENT_KEY, BONDED_ROUTER_ADDRESS, BONDED_AGENT_SECRET
+# Adds
+@bondedhq/sdk

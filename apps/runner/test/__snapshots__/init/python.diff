@@ -1,0 +1,13 @@
+# By hand
+- Python: there is no Bonded package to install. While Bonded rates the agent (BONDED_EPISODE_ID is set), call the episode's tools over plain HTTP:
+-     import json, os, urllib.request
+    def call(name, args=None):
+        url = f"{os.environ['BONDED_TOOLS_URL'].rstrip('/')}/{name}"
+        req = urllib.request.Request(url, data=json.dumps(args or {}).encode(), method="POST", headers={"content-type": "application/json"})
+        return json.loads(urllib.request.urlopen(req).read())
+- In production, every trade is MandateVault.execute(target, data) sent from the vault's agent key (web3.py works). For an Agent URL, see https://github.com/ddboy19912/bonded/tree/main/examples/python-agent-url.
+
+# Variables
+(none)
+# Adds
+(nothing)

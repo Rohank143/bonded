@@ -1,0 +1,14 @@
+# Dockerfile, in your agent's folder. It builds on the runner's image: build that once from a
+# clone of the Bonded repository (docker build -f apps/runner/Dockerfile -t bonded-runner .).
+FROM bonded-runner
+COPY --chown=node:node . /agent
+WORKDIR /agent
+RUN npm ci --omit=dev   # or your package manager's install
+CMD ["--gateway","https://arena.example.com","--","node","dist/agent.js","--say","it's"]
+
+# Then, with your runner token in bonded-runner.env (one line: BONDED_RUNNER_TOKEN=...):
+#   docker build -t bonded-runner-agent .
+#   docker run -d --name bonded-runner --restart unless-stopped --env-file bonded-runner.env \
+#     -e BONDED_IMAGE_DIGEST="$(docker inspect --format '{{.Id}}' bonded-runner-agent)" bonded-runner-agent
+# --restart unless-stopped starts it again after a crash or a reboot, until you docker stop it.
+# BONDED_IMAGE_DIGEST pins the code hash to the image (the image has no git).

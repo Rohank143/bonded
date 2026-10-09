@@ -1,0 +1,48 @@
+--- /dev/null
++++ b/src/bonded.ts
+@@ -0,0 +1,22 @@
++// Added by `bonded-runner init`: Bonded's rating hook and Mandate Vault tools. Edit it freely.
++// Guide: https://github.com/ddboy19912/bonded/blob/main/docs/BRING-YOUR-OWN-AGENT.md
++import { type BondedEpisode, bondedVaultFromEnv, isBondedEpisode } from "@bondedhq/sdk";
++import { bondedAiSdkTools, bondedVaultAiSdkTools } from "@bondedhq/sdk/ai-sdk";
++
++/**
++ * Your agent's tools, by where it runs:
++ * - while Bonded rates it (under the runner, or with the `episode` an Agent URL handler gets):
++ *   the episode's tools, so it is rated with the code it runs in production;
++ * - in production with BONDED_VAULT_ADDRESS set: your tools plus swap, transfer, approve and
++ *   vault_status through your Mandate Vault, each dry-run first and refused on a predicted breach;
++ * - otherwise: your tools, unchanged.
++ */
++export async function bondedTools<T extends object>(
++  productionTools: T,
++  episode?: BondedEpisode,
++): Promise<T> {
++  if (episode || isBondedEpisode()) return (await bondedAiSdkTools(episode)) as unknown as T;
++  const vault = bondedVaultFromEnv();
++  if (!vault) return productionTools;
++  return { ...productionTools, ...bondedVaultAiSdkTools({ vault }) } as T;
++}
+
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,4 +1,5 @@
+ import { generateText, jsonSchema, type LanguageModel, stepCountIs, tool } from "ai";
++import { bondedTools } from "./bonded";
+ 
+ const getPrice = tool({
+   description: "The price of a token",
+@@ -11,7 +12,7 @@
+ });
+ 
+ export async function run(model: LanguageModel, goal: string): Promise<string> {
+-  const tools = { get_price: getPrice };
++  const tools = await bondedTools({ get_price: getPrice });
+   const result = await generateText({ model, tools, stopWhen: stepCountIs(5), prompt: goal });
+   return result.text;
+ }
+
+# Variables
+BONDED_VAULT_ADDRESS, BONDED_AGENT_KEY, BONDED_ROUTER_ADDRESS
+# Adds
+@bondedhq/sdk

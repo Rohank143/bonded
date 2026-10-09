@@ -154,6 +154,22 @@ describe("the runner", { timeout: TEST_MS }, () => {
     await eventually(() => gateway.of("ping").length >= 2);
   });
 
+  it("calls onConnect once connected, and starts the agent in its cwd", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bonded-runner-cwd-"));
+    stops.push(async () => rmSync(dir, { recursive: true, force: true }));
+    let connected = 0;
+    const { gateway } = await setup({
+      command: node("console.log(process.cwd())"),
+      cwd: dir,
+      onConnect: () => connected++,
+    });
+    expect(connected).toBe(1);
+    gateway.send(episode());
+    await eventually(() => gateway.of("episode_done").length === 1);
+    const { realpathSync } = await import("node:fs");
+    expect(realpathSync(gateway.of("episode_done")[0]!.stdoutTail!.trim())).toBe(realpathSync(dir));
+  });
+
   it("reports its code hash and where it came from in hello", async () => {
     const code = {
       codeHash: `0x${"ef".repeat(32)}` as const,
@@ -170,12 +186,15 @@ describe("the runner", { timeout: TEST_MS }, () => {
 
   it("runs the agent with the episode in its environment, never the runner token", async () => {
     process.env.BONDED_RUNNER_TOKEN = "must-not-leak";
+    process.env.BONDED_AGENT_KEY = "0xproduction-key";
+    process.env.BONDED_VAULT_ADDRESS = "0xproduction-vault";
     try {
       const { gateway } = await setup({
         command: node(
           "const e=process.env;console.log(JSON.stringify({id:e.BONDED_EPISODE_ID,mcp:e.BONDED_MCP_URL," +
             "task:JSON.parse(e.BONDED_TASK),chain:e.BONDED_CHAIN_ID,deadline:e.BONDED_DEADLINE_MS," +
-            "rpc:e.BONDED_RPC_URL??null,key:e.BONDED_SESSION_KEY??null,token:e.BONDED_RUNNER_TOKEN??null}))",
+            "rpc:e.BONDED_RPC_URL??null,key:e.BONDED_SESSION_KEY??null,token:e.BONDED_RUNNER_TOKEN??null," +
+            "prod:[e.BONDED_AGENT_KEY,e.BONDED_VAULT_ADDRESS].filter(Boolean)}))",
         ),
       });
       const ep = episode();
@@ -195,9 +214,12 @@ describe("the runner", { timeout: TEST_MS }, () => {
         rpc: null,
         key: null,
         token: null,
+        prod: [],
       });
     } finally {
       delete process.env.BONDED_RUNNER_TOKEN;
+      delete process.env.BONDED_AGENT_KEY;
+      delete process.env.BONDED_VAULT_ADDRESS;
     }
   });
 

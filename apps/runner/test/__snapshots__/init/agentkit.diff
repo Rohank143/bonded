@@ -1,0 +1,53 @@
+--- /dev/null
++++ b/src/bonded.ts
+@@ -0,0 +1,29 @@
++// Added by `bonded-runner init`: Bonded's rating hook and Mandate Vault wallet provider. Edit it freely.
++// Guide: https://github.com/ddboy19912/bonded/blob/main/docs/BRING-YOUR-OWN-AGENT.md
++import { AgentKit, EvmWalletProvider } from "@coinbase/agentkit";
++import { type BondedEpisode, isBondedEpisode } from "@bondedhq/sdk";
++import { BondedWalletProvider, bondedEpisodeActionProvider } from "@bondedhq/sdk/agentkit";
++
++/**
++ * `AgentKit.from`, with Bonded:
++ * - while Bonded rates the agent (under the runner, or with the `episode` an Agent URL handler
++ *   gets): the episode's tools are its only actions, so it is rated with the code it runs;
++ * - in production with BONDED_VAULT_ADDRESS set: your wallet provider signs as the vault's agent
++ *   key and every transaction becomes vault.execute(to, data), dry-run first;
++ * - otherwise: AgentKit.from(options), unchanged.
++ */
++export async function bondedAgentKit(
++  options: NonNullable<Parameters<typeof AgentKit.from>[0]>,
++  episode?: BondedEpisode,
++): Promise<AgentKit> {
++  if (episode || isBondedEpisode())
++    return AgentKit.from({ ...options, actionProviders: [await bondedEpisodeActionProvider(episode)] });
++  const vault = process.env.BONDED_VAULT_ADDRESS;
++  if (!vault || !(options.walletProvider instanceof EvmWalletProvider)) return AgentKit.from(options);
++  const walletProvider = await BondedWalletProvider.create({
++    wallet: options.walletProvider,
++    vault: vault as `0x${string}`,
++    guard: true,
++  });
++  return AgentKit.from({ ...options, walletProvider });
++}
+
+--- a/src/chatbot.ts
++++ b/src/chatbot.ts
+@@ -4,10 +4,11 @@
+   type EvmWalletProvider,
+   walletActionProvider,
+ } from "@coinbase/agentkit";
++import { bondedAgentKit } from "./bonded.js";
+ 
+ /** The AgentKit chatbot template's setup, with the wallet provider built by the caller. */
+ export async function initializeAgent(walletProvider: EvmWalletProvider) {
+-  const agentkit = await AgentKit.from({
++  const agentkit = await bondedAgentKit({
+     walletProvider,
+     actionProviders: [erc20ActionProvider(), walletActionProvider()],
+   });
+
+# Variables
+BONDED_VAULT_ADDRESS, BONDED_AGENT_KEY, BONDED_ROUTER_ADDRESS
+# Adds
+@bondedhq/sdk

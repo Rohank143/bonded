@@ -21,6 +21,7 @@
   },
   "devDependencies": {
     "@bonded/arena": "workspace:*",
+    "@bondedhq/runner": "workspace:*",
     "@bondedhq/shared": "workspace:*"
   }
 }
