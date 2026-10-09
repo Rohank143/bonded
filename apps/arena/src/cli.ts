@@ -23,16 +23,25 @@ import {
   type ArenaAgent,
   EVM_CHAINS,
   type EvmMandateInput,
+  isWellFormedAgentSecret,
   isWellFormedRunnerToken,
   llmConfigFromEnv,
+  newAgentSecret,
   OpenAICompatibleClient,
   parseSentinelQuestionSet,
 } from "@bonded/shared";
 import { loadAttackLibrary } from "./attacks.js";
+import { type CheckEvent, runConnectionCheck } from "./check.js";
 import { runControls } from "./controls.js";
 import { loadDotEnv, usesLanguageModel } from "./env.js";
 import { type EpisodeResult, runEpisode, saveEpisode } from "./episode.js";
-import { ArenaGateway, newRunnerToken, RemoteAgent, StaticRunnerTokens } from "./gateway/index.js";
+import {
+  type AgentTransport,
+  ArenaGateway,
+  newRunnerToken,
+  RemoteAgent,
+  StaticRunnerTokens,
+} from "./gateway/index.js";
 import { FileHeldOutLedger, freshHeldOut } from "./held-out-fresh.js";
 import { rateAgent } from "./rate.js";
 import { sentinelInfo } from "./sentinel-info.js";
@@ -46,6 +55,9 @@ const USAGE = `Usage:
   pnpm --filter @bonded/arena arena rate [options]   full rating: score, report, attestation
   pnpm --filter @bonded/arena arena controls [options]  benign episodes only, for Sentinel's
                                                        false-alarm test (no score)
+  pnpm --filter @bonded/arena arena check [options]  connection check for your own agent: one
+                                                     benign episode, live, with what went wrong
+                                                     (no score). Takes the remote agent options
 
 Agent:
   --agent <vulnerable|hardened|partial|decision|agentkit|solana-agent-kit|remote>
@@ -83,9 +95,15 @@ Attacks:
                            pnpm heldout:generate); the report counts them as unpublished
   --list                   list the attack library and exit
 
-Remote agents (--agent remote, run or rate):
+Remote agents (--agent remote, run or rate; and check):
   --mode <tools|chain>     tools (default): your agent calls tools over MCP or HTTP; chain: it reads
                            with tools and signs its own vault transactions through an RPC endpoint
+  --agent-url <url>        Agent URL mode instead of a runner: the gateway POSTs each signed episode
+                           to your agent's own endpoint (https, or http to this machine for a local
+                           run). Your agent then needs --public-url to reach the gateway if it
+                           isn't on this machine
+  --agent-secret <s>       the secret your agent checks signatures with (or BONDED_AGENT_SECRET;
+                           default: a fresh one, printed)
   --runner-token <t>       the token your runner connects with (default: a fresh one, printed)
   --gateway-port <n>       port for the local gateway (default: 8789)
   --gateway-host <h>       address to listen on (default: 127.0.0.1)
@@ -137,6 +155,8 @@ async function main(): Promise<number> {
       "held-out": { type: "string" },
       mode: { type: "string", default: "tools" },
       "runner-token": { type: "string" },
+      "agent-url": { type: "string" },
+      "agent-secret": { type: "string" },
       "gateway-port": { type: "string", default: "8789" },
       "gateway-host": { type: "string", default: "127.0.0.1" },
       "public-url": { type: "string" },
@@ -154,7 +174,11 @@ async function main(): Promise<number> {
   const command = positionals[0];
   if (
     values.help ||
-    (command !== "run" && command !== "rate" && command !== "controls" && !values.list)
+    (command !== "run" &&
+      command !== "rate" &&
+      command !== "controls" &&
+      command !== "check" &&
+      !values.list)
   ) {
     console.log(USAGE);
     return values.help ? 0 : 1;
@@ -169,8 +193,10 @@ async function main(): Promise<number> {
     return 0;
   }
 
+  if (command === "check") values.agent = "remote";
   const remote = values.agent === "remote";
   if (remote && command === "controls") throw new Error("--agent remote works with run and rate");
+  if (values["agent-url"] && !remote) throw new Error("--agent-url needs --agent remote");
   // Local defaults, or exactly what a hosted rating of an operator-run agent runs.
   const settings = rateSettings(
     values.profile,
@@ -204,10 +230,42 @@ async function main(): Promise<number> {
     };
   let gateway: ArenaGateway | undefined;
   try {
+    let transport: AgentTransport | undefined;
+    let remoteCode: { hash: `0x${string}`; source: string } | undefined;
     if (remote) {
-      const started = await startRemote(sandbox, values, mode.data, settings.episodeTimeoutMs);
+      const started = await startRemote(sandbox, values, mode.data, settings.episodeTimeoutMs, {
+        verify: command !== "check",
+      });
       gateway = started.gateway;
       agent = started.agent;
+      transport = started.agent.transport;
+      remoteCode = started.code;
+    }
+    if (command === "check") {
+      console.log(`\nConnection check (${mode.data} mode): one benign episode, not scored\n`);
+      const result = await runConnectionCheck({
+        gateway: gateway!,
+        sandbox,
+        transport: transport!,
+        mode: mode.data,
+        ...(values["episode-timeout"]
+          ? { episodeTimeoutMs: positiveInt(values["episode-timeout"], "--episode-timeout") * 1000 }
+          : {}),
+        onEvent: (event) => {
+          const line = describeCheckEvent(event);
+          if (line) console.log(line);
+        },
+      });
+      console.log(result.passed ? "\nPASSED" : "\nFAILED");
+      for (const problem of result.problems) console.log(`  problem: ${problem}`);
+      for (const warning of result.warnings) console.log(`  warning: ${warning}`);
+      console.log(
+        `  ${result.toolsCalled} tool calls, read ${result.surfacesRead.length} surfaces` +
+          (result.surfacesRead.length ? ` (${result.surfacesRead.join(", ")})` : "") +
+          `, task ${result.taskCompleted === null ? "not run" : result.taskCompleted ? "done" : "not done"}`,
+      );
+      if (result.code) console.log(`  code hash ${result.code.hash} (${result.code.source})`);
+      return result.passed ? 0 : 1;
     }
     if (command === "controls") {
       const outDir = values.out ?? `ratings/controls-${agent.name.replaceAll("/", "_")}`;
@@ -231,13 +289,17 @@ async function main(): Promise<number> {
     }
     if (command === "rate") {
       const outDir = values.out ?? `ratings/${agent.name.replaceAll("/", "_")}`;
-      const codeHash = hex32(values["code-hash"], "--code-hash");
+      // Declared, or else what the runner or the agent URL reported.
+      const codeHash = hex32(values["code-hash"], "--code-hash") ?? remoteCode?.hash;
+      if (!values["code-hash"] && remoteCode)
+        console.log(`Code hash ${remoteCode.hash} (${remoteCode.source}, reported by your agent)`);
       const tee = values["tee-url"]
         ? await attestTeeAgent({
             url: values["tee-url"],
             // A local CLI run may check a TEE simulator on this machine.
             allowLoopback: true,
-            codeHash: codeHash ?? required("--code-hash with --tee-url"),
+            codeHash:
+              hex32(values["code-hash"], "--code-hash") ?? required("--code-hash with --tee-url"),
             composeHash:
               hex32(values["tee-compose-hash"], "--tee-compose-hash") ??
               required("--tee-compose-hash with --tee-url"),
@@ -364,6 +426,35 @@ async function main(): Promise<number> {
   }
 }
 
+/** One line for a live check event (the result is printed after). */
+function describeCheckEvent(event: CheckEvent): string | undefined {
+  switch (event.type) {
+    case "started":
+      return "started";
+    case "tool":
+      return `  tool ${event.name}${event.surface ? ` (${event.surface})` : ""}: ${event.ok ? "ok" : `failed: ${event.error ?? "unknown"}`}`;
+    case "tx":
+      return `  transaction: ${event.ok ? "sent" : `refused: ${event.reason ?? "unknown"}`}`;
+    case "done": {
+      const exit = event.exitCode === undefined ? "" : `, exit code ${event.exitCode}`;
+      const tails = [
+        event.stdoutTail ? `  stdout (end):\n${indent(event.stdoutTail)}` : "",
+        event.stderrTail ? `  stderr (end):\n${indent(event.stderrTail)}` : "",
+      ].filter(Boolean);
+      return [`done in ${(event.durationMs / 1000).toFixed(1)} s${exit}`, ...tails].join("\n");
+    }
+    default:
+      return undefined;
+  }
+}
+
+const indent = (text: string) =>
+  text
+    .trimEnd()
+    .split("\n")
+    .map((line) => `    ${line}`)
+    .join("\n");
+
 /** Stands in until the remote agent is built; never run. */
 const placeholderAgent: ArenaAgent = {
   name: "remote",
@@ -378,6 +469,8 @@ async function startRemote(
   sandbox: Sandbox,
   values: {
     "runner-token"?: string;
+    "agent-url"?: string;
+    "agent-secret"?: string;
     "gateway-port"?: string;
     "gateway-host"?: string;
     "public-url"?: string;
@@ -386,7 +479,13 @@ async function startRemote(
   },
   mode: AgentMode,
   episodeTimeoutMs: number,
-): Promise<{ gateway: ArenaGateway; agent: RemoteAgent }> {
+  options: { verify: boolean },
+): Promise<{
+  gateway: ArenaGateway;
+  agent: RemoteAgent;
+  code?: { hash: `0x${string}`; source: string };
+}> {
+  if (values["agent-url"]) return startAgentUrl(sandbox, values, mode, episodeTimeoutMs, options);
   const given = values["runner-token"];
   const token = given ?? newRunnerToken();
   if (!isWellFormedRunnerToken(token))
@@ -440,7 +539,80 @@ async function startRemote(
     name: values.name ?? "remote/local",
     episodeTimeoutMs,
   });
-  return { gateway, agent };
+  const code = gateway.runner("local")?.code;
+  return { gateway, agent, ...(code ? { code } : {}) };
+}
+
+/**
+ * Agent URL mode for a local run: a gateway whose episodes are POSTed to the agent's URL (http to
+ * this machine allowed, since it's local). The secret is held in memory only.
+ */
+async function startAgentUrl(
+  sandbox: Sandbox,
+  values: {
+    "agent-url"?: string;
+    "agent-secret"?: string;
+    "gateway-port"?: string;
+    "gateway-host"?: string;
+    "public-url"?: string;
+    name?: string;
+  },
+  mode: AgentMode,
+  episodeTimeoutMs: number,
+  options: { verify: boolean },
+): Promise<{
+  gateway: ArenaGateway;
+  agent: RemoteAgent;
+  code?: { hash: `0x${string}`; source: string };
+}> {
+  const url = values["agent-url"]!;
+  const given = values["agent-secret"] ?? process.env.BONDED_AGENT_SECRET;
+  const secret = given ?? newAgentSecret();
+  if (!isWellFormedAgentSecret(secret))
+    throw new Error(
+      "--agent-secret must be bonded_as_ followed by at least 16 base64url characters",
+    );
+  const gateway = new ArenaGateway({
+    tokens: new StaticRunnerTokens(),
+    ...(values["public-url"] ? { publicUrl: values["public-url"] } : {}),
+    agentUrl: { allowLoopback: true },
+  });
+  const base = await gateway.listen({
+    port: positiveInt(values["gateway-port"], "--gateway-port"),
+    host: values["gateway-host"] ?? "127.0.0.1",
+  });
+  console.log(`\nArena Gateway listening at ${base}`);
+  const problem = gateway.agentUrls.urlProblem(url);
+  if (problem) {
+    await gateway.close();
+    throw new Error(problem);
+  }
+  if (!given) {
+    console.log("Your agent checks each call's signature with this secret (for this run only):\n");
+    console.log(`  BONDED_AGENT_SECRET=${secret}\n`);
+    console.log("Start your agent with it, then press Enter.");
+    await new Promise<void>((resolve) => process.stdin.once("data", () => resolve()));
+    process.stdin.pause();
+  }
+  let code: { hash: `0x${string}`; source: string } | undefined;
+  if (options.verify) {
+    const verified = await gateway.agentUrls.verify(url, secret);
+    if (!verified.ok) {
+      await gateway.close();
+      throw new Error(verified.problem);
+    }
+    console.log(`Agent URL verified${verified.version ? ` (version ${verified.version})` : ""}`);
+    if (verified.codeHash) code = { hash: verified.codeHash, source: "url" };
+  }
+  const agent = new RemoteAgent({
+    gateway,
+    sandbox,
+    transport: { kind: "url", url, secret },
+    mode,
+    name: values.name ?? "remote/url",
+    episodeTimeoutMs,
+  });
+  return { gateway, agent, ...(code ? { code } : {}) };
 }
 
 function buildAgent(values: {
