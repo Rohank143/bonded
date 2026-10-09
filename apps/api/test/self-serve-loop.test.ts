@@ -179,7 +179,24 @@ it("a new wallet onboards, rates, insures and breaches an agent, and the claim p
   expect(rated.status).toBe(202);
   for (let i = 0; i < 6; i++)
     await operator.read.request({ method: "evm_mine", params: [] } as never);
-  await workOne(pg.db, operator, sandbox.rpcUrl, ANVIL_KEYS.deployer);
+  // Run the worker until the rating is over, as the service does: a failed attempt is retried
+  // (up to the job's three attempts), so the test waits on the rating's own status, not on one
+  // pass of the worker, and says why if it never posts.
+  const runId = rated.body.runId as string;
+  const errors: string[] = [];
+  let status = "queued";
+  for (let attempt = 0; attempt < 3 && status !== "done" && status !== "failed"; attempt++) {
+    await workOne(pg.db, operator, sandbox.rpcUrl, ANVIL_KEYS.deployer, (e) =>
+      errors.push(e instanceof Error ? `${e.name}: ${e.message}` : String(e)),
+    );
+    const row = (await pg.db.pool.query("SELECT status FROM ratings WHERE id=$1", [runId]))
+      .rows[0] as { status: string };
+    status = row.status;
+    // A retry waits 30 s in the service; here it may start at once.
+    if (status === "queued")
+      await pg.db.pool.query("UPDATE jobs SET available_at=now() WHERE id=$1", [runId]);
+  }
+  expect(status, errors.join("\n")).toBe("done");
   const score = await operator.read.readContract({
     address: d.registry,
     abi: bondedRegistryAbi,

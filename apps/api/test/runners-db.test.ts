@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { RUNNER_FRESH_MS, remoteCooldownMs, type Database } from "@bonded/db";
 import { postgres } from "./postgres.js";
@@ -23,12 +26,13 @@ beforeAll(async () => {
 }, 120_000);
 afterAll(() => pg?.stop());
 
-describe("migrations 0014 to 0019", () => {
+describe("migrations 0014 to 0021", () => {
   it("apply once, in order, and again is a no-op", async () => {
     const versions = (
       await db.pool.query("SELECT version FROM schema_migrations ORDER BY version")
     ).rows.map((r) => r.version);
-    expect(versions).toEqual(Array.from({ length: 19 }, (_, i) => i + 1));
+    // Numbered by their file names (0001 to 0021), each once and in order.
+    expect(versions).toEqual(Array.from({ length: 21 }, (_, i) => i + 1));
     await db.migrate();
     const tables = (
       await db.pool.query(
@@ -55,6 +59,42 @@ describe("migrations 0014 to 0019", () => {
     ).rows.map((r) => r.column_name);
     expect(rated).toEqual(["charged_owner", "config", "kind"]);
   });
+});
+
+describe("migrations on a database that main already migrated", () => {
+  it("applies only 0020 and 0021 after 0001 to 0019, then nothing", async () => {
+    // Before migrations took their version from the file name, the version was the place in the
+    // list: on main that put 0001 to 0019 at versions 1 to 19, the same numbers.
+    const old = await postgres({ migrate: false });
+    try {
+      const dir = fileURLToPath(new URL("../../../packages/db/migrations/", import.meta.url));
+      const files = (await readdir(dir)).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
+      expect(files.map((f) => Number(f.slice(0, 4)))).toEqual(
+        Array.from({ length: 21 }, (_, i) => i + 1),
+      );
+      await old.db.pool.query("CREATE TABLE schema_migrations (version integer PRIMARY KEY)");
+      for (const [index, file] of files.slice(0, 19).entries()) {
+        await old.db.pool.query(await readFile(join(dir, file), "utf8"));
+        await old.db.pool.query("INSERT INTO schema_migrations VALUES ($1)", [index + 1]);
+      }
+      await old.db.migrate();
+      const versions = async () =>
+        (
+          await old.db.pool.query("SELECT version FROM schema_migrations ORDER BY version")
+        ).rows.map((r) => r.version);
+      expect(await versions()).toEqual(Array.from({ length: 21 }, (_, i) => i + 1));
+      const added = (
+        await old.db.pool.query(
+          "SELECT table_name FROM information_schema.tables WHERE table_name IN ('previews','notification_settings') ORDER BY 1",
+        )
+      ).rows.map((r) => r.table_name);
+      expect(added).toEqual(["notification_settings", "previews"]);
+      await old.db.migrate();
+      expect(await versions()).toEqual(Array.from({ length: 21 }, (_, i) => i + 1));
+    } finally {
+      await old.stop();
+    }
+  }, 120_000);
 });
 
 describe("runner tokens", () => {

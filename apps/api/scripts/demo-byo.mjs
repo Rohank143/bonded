@@ -16,6 +16,7 @@ import { ArenaGateway } from "@bonded/arena";
 import {
   EvmMandate,
   bondedRegistryAbi,
+  byoaMessage,
   coverManagerAbi,
   mandateHash,
   mandateVaultFactoryAbi,
@@ -39,7 +40,12 @@ import {
   stringToBytes,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { randomBytes } from "node:crypto";
 import { gatewayAgents } from "../dist/remote-agent.js";
+import { SecretBox } from "../dist/secrets.js";
+import { gatewayCheckRunner, gatewayUrlVerifier } from "../dist/connections.js";
+import { workCheckOne } from "../dist/check-worker.js";
+import { workPreviewOne } from "../dist/preview-worker.js";
 export { DEFAULT_REMOTE_POLICY } from "../dist/remote-policy.js";
 import { DbRunnerAuth, RunnerPresenceWriter } from "../dist/runners.js";
 
@@ -50,15 +56,38 @@ const BYO_AGENT = `${ROOT}examples/byo-agent/dist/main.js`;
 const ENTRY_POINT = "0x0000000071727De22E5E9d8BAf0edAc6f37da032";
 const usd = (n) => BigInt(n) * 1_000_000n;
 
-/** The local Arena Gateway, with runner tokens and presence in the demo's database. */
+/**
+ * The local Arena Gateway, with runner tokens and presence in the demo's database, and what
+ * Agent URL mode, connection checks and previews need on this machine: an ephemeral secret key
+ * (AGENT_URL_SECRET_KEY's stand-in, for this run only) and plain-http loopback Agent URLs.
+ */
 export async function startGateway(db, chainId) {
   const presence = new RunnerPresenceWriter(db);
   const gateway = new ArenaGateway({
     tokens: new DbRunnerAuth(db, chainId),
     onRunnerPresence: presence.onEvent,
+    agentUrl: { allowLoopback: true },
   });
   const url = await gateway.listen({ port: 0, host: "127.0.0.1" });
-  return { gateway, url, remote: gatewayAgents(gateway) };
+  const secrets = new SecretBox(randomBytes(32));
+  const remote = gatewayAgents(gateway);
+  return {
+    gateway,
+    url,
+    remote,
+    secrets,
+    // What createApi takes for Agent URLs on this machine.
+    api: {
+      secrets,
+      verifyAgentUrl: gatewayUrlVerifier(gateway.agentUrls),
+      allowLoopbackUrls: true,
+    },
+    // Connection checks and previews, run alongside the demo's rating worker.
+    async workExtras(chain, rpc) {
+      await workCheckOne(db, chainId, { runCheck: gatewayCheckRunner(gateway), secrets });
+      await workPreviewOne(db, chain, rpc, { remote, secrets, heldOut: { perClass: 1 } });
+    },
+  };
 }
 
 /** Forge artifact of a contract (contracts/evm/out), for deploying test-only contracts. */
@@ -173,6 +202,30 @@ export async function runByoDemo(ctx) {
     await delay(200);
   }
   console.log(`  runner connected to the gateway at ${gatewayUrl}`);
+  // A rating needs a passing connection check of this connection: one benign episode, run by the
+  // demo's check lane through the same gateway, signed by the owner like any other request.
+  {
+    const timestamp = now();
+    const signature = await owner.signMessage({
+      message: byoaMessage({ action: "check", ...base, timestamp }),
+    });
+    const r = await app.request(`/self/agents/${byoId}/checks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timestamp, signature }),
+    });
+    const made = await r.json();
+    if (r.status >= 400) throw new Error(`connection check: ${made.error ?? r.status}`);
+    for (let i = 0; ; i++) {
+      const check = await db.check(made.checkId);
+      if (check.status === "passed") break;
+      if (check.status === "failed")
+        throw new Error(`the connection check failed: ${check.result?.problems?.join(" ")}`);
+      if (i > 120) throw new Error(`the connection check didn't finish:\n${runnerLog}`);
+      await delay(1000);
+    }
+    console.log("  connection check passed (one benign episode)");
+  }
   // The rating sandbox forks a few blocks behind the tip; make sure it includes the setup.
   await ctx.mineBlocks(6);
   const started = Date.now();

@@ -1,4 +1,6 @@
 import {
+  AgentUrlUnavailableError,
+  bondedFailure,
   HOSTED_REMOTE_PROFILE,
   RemoteAgent,
   TeeVerificationError,
@@ -10,6 +12,7 @@ import {
 } from "@bonded/arena";
 import type { ArenaAgent, RemoteMode } from "@bondedhq/shared";
 import type { Hex } from "viem";
+import type { AgentConnection } from "./connections.js";
 
 /**
  * Bring your own agent (docs/BRING-YOUR-OWN-AGENT.md): the rating worker's side of a remote agent.
@@ -26,8 +29,13 @@ export interface RemoteAgentRequest {
   /** The on-chain agent id. */
   agentId: string;
   mode: RemoteMode;
-  /** The operator's declared code hash: what the rating is about. */
+  /** The code hash the rating is about: declared, or what the runner or URL reported. */
   codeHash: Hex;
+  /**
+   * How to reach the agent: its runner (by `agentKey`, the default) or its Agent URL, with the
+   * secret that signs each call. The secret never leaves the worker except in that signature.
+   */
+  connection?: AgentConnection;
   /**
    * A TEE-bound agent (chain mode). The rating has an Arena key of its own: the TEE derives it
    * from `keyId`, and `evmAddress` is its address, which the episode vaults name as their agent,
@@ -54,18 +62,22 @@ export type RemoteAgentFactory = (request: RemoteAgentRequest, sandbox: Sandbox)
 
 /**
  * The Arena Gateway's `RemoteAgent` for a rating: the agent's runner is the one its token maps to
- * (the agent's key); a TEE-bound agent's evidence goes to `verify` at every episode, and in chain
+ * (the agent's key), or its Agent URL, called with the agent secret; a TEE-bound agent's evidence goes to `verify` at every episode, and in chain
  * mode its vault names the TEE's attested key, so no key is sent.
  */
 export function gatewayAgents(
   gateway: ArenaGateway,
   options: { episodeTimeoutMs?: number; runnerWaitMs?: number } = {},
 ): RemoteAgentFactory {
-  return (request, sandbox) =>
-    new RemoteAgent({
+  return (request, sandbox) => {
+    // An Agent URL can't carry a TEE's evidence: that comes through the runner.
+    if (request.connection?.kind === "url" && request.tee)
+      throw new RatingRefused("a TEE-bound agent is rated through its runner", true);
+    // No `onEvent` here: per-episode activity would show the operator which episodes are attacks.
+    return new RemoteAgent({
       gateway,
       sandbox,
-      runner: request.agentKey,
+      transport: request.connection ?? { kind: "runner", key: request.agentKey },
       mode: request.mode,
       name: `remote/agent-${request.agentId}`,
       episodeTimeoutMs: options.episodeTimeoutMs ?? REMOTE_EPISODE_TIMEOUT_MS,
@@ -81,6 +93,7 @@ export function gatewayAgents(
           }
         : {}),
     });
+  };
 }
 
 /** A rating that can't run, and whether trying again could help. Its message is stored as is. */
@@ -206,6 +219,9 @@ export interface RatingFailure {
  * so it gets a generic reason and is retried.
  */
 export function ratingFailure(error: unknown, budgetSpentIn?: string): RatingFailure {
+  // Bonded couldn't call the agent's URL: not the agent's doing, so no standing or cooldown, and
+  // the rating is retried.
+  if (error instanceof AgentUrlUnavailableError) return { reason: error.message, final: false };
   if (error instanceof RatingRefused && error.agent)
     return {
       reason: error.message,
@@ -221,4 +237,15 @@ export function ratingFailure(error: unknown, budgetSpentIn?: string): RatingFai
     };
   if (error instanceof RatingRefused) return { reason: error.message, final: error.final };
   return { reason: "rating failed; retry scheduled" };
+}
+
+/**
+ * Whether an episode failed because Bonded couldn't call the agent's URL (its own per-host rate
+ * limit): the gateway's `bondedFailure`, so never charged to the agent. A URL that answered
+ * non-2xx, or didn't answer in 10 s, is the agent's. (rateAgent itself stops such a rating with
+ * AgentUrlUnavailableError before the episode is counted; this covers any episode that slips by.)
+ */
+export function bondedUrlFailure(value: unknown): boolean {
+  const summary = (value as { agentSummary?: object } | null)?.agentSummary;
+  return Boolean(summary && bondedFailure(summary));
 }

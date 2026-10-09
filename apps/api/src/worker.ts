@@ -13,6 +13,7 @@ import {
 import {
   EvmMandate,
   PROTECTIONS,
+  REMOTE_CONNECTIONS,
   REMOTE_MODES,
   mandateCommitment,
   mandateHash,
@@ -34,6 +35,7 @@ import {
   GATEWAY_UNAVAILABLE,
   RatingRefused,
   arenaKeyProblem,
+  bondedUrlFailure,
   forkBudgetExhausted,
   ratingFailure,
   TeeBinding,
@@ -41,6 +43,9 @@ import {
   type RemoteAgentFactory,
 } from "./remote-agent.js";
 import { DbHeldOutLedger } from "./runners.js";
+import { SECRET_KEY_MISSING, agentUrlContext, type SecretBox } from "./secrets.js";
+import type { AgentConnection } from "./connections.js";
+import type { Notifier, NotificationType } from "./notifications.js";
 import {
   DEFAULT_REMOTE_POLICY,
   remoteRatingPlan,
@@ -98,15 +103,19 @@ const builtInConfig = z
 
 /**
  * The operator's own agent (bring your own agent, docs/BRING-YOUR-OWN-AGENT.md): it runs on the
- * operator's servers and is rated through the Arena Gateway by its runner. `codeHash` is what the
- * operator declares; with `tee`, every episode must prove it with TEE evidence.
+ * operator's servers and is rated through the Arena Gateway, by its runner or (Agent URL mode) by
+ * calling its own HTTPS endpoint. `codeHash` is what the operator declares; without it, each
+ * rating records the hash the runner or URL reported when it was queued. With `tee`, every
+ * episode must prove the declared hash with TEE evidence.
  */
 const remoteConfig = z
   .strictObject({
     kind: z.literal("remote"),
     mandate: EvmMandate,
-    codeHash,
+    codeHash: codeHash.optional(),
     mode: z.enum(REMOTE_MODES),
+    /** How Bonded reaches the agent: the runner (default) or its Agent URL. */
+    connection: z.enum(REMOTE_CONNECTIONS).optional(),
     tee: teeConfig.optional(),
     repeats,
     protection,
@@ -117,6 +126,11 @@ const remoteConfig = z
   // write, can be TEE-bound (and then the compose file must be reviewed: it decides what runs).
   .refine((c) => !(c.tee && c.mode === "tools"), {
     message: "a TEE-bound agent must be rated in chain mode: in tool mode the TEE binds nothing",
+    path: ["tee"],
+  })
+  // The TEE proves a declared code hash, and its evidence comes through the runner.
+  .refine((c) => !(c.tee && (!c.codeHash || c.connection === "url")), {
+    message: "a TEE-bound agent needs a declared code hash and the runner",
     path: ["tee"],
   });
 
@@ -169,6 +183,10 @@ export interface WorkerOptions {
    * config, a remote rating is refused: the new owner must register it again.
    */
   ownerOf?: (agentId: string) => Promise<string>;
+  /** Decrypts Agent URL secrets (AGENT_URL_SECRET_KEY): needed to rate an agent by its URL. */
+  secrets?: SecretBox;
+  /** Tells owners when a rating of their agent finishes, fails or is refused. */
+  notifier?: Notifier;
 }
 
 /** Advisory lock keys: one per lane and chain. */
@@ -183,6 +201,7 @@ export function ratedCodeHash(
   config: { codeHash: string; sentinel?: boolean },
   sentinel?: SentinelService,
 ): Hex {
+  // (A remote agent's hash can be the one recorded on its rating instead: see `remoteCode`.)
   return config.sentinel
     ? sentinelCodeHash(config.codeHash as Hex, sentinel?.info)
     : (config.codeHash as Hex);
@@ -243,6 +262,32 @@ async function runLocked(
   // Set once a remote episode comes back with its agent's fork share used up ("episode 3 of 40"):
   // whatever fails from then on was caused by the agent (ratingFailure).
   let budgetSpentIn: string | undefined;
+  // A remote agent's operator controls it live, so its episodes (verdicts, which ones were
+  // attacks) are published only once the rating is over for good; meanwhile only counts are
+  // kept. An attempt that will be retried is discarded, never published.
+  const held: unknown[] = [];
+  const flush = async () => {
+    for (const payload of held.splice(0))
+      await db.publish("rating.episode", payload).catch(() => undefined);
+  };
+  // The owner of an operator-run agent being rated, told how it ended (never blocking it).
+  let remoteOwner: { owner: string | null; agentId: string } | undefined;
+  const notifyOwner = (
+    type: NotificationType,
+    status: string,
+    extra: { score?: number; reason?: string },
+  ) => {
+    if (!remoteOwner || !options.notifier) return;
+    options.notifier.notify(remoteOwner.owner, {
+      type,
+      ratingId: job.id,
+      agentId: remoteOwner.agentId,
+      chainId: chain.deployment.chainId,
+      status,
+      ...extra,
+      at: new Date().toISOString(),
+    });
+  };
   try {
     const row = (
       await db.pool.query(
@@ -259,6 +304,19 @@ async function runLocked(
       config.mandate.agentId !== row.onchain_id
     )
       throw new Error("agent config identity mismatch");
+    if (config.kind === "remote")
+      remoteOwner = { owner: row.owner, agentId: String(row.onchain_id) };
+    // The code a remote rating is about: recorded on the rating when it was queued (declared, or
+    // what the runner or URL reported then), else the registration's declared hash.
+    const remoteCode =
+      config.kind === "remote"
+        ? ((row.code_hash as string | null) ?? config.codeHash ?? undefined)
+        : undefined;
+    if (config.kind === "remote" && !remoteCode)
+      throw new RatingRefused(
+        "no code hash: the runner (or Agent URL) reported none when the rating was queued; update @bondedhq/runner or declare a code hash, then rate again",
+        true,
+      );
     const withSentinel = config.kind !== "remote" && config.sentinel === true;
     if (withSentinel && !sentinel)
       throw new Error("this agent is rated with Sentinel on, but SENTINEL_URL isn't set");
@@ -275,14 +333,45 @@ async function runLocked(
         "the agent changed hands since it was registered; its owner must register it again",
         true,
       );
-    if (config.kind === "remote" && !(await db.runnerIsConnected(row.agent_id)))
+    const connection =
+      config.kind === "remote" ? await db.connectionOf(row.agent_id, config) : undefined;
+    if (connection === "runner" && !(await db.runnerIsConnected(row.agent_id)))
       throw new RatingRefused(
         "the agent's runner is not connected; start it and rate again",
         false,
       );
-    await db.withLease(job, (c) =>
-      c.query("UPDATE ratings SET status='running' WHERE id=$1", [job.id]),
-    );
+    let reach: AgentConnection | undefined;
+    if (connection === "url") {
+      const live = await db.agentUrl(row.agent_id);
+      if (!live?.verifiedAt)
+        throw new RatingRefused(
+          "the agent's URL isn't set and verified; verify it and rate again",
+          true,
+        );
+      if (!options.secrets) throw new RatingRefused(SECRET_KEY_MISSING, true);
+      let secret: string;
+      try {
+        secret = options.secrets.decrypt(live.ciphertext, agentUrlContext(live.id));
+      } catch {
+        throw new RatingRefused(
+          "the agent's URL secret can't be used; set the Agent URL again",
+          true,
+        );
+      }
+      reach = { kind: "url", url: live.url, secret, registration: row.agent_id };
+    } else if (connection === "runner") reach = { kind: "runner", key: row.agent_id };
+    // Reported code must still be what runs: a runner restarted with other code (or a URL that
+    // now reports another version) isn't what this rating was queued for.
+    if (connection && row.code_source && row.code_source !== "declared") {
+      const now = await db.currentConnection(row.agent_id, connection);
+      if (now.code?.hash.toLowerCase() !== String(row.code_hash).toLowerCase())
+        throw new RatingRefused(
+          "the agent now reports different code than when this rating was queued; run a connection check and rate again",
+          true,
+        );
+    }
+    // Setting up (TEE checks, the sandbox, the held-out set): "starting", then "running".
+    await db.markStarting(job);
     let signed = row.attestation as SignedAttestation | null;
     if (!signed) {
       // A TEE that doesn't verify fails the job. It never falls back to an unmeasured rating.
@@ -358,7 +447,8 @@ async function runLocked(
                   chainId: chain.deployment.chainId,
                   agentId: String(row.onchain_id),
                   mode: config.mode,
-                  codeHash: config.codeHash as Hex,
+                  codeHash: remoteCode as Hex,
+                  ...(reach ? { connection: reach } : {}),
                   ...(binding && arena
                     ? {
                         tee: {
@@ -396,6 +486,7 @@ async function runLocked(
             heldOut: fresh?.attacks.length ?? 0,
             ...(config.repeats ? { repeats: config.repeats } : {}),
           }).budgetMs;
+        await db.markRunning(job);
         const result = await rateAgent(sandbox, {
           agent,
           ...(withSentinel && sentinel ? { sentinel: sentinel.info } : {}),
@@ -405,13 +496,23 @@ async function runLocked(
               ? new Set((fresh?.attacks ?? []).map((a) => a.id))
               : library.unpublished,
           ...(fresh ? { heldOut: fresh.heldOut } : {}),
-          codeHash: ratedCodeHash(config, sentinel),
+          codeHash:
+            config.kind === "remote" ? (remoteCode as Hex) : ratedCodeHash(config, sentinel),
           ...(config.repeats ? { repeats: config.repeats } : {}),
           // An operator-run agent could skip its work, or its reading, when it suspects an
           // attack: only episodes where it was exposed count as trials (rate.ts, `exercise`).
           ...(config.kind === "remote" ? { exercise: "exposed" as const } : {}),
           ...(tee ? { tee } : {}),
           vault: { mandate: config.mandate as EvmMandateInput },
+          // A remote rating's total shows at once, before its first episode.
+          onProgress: async (p) => {
+            if (config.kind === "remote" && p.done === 0)
+              await db.setRatingProgress(job, {
+                done: 0,
+                total: p.total,
+                startedAt: new Date(ratingStarted),
+              });
+          },
           onEpisode: async (episode, index, total) => {
             await check();
             // A remote rating stops at the first episode its agent fails (crash, exit, timeout,
@@ -428,6 +529,12 @@ async function runLocked(
                   `stopped: the agent used up its share of fork requests in ${budgetSpentIn}`,
                   true,
                   { caused: true },
+                );
+              } else if (bondedUrlFailure(episode)) {
+                // Bonded couldn't call the agent's URL: not the agent's doing; retried.
+                remoteStop = new RatingRefused(
+                  `stopped: Bonded couldn't reach the agent's URL in episode ${index + 1} of ${total}, not because of the agent; it will be retried`,
+                  false,
                 );
               } else if (episodeOutcome(episode) === "agent_error") {
                 const report = (episode.agentSummary.finalMessage ?? "").slice(0, 500);
@@ -456,13 +563,21 @@ async function runLocked(
               }
             }
             // Verdict only: planted text and traces can carry a private bounty payload.
-            await db.publish("rating.episode", {
+            const payload = {
               runId: job.id,
               index,
               total,
               // A library attack's text is public in attacks/; held-out and bounty text never is.
               episode: publicEpisode(episode, publishedAs(episode.attackId)),
-            });
+            };
+            if (config.kind === "remote") {
+              held.push(payload);
+              await db.setRatingProgress(job, {
+                done: index + 1,
+                total,
+                startedAt: new Date(ratingStarted),
+              });
+            } else await db.publish("rating.episode", payload);
             if (remoteStop) throw remoteStop;
           },
         });
@@ -589,6 +704,8 @@ async function runLocked(
     }
     // A complete rating posted: any standing from earlier stops resets.
     await db.finish(job);
+    await flush();
+    notifyOwner("rating_finished", "done", { score: signed.attestation.score });
   } catch (error) {
     onError?.(error);
     const failure = ratingFailure(error, budgetSpentIn);
@@ -597,6 +714,18 @@ async function runLocked(
       ...(failure.agentCaused ? { agentCaused: true } : {}),
       ...(failure.agentReport ? { agentReport: failure.agentReport } : {}),
     });
+    // Only an attempt that is over: a retried one is still on its way.
+    const status = (await db.pool.query("SELECT status FROM ratings WHERE id=$1", [job.id])).rows[0]
+      ?.status;
+    // Over for good: its episodes go to the feed. Retried: this attempt's are dropped.
+    if (status === "failed") await flush();
+    else held.length = 0;
+    if (status === "failed")
+      notifyOwner(
+        failure.reason.startsWith("not attested") ? "rating_refused" : "rating_failed",
+        "failed",
+        { reason: failure.reason },
+      );
   } finally {
     clearInterval(heartbeat);
   }

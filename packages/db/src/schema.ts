@@ -25,9 +25,8 @@ export const agents = pgTable(
 );
 export const ratings = pgTable("ratings", {
   id: uuid().primaryKey(),
-  agentId: text("agent_id")
-    .notNull()
-    .references(() => agents.id),
+  /** Null for a preview's rating (0020), which has `previewId` instead. */
+  agentId: text("agent_id").references(() => agents.id),
   status: text().notNull().default("queued"),
   report: jsonb(),
   reportJson: text("report_json"),
@@ -38,6 +37,26 @@ export const ratings = pgTable("ratings", {
   kind: text().notNull().default(""),
   chargedOwner: text("charged_owner"),
   config: jsonb(),
+  /** 0020: the preview it rates, the code it rated and where that came from, its progress. */
+  previewId: uuid("preview_id"),
+  codeHash: text("code_hash"),
+  codeSource: text("code_source"),
+  progress: jsonb(),
+});
+/** A preview rating (0020): an agent rated with no vault, bond or registration. */
+export const previews = pgTable("previews", {
+  id: uuid().primaryKey(),
+  chainId: integer("chain_id").notNull(),
+  owner: text().notNull(),
+  mode: text().notNull(),
+  connection: text().notNull(),
+  codeHash: text("code_hash"),
+  status: text().notNull().default("created"),
+  ratingId: uuid("rating_id"),
+  error: text(),
+  upgradedTo: text("upgraded_to"),
+  createdAt: created(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 export const attestations = pgTable("attestations", {
   id: uuid()

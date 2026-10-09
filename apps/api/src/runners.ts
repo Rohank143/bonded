@@ -6,7 +6,8 @@ import {
   type RunnerTokenValidator,
 } from "@bonded/arena";
 import type { Database } from "@bonded/db";
-import type { AgentMode } from "@bondedhq/shared";
+import { AgentMode } from "@bondedhq/shared";
+import { reportedCode } from "./connections.js";
 import { agentConfig } from "./worker.js";
 
 /**
@@ -81,8 +82,23 @@ export class DbRunnerAuth implements RunnerTokenValidator {
     if (!token.startsWith(RUNNER_TOKEN_PREFIX) || token.length > 128) return null;
     const record = await this.db.runnerToken(runnerTokenHash(token));
     if (!record || record.chainId !== this.chainId) return null;
+    // A preview's token: the preview's wallet made it, and the runner runs in the preview's mode.
+    if (record.preview) {
+      if (record.createdBy.toLowerCase() !== record.preview.owner.toLowerCase()) return null;
+      const mode = AgentMode.safeParse(record.preview.mode);
+      if (!mode.success) return null;
+      return {
+        key: record.agentKey,
+        tokenId: record.tokenId,
+        chainId: record.chainId,
+        agentId: record.agentKey,
+        mode: mode.data,
+      };
+    }
     const config = agentConfig.safeParse(record.config);
-    if (!config.success || config.data.kind !== "remote") return null;
+    // An agent registered to be reached by its URL has no runner.
+    if (!config.success || config.data.kind !== "remote" || config.data.connection === "url")
+      return null;
     if (this.ownerOf && (await this.owner(record.agentId)) !== record.createdBy.toLowerCase())
       return null;
     return {
@@ -160,10 +176,19 @@ export class RunnerPresenceWriter {
   private async write(event: RunnerPresenceEvent) {
     if (event.type === "connected") {
       if (!event.hello) return;
+      // The code hash the runner computed for its agent, if it reported one.
+      const code = reportedCode(event.hello);
       const id = await this.db.runnerConnected(event.key, {
         runnerVersion: event.hello.runnerVersion,
         mode: event.hello.mode,
         teeUrl: event.hello.teeUrl,
+        ...(code
+          ? {
+              codeHash: code.codeHash,
+              codeSource: code.codeSource,
+              ...(code.codeDetail ? { codeDetail: code.codeDetail } : {}),
+            }
+          : {}),
       });
       if (id) this.connections.set(event.key, id);
       else this.connections.delete(event.key);

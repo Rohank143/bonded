@@ -167,6 +167,14 @@ export {
 } from "./held-out-fresh.js";
 export * from "./gateway/index.js";
 export {
+  publicAddress,
+  safeGet,
+  safeRequest,
+  type SafeFetchOptions,
+  type SafeRequestOptions,
+  UnsafeUrlError,
+} from "./safe-fetch.js";
+export {
   CHECK_EPISODE_TIMEOUT_MS,
   CHECK_RUNNER_WAIT_MS,
   type CheckEvent,

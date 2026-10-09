@@ -161,6 +161,15 @@ To run the rating service's gateway yourself, start the API in the `arena-worker
 | `REMOTE_RATINGS_PER_AGENT_DAILY`, `REMOTE_RATINGS_PER_OWNER_DAILY`, `REMOTE_RATINGS_DAILY` | 2, 3, 20 | Remote ratings per agent, per owner and for the whole chain, per 24 hours. Renewals and re-ratings count |
 | `REMOTE_RATING_INTERVAL_MS` | 3600000 | The least time between two ratings of one operator-run agent; also how often a TEE change may re-rate it |
 | `RENEW_CHECK_MS` | 600000 | How often the arena-worker looks for connected agents whose scores expire within 3 days |
+| `AGENT_URL_SECRET_KEY` | unset (Agent URL mode and webhooks are refused) | 32 bytes (64 hex characters, or base64) that encrypt Agent URL secrets and webhook secrets at rest (AES-256-GCM). The same value on the API and the arena-worker. Make one with `openssl rand -hex 32` |
+| `PREVIEW_PER_WALLET_DAILY`, `PREVIEW_DAILY` | 1, 20 | Preview ratings per wallet and for the whole chain, per 24 hours (0 turns previews off). Previews run one at a time, after official remote ratings |
+| `PREVIEW_CREATES_PER_WALLET_DAILY` | 5 | Previews a wallet may create per 24 hours |
+| `PREVIEW_RATING_MAX_MS` | 2700000 | A preview's time budget ceiling (45 minutes; 40 s an episode below it) |
+| `CHECKS_PER_WALLET_HOURLY`, `CHECKS_HOURLY` | 10, 30 | Connection checks per wallet and for the whole chain, per hour |
+| `AGENT_URL_VERIFIES_PER_WALLET_HOURLY`, `AGENT_URL_VERIFIES_HOURLY` | 10, 100 | Agent URL registrations and re-verifications (each one calls the URL) per wallet and in all, per hour; also at most 10 an hour per URL host |
+| `RESEND_API_KEY`, `EMAIL_FROM` | unset (no email) | Notification email through Resend, only when both are set (arena-worker sends; the API accepts addresses only then) |
+| `AGENT_URL_ALLOW_LOOPBACK` | unset | `1` lets Agent URLs and webhooks be plain http on this machine (`localhost`, `127.0.0.1`): local runs only, never hosted. `pnpm demo -- --byo` sets up the same itself, with an ephemeral secret key |
+| `BONDED_OWN_HOSTS` | unset | Extra hosts (comma-separated) an Agent URL or webhook may not use, beyond Bonded's deployed hosts, the web origins, the gateway and the service's own Railway domain |
 
 With the gateway on, the arena-worker runs two rating lanes, each with its own lock, so Bonded's own ratings never wait behind an operator's agent. The remote policy is read once (`remotePolicyFromEnv` in `apps/api/src/remote-policy.ts`) and used by the API, the worker, renewals and re-ratings alike. Its rating defaults come from `HOSTED_REMOTE_PROFILE` in `apps/arena/src/rate.ts`, which `pnpm arena rate --agent remote --profile hosted` also uses, so a local run with that profile predicts a hosted rating. Accepted bounties re-rate Bonded's own agents only: bounty attacks are never run against operator-run agents.
 

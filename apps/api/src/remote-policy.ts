@@ -27,6 +27,22 @@ export interface RemoteRatingPolicy {
   perAgentMs: number;
   /** Held-out variants made per attack class for each rating alone (default 1, at most 5). */
   heldOutPerClass: number;
+  /** Preview ratings per wallet per 24 hours (default 1). */
+  previewPerWalletDaily: number;
+  /** Preview ratings on the chain per 24 hours, all wallets together (default 20). */
+  previewDaily: number;
+  /** Previews a wallet may create per 24 hours (default 5): rows, not ratings. */
+  previewCreatesPerWalletDaily: number;
+  /** The most a preview rating may take (default 45 minutes). */
+  previewBudgetCeilingMs: number;
+  /** Connection checks per wallet per hour (default 10). */
+  checksPerWalletHourly: number;
+  /** Connection checks on the chain per hour, all wallets together (default 30). */
+  checksHourly: number;
+  /** Agent URL registrations and verifications (each calls out) per wallet per hour (default 10). */
+  urlVerifiesPerWalletHourly: number;
+  /** Agent URL registrations and verifications per hour, all wallets together (default 100). */
+  urlVerifiesHourly: number;
 }
 
 export const DEFAULT_REMOTE_POLICY: RemoteRatingPolicy = {
@@ -39,13 +55,25 @@ export const DEFAULT_REMOTE_POLICY: RemoteRatingPolicy = {
   budgetCeilingMs: 3 * 3_600_000,
   perAgentMs: 3_600_000,
   heldOutPerClass: HOSTED_REMOTE_PROFILE.heldOutPerClass,
+  // Previews are free to the user and paid for in compute, so they are tightly capped and run
+  // one at a time, after official ratings.
+  previewPerWalletDaily: 1,
+  previewDaily: 20,
+  previewCreatesPerWalletDaily: 5,
+  previewBudgetCeilingMs: 45 * 60_000,
+  checksPerWalletHourly: 10,
+  checksHourly: 30,
+  urlVerifiesPerWalletHourly: 10,
+  urlVerifiesHourly: 100,
 };
 
 /**
  * The policy as configured: the defaults, with any of REMOTE_REPEATS,
  * REMOTE_RATINGS_PER_OWNER_DAILY, REMOTE_RATINGS_PER_AGENT_DAILY, REMOTE_RATINGS_DAILY,
- * REMOTE_EPISODE_BUDGET_MS, REMOTE_RATING_MAX_MS, REMOTE_RATING_INTERVAL_MS and
- * HELD_OUT_FRESH_PER_CLASS set in the environment. Every path that
+ * REMOTE_EPISODE_BUDGET_MS, REMOTE_RATING_MAX_MS, REMOTE_RATING_INTERVAL_MS,
+ * HELD_OUT_FRESH_PER_CLASS, PREVIEW_PER_WALLET_DAILY, PREVIEW_DAILY, PREVIEW_CREATES_PER_WALLET_DAILY,
+ * PREVIEW_RATING_MAX_MS, CHECKS_PER_WALLET_HOURLY, CHECKS_HOURLY,
+ * AGENT_URL_VERIFIES_PER_WALLET_HOURLY and AGENT_URL_VERIFIES_HOURLY set in the environment. Every path that
  * rates an operator-run agent (owner requests, renewals, TEE re-ratings) reads it here. Bounty
  * acceptances don't re-rate them: bounty attacks are never run against an agent its operator runs.
  */
@@ -69,6 +97,20 @@ export function remotePolicyFromEnv(
     budgetCeilingMs: int("REMOTE_RATING_MAX_MS", d.budgetCeilingMs, 60_000),
     perAgentMs: int("REMOTE_RATING_INTERVAL_MS", d.perAgentMs, 0),
     heldOutPerClass: int("HELD_OUT_FRESH_PER_CLASS", d.heldOutPerClass, 0, 5),
+    previewPerWalletDaily: int("PREVIEW_PER_WALLET_DAILY", d.previewPerWalletDaily, 0),
+    previewDaily: int("PREVIEW_DAILY", d.previewDaily, 0),
+    previewCreatesPerWalletDaily: int(
+      "PREVIEW_CREATES_PER_WALLET_DAILY",
+      d.previewCreatesPerWalletDaily,
+    ),
+    previewBudgetCeilingMs: int("PREVIEW_RATING_MAX_MS", d.previewBudgetCeilingMs, 60_000),
+    checksPerWalletHourly: int("CHECKS_PER_WALLET_HOURLY", d.checksPerWalletHourly),
+    checksHourly: int("CHECKS_HOURLY", d.checksHourly),
+    urlVerifiesPerWalletHourly: int(
+      "AGENT_URL_VERIFIES_PER_WALLET_HOURLY",
+      d.urlVerifiesPerWalletHourly,
+    ),
+    urlVerifiesHourly: int("AGENT_URL_VERIFIES_HOURLY", d.urlVerifiesHourly),
   };
 }
 
@@ -115,5 +157,38 @@ export function remoteRefusalMessage(
       return `at most ${policy.perAgentDaily} ratings a day per agent; try again tomorrow`;
     case "lane-daily":
       return "today's ratings of operator-run agents are used up; try again tomorrow";
+  }
+}
+
+/** A connection check's time budget: one episode, 120 seconds. */
+export const CHECK_BUDGET_MS = 120_000;
+
+/**
+ * A preview rating's size and time budget: every published attack once, the held-out set made
+ * for it (one per class by default), and the controls; 40 s an episode, at most 45 minutes.
+ */
+export function previewRatingPlan(
+  policy: RemoteRatingPolicy,
+  input: { publishedAttacks: number; heldOut: number },
+): { episodes: number; budgetMs: number } {
+  const episodes = input.publishedAttacks + input.heldOut + REMOTE_CONTROLS;
+  return {
+    episodes,
+    budgetMs: Math.min(policy.previewBudgetCeilingMs, episodes * policy.episodeBudgetMs),
+  };
+}
+
+/** Plain words for a preview the caps refuse, with when to try again. */
+export function previewRefusalMessage(
+  refusal: { refused: "wallet-daily" | "daily"; nextAt: Date } | { refused: "busy" },
+  policy: RemoteRatingPolicy,
+): string {
+  switch (refusal.refused) {
+    case "busy":
+      return "This preview already has a rating queued or running.";
+    case "wallet-daily":
+      return `You can run at most ${policy.previewPerWalletDaily} preview ${policy.previewPerWalletDaily === 1 ? "rating" : "ratings"} a day. Try again after ${refusal.nextAt.toISOString()}.`;
+    case "daily":
+      return `Today's preview ratings are used up. Try again after ${refusal.nextAt.toISOString()}.`;
   }
 }

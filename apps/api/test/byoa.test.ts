@@ -162,7 +162,25 @@ const revokeToken = async (v: AgentVault, who = owner) =>
     `/self/agents/${v.agentId}/runner-token`,
     await tokenRequest(v, "revoke-runner-token", who),
   );
+/**
+ * A passing connection check of the agent's connection as it is now, as the check lane would
+ * record one: a remote rating needs one in the last 24 hours (previews.test.ts tests that rule).
+ */
+async function passCheck(v: AgentVault) {
+  const record = await pg.db.agentRecord(key(v));
+  const config = (record?.config ?? {}) as { mode?: string; codeHash?: string; kind?: string };
+  if (config.kind !== "remote") return;
+  const current = await pg.db.currentConnection(key(v), "runner");
+  const code = config.codeHash ?? current.code?.hash ?? null;
+  await pg.db.pool.query(
+    `INSERT INTO connection_checks(id,subject,chain_id,owner,mode,connection,credential_id,code_hash,
+       status,result,finished_at)
+     VALUES(gen_random_uuid(),$1,$2,$3,$4,'runner',$5,$6,'passed','{"passed":true}',now())`,
+    [key(v), sandbox.deployment.chainId, record?.owner, config.mode, current.credentialId, code],
+  );
+}
 async function rate(v: AgentVault, a = app) {
+  await passCheck(v);
   const timestamp = now();
   const agentId = v.agentId.toString();
   const signature = await sign({

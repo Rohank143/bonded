@@ -269,7 +269,9 @@ try {
   const byo = values.byo ? await import("./demo-byo.mjs") : undefined;
   const started = byo ? await byo.startGateway(db, d.chainId) : undefined;
   byoGateway = started?.gateway;
-  const workerOptions = started ? { remote: started.remote, heldOut: { perClass: 1 } } : {};
+  const workerOptions = started
+    ? { remote: started.remote, heldOut: { perClass: 1 }, secrets: started.secrets }
+    : {};
   const app = createApi({
     db,
     chain,
@@ -278,6 +280,7 @@ try {
     webOrigins: [webOrigin],
     ...(started
       ? {
+          ...started.api,
           gatewayUrl: started.url,
           selfServe: {
             repeats: runs,
@@ -367,6 +370,8 @@ try {
     (async () => {
       while (!stopping) {
         await workOne(db, chain, rpc, key, () => {}, undefined, workerOptions).catch(() => {});
+        // --byo: connection checks and previews asked for in the web app, too.
+        if (started) await started.workExtras(chain, rpc).catch(() => {});
         await delay(2000);
       }
     })(),

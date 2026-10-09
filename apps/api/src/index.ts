@@ -22,6 +22,7 @@ import {
   type BindingLevel,
 } from "@bondedhq/shared";
 import {
+  AgentUrlClient,
   readLeaderboard,
   BountySpecError,
   loadAttackLibrary,
@@ -45,6 +46,13 @@ import { selfServeRoutes, type SelfServeLimits } from "./self-serve.js";
 import { libraryRoutes, MAX_BODY_BYTES } from "./library.js";
 import { observedRatesRoute } from "./observed-rates.js";
 import { ratingFacts } from "./rating-facts.js";
+import { sessionRoutes } from "./sessions.js";
+import { ownDomainsFrom, ownerRoutes } from "./previews.js";
+import { notificationRoutes, type EmailSender } from "./notifications.js";
+import { PollStreams } from "./poll-stream.js";
+import { DEFAULT_REMOTE_POLICY } from "./remote-policy.js";
+import type { SecretBox } from "./secrets.js";
+import { gatewayUrlVerifier, type AgentUrlVerifier } from "./connections.js";
 export { issueQuote } from "./quotes.js";
 /** A decimal id, in canonical form: "01" and "1" are the same agent, so they must be the same key. */
 const uint = z
@@ -122,6 +130,26 @@ export function createApi(options: {
    * (default `UNDERWRITING_COVER_CAP_USD`: 5,000 declared, 20,000 TEE).
    */
   coverCaps?: Readonly<Record<BindingLevel, number>>;
+  /**
+   * Encrypts Agent URL and webhook secrets (AGENT_URL_SECRET_KEY). Without it, Agent URL mode and
+   * webhooks are refused.
+   */
+  secrets?: SecretBox;
+  /** Answers an Agent URL's verify challenge (default: the Arena Gateway's). */
+  verifyAgentUrl?: AgentUrlVerifier;
+  /** Sends notification emails, when configured (RESEND_API_KEY and EMAIL_FROM). */
+  email?: EmailSender;
+  /** Bonded's own hosts, which an Agent URL or webhook may not use (beyond the web origins). */
+  ownDomains?: readonly string[];
+  /** Agent URLs and webhooks may be plain http on this machine: local demos and tests only. */
+  allowLoopbackUrls?: boolean;
+  /** Requests per client to the preview, check and notification routes, per window. */
+  ownerRequests?: {
+    writes?: ConstructorParameters<typeof RateLimiter>[0];
+    reads?: ConstructorParameters<typeof RateLimiter>[0];
+    /** Connection checks per client address per hour (default 30). */
+    checksPerClientHourly?: number;
+  };
 }) {
   const { db, chain } = options;
   if (options.apiToken.length < 24)
@@ -134,7 +162,7 @@ export function createApi(options: {
     "*",
     cors({
       origin: (origin) => (originAllowed(origin, origins) ? origin : null),
-      allowMethods: ["GET", "POST", "DELETE"],
+      allowMethods: ["GET", "POST", "PUT", "DELETE"],
       allowHeaders: ["Content-Type", "Authorization", "Last-Event-ID"],
       maxAge: 600,
     }),
@@ -157,9 +185,14 @@ export function createApi(options: {
   // rate, and create or revoke a runner token) and quotes (capped without the token; buyCover
   // checks the guardian on chain) and Sentinel checks (signed by the agent's own key, see
   // sentinel.ts). Every other POST or DELETE needs the operator token.
+  // Previews, Agent URLs, checks and notification settings are made with an owner session
+  // (sessions.ts), opened by a wallet signature.
   const PUBLIC_POST =
-    /^\/(bounties\/\d{1,78}\/reveal|self\/agents(\/\d{1,78}\/(rate|runner-token))?|quotes|sentinel\/check)$/;
-  const PUBLIC_DELETE = /^\/self\/agents\/\d{1,78}\/runner-token$/;
+    /^\/(bounties\/\d{1,78}\/reveal|self\/agents(\/\d{1,78}\/(rate|runner-token|agent-url|agent-url\/verify|agent-url\/secret|checks))?|quotes|sentinel\/check|self\/session|self\/notifications(\/webhook-secret)?|previews(\/session|\/[0-9a-f-]{36}\/(stop|runner-token|agent-url|agent-url\/verify|agent-url\/secret|checks|rate|notifications))?|self\/agents\/\d{1,78}\/notifications|streams\/token)$/;
+  const PUBLIC_PUT =
+    /^\/(self\/notifications|previews\/[0-9a-f-]{36}\/notifications|self\/agents\/\d{1,78}\/notifications)$/;
+  const PUBLIC_DELETE =
+    /^\/(self\/agents\/\d{1,78}\/(runner-token|agent-url)|self\/session|previews\/session|previews\/[0-9a-f-]{36}\/(runner-token|agent-url))$/;
   const hasToken = (header: string | undefined) => {
     const token = Buffer.from(header ?? "");
     const expected = Buffer.from(`Bearer ${options.apiToken}`);
@@ -171,7 +204,9 @@ export function createApi(options: {
         ? PUBLIC_POST.test(c.req.path)
         : c.req.method === "DELETE"
           ? PUBLIC_DELETE.test(c.req.path)
-          : true;
+          : c.req.method === "PUT"
+            ? PUBLIC_PUT.test(c.req.path)
+            : true;
     if (!open && !hasToken(c.req.header("Authorization")))
       return c.json({ error: "unauthorized" }, 401);
     await next();
@@ -183,6 +218,29 @@ export function createApi(options: {
     if (e instanceof QuoteError) return c.json({ error: e.message }, 409);
     console.error("API request failed", e.name);
     return c.json({ error: "request failed" }, 503);
+  });
+  // Bring your own agent, round 2: sessions, previews, Agent URLs, checks, estimates, progress
+  // and notification settings.
+  const ownerNow = options.selfServe?.now ?? Date.now;
+  const writes = new RateLimiter({
+    perClient: 60,
+    total: 1200,
+    windowMs: 10 * 60_000,
+    ...options.ownerRequests?.writes,
+    now: ownerNow,
+  });
+  const reads = new RateLimiter({
+    perClient: 600,
+    total: 20_000,
+    windowMs: 10 * 60_000,
+    ...options.ownerRequests?.reads,
+    now: ownerNow,
+  });
+  const wallet = sessionRoutes(app, {
+    db,
+    chainId: chain.deployment.chainId,
+    now: ownerNow,
+    writes,
   });
   app.get("/health", async (c) => {
     await db.pool.query("SELECT 1");
@@ -306,12 +364,19 @@ export function createApi(options: {
   for (const path of ["/arena/runs/:id", "/arena/runs/:id/report"])
     app.get(path, async (c) => {
       const id = z.uuid().parse(c.req.param("id"));
+      // A preview's rating too, but only to its owner's session: "not found" to anyone else.
       const r = await db.pool.query(
-        "SELECT id,status,report,report_json,error,created_at FROM ratings WHERE id=$1",
+        `SELECT id,status,report,report_json,error,created_at,code_hash AS "codeHash",
+           code_source AS "codeSource", (preview_id IS NOT NULL) AS preview, charged_owner
+         FROM ratings WHERE id=$1`,
         [id],
       );
       if (!r.rowCount) return c.json({ error: "run not found" }, 404);
-      const row = r.rows[0];
+      const { charged_owner: chargedOwner, ...row } = r.rows[0];
+      if (row.preview) {
+        const viewer = await wallet(c).catch(() => undefined);
+        if (!viewer || viewer !== chargedOwner) return c.json({ error: "run not found" }, 404);
+      }
       if (path.endsWith("/report"))
         return row.report_json
           ? c.body(row.report_json, 200, { "Content-Type": "application/json; charset=utf-8" })
@@ -325,8 +390,8 @@ export function createApi(options: {
       // How far it has got, and a rough estimate of the time left, from its published episodes.
       const progress = await db.runProgress(id);
       const elapsed =
-        progress.startedAt && progress.lastAt
-          ? progress.lastAt.getTime() - progress.startedAt.getTime()
+        progress.episodesStartedAt && progress.lastAt
+          ? progress.lastAt.getTime() - progress.episodesStartedAt.getTime()
           : 0;
       const etaSeconds =
         row.status === "running" && progress.total && progress.done > 1
@@ -335,7 +400,13 @@ export function createApi(options: {
       return c.json({
         ...row,
         ...(row.report ? ratingFacts(undefined, row.report) : {}),
-        progress: { done: progress.done, total: progress.total, etaSeconds },
+        // Counts and an ETA only: no verdicts while a remote rating runs.
+        progress: {
+          done: progress.done,
+          total: progress.total,
+          etaSeconds,
+          startedAt: progress.startedAt?.toISOString() ?? null,
+        },
       });
     });
   // Class-level results only (docs/disclosures). Each entry posted on this API's chain is checked
@@ -502,6 +573,49 @@ export function createApi(options: {
     ...(options.selfServe ? { limits: options.selfServe } : {}),
     ...(options.gatewayUrl ? { gatewayUrl: options.gatewayUrl } : {}),
     ...(options.coverCaps ? { coverCaps: options.coverCaps } : {}),
+    agentUrls: Boolean(options.secrets),
+    wallet,
+  });
+  const ownDomains = [
+    ...ownDomainsFrom([...(options.webOrigins ?? []), options.gatewayUrl]),
+    ...(options.ownDomains ?? []),
+  ];
+  const streams = new PollStreams();
+  const urlClient = new AgentUrlClient({
+    refusedHosts: ownDomains,
+    ...(options.allowLoopbackUrls ? { allowLoopback: true } : {}),
+  });
+  ownerRoutes(app, {
+    db,
+    chain,
+    policy: options.selfServe?.remote ?? DEFAULT_REMOTE_POLICY,
+    wallet,
+    now: ownerNow,
+    writes,
+    reads,
+    ...(options.secrets ? { secrets: options.secrets } : {}),
+    // The API's own Agent URL client (the gateway has its own): it refuses Bonded's hosts and
+    // rate-limits calls per URL host.
+    verifyAgentUrl: options.verifyAgentUrl ?? gatewayUrlVerifier(urlClient),
+    urlProblem: (url) => urlClient.urlProblem(url),
+    ownDomains,
+    ...(options.gatewayUrl ? { gatewayUrl: options.gatewayUrl } : {}),
+    ...(options.allowLoopbackUrls ? { allowLoopbackUrls: true } : {}),
+    ...(options.email ? { email: options.email } : {}),
+    streams,
+    ...(options.ownerRequests?.checksPerClientHourly
+      ? { checksPerClientHourly: options.ownerRequests.checksPerClientHourly }
+      : {}),
+  });
+  notificationRoutes(app, {
+    db,
+    wallet,
+    writes,
+    reads,
+    ...(options.secrets ? { secrets: options.secrets } : {}),
+    ...(options.email ? { email: options.email } : {}),
+    ownDomains,
+    ...(options.allowLoopbackUrls ? { allowLoopbackUrls: true } : {}),
   });
   observedRatesRoute(app, { db, chainId: chain.deployment.chainId });
   libraryRoutes(app, { db, chainId: chain.deployment.chainId });
@@ -517,5 +631,10 @@ export function createApi(options: {
     if (runId) z.uuid().parse(runId);
     return events.open(c, after, runId);
   });
-  return Object.assign(app, { close: () => events.close() });
+  return Object.assign(app, {
+    close: async () => {
+      streams.close();
+      await events.close();
+    },
+  });
 }

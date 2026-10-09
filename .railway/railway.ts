@@ -93,6 +93,9 @@ export default defineRailway(() => {
   const GATEWAY_DOMAIN = "arena-worker-production.up.railway.app";
   const GATEWAY_PORT = "8080";
   const gateway = { GATEWAY_PUBLIC_URL: `https://${GATEWAY_DOMAIN}` };
+  // Preview ratings are free to the user and paid for in compute, so they are tightly capped
+  // (the code's defaults, spelled out so a plan shows them). The API and the worker read the same.
+  const previews = { PREVIEW_PER_WALLET_DAILY: "1", PREVIEW_DAILY: "20" };
 
   const api = service("api", {
     ...role({ healthcheckPath: "/health", healthcheckTimeout: 120 }),
@@ -107,6 +110,10 @@ export default defineRailway(() => {
       ...gateway,
       API_TOKEN: preserve(),
       ATTESTER_KEY: preserve(),
+      // Encrypts Agent URL and webhook secrets at rest (bring your own agent, round 2): 32 bytes
+      // set by the founder in Railway (openssl rand -hex 32). The arena-worker reads the same.
+      AGENT_URL_SECRET_KEY: preserve(),
+      ...previews,
       // Telegram alerts (docs/PLAN.md, Day 13 workstream 6): set by the founder, kept here.
       TELEGRAM_BOT_TOKEN: preserve(),
       TELEGRAM_CHAT_ID: preserve(),
@@ -136,6 +143,9 @@ export default defineRailway(() => {
       GATEWAY_TRUST_PROXY: "1",
       ROLE: "arena-worker",
       ATTESTER_KEY: preserve(),
+      // Decrypts Agent URL secrets to sign calls to agents, and webhook secrets for notifications.
+      AGENT_URL_SECRET_KEY: api.env.AGENT_URL_SECRET_KEY,
+      ...previews,
     },
   });
 

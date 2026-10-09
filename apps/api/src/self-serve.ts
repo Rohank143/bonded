@@ -1,6 +1,6 @@
 import type { Context, Hono } from "hono";
 import { z } from "zod";
-import type { Database } from "@bonded/db";
+import type { Database, RatedCode } from "@bonded/db";
 import {
   bondedRegistryAbi,
   EvmMandate,
@@ -11,6 +11,7 @@ import {
   mandateModuleAbi,
   mandateModuleFactoryAbi,
   PROTECTIONS,
+  REMOTE_CONNECTIONS,
   REMOTE_KIND,
   REMOTE_MODES,
   SELF_SERVE_KINDS,
@@ -34,6 +35,9 @@ import {
   type Hex,
 } from "viem";
 import { RateLimiter, clientAddress } from "./rate-limit.js";
+import { Refused, handle } from "./refused.js";
+import { SECRET_KEY_MISSING } from "./secrets.js";
+import { NEEDS_CHECK, codeInfo, publicCheckSummary } from "./connections.js";
 import {
   DEFAULT_REMOTE_POLICY,
   remoteQuota,
@@ -112,26 +116,24 @@ const registerInput = z.union([
     vault: address,
     kind: z.literal(REMOTE_KIND),
     mandate: EvmMandate,
-    codeHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/),
+    /** Optional (Advanced): without it, the runner's or URL's reported hash is used. */
+    codeHash: z
+      .string()
+      .regex(/^0x[0-9a-fA-F]{64}$/)
+      .optional(),
     mode: z.enum(REMOTE_MODES),
+    /** How Bonded reaches the agent: the runner (default) or its Agent URL. */
+    connection: z.enum(REMOTE_CONNECTIONS).optional(),
     tee: teeConfig.optional(),
     protection: z.enum(PROTECTIONS).optional(),
+    /** "Make it official": the preview this registration comes from, linked to it. Not signed. */
+    previewId: z.uuid().optional(),
     timestamp: z.number().int().positive(),
     signature,
   }),
 ]);
 /** A signed request with nothing else in it: rate, create or revoke a runner token. */
 const signedInput = z.strictObject({ timestamp: z.number().int().positive(), signature });
-
-/** A self-serve request the API refuses, with the status and the reason to show the user. */
-class Refused extends Error {
-  constructor(
-    readonly status: 400 | 403 | 404 | 409 | 429,
-    message: string,
-  ) {
-    super(message);
-  }
-}
 
 export function selfServeRoutes(
   app: Hono,
@@ -143,6 +145,14 @@ export function selfServeRoutes(
     gatewayUrl?: string;
     /** Underwriting policy's cover caps by binding, shown with a remote agent's registration. */
     coverCaps?: Readonly<Record<BindingLevel, number>>;
+    /** Whether Agent URL mode can be used here (AGENT_URL_SECRET_KEY is set). */
+    agentUrls?: boolean;
+    /**
+     * The owner session's wallet (sessions.ts): runner tokens and ratings of an owned agent can be
+     * asked for with it instead of a fresh signature, so the agent page needs one sign-in. The
+     * registry is still asked who owns the agent, each time.
+     */
+    wallet?: (c: Context) => Promise<string>;
   },
 ) {
   const { db, chain } = options;
@@ -296,14 +306,6 @@ export function selfServeRoutes(
       })
     ).toLowerCase();
 
-  const handle = (fn: (c: Context) => Promise<Response>) => async (c: Context) => {
-    try {
-      return await fn(c);
-    } catch (e) {
-      if (e instanceof Refused) return c.json({ error: e.message }, e.status);
-      throw e;
-    }
-  };
   const limit = (c: Context) => {
     if (!requests.allow(clientAddress(c.req.raw.headers)))
       throw new Refused(429, "too many requests; try again in a few minutes");
@@ -321,8 +323,16 @@ export function selfServeRoutes(
         sentinel?: boolean;
         codeHash?: string;
         mode?: string;
+        connection?: "runner" | "url";
         tee?: { url: string; composeHash: string };
       };
+      const connection = await db.connectionOf(rowId(agentId), config);
+      const current =
+        config.kind === REMOTE_KIND
+          ? await db.currentConnection(rowId(agentId), connection)
+          : undefined;
+      const fromPreview =
+        config.kind === REMOTE_KIND ? await db.previewUpgradedTo(rowId(agentId)) : undefined;
       const last = record.last_rating_at?.getTime();
       return c.json({
         registered: true,
@@ -335,9 +345,17 @@ export function selfServeRoutes(
         // The owner's own agent: what was declared, so the page can show it.
         ...(config.kind === REMOTE_KIND
           ? {
-              codeHash: config.codeHash,
+              // Declared, or null: then each rating records what the runner or URL reports.
+              codeHash: config.codeHash ?? null,
+              codeSource: config.codeHash ? "declared" : "auto",
+              reportedCode: current?.code ?? null,
               mode: config.mode,
+              connection,
+              // Ready to be reached: runner connected, or Agent URL verified (never the URL here).
+              connectionReady: current?.ready ?? false,
               tee: config.tee ?? null,
+              // Made official from a preview: whether, not which (the owner's session lists theirs).
+              fromPreview: Boolean(fromPreview),
               // Underwriting policy, not score: the most cover it can hold, by binding.
               coverCaps: options.coverCaps ?? UNDERWRITING_COVER_CAP_USD,
               // The most a rating will be, before the owner asks for one.
@@ -376,6 +394,17 @@ export function selfServeRoutes(
           400,
           "a TEE-bound agent must be rated in chain mode: in tool mode its tool calls come from the runner, outside the TEE, so the TEE would bind nothing",
         );
+      if (
+        input.kind === REMOTE_KIND &&
+        input.tee &&
+        (!input.codeHash || input.connection === "url")
+      )
+        throw new Refused(
+          400,
+          "A TEE-bound agent needs a declared code hash (the one its TEE reports) and the runner, which forwards its evidence.",
+        );
+      if (input.kind === REMOTE_KIND && input.connection === "url" && !options.agentUrls)
+        throw new Refused(409, SECRET_KEY_MISSING);
       const hash = mandateHash(input.mandate);
       const module = input.protection === "module";
       const base = {
@@ -393,8 +422,9 @@ export function selfServeRoutes(
               ...base,
               kind: REMOTE_KIND,
               remote: {
-                codeHash: input.codeHash,
+                ...(input.codeHash ? { codeHash: input.codeHash } : {}),
                 mode: input.mode,
+                ...(input.connection === "url" ? { connection: "url" as const } : {}),
                 ...(input.tee ? { tee: input.tee } : {}),
               },
             }
@@ -413,8 +443,9 @@ export function selfServeRoutes(
           ? {
               kind: REMOTE_KIND,
               mandate: input.mandate,
-              codeHash: input.codeHash,
+              ...(input.codeHash ? { codeHash: input.codeHash } : {}),
               mode: input.mode,
+              ...(input.connection === "url" ? { connection: "url" } : {}),
               ...(input.tee ? { tee: input.tee } : {}),
               repeats: limits.remote.repeats,
               ...(module ? { protection: "module" } : {}),
@@ -437,14 +468,27 @@ export function selfServeRoutes(
       // token: the gateway drops a connected runner at its next heartbeat, and the owner makes
       // a new token. No token outlives the registration it was made for.
       const before = previous?.config as { kind?: string } | undefined;
-      if (before?.kind === REMOTE_KIND) await db.revokeAllRunnerTokens(rowId(input.agentId));
+      if (before?.kind === REMOTE_KIND) {
+        await db.revokeAllRunnerTokens(rowId(input.agentId));
+        await db.revokeAgentUrls(rowId(input.agentId));
+      }
+      // "Make it official": link the preview it came from (the signer's own only).
+      if (input.kind === REMOTE_KIND && input.previewId)
+        await db.linkPreviewUpgrade(input.previewId, who, rowId(input.agentId));
       return c.json(
         {
           registered: true,
           agentId: input.agentId,
           kind: input.kind,
           sentinel: input.kind !== REMOTE_KIND && input.sentinel === true,
-          ...(input.kind === REMOTE_KIND ? { mode: input.mode, tee: Boolean(input.tee) } : {}),
+          ...(input.kind === REMOTE_KIND
+            ? {
+                mode: input.mode,
+                connection: input.connection ?? "runner",
+                codeSource: input.codeHash ? "declared" : "auto",
+                tee: Boolean(input.tee),
+              }
+            : {}),
         },
         201,
       );
@@ -457,11 +501,15 @@ export function selfServeRoutes(
     handle(async (c) => {
       limit(c);
       const agentId = uint.parse(c.req.param("id"));
-      const input = signedInput.parse(await c.req.json());
-      const who = await signer(
-        { action: "rate", chainId: d.chainId, agentId, timestamp: input.timestamp },
-        input.signature,
-      );
+      let who: string;
+      if (withSession(c)) who = await options.wallet!(c);
+      else {
+        const input = signedInput.parse(await c.req.json());
+        who = await signer(
+          { action: "rate", chainId: d.chainId, agentId, timestamp: input.timestamp },
+          input.signature,
+        );
+      }
       const record = await db.agentRecord(rowId(agentId));
       if (!record?.enabled || record.source !== "user")
         throw new Refused(404, "register the agent for ratings first");
@@ -475,9 +523,40 @@ export function selfServeRoutes(
         const problem = await remoteRatingProblem(chain, agentId, record.owner);
         if (problem) throw new Refused(409, problem);
       }
-      // The owner's own agent is rated through its runner, so one must be connected now.
-      if (remote && !(await db.runnerIsConnected(rowId(agentId))))
-        throw new Refused(409, "no runner is connected for this agent; start it, then rate");
+      // The owner's own agent is rated through its runner (or its Agent URL), so it must be
+      // reachable now, and a passing connection check of exactly this connection must exist.
+      let code: RatedCode | undefined;
+      if (remote) {
+        const config = record.config as {
+          mode: string;
+          connection?: "runner" | "url";
+          codeHash?: string;
+        };
+        const connection = await db.connectionOf(rowId(agentId), config);
+        const current = await db.currentConnection(rowId(agentId), connection);
+        if (!current.ready)
+          throw new Refused(
+            409,
+            connection === "url"
+              ? "The agent's URL isn't verified yet. Verify it, then rate."
+              : "no runner is connected for this agent; start it, then rate",
+          );
+        code = config.codeHash ? { hash: config.codeHash, source: "declared" } : current.code;
+        if (!code)
+          throw new Refused(
+            409,
+            connection === "url"
+              ? "The Agent URL reported no version, so there is no code hash. Report a version when you answer the verify challenge, or register a code hash."
+              : "The runner reported no code hash. Update @bondedhq/runner, or register a code hash.",
+          );
+        const passing = await db.passingCheck(rowId(agentId), {
+          mode: config.mode,
+          connection,
+          credentialId: current.credentialId,
+          codeHash: code.hash,
+        });
+        if (!passing) throw new Refused(409, NEEDS_CHECK);
+      }
       // One rating per agent per interval (an hour by default): an operator-run agent's comes
       // from its policy.
       const perAgentMs = remote ? limits.remote.perAgentMs : limits.perAgentMs;
@@ -486,6 +565,7 @@ export function selfServeRoutes(
         perAgentMs,
         dailyCap: limits.dailyRatings,
         ...(remote ? { remote: remoteQuota(limits.remote, now()) } : {}),
+        ...(code ? { code } : {}),
       });
       if ("refused" in queued)
         throw new Refused(
@@ -504,21 +584,38 @@ export function selfServeRoutes(
    * The owner's own agent, ready for a runner token: registered as remote, and asked for by the
    * agent's owner (the registry's, not whoever registered it) with a fresh signature.
    */
+  /** With a session: its wallet. Otherwise the signer of a fresh signed request. */
+  const withSession = (c: Context) =>
+    Boolean(options.wallet) && (c.req.header("Authorization") ?? "").startsWith("Bearer ");
   async function remoteOwner(c: Context, action: "runner-token" | "revoke-runner-token") {
     limit(c);
     const agentId = uint.parse(c.req.param("id"));
-    const input = signedInput.parse(await c.req.json());
-    const who = await signer(
-      { action, chainId: d.chainId, agentId, timestamp: input.timestamp },
-      input.signature,
-    );
+    let who: string;
+    let timestamp: number;
+    if (withSession(c)) {
+      who = await options.wallet!(c);
+      // Ordered after every request on record, signed or not.
+      timestamp = Math.max(
+        Math.floor(now() / 1000),
+        (await db.lastRunnerRequestAt(rowId(agentId))) + 1,
+      );
+    } else {
+      const input = signedInput.parse(await c.req.json());
+      who = await signer(
+        { action, chainId: d.chainId, agentId, timestamp: input.timestamp },
+        input.signature,
+      );
+      timestamp = input.timestamp;
+    }
     const record = await db.agentRecord(rowId(agentId));
     if (!record?.enabled) throw new Refused(404, "register the agent for ratings first");
     if ((record.config as { kind?: string }).kind !== REMOTE_KIND)
       throw new Refused(409, "runner tokens are for agents registered as your own agent");
+    if ((record.config as { connection?: string }).connection === "url")
+      throw new Refused(409, "This agent is reached by its Agent URL, so it has no runner.");
     if ((await ownerOf(agentId)) !== who)
       throw new Refused(403, "only the agent's owner can manage its runner token");
-    return { agentId, who, timestamp: input.timestamp };
+    return { agentId, who, timestamp };
   }
 
   /**
@@ -575,8 +672,31 @@ export function selfServeRoutes(
         return c.json({ error: "this agent isn't registered as your own agent" }, 404);
       const status = await db.runnerStatus(rowId(agentId));
       const mode = (record.config as { mode: AgentMode }).mode;
+      // How it is reached (runner or Agent URL, never the secret), its code and its last check.
+      const connection = await db.connectionOf(rowId(agentId), record.config);
+      const [current, url, checks] = await Promise.all([
+        db.currentConnection(rowId(agentId), connection),
+        db.agentUrl(rowId(agentId)),
+        db.checksOf(rowId(agentId), 1),
+      ]);
+      const declared = (record.config as { codeHash?: string }).codeHash;
       return c.json({
         ...status,
+        connection,
+        // Public: that a URL is set and answered, never the URL itself (the owner's session
+        // shows it at GET …/agent-url); the last check's outcome, never its id or its output.
+        agentUrl: url
+          ? {
+              configured: true,
+              verifiedAt: url.verifiedAt?.toISOString() ?? null,
+              version: url.version,
+            }
+          : null,
+        lastCheck: checks[0] ? publicCheckSummary(checks[0]) : null,
+        codeHash: codeInfo(
+          declared ? { hash: declared, source: "declared" } : current.code,
+          url?.version,
+        ),
         // Every rating of the agent, failed ones included, so a stopped attempt is visible.
         attempts: (await db.ratingAttempts(rowId(agentId))).items,
         // Why a runner that is there doesn't count, e.g. it was started in the other mode.
@@ -615,17 +735,25 @@ export function perInterval(ms: number): string {
 
 /** The published library, read once: the base of every remote rating's size. */
 let published: { attacks: number; classes: number } | undefined;
+/** The published library's size: its attacks and attack classes. */
+export function publishedLibrary(): { attacks: number; classes: number } {
+  published ??= (() => {
+    const library = loadAttackLibrary();
+    return { attacks: library.length, classes: new Set(library.map((a) => a.class)).size };
+  })();
+  return published;
+}
 /**
  * The most a remote rating will be, and its time budget, before it is asked for
  * (remote-policy.ts). Its held-out set is at most `heldOutPerClass` variants for each attack class
  * the library has seeds for; a variant that can't be made is left out, so a rating can be smaller.
  * The rating's progress counts its real size once the set is made.
  */
-function expectedRating(repeats: number, policy: RemoteRatingPolicy = DEFAULT_REMOTE_POLICY) {
-  published ??= (() => {
-    const library = loadAttackLibrary();
-    return { attacks: library.length, classes: new Set(library.map((a) => a.class)).size };
-  })();
+export function expectedRating(
+  repeats: number,
+  policy: RemoteRatingPolicy = DEFAULT_REMOTE_POLICY,
+) {
+  const published = publishedLibrary();
   const plan = remoteRatingPlan(policy, {
     publishedAttacks: published.attacks,
     heldOut: published.classes * policy.heldOutPerClass,

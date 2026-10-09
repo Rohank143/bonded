@@ -23,6 +23,11 @@ import {
 } from "@bondedhq/shared";
 import { REMOTE_EPISODE_TIMEOUT_MS, gatewayAgents } from "./remote-agent.js";
 import { DbRunnerAuth, RunnerPresenceWriter } from "./runners.js";
+import { secretBoxFromEnv } from "./secrets.js";
+import { Notifier, emailFromEnv } from "./notifications.js";
+import { workPreviewOne } from "./preview-worker.js";
+import { workCheckOne } from "./check-worker.js";
+import { gatewayCheckRunner } from "./connections.js";
 
 loadDotEnv();
 const role = process.env.ROLE ?? "api";
@@ -74,6 +79,35 @@ const gatewayUrl = () => {
 };
 /** Sizes, caps and budgets for operator-run agents' ratings: the one configured policy. */
 const remotePolicy = remotePolicyFromEnv();
+// Agent URL and webhook secrets are stored encrypted with AGENT_URL_SECRET_KEY; without it, Agent
+// URL mode and webhooks are refused (a malformed key stops the service here).
+const secrets = secretBoxFromEnv();
+// Notification email, only when RESEND_API_KEY and EMAIL_FROM are both set.
+const email = emailFromEnv();
+/**
+ * Hosts an Agent URL or webhook may never be (beyond BONDED_OWN_HOSTS in @bonded/arena): any in
+ * BONDED_OWN_HOSTS (comma-separated), this service's own Railway domain, and the web origins.
+ */
+const ownHosts = [
+  ...(process.env.BONDED_OWN_HOSTS ?? "").split(","),
+  process.env.RAILWAY_PUBLIC_DOMAIN ?? "",
+  (process.env.GATEWAY_PUBLIC_URL ?? "").replace(/^https?:\/\//, "").split("/")[0] ?? "",
+  ...(process.env.WEB_ORIGINS ?? "").split(",").map(
+    (origin) =>
+      origin
+        .trim()
+        .replace(/^https?:\/\//, "")
+        .replace(/^\*\./, "")
+        .split("/")[0] ?? "",
+  ),
+]
+  .map((d) => d.trim().toLowerCase())
+  .filter((d) => d && !d.includes("*") && !/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(d));
+/**
+ * Plain-http, loopback Agent URLs and webhooks: a local demo only (AGENT_URL_ALLOW_LOOPBACK=1),
+ * never hosted.
+ */
+const allowLoopback = process.env.AGENT_URL_ALLOW_LOOPBACK === "1";
 const db = new Database(required("DATABASE_URL"));
 await db.migrate();
 if (role === "migrate") {
@@ -143,6 +177,12 @@ if (role === "migrate") {
         declared: usdCap("DECLARED_COVER_CAP_USD", UNDERWRITING_COVER_CAP_USD.declared),
         tee: usdCap("TEE_COVER_CAP_USD", UNDERWRITING_COVER_CAP_USD.tee),
       },
+      ...(secrets ? { secrets } : {}),
+      ...(email ? { email } : {}),
+      // Bonded's own hosts, which an Agent URL or webhook may not point at (the web origins and
+      // the gateway are added from their own settings).
+      ownDomains: ownHosts,
+      ...(allowLoopback ? { allowLoopbackUrls: true } : {}),
     });
     server = serve({
       fetch: api.fetch,
@@ -201,6 +241,8 @@ if (role === "migrate") {
           const before = new Date(Date.now() - retentionDays * 86_400_000);
           await db.pruneEvents(before);
           await db.pruneSentinelChecks(before);
+          // Used sign-in signatures and long-expired sessions (a day past their window).
+          await db.pruneOwnerAuth();
         },
         3_600_000,
       ),
@@ -237,6 +279,8 @@ if (role === "migrate") {
         ),
         ...(publicUrl ? { publicUrl } : {}),
         onRunnerPresence: presence.onEvent,
+        // Agent URL mode: never call Bonded's own hosts.
+        agentUrl: { refusedHosts: ownHosts, ...(allowLoopback ? { allowLoopback: true } : {}) },
         // Proxies in front of the gateway whose X-Forwarded-For it trusts for per-address limits:
         // 1 behind Railway's edge, 0 (the socket's address) anywhere else.
         trustProxy: z.coerce
@@ -276,6 +320,27 @@ if (role === "migrate") {
         .int()
         .min(1000)
         .parse(process.env[name] ?? fallback);
+    // Owners hear when a rating of their agent or a preview ends; never blocking the rating.
+    const notifier = new Notifier(db, {
+      ...(secrets ? { secrets } : {}),
+      ...(allowLoopback ? { allowLoopback: true } : {}),
+      ...(email ? { email } : {}),
+      log: (line) => console.error(line),
+    });
+    // Connection checks: a lane of their own. Without a gateway able to run them, each check
+    // fails at once with a plain reason instead of waiting.
+    tasks.push(
+      loop(
+        "Connection checks",
+        () =>
+          workCheckOne(db, deployment.chainId, {
+            runCheck: gateway ? gatewayCheckRunner(gateway) : undefined,
+            secrets,
+            log: (line) => console.error(line),
+          }),
+        1000,
+      ),
+    );
     if (gateway) {
       // Two lanes, each with its own lock: Bonded's own ratings never wait behind an operator's
       // agent, and remote ratings take turns by owner.
@@ -301,13 +366,24 @@ if (role === "migrate") {
         loop(
           "The remote rating worker",
           () =>
-            workOne(db, worker, rpc, key("ATTESTER_KEY"), undefined, sentinel, {
-              lane: "remote",
-              remote,
-              heldOut,
-              remotePolicy,
-              ownerOf,
-            }),
+            (async () =>
+              // Previews only when no official remote rating is waiting, in the same lane.
+              (await workOne(db, worker, rpc, key("ATTESTER_KEY"), undefined, sentinel, {
+                lane: "remote",
+                remote,
+                heldOut,
+                remotePolicy,
+                ownerOf,
+                ...(secrets ? { secrets } : {}),
+                notifier,
+              })) ||
+              (await workPreviewOne(db, worker, rpc, {
+                remote,
+                heldOut,
+                policy: remotePolicy,
+                ...(secrets ? { secrets } : {}),
+                notifier,
+              })))(),
           1000,
         ),
       );
@@ -315,7 +391,13 @@ if (role === "migrate") {
       tasks.push(
         loop(
           "The rating worker",
-          () => workOne(db, worker, rpc, key("ATTESTER_KEY"), undefined, sentinel, { heldOut }),
+          async () =>
+            (await workOne(db, worker, rpc, key("ATTESTER_KEY"), undefined, sentinel, {
+              heldOut,
+              notifier,
+            })) ||
+            // Without a gateway a preview can't run: it fails at once, saying why.
+            (await workPreviewOne(db, worker, rpc, { heldOut, policy: remotePolicy, notifier })),
           1000,
         ),
       );

@@ -1,4 +1,5 @@
 import { type ChildProcess, execFile, spawn } from "node:child_process";
+import { randomInt } from "node:crypto";
 import { readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
@@ -65,6 +66,8 @@ export interface SandboxOptions {
   forkBudget?: ForkBudget | false;
   /** Port for anvil; a free one is picked by default. */
   port?: number;
+  /** Picks the free port (tests stand in a port that is already taken). */
+  pickPort?: () => Promise<number>;
   /** Progress messages (deploy output, etc.). */
   log?: (message: string) => void;
 }
@@ -116,18 +119,41 @@ export class Sandbox {
     return this.forkProxy?.openScope();
   }
 
+  /**
+   * Starts anvil on a free port. A free port can be taken by another process between picking it
+   * and anvil binding it (parallel test runs start many sandboxes at once): then anvil exits, or
+   * the RPC answering on that port is someone else's chain. Either way it is detected (the chain
+   * id is checked) and the sandbox starts again on another port, up to five times.
+   */
   static async start(options: SandboxOptions = {}): Promise<Sandbox> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await Sandbox.startOnce(options);
+      } catch (error) {
+        if (!(error instanceof PortTakenError) || options.port !== undefined || attempt >= 5)
+          throw error;
+      }
+    }
+  }
+
+  private static async startOnce(options: SandboxOptions): Promise<Sandbox> {
     const log = options.log ?? (() => {});
-    const port = options.port ?? (await freePort());
+    const port = options.port ?? (await (options.pickPort ?? freePort)());
     const rpcUrl = `http://127.0.0.1:${port}`;
 
-    const args = anvilArgs(port, Boolean(options.forkUrl));
+    // A balance for the dev accounts that only this anvil has: how it is told apart from another
+    // process's anvil that took the port first (on a fresh chain or a fork alike).
+    const marker = 10_000 + randomInt(1, 1_000);
+    const args = [...anvilArgs(port, Boolean(options.forkUrl)), "--balance", String(marker)];
     let proxy: ForkProxy | undefined;
+    // The chain id this sandbox's anvil will answer with (anvilArgs gives a fresh chain its own).
+    let expectedChainId: number | undefined = options.forkUrl ? undefined : 313_370_000 + port;
     if (options.forkUrl) {
       // Fork a few blocks behind the tip: some public RPCs load-balance across nodes that lag,
       // and a node that hasn't seen the tip yet can't serve state for it.
       const upstream = createPublicClient({ transport: http(options.forkUrl) });
       const tip = await upstream.getBlockNumber();
+      expectedChainId = await upstream.getChainId();
       proxy =
         options.forkBudget === false
           ? undefined
@@ -150,6 +176,14 @@ export class Sandbox {
 
     try {
       const chainId = await Promise.race([waitForRpc(rpcUrl, anvil, () => stderr), spawnError]);
+      if (expectedChainId !== undefined && chainId !== expectedChainId)
+        throw new PortTakenError(`port ${port} is answered by another chain (${chainId})`);
+      const probe = createPublicClient({ transport: http(rpcUrl, { retryCount: 0 }) });
+      const balance = await probe.getBalance({
+        address: privateKeyToAccount(ANVIL_KEYS.deployer).address,
+      });
+      if (balance !== BigInt(marker) * 10n ** 18n || hasExited(anvil))
+        throw new PortTakenError(`port ${port} is answered by another anvil`);
       const chain = defineChain({
         id: chainId,
         name: options.forkUrl ? `fork of chain ${chainId}` : "arena local",
@@ -300,11 +334,19 @@ export function hasExited(child: ChildProcess): boolean {
   return child.exitCode !== null || child.signalCode !== null;
 }
 
+/** Another process took the port picked for anvil (see `Sandbox.start`). */
+class PortTakenError extends Error {}
+
 async function waitForRpc(rpcUrl: string, anvil: ChildProcess, stderr: () => string) {
   const client = createPublicClient({ transport: http(rpcUrl, { retryCount: 0 }) });
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
-    if (hasExited(anvil)) throw new Error(`anvil exited: ${stderr().trim()}`);
+    if (hasExited(anvil)) {
+      const said = stderr().trim();
+      if (/address already in use|addrinuse|os error 48|os error 98/i.test(said))
+        throw new PortTakenError(`anvil couldn't bind its port: ${said}`);
+      throw new Error(`anvil exited: ${said}`);
+    }
     try {
       return await client.getChainId();
     } catch {
