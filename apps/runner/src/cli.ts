@@ -75,7 +75,9 @@ async function main(): Promise<number> {
     command: positionals,
     ...(values["code-hash"] ? { flag: values["code-hash"] } : {}),
   });
-  console.error(`[bonded-runner] code hash ${code.codeHash} (${code.codeSource}: ${code.detail})`);
+  console.error(
+    `[bonded-runner] code hash ${code.codeHash} (${code.codeSource}: ${code.detail}${code.codeSource === "git-dirty" ? ", with uncommitted changes" : ""})`,
+  );
   const runner = new Runner({
     code,
     gateway,

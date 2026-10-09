@@ -232,10 +232,21 @@ describe("code hashes", () => {
   it("hello carries an optional code hash and source; older runners' hello still parses", () => {
     const hello = { type: "hello", runnerVersion: "1", protocol: 1, mode: "tools" };
     expect(parseRunnerMessage(RunnerToServer, JSON.stringify(hello))).toEqual(hello);
-    const withCode = { ...hello, codeHash: `0x${"ab".repeat(32)}`, codeSource: "git-dirty" };
+    const withCode = {
+      ...hello,
+      codeHash: `0x${"ab".repeat(32)}`,
+      codeSource: "git-dirty",
+      codeDetail: "a".repeat(40),
+    };
     expect(parseRunnerMessage(RunnerToServer, JSON.stringify(withCode))).toEqual(withCode);
     expect(
       parseRunnerMessage(RunnerToServer, JSON.stringify({ ...hello, codeHash: "0x12" })),
+    ).toBeUndefined();
+    expect(
+      parseRunnerMessage(
+        RunnerToServer,
+        JSON.stringify({ ...withCode, codeDetail: "x".repeat(201) }),
+      ),
     ).toBeUndefined();
     expect(
       parseRunnerMessage(RunnerToServer, JSON.stringify({ ...withCode, codeSource: "magic" })),
