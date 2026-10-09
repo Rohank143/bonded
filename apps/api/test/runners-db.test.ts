@@ -26,13 +26,13 @@ beforeAll(async () => {
 }, 120_000);
 afterAll(() => pg?.stop());
 
-describe("migrations 0014 to 0021", () => {
+describe("migrations 0014 to 0022", () => {
   it("apply once, in order, and again is a no-op", async () => {
     const versions = (
       await db.pool.query("SELECT version FROM schema_migrations ORDER BY version")
     ).rows.map((r) => r.version);
-    // Numbered by their file names (0001 to 0021), each once and in order.
-    expect(versions).toEqual(Array.from({ length: 21 }, (_, i) => i + 1));
+    // Numbered by their file names (0001 to 0022), each once and in order.
+    expect(versions).toEqual(Array.from({ length: 22 }, (_, i) => i + 1));
     await db.migrate();
     const tables = (
       await db.pool.query(
@@ -62,7 +62,7 @@ describe("migrations 0014 to 0021", () => {
 });
 
 describe("migrations on a database that main already migrated", () => {
-  it("applies only 0020 and 0021 after 0001 to 0019, then nothing", async () => {
+  it("applies only 0020 to 0022 after 0001 to 0019, then nothing", async () => {
     // Before migrations took their version from the file name, the version was the place in the
     // list: on main that put 0001 to 0019 at versions 1 to 19, the same numbers.
     const old = await postgres({ migrate: false });
@@ -70,7 +70,7 @@ describe("migrations on a database that main already migrated", () => {
       const dir = fileURLToPath(new URL("../../../packages/db/migrations/", import.meta.url));
       const files = (await readdir(dir)).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
       expect(files.map((f) => Number(f.slice(0, 4)))).toEqual(
-        Array.from({ length: 21 }, (_, i) => i + 1),
+        Array.from({ length: 22 }, (_, i) => i + 1),
       );
       await old.db.pool.query("CREATE TABLE schema_migrations (version integer PRIMARY KEY)");
       for (const [index, file] of files.slice(0, 19).entries()) {
@@ -82,15 +82,22 @@ describe("migrations on a database that main already migrated", () => {
         (
           await old.db.pool.query("SELECT version FROM schema_migrations ORDER BY version")
         ).rows.map((r) => r.version);
-      expect(await versions()).toEqual(Array.from({ length: 21 }, (_, i) => i + 1));
+      expect(await versions()).toEqual(Array.from({ length: 22 }, (_, i) => i + 1));
       const added = (
         await old.db.pool.query(
           "SELECT table_name FROM information_schema.tables WHERE table_name IN ('previews','notification_settings') ORDER BY 1",
         )
       ).rows.map((r) => r.table_name);
       expect(added).toEqual(["notification_settings", "previews"]);
+      // 0022: vault trades, the in-app list and funnel counts.
+      const launch = (
+        await old.db.pool.query(
+          "SELECT table_name FROM information_schema.tables WHERE table_name IN ('vault_trades','owner_notifications','funnel_daily') ORDER BY 1",
+        )
+      ).rows.map((r) => r.table_name);
+      expect(launch).toEqual(["funnel_daily", "owner_notifications", "vault_trades"]);
       await old.db.migrate();
-      expect(await versions()).toEqual(Array.from({ length: 21 }, (_, i) => i + 1));
+      expect(await versions()).toEqual(Array.from({ length: 22 }, (_, i) => i + 1));
     } finally {
       await old.stop();
     }
