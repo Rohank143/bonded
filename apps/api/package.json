@@ -22,7 +22,7 @@
     "@bonded/db": "workspace:*",
     "@bonded/demo-agents": "workspace:*",
     "@bonded/keeper": "workspace:*",
-    "@bonded/shared": "workspace:*",
+    "@bondedhq/shared": "workspace:*",
     "@hono/node-server": "^1.19.9",
     "hono": "4.13.9",
     "viem": "^2.56.9",

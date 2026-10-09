@@ -26,7 +26,7 @@ Plan reference: docs/PLAN.md Section 20, Day 4. Design record: `docs/decisions/0
   - `Deploy.s.sol` deploys the market and the protocol, wires every module and writes `deployments/<chainId>.json`.
   - `Smoke.s.sol` runs the demo loop against that file.
   - `pnpm demo:local` runs both on anvil. It refuses a busy port 8545 and cleans up anvil afterwards.
-- **`@bonded/shared`:** `parseEvmDeployment` validates deployment files, checksums addresses and rejects a file for the wrong chain.
+- **`@bondedhq/shared`:** `parseEvmDeployment` validates deployment files, checksums addresses and rejects a file for the wrong chain.
 - **Tests:** 156 Forge tests (29 new: registry 10, disputes 8, bounties 5, testnet contracts 3, plus 3 in CoverManager and OperatorBond for the registry wiring) and 47 TypeScript tests (4 new).
 
 ## Local deploy and smoke run
@@ -70,7 +70,7 @@ Things the deploy exposed, fixed in the follow-up PR:
 - Section 6.4: `buyCover` also checks that the caller owns the agent in the registry.
 - Section 13.1: the bounty commitment includes the hunter's address.
 - Section 15: new paragraph on the testnet demo market.
-- Section 20, Day 4: addresses live in `contracts/evm/deployments/` and are read through `@bonded/shared`.
+- Section 20, Day 4: addresses live in `contracts/evm/deployments/` and are read through `@bondedhq/shared`.
 
 ## Blockers
 

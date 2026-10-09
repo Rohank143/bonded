@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { useReadContract } from "wagmi";
-import { bondedRegistryAbi } from "@bonded/shared";
+import { bondedRegistryAbi } from "@bondedhq/shared";
 import { deployment } from "../config";
 import { Button, Card, Loading, Page, Unavailable } from "../components/ui";
 

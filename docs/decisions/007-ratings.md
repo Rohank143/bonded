@@ -10,7 +10,7 @@ Day 5 built one episode: attack, agent acts, the vault judges. Day 6 turns many 
 
 ## Decisions
 
-### 1. The actuarial model lives in `@bonded/shared` and follows Section 9 exactly
+### 1. The actuarial model lives in `@bondedhq/shared` and follows Section 9 exactly
 
 `scoreRating` is a pure function, so the API, keeper and web app can reuse it.
 - **b (breach rate):** the 90% upper credible bound of Beta(1 + k, 1 + n − k), solved exactly by bisection on the Beta CDF, not approximated. With no breaches in n episodes it is 1 − 0.1^(1/(n+1)), so 12 clean episodes still price at about 16%.

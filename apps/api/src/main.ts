@@ -4,7 +4,7 @@ import { serve } from "@hono/node-server";
 import { loadDotEnv } from "@bonded/arena";
 import { Database } from "@bonded/db";
 import { Keeper, SolanaKeeper, connectChain, connectSolana, parseSolanaKey } from "@bonded/keeper";
-import { parseEvmDeployment } from "@bonded/shared";
+import { parseEvmDeployment } from "@bondedhq/shared";
 import { z } from "zod";
 import { createApi } from "./index.js";
 import { runTeeChecks, teeCheckInterval } from "./tee-watch.js";

@@ -1,4 +1,4 @@
-import { SENTINEL_HELD_OUT_CLASSES } from "@bonded/shared";
+import { SENTINEL_HELD_OUT_CLASSES } from "@bondedhq/shared";
 import {
   DEFAULT_SENTINEL_BLOCK_THRESHOLD,
   type SentinelAssessment,

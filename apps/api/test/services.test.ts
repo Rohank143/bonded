@@ -19,7 +19,7 @@ import {
   mandateVaultAbi,
   type SignedQuote,
   mandateHash,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { encodeFunctionData, keccak256, stringToBytes } from "viem";
 import { createApi } from "../src/index.js";
 import { postgres } from "./postgres.js";

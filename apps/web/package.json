@@ -12,7 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@bonded/shared": "workspace:*",
+    "@bondedhq/shared": "workspace:*",
     "@rainbow-me/rainbowkit": "2.2.11",
     "@tanstack/react-query": "5.104.0",
     "react": "19.3.0",

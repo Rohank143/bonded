@@ -8,7 +8,7 @@ import {
   mandateVaultAbi,
   quoteMessage,
   testTokenAbi,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { deployment } from "../config";
 import { api, type SignedQuoteResponse } from "../lib/api";
 import { usePolicies } from "../lib/chain";

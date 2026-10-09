@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { usePublicClient } from "wagmi";
 import { getAbiItem, type Address, type Hex } from "viem";
-import { claimsEngineAbi, coverManagerAbi, mandateVaultFactoryAbi } from "@bonded/shared";
+import { claimsEngineAbi, coverManagerAbi, mandateVaultFactoryAbi } from "@bondedhq/shared";
 import { deployment } from "../config";
 
 /** A paid claim, as emitted by ClaimsEngine.ClaimPaid (docs/PLAN.md Section 11.2). */

@@ -106,7 +106,7 @@ This is a fidelity (crime) policy for AI agents, the same established insurance 
 | **Cover** | Operator bond (first loss) + underwriting pool + parametric claims + dispute module | On-chain |
 | **Bonded Sentinel** | Per-action guard (T4 GPU: about 220 ms; CPU: about 2.5 s) on a fine-tuned Laya model. Advisory only; earns a premium discount | Off-chain service (GPU or CPU) |
 
-Supporting parts: TEE key custody, community attack bounties, public leaderboard, `@bonded/sdk`.
+Supporting parts: TEE key custody, community attack bounties, public leaderboard, `@bondedhq/sdk`.
 
 ### 3.3 Design principles
 
@@ -134,7 +134,7 @@ Supporting parts: TEE key custody, community attack bounties, public leaderboard
 
 1. The operator registers the agent: an ERC-8004 identity plus metadata (model family, framework, code hash).
 2. They write a **mandate** (allowed assets, contracts, destinations and limits) and choose Monitor or Enforce mode.
-3. They submit the agent to the Arena, either natively through `@bonded/sdk` or as a black box that accepts our RPC and data endpoints.
+3. They submit the agent to the Arena, either natively through `@bondedhq/sdk` or as a black box that accepts our RPC and data endpoints.
 4. The Arena runs about 200 episodes across 10 attack classes, with a live feed in the UI.
 5. Output: a Bonded Score, a per-class breakdown, expected loss and a premium quote. The signed attestation is posted to every chain's registry.
 6. The operator deploys a `MandateVault` through the factory and stakes the **operator bond** (at least 10% of the desired cover).
@@ -395,7 +395,7 @@ Each seed is a YAML spec: `id`, `class`, `surfaces`, `payload_template`, `succes
 
 | Adapter | How it works | Hackathon scope |
 |---|---|---|
-| **Native SDK** | The agent implements `ArenaAgent` from `@bonded/shared` (later re-exported by `@bonded/sdk`); its tools route through the sandbox world. Built Day 5; `vulnerable-agent` uses it | ✅ |
+| **Native SDK** | The agent implements `ArenaAgent` from `@bondedhq/shared` (later re-exported by `@bondedhq/sdk`); its tools route through the sandbox world. Built Day 5; `vulnerable-agent` uses it | ✅ |
 | **Black-box** | The agent accepts a configurable RPC URL, data API base URLs and a session key; we point them at the sandbox | ✅ |
 | **Framework adapters** | ElizaOS plugin, Solana Agent Kit, Coinbase AgentKit templates | ✅ at least 2, for the leaderboard |
 | **Decision-model agents** | Bots whose "brain" is Laya or Jev (typed decisions), wrapped with a trading loop. Day 6: `DecisionModelAgent` behind a typed `DecisionModel` interface, running on any chat model until Laya is reachable | ✅ Laya; Jev if access arrives |
@@ -454,7 +454,7 @@ Bonded Score           S       = round(100 · e^(−EL / τ))              (τ =
 
 The λ values are illustrative priors. The model's inputs, not these numbers, are the product.
 
-**Built on Day 6 (ADR-007):** `scoreRating` in `@bonded/shared` implements this section and reproduces the table above.
+**Built on Day 6 (ADR-007):** `scoreRating` in `@bondedhq/shared` implements this section and reproduces the table above.
 - **A9's λ:** it isn't given here, so it's our assumption: 0.05 a year.
 - **Severity:** the larger of the measured loss and a prior set by the seeds' severity hints. In Enforce mode the prior is capped at per-trade cap ÷ vault value.
 - **Demo results:**
@@ -613,7 +613,7 @@ Storage is Postgres (Drizzle schema, SQL migrations that run on start); jobs run
 - Sends alerts to vault guardians.
 - **Restart-safe:** keeps a per-chain block cursor in Postgres and resumes from it, and checks on-chain state before filing, so a restart or sleep delays a claim but never loses or duplicates one. The contracts give it slack (7-day claim window, 3-day premium grace period), and `fileClaim` is permissionless, so a guardian can file if the keeper is down.
 
-### 14.3 SDK (`packages/sdk`, `@bonded/sdk`)
+### 14.3 SDK (`packages/sdk`, `@bondedhq/sdk`)
 
 - `BondedVault` client: `execute`, balances, breach log.
 - `sentinel.check(action)` as a pre-trade hook.
@@ -646,7 +646,7 @@ Wallets: wagmi/viem (EVM) and Solana wallet adapter.
 | **Ethereum** | Sepolia | ERC-8004 registries (canonical if deployed, otherwise reference implementation) + BondedRegistry + a cover deployment | Canonical ERC-8004 addresses |
 | **Solana** | Devnet | `bonded_vault`, `bonded_cover`, `bonded_registry` | Circle devnet USDC, Jupiter devnet support (else a mock AMM) |
 
-**Testnet demo market (built Day 4, ADR-004).** The testnet deployment doesn't depend on facts we couldn't confirm (USDG, stock token and AMM addresses). `script/Deploy.s.sol` deploys its own market next to the protocol: tUSDG (6 decimals) and tTSLA/tAMZN/tNVDA (18 decimals, like Stock Tokens) with capped faucets, a `MockOracle`, and a `DemoRouter` that swaps at the oracle price minus 0.2%. Addresses are written to `contracts/evm/deployments/<chainId>.json` and read through `parseEvmDeployment` in `@bonded/shared`. `script/Smoke.s.sol` runs the full loop against any deployment; `pnpm demo:local` runs both on anvil.
+**Testnet demo market (built Day 4, ADR-004).** The testnet deployment doesn't depend on facts we couldn't confirm (USDG, stock token and AMM addresses). `script/Deploy.s.sol` deploys its own market next to the protocol: tUSDG (6 decimals) and tTSLA/tAMZN/tNVDA (18 decimals, like Stock Tokens) with capped faucets, a `MockOracle`, and a `DemoRouter` that swaps at the oracle price minus 0.2%. Addresses are written to `contracts/evm/deployments/<chainId>.json` and read through `parseEvmDeployment` in `@bondedhq/shared`. `script/Smoke.s.sol` runs the full loop against any deployment; `pnpm demo:local` runs both on anvil.
 
 **Robinhood Chain nuances.** Stock tokens are offered to non-US users. Agents that trade inside Robinhood *brokerage* accounts (the Trading MCP) are off-chain and custodial, so on-chain triggers can't see them. That becomes a later "off-chain adapter" built on Robinhood's own reporting, and a partnership pitch.
 
@@ -695,7 +695,7 @@ bonded/
 │   └── solana/                 Anchor workspace (programs/bonded_vault, bonded_cover, bonded_registry)
 ├── packages/
 │   ├── shared/                 mandate/attack/attestation/quote schemas (Zod + JSON Schema), chain configs
-│   └── sdk/                    @bonded/sdk
+│   └── sdk/                    @bondedhq/sdk
 ├── apps/
 │   ├── arena/                  red-team engine, world simulator, adapters, judge, actuarial model
 │   ├── api/                    REST + SSE
@@ -787,7 +787,7 @@ Day 1 = Sun Sep 27. Submission target = Day 15 (Sun Oct 11). Day 16 (Mon Oct 12)
 | 1 | Sun Sep 27 | Monorepo scaffold (pnpm, Turbo, CI); `packages/shared` schemas (mandate, attack spec, attestation, quote); chain-facts check (RPCs, chain ids, USDC, oracles, faucets); ADR-001 stack | CI green on an empty build; schemas have tests; chain facts in `packages/shared/chains.ts` |
 | 2 | Mon Sep 28 | `MandateVault` + factory + oracle adapters; classification (T1–T3), `reconcile`, freeze/rotate; ERC-4626 NAV | Forge tests for every breach type, both modes, and reconcile; fuzzed accounting |
 | 3 | Tue Sep 29 | `CoverPool`, `OperatorBond`, `CoverManager` (EIP-712 quotes, policy NFT, streaming, caps), `ClaimsEngine` (waterfall) | Integration test: rate → bind → breach → claim → bond slashed → pool pays → vault restored |
-| 4 | Wed Sep 30 | `BondedRegistry` (ERC-8004 compatible), `DisputeModule`, `BountyBoard`; deploy scripts; **deploy to Robinhood Chain testnet + Arbitrum Sepolia**; mock stock tokens + AMM pool if needed | Addresses in `contracts/evm/deployments/`, read through `@bonded/shared`; a smoke script passes on both testnets |
+| 4 | Wed Sep 30 | `BondedRegistry` (ERC-8004 compatible), `DisputeModule`, `BountyBoard`; deploy scripts; **deploy to Robinhood Chain testnet + Arbitrum Sepolia**; mock stock tokens + AMM pool if needed | Addresses in `contracts/evm/deployments/`, read through `@bondedhq/shared`; a smoke script passes on both testnets |
 | 5 | Thu Oct 1 | Arena core: fork sandbox, world simulator (news/social/DM/price/metadata/tool output), episode runner, **judge = vault breach log**; `vulnerable-agent` v0 | 1 attack class runs end to end on a fork with a correct verdict |
 | 6 | Fri Oct 2 | Attack library (10 classes, ~40 seeds); adaptive attacker (LLM via OpenRouter); actuarial model + scoring; report; attestation signing; Sentinel dataset logging; `hardened-agent` v0 | Full rating run on both demo agents; scores differ in the expected direction; report renders |
 | 7 | Sat Oct 3 | API (REST + SSE) + keeper, deployed live (ADR-008); testnet E2E: Arena → attestation → quote → buyCover → live breach → auto claim | **GATE 1: core loop live on Robinhood Chain testnet.** Founder review #1 |
