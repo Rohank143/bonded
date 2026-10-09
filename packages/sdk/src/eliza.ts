@@ -48,6 +48,8 @@ export interface ElizaPlugin {
   description: string;
   actions: ElizaAction[];
   providers: ElizaProvider[];
+  /** Runs when the runtime registers the plugin, before it reads `actions` and `providers`. */
+  init?: (config: Record<string, string>, runtime: unknown) => Promise<void>;
 }
 
 import { type Address, erc20Abi, getAddress, isAddress, parseUnits } from "viem";
@@ -61,6 +63,14 @@ import {
   type TokenInfo,
 } from "./guarded.js";
 import { SENTINEL_INPUT_CHARS } from "@bondedhq/shared";
+import { type BondedEpisode, episodeVault, fromBondedEnv } from "./episode.js";
+import {
+  type EpisodeTool,
+  type EpisodeTools,
+  isBondedEpisode,
+  resolveTools,
+  resultText,
+} from "./mcp.js";
 import type { ActionResult, BondedVault } from "./vault.js";
 
 export interface BondedElizaOptions {
@@ -75,6 +85,13 @@ export interface BondedElizaOptions {
   guard?: boolean;
   /** Ask Sentinel before each action, with the conversation as the untrusted input. */
   sentinel?: SentinelGuardOptions;
+  /**
+   * Rating mode. With `"auto"` (the default), when the process is running a Bonded episode
+   * (`isBondedEpisode()`: the runner set `BONDED_*` variables), the plugin swaps its actions for
+   * the episode's, when the runtime registers it: see `bondedEpisodePlugin`. `"off"` keeps the
+   * vault actions always.
+   */
+  rating?: "auto" | "off";
 }
 
 /** The action names this plugin adds. */
@@ -183,11 +200,124 @@ export function bondedPlugin(options: BondedElizaOptions): ElizaPlugin {
     },
   };
 
-  return {
+  const plugin: ElizaPlugin = {
     name: "bonded",
     description: "Trade through a Bonded Mandate Vault, checked against the agent's mandate.",
     actions: BONDED_ACTIONS.map(action),
     providers: [provider],
+  };
+  if ((options.rating ?? "auto") === "auto")
+    plugin.init = async (config, runtime) => {
+      if (!isBondedEpisode()) return;
+      const rated = bondedEpisodePlugin({ guard });
+      await rated.init!(config, runtime);
+      plugin.actions = rated.actions;
+      plugin.providers = rated.providers;
+    };
+  return plugin;
+}
+
+export interface BondedEpisodeElizaOptions {
+  /** The episode. Default: the one the runner set up (`fromBondedEnv`). */
+  episode?: BondedEpisode;
+  /** An existing connection to the episode's tools (otherwise one is made at `init`). */
+  tools?: EpisodeTools;
+  /** Chain mode: dry-run each vault action first (default true), as `bondedPlugin` does. */
+  guard?: boolean;
+}
+
+/**
+ * Rating mode for ElizaOS: a plugin whose actions are the episode's tools, so an Eliza agent is
+ * rated with the same character and model it runs in production. Each tool becomes an action
+ * named after it in capitals (`get_prices` is `GET_PRICES`); its parameters come from
+ * `options.parameters`, or the runtime's `OBJECT_SMALL` model reads them from the conversation
+ * against the tool's JSON Schema. The `BONDED_TASK` provider gives the agent the episode's task.
+ *
+ * In tools mode the writes (`SWAP`, `TRANSFER`, `APPROVE`) are tools too. In chain mode only the
+ * reads are, and the plugin adds `BONDED_SWAP`, `BONDED_TRANSFER` and `BONDED_APPROVE` on the
+ * episode vault, signed with the episode's session key (`episodeVault`).
+ *
+ * The actions are filled in by `init`, which the runtime calls when it registers the plugin
+ * (before it reads them). `bondedPlugin` does this by itself while an episode is running.
+ */
+export function bondedEpisodePlugin(options: BondedEpisodeElizaOptions = {}): ElizaPlugin {
+  const plugin: ElizaPlugin = {
+    name: "bonded-episode",
+    description: "The tools of a Bonded Arena episode.",
+    actions: [],
+    providers: [],
+    init: async () => {
+      const episode = options.episode ?? fromBondedEnv();
+      const tools = await resolveTools(options.tools ?? episode);
+      const actions = tools.tools.map(toolAction);
+      if (episode.mode === "chain" && episode.sessionKey)
+        actions.push(
+          ...bondedPlugin({
+            vault: episodeVault(episode),
+            tokens: episode.contracts.tokens,
+            guard: options.guard ?? true,
+            rating: "off",
+          }).actions,
+        );
+      plugin.actions = actions;
+      plugin.providers = [taskProvider(episode)];
+    },
+  };
+  return plugin;
+}
+
+/** One episode tool as an Eliza action. */
+function toolAction(t: EpisodeTool): ElizaAction {
+  const name = t.name.toUpperCase();
+  const takesArgs = Object.keys(t.inputSchema.properties ?? {}).length > 0;
+  return {
+    name,
+    similes: [t.name],
+    description: t.description,
+    validate: async () => true,
+    handler: async (runtime, message, state, handlerOptions, callback) => {
+      const given = handlerOptions?.parameters;
+      const args =
+        given && typeof given === "object"
+          ? (given as Record<string, unknown>)
+          : takesArgs
+            ? await runtime.useModel("OBJECT_SMALL", {
+                prompt: [
+                  `Extract the parameters for ${name} (${t.description}) from the conversation.`,
+                  `Answer with JSON only, matching this JSON Schema: ${JSON.stringify(t.inputSchema)}`,
+                  "Use only values the conversation states.",
+                  "",
+                  state?.text ?? message.content.text ?? "",
+                ].join("\n"),
+              })
+            : {};
+      const result = await t.call(
+        args && typeof args === "object" ? (args as Record<string, unknown>) : {},
+      );
+      const text = resultText(result);
+      await callback?.({ text, actions: [name] });
+      return result.ok
+        ? { success: true, text, data: { tool: t.name, output: result.output } }
+        : { success: false, text, error: result.error, data: { tool: t.name } };
+    },
+  };
+}
+
+/** The episode's task, as the agent's current instructions. */
+function taskProvider(episode: BondedEpisode): ElizaProvider {
+  const text = [
+    `Your task: ${episode.task.goal}`,
+    `Your mandate: ${episode.task.mandate}`,
+    `Tokens: ${episode.contracts.tokens.map((t) => t.symbol).join(", ")}.`,
+  ].join("\n");
+  return {
+    name: "BONDED_TASK",
+    description: "The task the agent is working on, and its mandate.",
+    get: async () => ({
+      text,
+      values: { bondedTaskGoal: episode.task.goal },
+      data: { episodeId: episode.episodeId, task: episode.task },
+    }),
   };
 }
 

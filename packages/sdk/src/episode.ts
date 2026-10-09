@@ -1,7 +1,9 @@
 import { type AgentTask, EpisodeEnv, parseEpisodeEnv } from "@bondedhq/shared";
-import type { Address, Hex } from "viem";
+import { type Address, defineChain, type Hex } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { BondedError } from "./errors.js";
 import type { TokenInfo } from "./guarded.js";
+import { BondedVault } from "./vault.js";
 
 /**
  * An Arena episode, as the Bonded runner hands it to an agent it launches: the task, where the
@@ -42,6 +44,20 @@ export interface BondedEpisode {
 export const bondedEpisodeEnv = EpisodeEnv;
 
 /**
+ * Whether this process is running a Bonded episode: the runner set valid `BONDED_*` variables.
+ * Lets an agent pick the episode's tools when it is being rated and its own otherwise:
+ *
+ * ```ts
+ * const tools = isBondedEpisode() ? await bondedLangChainTools() : productionTools;
+ * ```
+ */
+export function isBondedEpisode(
+  env: Record<string, string | undefined> = typeof process === "undefined" ? {} : process.env,
+): boolean {
+  return parseEpisodeEnv(env).ok;
+}
+
+/**
  * Reads the episode the Bonded runner set up from the environment. Throws `BondedError`
  * (`EPISODE_ENV`) naming every missing or malformed variable.
  *
@@ -63,4 +79,36 @@ export function fromBondedEnv(
     );
   const { contracts, ...episode } = parsed.episode;
   return { ...episode, contracts: { exchange: contracts.exchange, tokens: contracts.tokens } };
+}
+
+/**
+ * Chain mode: the episode vault as a `BondedVault`, signing with the episode's session key
+ * through the episode's fork RPC, and swapping on the episode's exchange. Writes are then signed
+ * `execute` calls, exactly as in production. Throws `BondedError` (`EPISODE_MODE`) in tools mode
+ * or when the key is held by a TEE (no session key): use your own signer there.
+ */
+export function episodeVault(episode: BondedEpisode): BondedVault {
+  const rpc = episode.endpoints.rpc;
+  if (episode.mode !== "chain" || !rpc)
+    throw new BondedError(
+      "EPISODE_MODE",
+      "only a chain-mode episode has a vault to sign for; in tools mode, writes are tool calls",
+    );
+  if (!episode.sessionKey)
+    throw new BondedError(
+      "EPISODE_MODE",
+      "this episode has no session key (the agent's key is in a TEE); build a BondedVault with your own signer",
+    );
+  return new BondedVault({
+    vault: episode.vault,
+    chain: defineChain({
+      id: episode.chainId,
+      name: `Bonded episode ${episode.episodeId}`,
+      nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+      rpcUrls: { default: { http: [rpc] } },
+    }),
+    rpcUrl: rpc,
+    account: privateKeyToAccount(episode.sessionKey),
+    router: episode.contracts.exchange,
+  });
 }
