@@ -1,4 +1,4 @@
-import { mandateModuleAbi, mandateVaultAbi } from "@bonded/shared";
+import { mandateModuleAbi, mandateVaultAbi } from "@bondedhq/shared";
 import { type Address, decodeErrorResult, type Hex, isHex, parseAbi } from "viem";
 import { BondedError, CallRevertedError, NotAgentError, VaultFrozenError } from "./errors.js";
 

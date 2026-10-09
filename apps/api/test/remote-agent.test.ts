@@ -10,7 +10,7 @@ import {
   type Sandbox,
   type VerifiedTee,
 } from "@bonded/arena";
-import { teeArenaReportData, teeReportData, type ArenaAgent } from "@bonded/shared";
+import { teeArenaReportData, teeReportData, type ArenaAgent } from "@bondedhq/shared";
 import type { Hex } from "viem";
 import {
   GATEWAY_UNAVAILABLE,

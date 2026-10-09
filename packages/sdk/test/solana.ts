@@ -10,7 +10,7 @@ import {
   depositInstruction,
   PROGRAM_IDS,
   TOKEN_PROGRAM,
-} from "@bonded/solana";
+} from "@bondedhq/solana";
 import { createMint, getOrCreateAssociatedTokenAccount, mintTo } from "@solana/spl-token";
 import {
   Connection,

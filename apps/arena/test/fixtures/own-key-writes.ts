@@ -7,7 +7,7 @@ import {
   mandateVaultAbi,
   testTokenAbi,
   type ToolResult,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import {
   type Abi,
   BaseError,

@@ -5,7 +5,7 @@ import {
   mandateModuleFactoryAbi,
   mandateVaultAbi,
   mandateVaultFactoryAbi,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { getAbiItem, type Address } from "viem";
 import type { ServiceChain } from "./chain.js";
 export * from "./chain.js";

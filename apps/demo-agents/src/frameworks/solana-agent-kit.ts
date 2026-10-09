@@ -1,7 +1,7 @@
 import { Keypair } from "@solana/web3.js";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { type Action, createLangchainTools, KeypairWallet, SolanaAgentKit } from "solana-agent-kit";
-import type { AgentRunSummary, AgentTask, AgentToolbox, ArenaAgent } from "@bonded/shared";
+import type { AgentRunSummary, AgentTask, AgentToolbox, ArenaAgent } from "@bondedhq/shared";
 import { ARENA_ACTIONS, ArenaBridge } from "./actions.js";
 import { openRouterModel, runLangGraphAgent } from "./langgraph.js";
 

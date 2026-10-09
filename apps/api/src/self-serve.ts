@@ -24,7 +24,7 @@ import {
   type BindingLevel,
   type SelfServeKind,
   type SelfServeRequest,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import type { ServiceChain } from "@bonded/keeper";
 import {
   decodeFunctionData,
@@ -55,7 +55,7 @@ import { agentConfig, teeConfig } from "./worker.js";
  * for ratings and asks for ratings by signing a message in their wallet, with no operator token.
  * What gets rated is one of Bonded's built-in scripted agent designs, run against the owner's own
  * vault and mandate (docs/AGENTS.md), or the owner's own agent, running on their servers and
- * connected to the Arena Gateway by `@bonded/runner` with a runner token made here
+ * connected to the Arena Gateway by `@bondedhq/runner` with a runner token made here
  * (docs/BRING-YOUR-OWN-AGENT.md).
  */
 

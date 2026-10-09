@@ -5,7 +5,7 @@ import {
   demoRouterAbi,
   mandateVaultAbi,
   testTokenAbi,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { createWalletClient, defineChain, encodeFunctionData, http, parseUnits } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";

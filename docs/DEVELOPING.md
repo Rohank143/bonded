@@ -38,7 +38,7 @@ pnpm demo             # THE demo, in one command: local chain, API, keeper and w
                       # Agent A and Agent B, buys cover, plants an address-poisoning attack,
                       # Agent A falls for it, the keeper's claim pays (bond first, then pool),
                       # then serves the web app at http://localhost:5180 (Ctrl-C stops it all)
-pnpm demo --byo       # also: your own agent (examples/byo-agent) connected through @bonded/runner
+pnpm demo --byo       # also: your own agent (examples/byo-agent) connected through @bondedhq/runner
                       # and a local Arena Gateway, rated with a held-out set of its own; and a
                       # smart account (ERC-7579 reference account) protected by an Enforce-mode
                       # mandate module, rated and covered. Prints both agents' pages.
@@ -110,7 +110,7 @@ A deploy writes `contracts/evm/deployments/<chainId>.json` only after checking e
 ### Checks before a pull request
 
 ```bash
-pnpm format:check && pnpm --filter @bonded/shared abis:check && pnpm typecheck && pnpm lint && pnpm test
+pnpm format:check && pnpm --filter @bondedhq/shared abis:check && pnpm typecheck && pnpm lint && pnpm test
 cd contracts/evm && forge fmt --check && forge test
 ```
 
@@ -121,18 +121,18 @@ How an agent that runs on its operator's servers is protected and rated: [BRING-
 | Path | Package | What it is |
 |---|---|---|
 | `apps/arena/src/gateway` | part of `@bonded/arena` | The Arena Gateway (MCP, HTTP, chain-mode RPC, the runner's WebSocket) and `RemoteAgent` |
-| `apps/runner` | `@bonded/runner` (publishable, with a `bonded-runner` bin and a Dockerfile) | Connects an agent to the gateway and starts it per episode. `examples/mcp-agent.mjs` is the smallest tool-mode agent, over MCP |
-| `packages/sdk` | `@bonded/sdk` (publishable) | The vault and module client, dry runs, the guard, the Sentinel client, the mandate builder, and the AgentKit, Solana Agent Kit and ElizaOS plugins |
+| `apps/runner` | `@bondedhq/runner` (publishable, with a `bonded-runner` bin and a Dockerfile) | Connects an agent to the gateway and starts it per episode. `examples/mcp-agent.mjs` is the smallest tool-mode agent, over MCP |
+| `packages/sdk` | `@bondedhq/sdk` (publishable) | The vault and module client, dry runs, the guard, the Sentinel client, the mandate builder, and the AgentKit, Solana Agent Kit and ElizaOS plugins |
 | `packages/sandbox` | `@bonded/sandbox` (private) | Local chains with the protocol deployed by the production scripts, shared by the Arena's and the SDK's tests |
-| `packages/shared/src/runner.ts` | `@bonded/shared` (publishable) | The runner protocol's messages, as zod schemas both sides parse with |
+| `packages/shared/src/runner.ts` | `@bondedhq/shared` (publishable) | The runner protocol's messages, as zod schemas both sides parse with |
 | `examples/byo-agent` | `@bonded/example-byo-agent` (private) | The full example, and the template to copy: an agent on its own server that trades through its vault with the SDK. When the runner starts it, it runs an episode in either mode: it reads all nine attack surfaces, treats them as untrusted data, and makes only the trade its task names (guarded by the SDK's dry run in chain mode). The Arena's runner end-to-end test rates it through the real gateway and runner |
 | `contracts/evm/src/Mandate{Base,Module,ModuleFactory}.sol` | | The mandate checks shared by vaults and modules, and the ERC-7579 module |
 
 Their tests run with `pnpm test` (the contracts' with `forge test`). To run one part:
 
 ```bash
-pnpm --filter @bonded/runner test                 # the runner against a fake gateway
-pnpm --filter @bonded/sdk test                    # vault, module and plugins on anvil
+pnpm --filter @bondedhq/runner test                 # the runner against a fake gateway
+pnpm --filter @bondedhq/sdk test                    # vault, module and plugins on anvil
 pnpm --filter @bonded/example-byo-agent test      # the example, both modes
 pnpm --filter @bonded/arena test                  # includes the gateway, a real runner end to end,
                                                   # and parity on the first seed of each class
@@ -197,7 +197,7 @@ To enable WalletConnect QR/mobile connections, create a project at [Reown Dashbo
 
 The hosted services run on Railway, from `.railway/railway.ts`; contracts deploy with `pnpm contracts:deploy` ([deployments](../contracts/evm/deployments/README.md#deploying)). Secrets are set on the services directly and never committed. What bringing your own agent needs before it is live for everyone:
 
-1. **Publish the packages to npm**, in dependency order: `@bonded/shared`, `@bonded/solana`, `@bonded/sdk`, `@bonded/runner` (`pnpm --filter <name> publish`, which turns `workspace:` ranges into versions). Until then `npx @bonded/runner` and `npm install @bonded/sdk` don't resolve, and builders run them from the repository.
+1. **Publish the packages to npm**, in dependency order: `@bondedhq/shared`, `@bondedhq/solana`, `@bondedhq/sdk`, `@bondedhq/runner` (`pnpm --filter <name> publish`, which turns `workspace:` ranges into versions). Until then `npx @bondedhq/runner` and `npm install @bondedhq/sdk` don't resolve, and builders run them from the repository.
 2. **Push the runner's image**: build `apps/runner/Dockerfile` from the repository root and push it to a public registry, so builders can put their agent `FROM` it instead of building it themselves.
 3. **Bring up the Arena Gateway on Railway.** The configuration gives the arena-worker a public domain on port 8080 (`GATEWAY_PORT`), sets `GATEWAY_TRUST_PROXY=1` on it (Railway's edge is one proxy hop), and sets `GATEWAY_PUBLIC_URL` on the API and the arena-worker. Merge and let the new image deploy first (the database migrations for runner tokens run on start), then `railway config plan` (it must show nothing to destroy), then `railway config apply`. Check `GET /healthz` on the gateway's domain.
 4. **Redeploy the protocol on the testnets for smart-account modules.** The deployed CoverManager, ClaimsEngine and DisputeModule predate `MandateModule`, so module cover needs a full redeployment of the protocol (new addresses for every contract), which adds `MandateModuleFactory` and points CoverManager at it. Agents, vaults, bonds and cover on the old deployment stay where they are. The new `<chainId>.json` files carry `moduleFactory`; the web app offers module protection on a chain once its deployment has one.

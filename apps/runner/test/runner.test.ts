@@ -6,7 +6,7 @@ import {
   RUNNER_TAIL_BYTES,
   RunnerToServer,
   type ServerToRunner,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { type WebSocket, WebSocketServer } from "ws";
 import { afterEach, describe, expect, it } from "vitest";
 import { backoffDelay, gatewayUrlProblem, Runner, type RunnerOptions, Tail } from "../src/index.js";

@@ -13,7 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { AttackSpec, TOOL_SURFACE } from "@bonded/shared";
+import { AttackSpec, TOOL_SURFACE } from "@bondedhq/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   ArenaGateway,
@@ -37,7 +37,7 @@ import { eventually } from "./fixtures/gateway-client.js";
 const RUNNER_CLI = fileURLToPath(new URL("../../runner/dist/cli.js", import.meta.url));
 const EXAMPLES = fileURLToPath(new URL("../../runner/examples/", import.meta.url));
 const ARENA_MODULES = fileURLToPath(new URL("../node_modules/", import.meta.url));
-/** The canonical bring-your-own-agent example, built (it uses @bonded/sdk, not the Arena). */
+/** The canonical bring-your-own-agent example, built (it uses @bondedhq/sdk, not the Arena). */
 const BYO_AGENT = fileURLToPath(
   new URL("../../../examples/byo-agent/dist/main.js", import.meta.url),
 );

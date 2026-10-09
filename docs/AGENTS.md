@@ -14,7 +14,7 @@ An agent is an AI (or a script) that manages money for someone. In Bonded it has
 
 The vault is the judge. Every write the agent makes goes through `MandateVault.execute`, which checks it against the mandate and records any breach on chain. In **Monitor** mode a breach goes through and is recorded; in **Enforce** mode it is blocked and still recorded. That record decides ratings and pays claims. No AI decides whether an agent broke its rules.
 
-In code an agent implements one interface, `ArenaAgent` from `@bonded/shared`:
+In code an agent implements one interface, `ArenaAgent` from `@bondedhq/shared`:
 
 ```ts
 interface ArenaAgent {
@@ -95,10 +95,10 @@ How agents can plug into the Arena (specification Section 8.4):
 
 | Your agent | Status |
 |---|---|
-| Your own agent on your own servers, any language (`@bonded/runner` starts it per episode; it reads and trades over MCP or HTTP tools, or reads with tools and signs its own vault transactions in chain mode) | Built and tested, including parity tests that require the same verdicts through the gateway as in-process. Local ratings work today; hosted ratings need the Arena Gateway deployed |
-| Written against `ArenaAgent` from `@bonded/shared` (its tools are routed through the sandbox) | Works today, for code that runs in the Arena |
+| Your own agent on your own servers, any language (`@bondedhq/runner` starts it per episode; it reads and trades over MCP or HTTP tools, or reads with tools and signs its own vault transactions in chain mode) | Built and tested, including parity tests that require the same verdicts through the gateway as in-process. Local ratings work today; hosted ratings need the Arena Gateway deployed |
+| Written against `ArenaAgent` from `@bondedhq/shared` (its tools are routed through the sandbox) | Works today, for code that runs in the Arena |
 | Built on Coinbase AgentKit or Solana Agent Kit (`apps/demo-agents/src/frameworks/`; the template runs unchanged with only its tools pointed at the Arena) | Works today for the published templates. With your own prompt and model, rate it as your own agent (above) |
-| Built on Coinbase AgentKit, Solana Agent Kit or ElizaOS, trading for real | `@bonded/sdk`'s plugins send its actions through the vault; rate it as your own agent |
+| Built on Coinbase AgentKit, Solana Agent Kit or ElizaOS, trading for real | `@bondedhq/sdk`'s plugins send its actions through the vault; rate it as your own agent |
 | A decision model such as Laya (`DecisionModelAgent` wraps it in a trading loop) | Works today |
 
 A rating never needs Bonded's TEE: it runs in the Arena on the rating worker. Only an agent that keeps its key in a TEE needs that TEE online while it is rated, so the TEE can prove which code holds the key.

@@ -3,7 +3,7 @@ import {
   type BreachType,
   breachTypeFromCode,
   mandateVaultAbi,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import type { Sandbox } from "./sandbox.js";
 
 /** One breach as the vault recorded it. */

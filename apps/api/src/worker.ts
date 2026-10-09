@@ -24,10 +24,10 @@ import {
   type AttackSpec,
   type ChatClient,
   type EvmMandateInput,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { z } from "zod";
 import { getAbiItem, hashTypedData, type Hex } from "viem";
-import { attestationTypedData, bondedDomain } from "@bonded/shared";
+import { attestationTypedData, bondedDomain } from "@bondedhq/shared";
 import type { ServiceChain } from "@bonded/keeper";
 import { ratingLibrary } from "./library.js";
 import { ratedAgent, sentinelCodeHash, type SentinelService } from "./sentinel.js";
@@ -197,9 +197,14 @@ const LANE_LOCK: Record<RatingLane | "all", number> = { all: 7004, builtin: 7004
  * front the rated code is different, so it gets the combined hash (`sentinelCodeHash`). This
  * holds for operator configs and self-serve registrations alike.
  */
-export function ratedCodeHash(config: { codeHash: string; sentinel?: boolean }): Hex {
+export function ratedCodeHash(
+  config: { codeHash: string; sentinel?: boolean },
+  sentinel?: SentinelService,
+): Hex {
   // (A remote agent's hash can be the one recorded on its rating instead: see `remoteCode`.)
-  return config.sentinel ? sentinelCodeHash(config.codeHash as Hex) : (config.codeHash as Hex);
+  return config.sentinel
+    ? sentinelCodeHash(config.codeHash as Hex, sentinel?.info)
+    : (config.codeHash as Hex);
 }
 /** Process one durable rating job under the chain worker lock; retries recover accepted posts. */
 export async function workOne(
@@ -491,7 +496,8 @@ async function runLocked(
               ? new Set((fresh?.attacks ?? []).map((a) => a.id))
               : library.unpublished,
           ...(fresh ? { heldOut: fresh.heldOut } : {}),
-          codeHash: config.kind === "remote" ? (remoteCode as Hex) : ratedCodeHash(config),
+          codeHash:
+            config.kind === "remote" ? (remoteCode as Hex) : ratedCodeHash(config, sentinel),
           ...(config.repeats ? { repeats: config.repeats } : {}),
           // An operator-run agent could skip its work, or its reading, when it suspects an
           // attack: only episodes where it was exposed count as trials (rate.ts, `exercise`).

@@ -1,4 +1,4 @@
-import type { BindingLevel, RemoteMode } from "@bonded/shared";
+import type { BindingLevel, RemoteMode } from "@bondedhq/shared";
 import type { Coverage, Liveness, Report, RunRecord, RunnerRecord, SelfAgentRecord } from "./api";
 
 /**
@@ -7,7 +7,7 @@ import type { Coverage, Liveness, Report, RunRecord, RunnerRecord, SelfAgentReco
  */
 
 /** The runner's npm package. */
-export const RUNNER_PACKAGE = "@bonded/runner";
+export const RUNNER_PACKAGE = "@bondedhq/runner";
 /**
  * The Docker line's image: the owner's own, built FROM the runner's image (apps/runner/Dockerfile)
  * with their agent added.
@@ -35,7 +35,7 @@ function runnerArgs({ gatewayUrl, mode, teeUrl }: RunnerCommandInput): string {
 }
 
 /**
- * `npx @bonded/runner …`, run where the agent runs. The token is passed as BONDED_RUNNER_TOKEN,
+ * `npx @bondedhq/runner …`, run where the agent runs. The token is passed as BONDED_RUNNER_TOKEN,
  * which keeps it out of the process list (the runner reads it from there).
  */
 export function runnerCommand(input: RunnerCommandInput): string {
@@ -138,7 +138,7 @@ export function normaliseCodeHash(text: string): string {
   return t.startsWith("sha256:") ? `0x${t.slice(7)}` : t;
 }
 
-/** Plain names for the attack surfaces (`AttackSurface` in @bonded/shared). */
+/** Plain names for the attack surfaces (`AttackSurface` in @bondedhq/shared). */
 export const SURFACE_LABELS: Record<string, string> = {
   dm: "messages",
   news: "news",

@@ -21,7 +21,7 @@
     "lint": "eslint src"
   },
   "dependencies": {
-    "@bonded/shared": "workspace:*",
+    "@bondedhq/shared": "workspace:*",
     "viem": "^2.56.9"
   }
 }

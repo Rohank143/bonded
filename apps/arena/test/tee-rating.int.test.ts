@@ -1,5 +1,5 @@
 import { ScriptedHardenedAgent } from "@bonded/demo-agents";
-import { bondedRegistryAbi, type Scoring, teeMeasurement } from "@bonded/shared";
+import { bondedRegistryAbi, type Scoring, teeMeasurement } from "@bondedhq/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadAttackLibrary, rateAgent, Sandbox, type VerifiedTee } from "../src/index.js";
 

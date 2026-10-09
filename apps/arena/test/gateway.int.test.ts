@@ -5,7 +5,7 @@ import {
   RUNNER_CLOSE,
   RUNNER_PROTOCOL_VERSION,
   testTokenAbi,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { encodeFunctionData, parseEther, parseUnits } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { WebSocket } from "ws";

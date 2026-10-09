@@ -1,4 +1,4 @@
-import type { ArenaAgent } from "@bonded/shared";
+import type { ArenaAgent } from "@bondedhq/shared";
 import { type ActionGuard, PolicyGuard } from "./hardened/guard.js";
 import { LlmHardenedAgent } from "./hardened/llm.js";
 import { ScriptedHardenedAgent } from "./hardened/scripted.js";
@@ -11,6 +11,7 @@ export {
   allowedAnswers,
   DEFAULT_DECISION_MODEL,
   type Decision,
+  type DecisionOptions,
   type DecisionModel,
   type DecisionQuestion,
   LlmDecisionModel,
@@ -29,8 +30,11 @@ export {
   type LayaOptions,
   LayaSentinel,
   type SentinelAssessment,
+  SentinelAssessmentError,
+  type SentinelAssessOptions,
   type SentinelFields,
   type SentinelModel,
+  validateCascadeOptions,
 } from "./decision/laya.js";
 export {
   type ActionGuard,

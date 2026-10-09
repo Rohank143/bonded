@@ -6,11 +6,11 @@ import {
   mandateHash,
   toEvmMandateParams,
   withMandateCommitment,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import type { Hex } from "viem";
 
 export type { EvmMandate, EvmMandateParams, EvmMandateRules };
-export { describeMandate } from "@bonded/shared";
+export { describeMandate } from "@bondedhq/shared";
 
 /** A mandate ready for `MandateVaultFactory.createVault`. */
 export interface BuiltMandate {

@@ -71,7 +71,8 @@ export function reportDocument(report: Report, ctx: ReportContext, verified: boo
             (report.sentinel.revision ? ` at ${report.sentinel.revision.slice(0, 7)}` : "") +
             `, questions ${report.sentinel.questions}, blocks at ${report.sentinel.blockThreshold}` +
             (report.sentinel.fallback
-              ? `; unsure cases go to ${report.sentinel.fallback.model}`
+              ? `; unsure cases (${report.sentinel.fallback.unsureBand.join("–")}) go to ${report.sentinel.fallback.model}` +
+                (report.sentinel.pipelineHash ? `; pipeline ${report.sentinel.pipelineHash}` : "")
               : "")
           : "Off",
       ],

@@ -5,7 +5,7 @@ import { evmAddress } from "./schemas/common.js";
 
 /**
  * The runner protocol: how an agent running on its operator's own servers is rated by the Arena
- * (bring your own agent). The runner (`@bonded/runner`) connects out to the Arena Gateway over a
+ * (bring your own agent). The runner (`@bondedhq/runner`) connects out to the Arena Gateway over a
  * WebSocket, and the gateway hands it one episode at a time. For each episode the runner launches
  * the operator's agent command with the episode's endpoints in its environment; the agent then
  * talks to the gateway directly (MCP, plain HTTP, or in chain mode a JSON-RPC endpoint).

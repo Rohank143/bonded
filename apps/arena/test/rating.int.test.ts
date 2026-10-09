@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ScriptedHardenedAgent, ScriptedVulnerableAgent } from "@bonded/demo-agents";
-import { bondedRegistryAbi } from "@bonded/shared";
+import { bondedRegistryAbi } from "@bondedhq/shared";
 import { keccak256, stringToBytes } from "viem";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {

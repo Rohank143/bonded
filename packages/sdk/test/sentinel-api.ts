@@ -1,4 +1,4 @@
-import { sentinelCheckDigest, sentinelCheckMessage } from "@bonded/shared";
+import { sentinelCheckDigest, sentinelCheckMessage } from "@bondedhq/shared";
 import { type Address, type Hex, isAddressEqual, recoverMessageAddress } from "viem";
 
 /**
