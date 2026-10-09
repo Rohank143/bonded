@@ -42,6 +42,10 @@ export const cascadeScoresSchema = z.object({
       manipulated: z.boolean(),
       primary: assessmentSchema.nullable(),
       llm: assessmentSchema.nullable(),
+      /** Calls made per path, retries included; absent in scores written before retries. */
+      attempts: z
+        .object({ primary: z.number().int().positive(), llm: z.number().int().positive() })
+        .optional(),
     }),
   ),
 });
@@ -89,7 +93,13 @@ export async function scoreCascadeDataset(
   primary: SentinelModel,
   llm: SentinelModel,
   identity: Pick<CascadeScores, "primary" | "fallback">,
-  options: { maxUsd: number; timeoutMs?: number; onCase?: (done: number, total: number) => void },
+  options: {
+    maxUsd: number;
+    timeoutMs?: number;
+    /** Extra tries after a failed call (default 2). Budget and cost errors never retry. */
+    retries?: number;
+    onCase?: (done: number, total: number) => void;
+  },
 ): Promise<CascadeScores> {
   if (!Number.isFinite(options.maxUsd) || options.maxUsd <= 0)
     throw new Error("maxUsd must be positive");
@@ -131,12 +141,26 @@ export async function scoreCascadeDataset(
         return null;
       }
     };
+    // A transient provider failure is retried so one dropped call doesn't void the evaluation;
+    // every extra call is recorded and reported, since live checks do not retry.
+    const withRetries = async (model: SentinelModel, paid: boolean) => {
+      let attempts = 0;
+      let answer = null;
+      while (answer === null && attempts <= (options.retries ?? 2)) {
+        attempts++;
+        answer = await assess(model, paid);
+      }
+      return { answer, attempts };
+    };
+    const p = await withRetries(primary, false);
+    const l = await withRetries(llm, true);
     cases.push({
       id: c.id,
       family: c.family,
       manipulated: c.manipulated,
-      primary: await assess(primary, false),
-      llm: await assess(llm, true),
+      primary: p.answer,
+      llm: l.answer,
+      attempts: { primary: p.attempts, llm: l.attempts },
     });
     options.onCase?.(i + 1, data.cases.length);
   }
@@ -306,6 +330,11 @@ export function compareCascade(
       totalUsdPer1000,
     },
     latencySource: "sum of measured path latencies; production records live checks separately",
+    retries: {
+      primary: scores.cases.reduce((n, c) => n + (c.attempts ? c.attempts.primary - 1 : 0), 0),
+      llm: scores.cases.reduce((n, c) => n + (c.attempts ? c.attempts.llm - 1 : 0), 0),
+      note: "extra calls after a failed call during scoring; live checks do not retry",
+    },
   };
 }
 
