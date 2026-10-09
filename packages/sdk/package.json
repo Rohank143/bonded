@@ -1,16 +1,57 @@
 {
   "name": "@bonded/sdk",
   "version": "0.1.0",
-  "description": "Trade through a Bonded Mandate Vault from any TypeScript agent: a typed vault client with dry runs, Sentinel checks, a mandate builder, and plugins for Coinbase AgentKit, Solana Agent Kit and ElizaOS.",
+  "description": "Trade through a Bonded Mandate Vault and get rated by the Bonded Arena from any TypeScript agent: a typed vault client with dry runs, Sentinel checks and a mandate builder; the Arena episode's tools for LangChain, the Vercel AI SDK, ElizaOS and Coinbase AgentKit; and an Agent URL handler.",
   "license": "MIT",
+  "keywords": [
+    "bonded",
+    "ai-agents",
+    "mandate-vault",
+    "mcp",
+    "langchain",
+    "langgraph",
+    "vercel-ai-sdk",
+    "agentkit",
+    "solana-agent-kit",
+    "elizaos",
+    "viem"
+  ],
+  "homepage": "https://github.com/ddboy19912/bonded/tree/main/packages/sdk#readme",
+  "bugs": {
+    "url": "https://github.com/ddboy19912/bonded/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ddboy19912/bonded.git",
+    "directory": "packages/sdk"
+  },
   "type": "module",
   "sideEffects": false,
+  "bin": {
+    "bonded-mcp-config": "./dist/mcp-config-cli.js"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp.d.ts",
+      "import": "./dist/mcp.js"
+    },
+    "./agent-url": {
+      "types": "./dist/agent-url.d.ts",
+      "import": "./dist/agent-url.js"
+    },
+    "./langchain": {
+      "types": "./dist/langchain.d.ts",
+      "import": "./dist/langchain.js"
+    },
+    "./ai-sdk": {
+      "types": "./dist/ai-sdk.d.ts",
+      "import": "./dist/ai-sdk.js"
     },
     "./agentkit": {
       "types": "./dist/agentkit.d.ts",
@@ -28,27 +69,13 @@
   },
   "files": [
     "dist",
-    "src",
-    "README.md"
+    "!dist/**/*.map",
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/ddboy19912/bonded.git",
-    "directory": "packages/sdk"
-  },
-  "homepage": "https://github.com/ddboy19912/bonded/tree/main/packages/sdk#readme",
-  "keywords": [
-    "bonded",
-    "ai-agents",
-    "mandate-vault",
-    "agentkit",
-    "solana-agent-kit",
-    "elizaos",
-    "viem"
-  ],
   "publishConfig": {
     "access": "public"
   },
@@ -56,10 +83,12 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.eliza.json",
     "lint": "eslint src test",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepack": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
     "@bonded/shared": "workspace:^",
+    "@modelcontextprotocol/sdk": "1.30.1",
     "viem": "^2.56.9",
     "zod": "^4.6.5"
   },
@@ -68,15 +97,19 @@
     "@bonded/solana": "workspace:*",
     "@coinbase/agentkit": "0.10.4",
     "@elizaos/core": "1.7.2",
+    "@langchain/core": "1.2.12",
     "@solana/spl-token": "0.4.15",
     "@solana/web3.js": "^1.98.4",
+    "ai": "7.0.114",
     "solana-agent-kit": "2.0.10"
   },
   "peerDependencies": {
     "@bonded/solana": "workspace:^",
     "@coinbase/agentkit": "^0.10.4",
     "@elizaos/core": "^1.7.2",
+    "@langchain/core": "^1.0.0",
     "@solana/web3.js": "^1.98.4",
+    "ai": "^5.0.0 || ^6.0.0 || ^7.0.0",
     "solana-agent-kit": "^2.0.10"
   },
   "peerDependenciesMeta": {
@@ -89,7 +122,13 @@
     "@elizaos/core": {
       "optional": true
     },
+    "@langchain/core": {
+      "optional": true
+    },
     "@solana/web3.js": {
+      "optional": true
+    },
+    "ai": {
       "optional": true
     },
     "solana-agent-kit": {

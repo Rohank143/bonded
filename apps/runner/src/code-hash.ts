@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { codeHashOf, type CodeSource } from "@bonded/shared";
 
 /**
@@ -23,7 +23,11 @@ import { codeHashOf, type CodeSource } from "@bonded/shared";
 export interface CodeIdentity {
   codeHash: `0x${string}`;
   codeSource: CodeSource;
-  /** What it was made from, for the runner's log (a commit, a digest, a file). */
+  /**
+   * What it was made from, sent in hello as `codeDetail` (at most 200 characters): the full
+   * commit for git and git-dirty, the digest for image, the flag or variable name for flag and
+   * env, and for unpinned the entry file's name (never its local path).
+   */
   detail: string;
 }
 
@@ -57,7 +61,12 @@ export function codeIdentity(options: CodeIdentityOptions): CodeIdentity {
     return { codeHash: lower(declared), codeSource: "env", detail: "BONDED_CODE_HASH" };
   }
   const digest = env.BONDED_IMAGE_DIGEST?.trim();
-  if (digest) return { codeHash: codeHashOf("image", digest), codeSource: "image", detail: digest };
+  if (digest)
+    return {
+      codeHash: codeHashOf("image", digest),
+      codeSource: "image",
+      detail: digest.slice(0, 200),
+    };
   const entry = entryFile(options.command, cwd);
   const git = options.git ?? gitState;
   // The entry file's own repository: the runner's directory may be another one entirely.
@@ -67,7 +76,7 @@ export function codeIdentity(options: CodeIdentityOptions): CodeIdentity {
     return {
       codeHash: codeHashOf(source, state.commit),
       codeSource: source,
-      detail: `commit ${state.commit.slice(0, 12)}${state.dirty ? " with uncommitted changes" : ""}`,
+      detail: state.commit,
     };
   }
   const bytes = entry ? readFileSync(entry) : Buffer.alloc(0);
@@ -75,7 +84,7 @@ export function codeIdentity(options: CodeIdentityOptions): CodeIdentity {
   return {
     codeHash: codeHashOf("unpinned", value),
     codeSource: "unpinned",
-    detail: entry ? `the command and ${entry}` : "the command line",
+    detail: entry ? `the command and ${basename(entry).slice(0, 150)}` : "the command line",
   };
 }
 

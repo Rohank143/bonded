@@ -46,7 +46,9 @@
     "sentinel:shortcuts": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena sentinel-shortcuts",
     "sentinel:consistency": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena sentinel-consistency",
     "docs:dev": "pnpm --filter @bonded/docs dev",
-    "sentinel:rewrite": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena sentinel-rewrite"
+    "sentinel:rewrite": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena sentinel-rewrite",
+    "release:check": "node scripts/release/check.mjs",
+    "release:packages": "node scripts/release/publish.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

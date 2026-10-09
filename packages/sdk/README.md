@@ -1,6 +1,7 @@
 # @bonded/sdk
 
-Trade through a Bonded Mandate Vault from any TypeScript agent, wherever it runs.
+Trade through a Bonded Mandate Vault from any TypeScript agent, wherever it runs, and get it rated
+by the Bonded Arena without changing how it works.
 
 The vault holds the agent's funds. The agent's key can only act through `MandateVault.execute(target, data)`, which checks every action against the mandate (tokens, contracts, recipients, per-trade and daily limits) and records any breach on chain. In **Monitor** mode a breach goes through and is recorded; in **Enforce** mode it is blocked and recorded. That breach log decides ratings and pays claims. This SDK is the agent's side of it: send actions, preview what the vault would decide, and ask Sentinel for advice.
 
@@ -8,7 +9,19 @@ The vault holds the agent's funds. The agent's key can only act through `Mandate
 npm install @bonded/sdk viem
 ```
 
-ESM only, Node 20 or later. Not yet published to npm; inside this repository use `"@bonded/sdk": "workspace:*"`.
+ESM only, Node 22 or later. Not yet published to npm (the founder publishes with
+`pnpm release:packages`); inside this repository use `"@bonded/sdk": "workspace:*"`.
+
+| Entry point | What it is | Peer dependency |
+|---|---|---|
+| `@bonded/sdk` | The vault client, dry runs, the guard, Sentinel, mandates, `fromBondedEnv` | |
+| `@bonded/sdk/mcp` | An episode's tools over MCP, `/done`, MCP config | |
+| `@bonded/sdk/agent-url` | The Agent URL handler | |
+| `@bonded/sdk/langchain` | The episode's tools as LangChain `StructuredTool`s | `@langchain/core` 1 |
+| `@bonded/sdk/ai-sdk` | The episode's tools as a Vercel AI SDK tool set | `ai` 5 to 7 |
+| `@bonded/sdk/eliza` | The ElizaOS plugin, with a rating mode | `@elizaos/core` 1.7 |
+| `@bonded/sdk/agentkit` | AgentKit wallet provider for the vault; the episode's tools as actions | `@coinbase/agentkit` 0.10 |
+| `@bonded/sdk/solana-agent-kit` | Solana Agent Kit plugin for the Solana vault | `solana-agent-kit` 2, `@bonded/solana` |
 
 ## The vault
 
@@ -117,15 +130,240 @@ const text = describeMandate(mandate, tokens); // for Sentinel checks
 
 The same builder the web app's onboarding uses, so both hash the same rules the same way. Cover requires `freezeOnBreach`, which is the default.
 
-## Running under the Bonded runner
+## Getting rated by the Arena
+
+The Bonded Arena rates an agent by running it through episodes: each one gives the agent a task and
+a set of tools (market data, messages, trading) in a sandbox, plants attacks in what the tools
+return, and judges the agent only by what its episode vault records. Your agent runs where it
+always runs and keeps its own model and prompts; while it is being rated it uses the episode's
+tools instead of its production ones. There are two ways to connect:
+
+- **The runner** (`@bonded/runner`): it connects out to Bonded and starts your agent command once
+  per episode, with the episode in `BONDED_*` environment variables.
+- **Agent URL**: no install. You serve one HTTPS endpoint and Bonded calls it once per episode
+  (see [Agent URL](#agent-url) below).
+
+Either way the agent gets the same `BondedEpisode`: the task, the mode, and the episode's
+endpoints (MCP, plain HTTP, `/done`, and in chain mode a fork RPC). Every endpoint URL carries the
+episode's capability and stops working when the episode ends, so nothing about one episode can be
+reused in the next.
+
+### The episode
 
 ```ts
-import { fromBondedEnv } from "@bonded/sdk";
+import { fromBondedEnv, isBondedEpisode } from "@bonded/sdk";
 
-const episode = fromBondedEnv(); // { episodeId, task, mode, endpoints, vault, chainId, contracts, sessionKey?, deadlineMs }
+if (isBondedEpisode()) {
+  const episode = fromBondedEnv(); // { episodeId, task, mode, endpoints, vault, chainId, contracts, sessionKey?, deadlineMs }
+}
 ```
 
-When the Bonded runner starts your agent for an Arena episode, it sets `BONDED_*` variables: the task, the mode, the episode's tool endpoints (MCP and HTTP), and in chain mode a fork RPC and a session key for the episode vault. `fromBondedEnv` reads and checks them, naming every missing or malformed one. In chain mode, build a `BondedVault` from `episode.vault`, `episode.endpoints.rpc` and `episode.sessionKey`; the fork only accepts `execute` calls to the episode vault signed by that key. The example agent runs both modes.
+`isBondedEpisode()` is true when the runner set valid `BONDED_*` variables. `fromBondedEnv` reads
+and checks them, naming every missing or malformed one (`BondedError`, code `EPISODE_ENV`).
+
+The mode decides how the agent acts:
+
+- **tools**: reads and writes are tool calls; `swap`, `transfer` and `approve` are tools, and the
+  Arena sends each write through the episode vault.
+- **chain**: reads are tool calls (that is where attacks are planted), and writes are
+  transactions the agent signs itself, as in production. `episodeVault(episode)` is a
+  `BondedVault` for the episode vault, signing with `episode.sessionKey` through the episode's
+  fork RPC; it throws in tools mode, or when the agent's key is in a TEE (no session key).
+
+When the agent is finished it says so, with its own model usage if it can (Bonded uses it to
+estimate what a full rating will cost you; it is recorded, never trusted for limits):
+
+```ts
+import { finishEpisode } from "@bonded/sdk/mcp";
+
+await finishEpisode(episode, {
+  finalMessage: "Bought 2,000 tUSDG of tNVDA",
+  usage: { inputTokens: 12_400, outputTokens: 900, costUsd: 0.04 },
+});
+```
+
+Under the runner, exiting also ends the episode; so does its deadline.
+
+### The episode's tools over MCP
+
+```ts
+import { connectEpisodeTools } from "@bonded/sdk/mcp";
+
+const episode = await connectEpisodeTools(); // from BONDED_*; or pass the episode you were given
+episode.tools; // [{ name, description, inputSchema, call(args) }]
+const prices = await episode.callTool("get_prices"); // { ok: true, output, text } | { ok: false, error, text }
+await episode.done({ finalMessage: "done" });
+```
+
+```ts
+connectEpisodeTools(
+  episode?: EpisodeToolsSource, // default fromBondedEnv()
+  options?: { signal?: AbortSignal; fetch?: typeof fetch; clientName?: string },
+): Promise<EpisodeTools>;
+
+interface EpisodeTools {
+  client: Client; // the official MCP SDK client
+  tools: EpisodeTool[]; // listed once at connect
+  listTools(): ReturnType<Client["listTools"]>; // MCP tools/list as the server answers
+  callTool(name: string, args?: Record<string, unknown>): Promise<EpisodeToolResult>;
+  done(body?: DoneRequest): Promise<void>; // POST {done}
+  close(): Promise<void>;
+}
+```
+
+A failed call is returned, not thrown (`ok: false`), so the agent's model can read the error and
+react, as it would to a production tool's. `text` is what a model should read.
+
+### Framework helpers
+
+One call gives the episode's tools in your framework's own shape, so the agent's code stays the
+same and only the tool list changes while it is being rated. Each helper takes an
+`EpisodeTools` connection or an episode, and with no argument reads `BONDED_*`. Each framework is
+an optional peer dependency: install the one you use.
+
+**LangChain and LangGraph** (`@langchain/core` 1):
+
+```ts
+import { bondedLangChainTools } from "@bonded/sdk/langchain";
+import { isBondedEpisode } from "@bonded/sdk";
+
+const tools = isBondedEpisode() ? await bondedLangChainTools() : productionTools;
+const agent = createReactAgent({ llm, tools }); // or model.bindTools(tools), ToolNode(tools)
+```
+
+`StructuredTool`s with each tool's own JSON Schema. They return the Arena's output as text, and
+`Error: ...` for a failed call.
+
+**Vercel AI SDK** (`ai` 5 or later; tested with 7):
+
+```ts
+import { bondedAiSdkTools } from "@bonded/sdk/ai-sdk";
+
+const tools = isBondedEpisode() ? await bondedAiSdkTools() : productionTools;
+const { text, totalUsage } = await generateText({ model, tools, stopWhen: stepCountIs(10), prompt });
+```
+
+A tool set of `tool({ inputSchema: jsonSchema(...), execute })`; `execute` returns the Arena's
+output, or `{ error }` for a failed call.
+
+**ElizaOS** (`@elizaos/core` 1.7): `bondedPlugin` has a rating mode, on by default
+(`rating: "auto"`). When the runtime registers the plugin while an episode is running, it swaps
+the vault actions for the episode's tools. For an agent that doesn't use the vault plugin in
+production, add `bondedEpisodePlugin()` while it is being rated:
+
+```ts
+import { bondedEpisodePlugin, bondedPlugin } from "@bonded/sdk/eliza";
+
+plugins: [isBondedEpisode() ? bondedEpisodePlugin() : myTradingPlugin];
+```
+
+Each tool becomes an action named after it in capitals (`get_prices` is `GET_PRICES`); its
+parameters come from `options.parameters`, or the runtime's `OBJECT_SMALL` model reads them from
+the conversation against the tool's JSON Schema. The `BONDED_TASK` provider gives the agent the
+episode's task and mandate. In chain mode only the reads are tools, and the plugin adds
+`BONDED_SWAP`, `BONDED_TRANSFER` and `BONDED_APPROVE` on `episodeVault(episode)`. The actions are
+filled in by the plugin's `init`, which the runtime calls before it reads them.
+
+**Coinbase AgentKit** (`@coinbase/agentkit` 0.10):
+
+```ts
+import { bondedEpisodeActionProvider } from "@bonded/sdk/agentkit";
+
+const kit = await AgentKit.from({
+  walletProvider,
+  actionProviders: isBondedEpisode() ? [await bondedEpisodeActionProvider()] : productionProviders,
+});
+// then getLangChainTools(kit) / getVercelAITools(kit) as usual
+```
+
+Actions are named `BondedEpisodeActionProvider_<tool>` and typed with a zod 3 schema built from
+the tool's JSON Schema (what AgentKit's framework extensions expect). In chain mode, writes are
+transactions: use a `BondedWalletProvider` for `episode.vault` with the session key and
+`episode.endpoints.rpc`.
+
+Every helper is tested end to end against a real Arena Gateway with a scripted model:
+[`examples/frameworks`](../../examples/frameworks/README.md).
+
+### MCP config for MCP-aware agents
+
+Agents that read an `mcpServers` config (Claude Desktop, Claude Code, Cursor and most agent
+frameworks) can point at the episode's MCP endpoint without any Bonded code:
+
+```ts
+import { mcpConfig } from "@bonded/sdk/mcp";
+
+mcpConfig(episode); // { mcpServers: { "bonded-episode": { type: "http", url: "<episode MCP URL>" } } }
+mcpConfig(episode, { style: "url" }); // { url } only, for clients that infer the transport
+mcpConfig(episode, { style: "stdio" }); // { command: "npx", args: ["-y", "mcp-remote@0.14.3", url] }, for stdio-only clients
+```
+
+The URL is per episode: it stops working when the episode ends. Write the config at the start of
+every episode, for example in the runner's agent command, with the `bonded-mcp-config` command this
+package installs:
+
+```sh
+bonded-runner --gateway ... -- sh -c 'bonded-mcp-config > .mcp.json && my-agent --mcp-config .mcp.json'
+```
+
+`bonded-mcp-config [--style http|url|stdio] [--name <name>]` reads `BONDED_*` and exits 1 outside
+an episode. `mcpConfigJson(episode, options)` returns the same text.
+
+### Agent URL
+
+In Agent URL mode Bonded `POST`s each episode to your HTTPS endpoint, signed with your agent
+secret (`bonded_as_...`, shown once when you register the URL). `createBondedHandler` is the whole
+endpoint: a standard Fetch API handler for Hono, Next.js route handlers, Bun, Deno and Cloudflare
+Workers, with a Node adapter for Express and `node:http`.
+
+```ts
+import { createBondedHandler, toNodeHandler } from "@bonded/sdk/agent-url";
+import { bondedAiSdkTools } from "@bonded/sdk/ai-sdk";
+
+const handler = createBondedHandler({
+  secret: process.env.BONDED_AGENT_SECRET!,
+  version: process.env.GIT_SHA, // reported when Bonded verifies the URL; becomes the code hash
+  async onEpisode(episode, { signal }) {
+    const tools = await bondedAiSdkTools(episode);
+    const result = await generateText({ model, tools, prompt: episode.task.goal, abortSignal: signal });
+    return {
+      finalMessage: result.text,
+      usage: { inputTokens: result.totalUsage.inputTokens ?? 0, outputTokens: result.totalUsage.outputTokens ?? 0 },
+    };
+  },
+});
+
+export const POST = handler; // Next.js route handler
+app.post("/bonded", (c) => handler(c.req.raw)); // Hono
+export default { fetch: (req, env, ctx) => handler(req, ctx) }; // Cloudflare: keeps the work alive with ctx.waitUntil
+expressApp.post("/bonded", toNodeHandler(handler)); // Express: mount before express.json()
+```
+
+What the handler does with each request:
+
+1. **Checks the signature** before reading the message: `bonded-timestamp` (unix seconds) must be
+   within 300 seconds of the server's clock, and `bonded-signature`
+   (`v1=<hex HMAC-SHA256(secret, "<timestamp>.<raw body>")>`, up to four while a secret rotates)
+   must match, compared in constant time. `secret` may be a list while you rotate it. A signature
+   it has accepted before is refused as a replay. Failures answer `401`, and a body that isn't one
+   of Bonded's messages `400`; nothing runs.
+2. `{ type: "verify", challenge }`: answers `200 { challenge, proof, version }`. `proof` is the
+   hex HMAC-SHA256 of `"verify." + challenge` under the secret (`agentUrlVerifyProof`), so only a
+   server holding the secret passes; an echo server doesn't.
+3. `{ type: "episode", ... }`: answers `202` at once (Bonded waits at most 10 seconds) and runs
+   `onEpisode` in the background. When it resolves, the handler posts `/done` with the
+   `finalMessage` and `usage` it returned. If it throws, `/done` is still posted, saying the agent
+   failed, and `onError` is called.
+4. `{ type: "cancel", episodeId }`: aborts that episode's `signal`, and no `/done` is posted. The
+   signal is also aborted when the episode's deadline passes.
+
+Limits: 256 KiB bodies (`maxBodyBytes`, the most Bonded sends), 8 episodes at once (`maxConcurrent`; Bonded sends one at a
+time per agent), and the same episode delivered twice runs once. On platforms that stop work when
+the response is sent, pass their `waitUntil` (as the option, or the handler's second argument).
+`signBondedRequest(secret, body)` signs a request the way Bonded does, for testing your endpoint;
+`verifyBondedSignature(...)` is the signature check on its own. Both use the scheme Bonded's
+gateway signs with, from `@bonded/shared/agent-url` (a small entry point without the contract ABIs,
+for edge bundles). A Python endpoint with no dependencies is in
+[`examples/python-agent-url`](../../examples/python-agent-url/README.md).
 
 ## Coinbase AgentKit
 
@@ -172,7 +410,8 @@ const plugin = bondedPlugin({ vault, tokens, sentinel: { apiUrl, mandate, tokens
 // character.plugins / project agent plugins: [plugin]
 ```
 
-Actions `BONDED_SWAP`, `BONDED_TRANSFER` and `BONDED_APPROVE` through the vault, and a `BONDED_VAULT` provider that tells the agent the vault's mode, whether it is frozen and its breach count. Parameters come from `options.parameters` when the caller passes them, or the runtime's `OBJECT_SMALL` model reads them from the conversation. Amounts are whole tokens; tokens can be named by symbol. Each action is dry-run first (turn off with `guard: false`); with `sentinel`, Sentinel is asked too, with the message and recent conversation as the untrusted input. Built against `@elizaos/core` 1.7.
+Actions `BONDED_SWAP`, `BONDED_TRANSFER` and `BONDED_APPROVE` through the vault, and a `BONDED_VAULT` provider that tells the agent the vault's mode, whether it is frozen and its breach count. Parameters come from `options.parameters` when the caller passes them, or the runtime's `OBJECT_SMALL` model reads them from the conversation. Amounts are whole tokens; tokens can be named by symbol. Each action is dry-run first (turn off with `guard: false`); with `sentinel`, Sentinel is asked too, with the message and recent conversation as the untrusted input. Built against `@elizaos/core` 1.7. While a Bonded episode is running the plugin switches to the
+episode's tools: see [Framework helpers](#framework-helpers).
 
 ## Development
 
@@ -180,6 +419,6 @@ Actions `BONDED_SWAP`, `BONDED_TRANSFER` and `BONDED_APPROVE` through the vault,
 pnpm --filter @bonded/sdk test
 ```
 
-Tests run against a local anvil with the protocol deployed by the production scripts, and check allowed and breaching actions against the vault's breach log, for the core client and each framework. The Solana tests need the programs built (`pnpm solana:build`) and the Solana CLI's `solana-test-validator`; without them they skip with a message. `pnpm --filter @bonded/sdk typecheck` also checks the ElizaOS plugin against `@elizaos/core`'s own types.
+Tests run against a local anvil with the protocol deployed by the production scripts, and check allowed and breaching actions against the vault's breach log, for the core client and each framework. The Agent URL handler's tests (signatures, verify, acknowledging then working, cancel, deadline) run without a chain. The framework helpers are tested end to end against a real Arena Gateway in `examples/frameworks` (`pnpm --filter @bonded/example-frameworks test`). The Solana tests need the programs built (`pnpm solana:build`) and the Solana CLI's `solana-test-validator`; without them they skip with a message. `pnpm --filter @bonded/sdk typecheck` also checks the ElizaOS plugin against `@elizaos/core`'s own types.
 
 An example agent that uses the SDK is in [`examples/byo-agent`](../../examples/byo-agent/README.md).

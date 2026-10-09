@@ -158,7 +158,7 @@ export interface RemoteEpisode {
    * The code hash the runner reported in its hello, and where it came from. Reported by the
    * runner, never verified: show it as such.
    */
-  code?: { hash: `0x${string}`; source: string; reportedBy: "runner" };
+  code?: { hash: `0x${string}`; source: string; detail?: string; reportedBy: "runner" };
   exitCode: number | null;
   signal?: string | null;
   durationMs: number;

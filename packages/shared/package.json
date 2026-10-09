@@ -3,9 +3,20 @@
   "version": "0.1.0",
   "description": "Bonded's shared schemas, ABIs, chain configs, signing types and the agent and runner protocols.",
   "license": "MIT",
+  "keywords": [
+    "bonded",
+    "ai-agents",
+    "mandate-vault",
+    "zod",
+    "abi"
+  ],
+  "homepage": "https://github.com/ddboy19912/bonded/tree/main/packages/shared#readme",
+  "bugs": {
+    "url": "https://github.com/ddboy19912/bonded/issues"
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/ddboy19912/bonded.git",
+    "url": "git+https://github.com/ddboy19912/bonded.git",
     "directory": "packages/shared"
   },
   "type": "module",
@@ -15,12 +26,24 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./agent-url": {
+      "types": "./dist/agent-url.d.ts",
+      "import": "./dist/agent-url.js"
     }
   },
   "files": [
     "dist",
-    "README.md"
+    "!dist/**/*.map",
+    "README.md",
+    "LICENSE"
   ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -34,11 +57,5 @@
     "viem": "^2.56.9",
     "yaml": "^2.9.1",
     "zod": "^4.6.5"
-  },
-  "engines": {
-    "node": ">=22"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }
