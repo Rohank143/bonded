@@ -2,7 +2,19 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomBytes, randomUUID } from "node:crypto";
 import { ANVIL_KEYS, Sandbox, createAgentVault } from "@bonded/arena";
 import { Keeper, connectChain, type ServiceChain } from "@bonded/keeper";
-import { demoRouterAbi, mandateVaultAbi, selfServeMessage, testTokenAbi } from "@bondedhq/shared";
+import {
+  Quote,
+  coverManagerAbi,
+  coverPoolAbi,
+  demoRouterAbi,
+  mandateHash,
+  mandateVaultAbi,
+  operatorBondAbi,
+  quoteMessage,
+  selfServeMessage,
+  signQuote,
+  testTokenAbi,
+} from "@bondedhq/shared";
 import { createWalletClient, encodeFunctionData, http, parseUnits, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { createApi } from "../src/index.js";
@@ -490,6 +502,125 @@ describe("bring your own agent, launch round: report data, vault status, health,
     expect((await body(refused)).code).toBe("check-limit");
     await capped.close();
   });
+
+  it("reports a lapsed cover after the chain clears its active policy, and alerts once", async () => {
+    const d = sandbox.deployment;
+    const operator = connectChain(d, sandbox.rpcUrl, ANVIL_KEYS.operator);
+    const usd = (n: number) => BigInt(n) * 1_000_000n;
+    const made = await createAgentVault(sandbox, { deposit: 1_000 });
+    const lapsing = made.address;
+    await pg.db.upsertUserAgent(d.chainId, made.agentId.toString(), owner.address, {
+      kind: "remote",
+      mandate: made.mandate,
+      mode: "tools",
+      vault: lapsing,
+    });
+    // A bond, pool capacity, and cover bound on the vault.
+    await operator.send(d.usdg, testTokenAbi, "faucet", [usd(110_000)]);
+    await operator.send(d.usdg, testTokenAbi, "approve", [d.bond, usd(10_000)]);
+    await operator.send(d.bond, operatorBondAbi, "stake", [made.agentId, usd(10_000)]);
+    await operator.send(d.usdg, testTokenAbi, "approve", [d.pool, usd(100_000)]);
+    await operator.send(d.pool, coverPoolAbi, "deposit", [
+      usd(100_000),
+      operator.wallet.account.address,
+    ]);
+    const chainNow = Number((await operator.read.getBlock()).timestamp);
+    const signed = await signQuote(
+      Quote.parse({
+        agentId: made.agentId.toString(),
+        vault: lapsing,
+        coverAmount: usd(5_000).toString(),
+        premiumRateBps: 120,
+        score: 90,
+        modelFamily: "unknown",
+        mandateHash: mandateHash(made.mandate),
+        reportHash: `0x${"ab".repeat(32)}`,
+        minBond: "0",
+        expiresAt: chainNow + 3600,
+        nonce: "7",
+      }),
+      { chainId: d.chainId, coverManager: d.coverManager, attesterKey: ANVIL_KEYS.deployer },
+    );
+    await operator.send(d.coverManager, coverManagerAbi, "buyCover", [
+      quoteMessage(signed.quote),
+      signed.signature,
+    ]);
+    // The depositor takes everything out: nothing is left to pay premiums with.
+    const depositor = connectChain(d, sandbox.rpcUrl, ANVIL_KEYS.depositor);
+    const shares = await operator.read.readContract({
+      address: lapsing,
+      abi: mandateVaultAbi,
+      functionName: "balanceOf",
+      args: [depositor.wallet.account.address],
+    });
+    await depositor.send(lapsing, mandateVaultAbi, "redeem", [
+      shares,
+      depositor.wallet.account.address,
+      depositor.wallet.account.address,
+    ]);
+    const advance = async (seconds: number) => {
+      await operator.read.request({ method: "evm_increaseTime", params: [seconds] } as never);
+      await operator.read.request({ method: "evm_mine", params: [] } as never);
+    };
+    // Every keeper tick accrues (interval 0) and indexes the CoverBound event.
+    const keeper = new Keeper(pg.db, chain, 0n, 0);
+    const reader = new AgentStatusReader(pg.db, chain, { ttlMs: 0 });
+
+    // A day on, the premium can't be collected: past due, in the grace period.
+    await advance(86_400);
+    await keeper.tick();
+    const due = (await reader.read(lapsing)).cover!;
+    expect(due).toMatchObject({ status: "active", active: true });
+    expect(due.pastDueSince).not.toBeNull();
+    const grace = Number(
+      await operator.read.readContract({
+        address: d.coverManager,
+        abi: coverManagerAbi,
+        functionName: "gracePeriod",
+      }),
+    );
+    expect(Date.parse(due.lapsesAt!) - Date.parse(due.pastDueSince!)).toBe(grace * 1000);
+
+    // Past the grace period: the policy lapses, and CoverManager clears activePolicyOf.
+    await advance(grace + 3600);
+    await keeper.tick();
+    expect(
+      await operator.read.readContract({
+        address: d.coverManager,
+        abi: coverManagerAbi,
+        functionName: "activePolicyOf",
+        args: [lapsing],
+      }),
+    ).toBe(0n);
+    const lapsed = (await reader.read(lapsing)).cover!;
+    expect(lapsed).toMatchObject({
+      policyId: due.policyId,
+      status: "lapsed",
+      active: false,
+      pastDueSince: due.pastDueSince,
+      lapsesAt: due.lapsesAt,
+    });
+
+    const session = await sessionFor(owner);
+    const h = await body(get(`/self/agents/${made.agentId}/health`, session));
+    expect(h.cover).toMatchObject({
+      status: "lapsed",
+      policyStatus: "lapsed",
+      policyId: due.policyId,
+    });
+    expect(h.problems).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "cover-lapsing" })]),
+    );
+
+    const alerts = new OwnerAlerts(pg.db, d.chainId, new Notifier(pg.db), reader);
+    await alerts.sweep();
+    await alerts.sweep();
+    const sent = await pg.db.pool.query(
+      "SELECT dedupe_key FROM owner_notifications WHERE type='cover_lapsing' AND subject=$1",
+      [`${d.chainId}:${made.agentId}`],
+    );
+    expect(sent.rows).toEqual([{ dedupe_key: `cover_lapsed:${due.policyId}` }]);
+  }, 120_000);
 });
 
 void ({} as Hex);

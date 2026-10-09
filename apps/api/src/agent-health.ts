@@ -138,7 +138,7 @@ export function healthProblems(input: HealthInput): HealthProblem[] {
         "The cover lapsed: its premium went unpaid past the grace period.",
         "cover-lapsing",
       );
-    else if (chain.cover?.pastDueSince)
+    else if (chain.cover?.active && chain.cover.pastDueSince)
       add(
         "problem",
         `The cover's premium is past due; the cover lapses${chain.cover.lapsesAt ? ` at ${date(Date.parse(chain.cover.lapsesAt))}` : ""} unless it is paid.`,
