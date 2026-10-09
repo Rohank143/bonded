@@ -225,6 +225,7 @@ export interface RunnerHello {
   /** The code hash the runner computed for the agent it runs, and where it came from. */
   codeHash?: string | undefined;
   codeSource?: string | undefined;
+  codeDetail?: string | undefined;
 }
 
 /** An agent's runner token and runner, as the owner's page shows them. */
@@ -344,6 +345,8 @@ export interface RatedCode {
   hash: string;
   /** "declared" (the owner's), "url" (the Agent URL's version), or the runner's own source. */
   source: string;
+  /** What the hash was made from, when the runner said (a commit, an image digest): display only. */
+  detail?: string;
 }
 
 /** How Bonded reaches an operator's agent. */
@@ -781,6 +784,18 @@ export class Database {
       return { revoked: r.rowCount ?? 0 };
     });
   }
+  /**
+   * The latest runner token request time on record for an agent (seconds, as signed), so a
+   * request made with a session can be ordered after every signed one.
+   */
+  async lastRunnerRequestAt(agentKey: string): Promise<number> {
+    const r = await this.pool.query(
+      `SELECT coalesce(max(greatest(signed_at, coalesce(revoked_signed_at, 0))), 0)::bigint AS t
+       FROM runner_tokens WHERE agent_id=$1`,
+      [agentKey],
+    );
+    return Number(r.rows[0].t);
+  }
   /** Whether a runner token request for this agent was already signed at or after `signedAt`. */
   private async runnerRequestSeen(c: Connection, agentKey: string, signedAt: number) {
     const r = await c.query(
@@ -839,13 +854,13 @@ export class Database {
     const connection = randomUUID();
     const r = await this.pool.query(
       `INSERT INTO runner_presence(agent_id,token_id,connection_id,connected,connected_at,last_heartbeat_at,
-                                   disconnected_at,runner_version,mode,tee_url,code_hash,code_source)
-       SELECT agent_id,id,$2,true,now(),now(),NULL,$3,$4,$5,$6,$7 FROM runner_tokens
+                                   disconnected_at,runner_version,mode,tee_url,code_hash,code_source,code_detail)
+       SELECT agent_id,id,$2,true,now(),now(),NULL,$3,$4,$5,$6,$7,$8 FROM runner_tokens
        WHERE agent_id=$1 AND revoked_at IS NULL
        ON CONFLICT(agent_id) DO UPDATE SET token_id=EXCLUDED.token_id,connection_id=EXCLUDED.connection_id,
          connected=true,connected_at=now(),last_heartbeat_at=now(),disconnected_at=NULL,
          runner_version=EXCLUDED.runner_version,mode=EXCLUDED.mode,tee_url=EXCLUDED.tee_url,
-         code_hash=EXCLUDED.code_hash,code_source=EXCLUDED.code_source
+         code_hash=EXCLUDED.code_hash,code_source=EXCLUDED.code_source,code_detail=EXCLUDED.code_detail
        RETURNING agent_id`,
       [
         agentKey,
@@ -855,6 +870,7 @@ export class Database {
         hello.teeUrl ?? null,
         hello.codeHash?.toLowerCase() ?? null,
         hello.codeSource ?? null,
+        hello.codeDetail ?? null,
       ],
     );
     return r.rowCount === 1 ? connection : undefined;
@@ -1999,13 +2015,19 @@ export class Database {
     }
     const p = (
       await c.query(
-        `SELECT p.code_hash,p.code_source FROM runner_presence p JOIN runner_tokens t ON t.id=p.token_id
+        `SELECT p.code_hash,p.code_source,p.code_detail FROM runner_presence p JOIN runner_tokens t ON t.id=p.token_id
          WHERE p.agent_id=$1 AND p.connected AND t.revoked_at IS NULL
            AND p.last_heartbeat_at > now() - make_interval(secs => $2)`,
         [key, RUNNER_FRESH_MS / 1000],
       )
     ).rows[0];
-    return p?.code_hash ? { hash: p.code_hash, source: p.code_source ?? "runner" } : undefined;
+    return p?.code_hash
+      ? {
+          hash: p.code_hash,
+          source: p.code_source ?? "runner",
+          ...(p.code_detail ? { detail: p.code_detail } : {}),
+        }
+      : undefined;
   }
   /**
    * The connection an agent or preview has now: its live runner token or Agent URL, whether it

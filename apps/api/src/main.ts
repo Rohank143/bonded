@@ -102,7 +102,12 @@ const ownHosts = [
   ),
 ]
   .map((d) => d.trim().toLowerCase())
-  .filter((d) => d && !d.includes("*") && !d.startsWith("localhost"));
+  .filter((d) => d && !d.includes("*") && !/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(d));
+/**
+ * Plain-http, loopback Agent URLs and webhooks: a local demo only (AGENT_URL_ALLOW_LOOPBACK=1),
+ * never hosted.
+ */
+const allowLoopback = process.env.AGENT_URL_ALLOW_LOOPBACK === "1";
 const db = new Database(required("DATABASE_URL"));
 await db.migrate();
 if (role === "migrate") {
@@ -177,6 +182,7 @@ if (role === "migrate") {
       // Bonded's own hosts, which an Agent URL or webhook may not point at (the web origins and
       // the gateway are added from their own settings).
       ownDomains: ownHosts,
+      ...(allowLoopback ? { allowLoopbackUrls: true } : {}),
     });
     server = serve({
       fetch: api.fetch,
@@ -274,7 +280,7 @@ if (role === "migrate") {
         ...(publicUrl ? { publicUrl } : {}),
         onRunnerPresence: presence.onEvent,
         // Agent URL mode: never call Bonded's own hosts.
-        agentUrl: { refusedHosts: ownHosts },
+        agentUrl: { refusedHosts: ownHosts, ...(allowLoopback ? { allowLoopback: true } : {}) },
         // Proxies in front of the gateway whose X-Forwarded-For it trusts for per-address limits:
         // 1 behind Railway's edge, 0 (the socket's address) anywhere else.
         trustProxy: z.coerce
@@ -317,6 +323,7 @@ if (role === "migrate") {
     // Owners hear when a rating of their agent or a preview ends; never blocking the rating.
     const notifier = new Notifier(db, {
       ...(secrets ? { secrets } : {}),
+      ...(allowLoopback ? { allowLoopback: true } : {}),
       ...(email ? { email } : {}),
       log: (line) => console.error(line),
     });

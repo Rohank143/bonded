@@ -366,7 +366,7 @@ describe("previews", () => {
     const third = await send("POST", "/previews", { mode: "tools" }, s, capped);
     expect(third.status).toBe(429);
     expect((await bodyOf(third)).error).toMatch(
-      /at most 2 previews a day per wallet; try again after/,
+      /You can start at most 2 previews a day\. Try again after/,
     );
   });
 
@@ -528,7 +528,9 @@ describe("connection checks", () => {
       expect((await send("POST", `/previews/${p.id}/checks`, {}, s, capped)).status).toBe(201);
       const third = await send("POST", `/previews/${p.id}/checks`, {}, s, capped);
       expect(third.status).toBe(429);
-      expect((await bodyOf(third)).error).toMatch(/at most 2 checks an hour per wallet/);
+      expect((await bodyOf(third)).error).toMatch(
+        /You can run at most 2 checks an hour\. Try again after/,
+      );
     }
     // A real check still gets its turn; the next one on the chain is refused.
     const runnerCheck = async () => {
@@ -544,7 +546,7 @@ describe("connection checks", () => {
     expect(first.status).toBe(201);
     const overall = await runnerCheck();
     expect(overall.status).toBe(429);
-    expect((await bodyOf(overall)).error).toMatch(/connection checks are busy/);
+    expect((await bodyOf(overall)).error).toMatch(/Connection checks are busy right now/);
     // Not this test's to run: the later tests take their own checks off the queue.
     await pg.db.pool.query("UPDATE connection_checks SET status='failed' WHERE id=$1", [
       (await bodyOf(first)).checkId,
@@ -642,13 +644,13 @@ describe("queuing a preview rating", () => {
         const again = await send("POST", `/previews/${second.id}/rate`, {}, s, capped);
         expect(again.status).toBe(429);
         expect((await bodyOf(again)).error).toMatch(
-          /at most 1 preview rating a day per wallet; try again after/,
+          /You can run at most 1 preview rating a day\. Try again after/,
         );
       } else {
         // The third wallet hits the chain's daily cap.
         expect(res.status).toBe(429);
         expect((await bodyOf(res)).error).toMatch(
-          /today's preview ratings are used up; try again after/,
+          /Today's preview ratings are used up\. Try again after/,
         );
       }
     }
@@ -768,10 +770,27 @@ describe("Agent URLs", () => {
       const secret = body.secret as string;
       expect(secret).toMatch(/^bonded_as_/);
       expect(made.headers.get("cache-control")).toBe("no-store");
-      // Registered and challenged in one call: the URL answered.
+      // Saved, not yet challenged: the agent needs its secret first.
       expect(body).toMatchObject({
         url: "https://agent.example/bonded",
+        verified: false,
+        verifiedAt: null,
+        codeHash: null,
+      });
+      expect(verifyCalls.find((v) => v.secret === secret)).toBeUndefined();
+      // An unverified URL can't be checked or rated.
+      const early = await bodyOf(await send("POST", `/previews/${preview.id}/checks`, {}, session));
+      expect((early.result as { problems: string[] }).problems[0]).toMatch(/Verify your Agent URL/);
+      // Not in the clear in the database, and never in any later response.
+      const row = (
+        await pg.db.pool.query("SELECT * FROM agent_urls WHERE id=$1", [body.agentUrlId])
+      ).rows[0];
+      expect(JSON.stringify(row)).not.toContain(secret);
+      expect(row.secret_ciphertext).toMatch(/^v1\./);
+      const verify = await send("POST", `/previews/${preview.id}/agent-url/verify`, {}, session);
+      expect(await bodyOf(verify)).toMatchObject({
         verified: true,
+        url: "https://agent.example/bonded",
         verifiedAt: expect.any(String),
         version: "v1.2.3",
         codeHash: {
@@ -781,18 +800,6 @@ describe("Agent URLs", () => {
           reportedBy: "agent",
           label: "reported by the agent",
         },
-      });
-      // Not in the clear in the database, and never in any later response.
-      const row = (
-        await pg.db.pool.query("SELECT * FROM agent_urls WHERE id=$1", [body.agentUrlId])
-      ).rows[0];
-      expect(JSON.stringify(row)).not.toContain(secret);
-      expect(row.secret_ciphertext).toMatch(/^v1\./);
-      const verify = await send("POST", `/previews/${preview.id}/agent-url/verify`, {}, session);
-      expect(await bodyOf(verify)).toEqual({
-        verified: true,
-        version: "v1.2.3",
-        codeHash: urlCodeHash("v1.2.3"),
       });
       // The verifier got the real secret, to sign its challenge with.
       expect(verifyCalls.at(-1)).toEqual({ url: "https://agent.example/bonded", secret });
@@ -842,7 +849,7 @@ describe("Agent URLs", () => {
       expect(rotated.secret).not.toBe(secret);
       expect(
         (await bodyOf(await get(`/previews/${preview.id}/agent-url`, session))).agentUrl,
-      ).toMatchObject({ verified: true, agentUrlId: rotated.agentUrlId });
+      ).toMatchObject({ verified: false, agentUrlId: rotated.agentUrlId });
       expect((await send("POST", `/previews/${preview.id}/rate`, {}, session)).status).toBe(409);
       // Revoking.
       expect(
@@ -899,27 +906,30 @@ describe("Agent URLs", () => {
     ).toBe(409);
   });
 
-  it("say why verification failed (422, nothing stored), and limit verifications of one host", async () => {
+  it("say why verification failed (422, the URL kept unverified), and limit verifications of one host", async () => {
     const failing = api(
       {},
-      { verifyAgentUrl: async () => ({ ok: false, problem: "Your URL answered 404" }) },
+      { verifyAgentUrl: async () => ({ ok: false, problem: "your URL answered 404" }) },
     );
     const session = await sessionFor(owner, failing);
     const preview = await newPreview(session, { mode: "tools", connection: "url" }, failing);
-    const register = () =>
-      send(
-        "POST",
-        `/previews/${preview.id}/agent-url`,
-        { url: "https://busy.example/a" },
-        session,
-        failing,
-      );
-    const res = await register();
+    const saved = await send(
+      "POST",
+      `/previews/${preview.id}/agent-url`,
+      { url: "https://busy.example/a" },
+      session,
+      failing,
+    );
+    expect(saved.status).toBe(201);
+    const verify = () =>
+      send("POST", `/previews/${preview.id}/agent-url/verify`, {}, session, failing);
+    const res = await verify();
     expect(res.status).toBe(422);
-    expect((await bodyOf(res)).error).toBe("Your URL answered 404");
-    expect(await pg.db.agentUrl(`preview:${preview.id}`)).toBeUndefined();
-    for (let i = 1; i < 10; i++) await register();
-    const limited = await register();
+    // The gateway's reason, as a full sentence.
+    expect((await bodyOf(res)).error).toBe("Your URL answered 404.");
+    expect((await pg.db.agentUrl(`preview:${preview.id}`))?.verifiedAt).toBeNull();
+    for (let i = 1; i < 10; i++) await verify();
+    const limited = await verify();
     expect(limited.status).toBe(429);
     expect((await bodyOf(limited)).retryAt).toEqual(expect.any(String));
   });
@@ -1026,7 +1036,7 @@ describe("registered agents", () => {
     ).token as string;
     // A runner that reports no code: nothing to rate.
     await connect(token, "tools");
-    expect((await bodyOf(await rate())).error).toMatch(/reported no code hash/);
+    expect((await bodyOf(await rate())).error).toMatch(/reported no code hash/i);
     await connect(token, "tools", hash(0xbeef));
     const unchecked = await rate();
     expect(unchecked.status).toBe(409);
@@ -1204,6 +1214,13 @@ describe("round 2, as the web app calls it", () => {
     // The same signature again: refused, nothing rotated.
     const replay = await send("POST", `/self/agents/${agentId}/agent-url`, req);
     expect(replay.status).toBe(409);
+    // The agent has its secret now: Bonded challenges it (signed too, a fresh signature).
+    const verified = await send(
+      "POST",
+      `/self/agents/${agentId}/agent-url/verify`,
+      await signedBody("agent-url", {}, { url }),
+    );
+    expect(verified.status, JSON.stringify(await verified.clone().json())).toBe(200);
     // Signed for another URL than sent; signed by someone else.
     expect(
       (
@@ -1280,29 +1297,31 @@ describe("round 2, as the web app calls it", () => {
     );
   });
 
-  it("caps Agent URL registrations per wallet and in all, so a spammer across wallets is stopped", async () => {
+  it("caps Agent URL verifications per wallet and in all, so a spammer across wallets is stopped", async () => {
     const capped = api({ urlVerifiesPerWalletHourly: 2, urlVerifiesHourly: 3 });
-    const register = async (who: PrivateKeyAccount) => {
+    const verify = async (who: PrivateKeyAccount) => {
       const s = await sessionFor(who, capped);
       const p = await newPreview(s, { mode: "tools", connection: "url" }, capped);
-      return send(
+      const saved = await send(
         "POST",
         `/previews/${p.id}/agent-url`,
         { url: `https://spam${Math.random()}.example/a` },
         s,
         capped,
       );
+      expect(saved.status).toBe(201);
+      return send("POST", `/previews/${p.id}/agent-url/verify`, {}, s, capped);
     };
     const a = privateKeyToAccount(generatePrivateKey());
     const b = privateKeyToAccount(generatePrivateKey());
-    expect((await register(a)).status).toBe(201);
-    expect((await register(a)).status).toBe(201);
-    const third = await register(a);
+    expect((await verify(a)).status).toBe(200);
+    expect((await verify(a)).status).toBe(200);
+    const third = await verify(a);
     expect(third.status).toBe(429);
     expect((await bodyOf(third)).retryAt).toEqual(expect.any(String));
-    expect((await register(b)).status).toBe(201);
+    expect((await verify(b)).status).toBe(200);
     // Three in all this hour: a fourth wallet is refused too.
-    expect((await register(privateKeyToAccount(generatePrivateKey()))).status).toBe(429);
+    expect((await verify(privateKeyToAccount(generatePrivateKey()))).status).toBe(429);
   });
 
   it("compares code hashes in any case, and never charges the agent for a URL Bonded couldn't call", async () => {
@@ -1402,6 +1421,7 @@ describe("review fixes (each a regression test for a finding)", () => {
       { url: "https://secret-host.example/hook?k=abc" },
       session,
     );
+    await send("POST", `/self/agents/${agentId}/agent-url/verify`, {}, session);
     const leaky: ConnectionCheckRunner = async (r) => {
       r.onEvent({
         type: "done",
@@ -1429,15 +1449,22 @@ describe("review fixes (each a regression test for a finding)", () => {
     ).toContain("sk-live-123");
     // An EventSource gets a one-use ticket for its own check only.
     const ticket = (
-      await bodyOf(await send("POST", "/streams/ticket", { checkId: made.checkId }, session))
-    ).ticket as string;
-    expect((await send("POST", "/streams/ticket", { checkId: made.checkId }, theirs)).status).toBe(
+      await bodyOf(await send("POST", "/streams/token", { checkId: made.checkId }, session))
+    ).token as string;
+    expect((await send("POST", "/streams/token", { checkId: made.checkId }, theirs)).status).toBe(
       404,
     );
-    const viaTicket = await app.request(`/checks/${made.checkId}/events?ticket=${ticket}`);
+    const viaTicket = await app.request(`/checks/${made.checkId}/events?token=${ticket}`);
     expect(viaTicket.status).toBe(200);
     expect(await viaTicket.text()).toContain("sk-live-123");
-    expect((await app.request(`/checks/${made.checkId}/events?ticket=${ticket}`)).status).toBe(401);
+    // Good again for the browser's reconnects, for that check only, and not for a rating.
+    const again = await app.request(`/checks/${made.checkId}/events?token=${ticket}`);
+    expect(again.status).toBe(200);
+    await again.body?.cancel();
+    expect(
+      (await app.request(`/checks/${crypto.randomUUID()}/events?token=${ticket}`)).status,
+    ).toBe(401);
+    expect((await app.request(`/checks/${made.checkId}/events?token=nope`)).status).toBe(401);
     await send("DELETE", `/self/agents/${agentId}/agent-url`, undefined, session);
   });
 
@@ -1550,5 +1577,82 @@ describe("review fixes (each a regression test for a finding)", () => {
     expect(
       (await pg.db.pool.query("SELECT 1 FROM used_signatures WHERE hash='old-sig'")).rowCount,
     ).toBe(0);
+  });
+});
+
+describe("one sign-in for the agent page, local Agent URLs, and code details", () => {
+  it("lets the owner's session ask for a runner token and a rating of an owned agent", async () => {
+    const agentId = mine.agentId.toString();
+    const session = await sessionFor();
+    // Someone else's session: the registry says they don't own it.
+    const theirs = await sessionFor(stranger);
+    const refused = await send("POST", `/self/agents/${agentId}/runner-token`, {}, theirs);
+    expect(refused.status).toBe(403);
+    const made = await send("POST", `/self/agents/${agentId}/runner-token`, {}, session);
+    expect(made.status, JSON.stringify(await made.clone().json())).toBe(201);
+    const { token } = await bodyOf(made);
+    expect(token).toMatch(/^bonded_rt_/);
+    // A signed request after it is still accepted (it is ordered after the session's).
+    tick();
+    const timestamp = now() + 120;
+    const signature = await owner.signMessage({
+      message: selfServeMessage({ action: "runner-token", chainId, agentId, timestamp }),
+    });
+    clock += 120_000;
+    const signed = await send("POST", `/self/agents/${agentId}/runner-token`, {
+      timestamp,
+      signature,
+    });
+    expect(signed.status).toBe(201);
+    const fresh = (await bodyOf(signed)).token as string;
+    // The runner reports what its code hash was made from (a commit): shown with the hash.
+    const identity = await auth.validate(fresh);
+    presence.onEvent({
+      type: "connected",
+      key: identity!.key,
+      at: Date.now(),
+      hello: {
+        type: "hello",
+        runnerVersion: "0.2.0",
+        protocol: 1,
+        mode: "tools",
+        codeHash: hash(0xd1),
+        codeSource: "git",
+        codeDetail: "4f2a9c1",
+      } as never,
+    });
+    await presence.flush();
+    expect(
+      (await bodyOf(await app.request(`/self/agents/${agentId}/runner`))).codeHash,
+    ).toMatchObject({
+      value: hash(0xd1),
+      source: "git",
+      detail: "4f2a9c1",
+      reportedBy: "runner",
+    });
+    // Rating with the session: the same rules (here, no passing check of this connection yet).
+    const rated = await send("POST", `/self/agents/${agentId}/rate`, {}, session);
+    expect(rated.status).toBe(409);
+    expect((await bodyOf(rated)).error).toBe(NEEDS_CHECK);
+    expect((await send("POST", `/self/agents/${agentId}/rate`, {}, theirs)).status).toBe(403);
+  });
+
+  it("allows plain-http loopback Agent URLs only when the service is local", async () => {
+    const local = api({}, { allowLoopbackUrls: true, webOrigins: ["http://localhost:5173"] });
+    const s = await sessionFor(owner, local);
+    const p = await newPreview(s, { mode: "tools", connection: "url" }, local);
+    for (const url of ["http://localhost:8790/agent", "http://127.0.0.1:8790/agent"])
+      expect(
+        (await send("POST", `/previews/${p.id}/agent-url`, { url }, s, local)).status,
+        url,
+      ).toBe(201);
+    const hosted = await send(
+      "POST",
+      `/previews/${p.id}/agent-url`,
+      { url: "http://127.0.0.1:8790/agent" },
+      s,
+    );
+    expect(hosted.status).toBe(400);
+    expect((await bodyOf(hosted)).error).toBe("Your URL must use https.");
   });
 });

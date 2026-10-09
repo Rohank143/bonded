@@ -158,7 +158,7 @@ export async function saveNotifications(
   }
   if (input.email !== undefined) {
     if (input.email !== null && !options.email)
-      throw new Refused(409, "email notifications aren't set up on this service");
+      throw new Refused(409, "Email notifications aren't set up on this service.");
     patch.email = input.email;
   }
   await db.saveNotificationSettings(owner, patch);
@@ -181,7 +181,7 @@ export function notificationRoutes(
   const { db } = options;
   const limited = (c: Context, limiter: RateLimiter) => {
     if (!limiter.allow(clientAddress(c.req.raw.headers)))
-      throw new Refused(429, "too many requests; try again in a few minutes");
+      throw new Refused(429, "Too many requests. Try again in a few minutes.");
   };
   app.get(
     "/self/notifications",
@@ -208,7 +208,7 @@ export function notificationRoutes(
       const owner = await options.wallet(c);
       if (!options.secrets) throw new Refused(409, SECRET_KEY_MISSING);
       const current = await db.notificationSettings(owner);
-      if (!current?.webhookUrl) throw new Refused(404, "set a webhook URL first");
+      if (!current?.webhookUrl) throw new Refused(404, "Set a webhook URL first.");
       const secret = newSecret(WEBHOOK_SECRET_PREFIX);
       await db.saveNotificationSettings(owner, {
         webhookSecretCiphertext: options.secrets.encrypt(secret, webhookContext(owner)),

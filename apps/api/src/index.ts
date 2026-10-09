@@ -188,7 +188,7 @@ export function createApi(options: {
   // Previews, Agent URLs, checks and notification settings are made with an owner session
   // (sessions.ts), opened by a wallet signature.
   const PUBLIC_POST =
-    /^\/(bounties\/\d{1,78}\/reveal|self\/agents(\/\d{1,78}\/(rate|runner-token|agent-url|agent-url\/verify|checks))?|quotes|sentinel\/check|self\/session|self\/notifications(\/webhook-secret)?|previews(\/session|\/[0-9a-f-]{36}\/(stop|runner-token|agent-url|agent-url\/verify|checks|rate|notifications))?|self\/agents\/\d{1,78}\/notifications|streams\/ticket)$/;
+    /^\/(bounties\/\d{1,78}\/reveal|self\/agents(\/\d{1,78}\/(rate|runner-token|agent-url|agent-url\/verify|checks))?|quotes|sentinel\/check|self\/session|self\/notifications(\/webhook-secret)?|previews(\/session|\/[0-9a-f-]{36}\/(stop|runner-token|agent-url|agent-url\/verify|checks|rate|notifications))?|self\/agents\/\d{1,78}\/notifications|streams\/token)$/;
   const PUBLIC_PUT =
     /^\/(self\/notifications|previews\/[0-9a-f-]{36}\/notifications|self\/agents\/\d{1,78}\/notifications)$/;
   const PUBLIC_DELETE =
@@ -574,12 +574,17 @@ export function createApi(options: {
     ...(options.gatewayUrl ? { gatewayUrl: options.gatewayUrl } : {}),
     ...(options.coverCaps ? { coverCaps: options.coverCaps } : {}),
     agentUrls: Boolean(options.secrets),
+    wallet,
   });
   const ownDomains = [
     ...ownDomainsFrom([...(options.webOrigins ?? []), options.gatewayUrl]),
     ...(options.ownDomains ?? []),
   ];
   const streams = new PollStreams();
+  const urlClient = new AgentUrlClient({
+    refusedHosts: ownDomains,
+    ...(options.allowLoopbackUrls ? { allowLoopback: true } : {}),
+  });
   ownerRoutes(app, {
     db,
     chain,
@@ -591,14 +596,8 @@ export function createApi(options: {
     ...(options.secrets ? { secrets: options.secrets } : {}),
     // The API's own Agent URL client (the gateway has its own): it refuses Bonded's hosts and
     // rate-limits calls per URL host.
-    verifyAgentUrl:
-      options.verifyAgentUrl ??
-      gatewayUrlVerifier(
-        new AgentUrlClient({
-          refusedHosts: ownDomains,
-          ...(options.allowLoopbackUrls ? { allowLoopback: true } : {}),
-        }),
-      ),
+    verifyAgentUrl: options.verifyAgentUrl ?? gatewayUrlVerifier(urlClient),
+    urlProblem: (url) => urlClient.urlProblem(url),
     ownDomains,
     ...(options.gatewayUrl ? { gatewayUrl: options.gatewayUrl } : {}),
     ...(options.allowLoopbackUrls ? { allowLoopbackUrls: true } : {}),
