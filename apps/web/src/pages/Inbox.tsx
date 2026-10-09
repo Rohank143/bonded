@@ -4,7 +4,7 @@ import { NOTIFICATION_TYPES } from "@bondedhq/shared";
 import { Link } from "react-router";
 import { useAccount } from "wagmi";
 import { ago } from "../lib/format";
-import { inboxSeenAt, markInboxSeen } from "../lib/health";
+import { inboxSeenAt, markInboxSeen, type InboxItem } from "../lib/health";
 import { byoaApi } from "../lib/byoa-api";
 import { messageCode } from "../lib/troubleshooting";
 import { useOwnerSession } from "../lib/owner-session";
@@ -82,28 +82,54 @@ export function Inbox() {
   const owner = useOwnerSession();
   const inbox = useInbox(owner.session?.session);
   const queryClient = useQueryClient();
-  // What was new when the page opened stays marked new until the next visit; opening the page
-  // marks everything shown read (on the API, so other browsers agree).
+  // What was new when the page opened stays marked new until the next visit. Only what the page
+  // shows is marked read (on the API, so other browsers agree): older notifications, on pages not
+  // loaded yet, stay unread until "Load more" shows them.
   const [seenBefore] = useState(() => inboxSeenAt());
-  const marked = useRef<string | null>(null);
+  const marked = useRef(new Set<string>());
   const session = owner.session?.session;
+  // Older pages, loaded with "Load more" from the `next` cursor.
+  const [older, setOlder] = useState<{ items: InboxItem[]; next: string | null }>();
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreError, setMoreError] = useState<unknown>(null);
+  const firstPage = inbox.data?.items ?? [];
+  const firstIds = new Set(firstPage.map((i) => i.id));
+  const items = [...firstPage, ...(older?.items ?? []).filter((i) => !firstIds.has(i.id))];
+  const next = older ? older.next : (inbox.data?.next ?? null);
+  const unreadShown = items
+    .filter((i) => i.read === false && !marked.current.has(i.id))
+    .map((i) => i.id);
+  const unreadKey = unreadShown.join(",");
   useEffect(() => {
     if (!inbox.data) return;
     markInboxSeen();
-    const newest = inbox.data.items[0];
-    if (!session || !newest || marked.current === newest.id) return;
-    if (!inbox.data.items.some((i) => i.read === false)) return;
-    marked.current = newest.id;
+    if (!session || !unreadShown.length) return;
+    const ids = unreadShown;
+    for (const id of ids) marked.current.add(id);
     void byoaApi
-      .markInboxRead(session, { through: newest.id })
+      .markInboxRead(session, { ids })
       .then(() =>
         queryClient.invalidateQueries({ queryKey: ["inbox", session], refetchType: "none" }),
       )
       .catch(() => {
-        // Not marked: the items stay unread, which is harmless.
-        marked.current = null;
+        // Not marked: the items stay unread, which is harmless, and are tried again.
+        for (const id of ids) marked.current.delete(id);
       });
-  }, [inbox.data, session, queryClient]);
+    // Keyed on the unread ids shown, so each newly shown one is marked once.
+  }, [inbox.data, session, queryClient, unreadKey]);
+  const loadMore = async () => {
+    if (!session || !next) return;
+    setLoadingMore(true);
+    setMoreError(null);
+    try {
+      const page = await byoaApi.inbox(session, { before: next });
+      setOlder((o) => ({ items: [...(o?.items ?? []), ...page.items], next: page.next ?? null }));
+    } catch (e) {
+      setMoreError(e);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
   return (
     <Page
       title="Notifications"
@@ -144,7 +170,7 @@ export function Inbox() {
           <MuteSettings session={owner.session.session} />
           <Card>
             <ul className="flex flex-col" aria-label="Notifications">
-              {inbox.data.items.map((i) => {
+              {items.map((i) => {
                 const fresh = i.read !== undefined ? !i.read : Date.parse(i.createdAt) > seenBefore;
                 return (
                   <li
@@ -174,6 +200,19 @@ export function Inbox() {
                 );
               })}
             </ul>
+            {next && (
+              <div className="mt-3 flex flex-col items-center gap-2 border-t border-white/[0.06] pt-4">
+                <Button
+                  size="sm"
+                  kind="secondary"
+                  loading={loadingMore}
+                  onClick={() => void loadMore()}
+                >
+                  Load more
+                </Button>
+                <ErrorText error={moreError} />
+              </div>
+            )}
           </Card>
         </>
       )}

@@ -36,6 +36,7 @@ import {
   MANDATE_TOKENS,
   ONBOARDING_STEPS,
   buildMandate,
+  batchOnChain,
   loadProgress,
   nextStep,
   parseAmount,
@@ -50,6 +51,7 @@ import {
 import {
   addressError,
   amountOrZeroError,
+  percentError,
   dailyLimitError,
   descriptionError,
   limitError,
@@ -92,6 +94,7 @@ import {
   PRESET_LABELS,
   applyPreset,
   basisLine,
+  type PresetFields,
   bondTable,
   recommendedBond,
   type PresetChoice,
@@ -112,6 +115,19 @@ import {
 } from "../components/ui";
 
 type Step = { label: string; state: "waiting" | "active" | "done"; hash?: Hex };
+/** The mandate's fields an owner can edit after choosing a preset, and their names. */
+type MandateField = "mode" | "tokens" | "maxTx" | "maxDaily" | "drawdown" | "slippage" | "refund";
+const MANDATE_FIELD_LABELS: Record<MandateField, string> = {
+  mode: "mode",
+  tokens: "tokens",
+  maxTx: "per-trade limit",
+  maxDaily: "daily limit",
+  drawdown: "maximum drawdown",
+  slippage: "maximum slippage",
+  refund: "refund address",
+};
+/** An onboarding call that is a transaction (finding a module is a read). */
+type TxCall = Exclude<OnboardingCall, "findModule">;
 
 const STEPS = [
   "Register the agent",
@@ -190,6 +206,8 @@ export function NewAgent() {
   const [agentKey, setAgentKey] = useState("");
   const [maxTx, setMaxTx] = useState("5000");
   const [maxDaily, setMaxDaily] = useState("25000");
+  const [drawdown, setDrawdown] = useState("15");
+  const [slippage, setSlippage] = useState("3");
   const [bond, setBond] = useState("4000");
   const [deposit, setDeposit] = useState("50000");
   const [description, setDescription] = useState("An agent onboarded from the Bonded web app.");
@@ -201,15 +219,32 @@ export function NewAgent() {
     retry: false,
   });
   const [preset, setPreset] = useState<PresetChoice>("custom");
+  // The preset the form started from, and what has been edited by hand since.
+  const [base, setBase] = useState<Exclude<PresetChoice, "custom">>();
+  const [edited, setEdited] = useState<MandateField[]>([]);
+  // A preset's own rules with no field of their own here (or set exactly as it says them).
+  const [presetRules, setPresetRules] = useState<
+    Pick<PresetFields, "assets" | "targets" | "destinations">
+  >({});
   const choosePreset = (id: PresetChoice) => {
     setPreset(id);
     const p = suggested.data?.presets.find((x) => x.id === id);
     if (!p) return;
     const f = applyPreset(p);
+    setBase(p.id);
+    setEdited([]);
     setMode(f.mode);
     setTokens(f.tokens);
     setMaxTx(f.maxTx);
     setMaxDaily(f.maxDaily);
+    if (f.drawdown !== undefined) setDrawdown(f.drawdown);
+    if (f.slippage !== undefined) setSlippage(f.slippage);
+    setPresetRules({
+      ...(f.assets ? { assets: f.assets } : {}),
+      ...(f.targets ? { targets: f.targets } : {}),
+      ...(f.destinations ? { destinations: f.destinations } : {}),
+    });
+    if (f.destinations) setRefund(f.destinations[0] ?? "");
   };
   const presetApplied = useRef(false);
   useEffect(() => {
@@ -223,13 +258,18 @@ export function NewAgent() {
     );
     // Once, when the suggestion arrives.
   }, [suggested.data]);
-  // Editing a field by hand makes the mandate custom.
+  // Editing a field by hand makes the mandate custom, and marks the field edited.
   const custom =
-    <T,>(set: (v: T) => void) =>
+    <T,>(field: MandateField, set: (v: T) => void) =>
     (v: T) => {
       setPreset("custom");
+      setEdited((e) => (e.includes(field) ? e : [...e, field]));
       set(v);
     };
+  const isEdited = (field: MandateField) =>
+    preset === "custom" && base !== undefined && edited.includes(field);
+  const editedMark = (field: MandateField) =>
+    isEdited(field) ? <span className="ml-1.5 text-xs font-normal text-warn">(edited)</span> : null;
   const [wantedCover, setWantedCover] = useState("");
   const [steps, setSteps] = useState<Step[]>([]);
   const [error, setError] = useState<unknown>(null);
@@ -240,18 +280,23 @@ export function NewAgent() {
     mode?: RemoteMode;
   }>();
   const [busy, setBusy] = useState(false);
+  // A saved batch the wallet doesn't know and the chain shows nothing from: only the owner
+  // decides to send it again.
+  const [lostBatch, setLostBatch] = useState<string>();
 
   const refundAddress = refund.trim() || user || "";
   const key = (selfAgent ? user : agentKey.trim()) ?? "";
   const form: MandateForm = {
     mode,
     tokens,
-    destinations: refundAddress ? [refundAddress] : [],
+    destinations: presetRules.destinations ?? (refundAddress ? [refundAddress] : []),
     maxTxUsd: Number(maxTx),
     maxDailyUsd: Number(maxDaily),
-    maxDrawdownPct: 15,
-    maxSlippagePct: 3,
+    maxDrawdownPct: Number(drawdown),
+    maxSlippagePct: Number(slippage),
     description: description.trim(),
+    ...(presetRules.assets ? { assets: presetRules.assets } : {}),
+    ...(presetRules.targets ? { targets: presetRules.targets } : {}),
   };
   // Everything is checked before the first transaction, so a bad field can't leave a half-made
   // agent behind or silently skip a funding step.
@@ -397,16 +442,26 @@ export function NewAgent() {
   /**
    * Sends a group of transactions: as one atomic batch when the wallet can (EIP-5792), else one
    * by one. A wallet that turns the batch down for any reason but the user's own "no" gets the
-   * same transactions one by one.
+   * same transactions one by one. `settle` records what each confirmed transaction made (the
+   * agent id, the vault) before the next one is asked for: one by one, a later prompt the user
+   * turns down must not lose what an earlier one made. Only an atomic batch settles as a group.
    */
-  async function sendGroup(kinds: Exclude<OnboardingCall, "findModule">[], ctx: CallContext) {
-    const calls = kinds.map((k) => onboardingCall(k, ctx));
-    if (batched && calls.length > 1) {
+  async function sendGroup(
+    kinds: TxCall[],
+    ctx: () => CallContext,
+    settle: (kinds: TxCall[], logs: Log[]) => void,
+    track: (batch: OnboardingProgress["batch"]) => void,
+  ) {
+    if (batched && kinds.length > 1) {
       for (const k of kinds) mark(CALL_STEP[k], "active");
       let id: string | undefined;
+      // Where to look for the batch's effects, should the wallet forget it.
+      const fromBlock = await getPublicClient(wagmiConfig, { chainId: robinhoodTestnet.id })
+        ?.getBlockNumber()
+        .catch(() => undefined);
       try {
         ({ id } = await sendCalls(wagmiConfig, {
-          calls: calls.map(encoded),
+          calls: kinds.map((k) => encoded(onboardingCall(k, ctx()))),
           chainId: robinhoodTestnet.id,
           forceAtomic: true,
         }));
@@ -418,23 +473,96 @@ export function NewAgent() {
         // The wallet can't batch after all: the same transactions, one by one, below.
       }
       if (id) {
-        const result = await waitForCallsStatus(wagmiConfig, { id });
-        if (result.status !== "success")
-          throw new Error("The batch of transactions failed, so none of them went through.");
-        const receipts = result.receipts ?? [];
-        const hash = receipts.at(-1)?.transactionHash;
-        for (const k of kinds) mark(CALL_STEP[k], "active", hash);
-        return receipts.flatMap((r) => r.logs as Log[]);
+        // Saved before waiting: a timeout or a reload follows this batch, it isn't sent again.
+        const batch = {
+          id,
+          calls: kinds,
+          ...(fromBlock !== undefined ? { fromBlock: fromBlock.toString() } : {}),
+        };
+        track(batch);
+        await followBatch(batch, ctx, settle, track);
+        return;
       }
     }
-    const logs: Log[] = [];
-    for (const [i, k] of kinds.entries()) logs.push(...(await send(CALL_STEP[k], calls[i]!)));
-    return logs;
+    for (const k of kinds) settle([k], await send(CALL_STEP[k], onboardingCall(k, ctx())));
+  }
+
+  /** Waits for a batch the wallet was sent (`wallet_getCallsStatus`), then settles it. */
+  async function followBatch(
+    batch: NonNullable<OnboardingProgress["batch"]>,
+    ctx: () => CallContext,
+    settle: (kinds: TxCall[], logs: Log[]) => void,
+    track: (batch: OnboardingProgress["batch"]) => void,
+  ) {
+    const { id, calls: kinds } = batch;
+    let result: Awaited<ReturnType<typeof waitForCallsStatus>>;
+    try {
+      result = await waitForCallsStatus(wagmiConfig, { id });
+    } catch (e) {
+      const code =
+        (e as { code?: number })?.code ?? (e as { cause?: { code?: number } })?.cause?.code;
+      // EIP-5792's "unknown bundle id": the wallet can't say what became of it, so the chain is
+      // asked. The batch stays saved until its effects are found, or the owner sends it again.
+      if (code === 5730) {
+        const client = getPublicClient(wagmiConfig, { chainId: robinhoodTestnet.id });
+        if (!client || batch.fromBlock === undefined)
+          throw new Error(
+            "Your wallet doesn't know this batch, and the chain couldn't be checked for it. Check your wallet's activity before going on.",
+            { cause: e },
+          );
+        const c = ctx();
+        const logs = (await client.getLogs({
+          address: [
+            deployment.registry,
+            deployment.factory,
+            deployment.bond,
+            ...(c.vault ? [c.vault] : []),
+          ],
+          fromBlock: BigInt(batch.fromBlock),
+        })) as Log[];
+        const landed = batchOnChain(logs, {
+          calls: kinds,
+          user: c.user,
+          agentId: c.agentId,
+          vault: c.vault,
+        });
+        if (!landed) {
+          setLostBatch(id);
+          throw new Error(
+            "Your wallet doesn't know this batch and nothing from it reached the chain.",
+            { cause: e },
+          );
+        }
+        // It went through: settle it as if the wallet had confirmed it.
+        for (const k of kinds)
+          mark(CALL_STEP[k], "active", landed[0]?.transactionHash ?? undefined);
+        settle(kinds, landed);
+        track(undefined);
+        return;
+      }
+      throw new Error(
+        "Your wallet's batch hasn't confirmed yet. Resume to keep following the same batch: it won't be sent again.",
+        { cause: e },
+      );
+    }
+    if (result.status !== "success") {
+      track(undefined);
+      throw new Error("The batch of transactions failed, so none of them went through.");
+    }
+    const receipts = result.receipts ?? [];
+    const hash = receipts.at(-1)?.transactionHash;
+    for (const k of kinds) mark(CALL_STEP[k], "active", hash);
+    settle(
+      kinds,
+      receipts.flatMap((r) => r.logs as Log[]),
+    );
+    track(undefined);
   }
 
   /**
-   * Runs every step not yet done for `progress`, saving it after each group, so a rejected prompt
-   * or a reload resumes here instead of registering another agent.
+   * Runs every step not yet done for `progress`, saving it after each confirmed transaction (or
+   * atomic batch), so a rejected prompt or a reload resumes here instead of registering another
+   * agent.
    */
   async function run(progress: OnboardingProgress) {
     if (!user) return;
@@ -453,15 +581,6 @@ export function NewAgent() {
     // A module guards funds already in the smart account: nothing to deposit.
     const onModulePath = progress.protection === "module";
     const depositValue = onModulePath ? 0n : parseAmount(progress.deposit)!;
-    const groups = onboardingPlan({
-      done: progress.done,
-      bond: bondValue,
-      deposit: depositValue,
-      module: onModulePath,
-    });
-    // Steps with nothing to send (no bond, no deposit) are done straight away.
-    const planned = new Set(groups.flat().map((c) => CALL_STEP[c]));
-    for (const step of ["faucet", "bond", "deposit"] as const) if (!planned.has(step)) finish(step);
     const ctx = (): CallContext => ({
       deployment,
       user,
@@ -490,37 +609,60 @@ export function NewAgent() {
       });
     };
     if (progress.vault) remember(progress.vault as Address);
+    /** What confirmed transactions made, saved at once (by `finish`). */
+    const settle = (kinds: TxCall[], logs: Log[]) => {
+      if (kinds.includes("register")) {
+        const agentId = (
+          parseEventLogs({ abi: bondedRegistryAbi, logs, eventName: "Registered" })[0]?.args as {
+            agentId: bigint;
+          }
+        ).agentId;
+        // The mandate is frozen here, with the agent id, and reused by every later step.
+        const mandate = buildMandate(deployment, agentId, progress.form);
+        progress = { ...progress, agentId: agentId.toString(), mandate };
+        finish("register");
+      }
+      if (kinds.includes("createVault")) {
+        const vault = (
+          parseEventLogs({ abi: mandateVaultFactoryAbi, logs, eventName: "VaultCreated" })[0]
+            ?.args as { vault: Address }
+        ).vault;
+        progress = { ...progress, vault };
+        remember(vault);
+        finish("vault");
+      }
+      if (kinds.includes("faucet")) finish("faucet");
+      if (kinds.includes("stake")) finish("bond");
+      if (kinds.includes("deposit")) finish("deposit");
+    };
+    /** The pending batch, saved with the progress (or cleared once it has settled). */
+    const track = (batch: OnboardingProgress["batch"]) => {
+      progress = { ...progress, batch };
+      if (!batch) delete progress.batch;
+      save(progress);
+    };
     try {
+      // A batch sent before a timeout or a reload: follow it, don't send it again.
+      if (progress.batch) {
+        const pending = progress.batch;
+        for (const k of pending.calls) mark(CALL_STEP[k], "active");
+        await followBatch(pending, ctx, settle, track);
+      }
+      const groups = onboardingPlan({
+        done: progress.done,
+        bond: bondValue,
+        deposit: depositValue,
+        module: onModulePath,
+      });
+      // Steps with nothing to send (no bond, no deposit) are done straight away.
+      const planned = new Set(groups.flat().map((c) => CALL_STEP[c]));
+      for (const step of ["faucet", "bond", "deposit"] as const)
+        if (!planned.has(step)) finish(step);
       for (const group of groups) {
         if (group.includes("findModule")) await findModule();
-        const kinds = group.filter(
-          (c): c is Exclude<OnboardingCall, "findModule"> => c !== "findModule",
-        );
+        const kinds = group.filter((c): c is TxCall => c !== "findModule");
         if (!kinds.length) continue;
-        const logs = await sendGroup(kinds, ctx());
-        if (kinds.includes("register")) {
-          const agentId = (
-            parseEventLogs({ abi: bondedRegistryAbi, logs, eventName: "Registered" })[0]?.args as {
-              agentId: bigint;
-            }
-          ).agentId;
-          // The mandate is frozen here, with the agent id, and reused by every later step.
-          const mandate = buildMandate(deployment, agentId, progress.form);
-          progress = { ...progress, agentId: agentId.toString(), mandate };
-          finish("register");
-        }
-        if (kinds.includes("createVault")) {
-          const vault = (
-            parseEventLogs({ abi: mandateVaultFactoryAbi, logs, eventName: "VaultCreated" })[0]
-              ?.args as { vault: Address }
-          ).vault;
-          progress = { ...progress, vault };
-          remember(vault);
-          finish("vault");
-        }
-        if (kinds.includes("faucet")) finish("faucet");
-        if (kinds.includes("stake")) finish("bond");
-        if (kinds.includes("deposit")) finish("deposit");
+        await sendGroup(kinds, ctx, settle, track);
       }
       if (!progress.done.includes("ratings")) {
         mark("ratings", "active");
@@ -834,10 +976,12 @@ export function NewAgent() {
                             onChange={() => choosePreset(id)}
                             title={p?.label ?? PRESET_LABELS[id]}
                           >
-                            {p
-                              ? (p.line ??
-                                `${p.mode === "enforce" ? "Enforce" : "Monitor"}, up to ${p.maxTxUsd.toLocaleString("en-US")} USD a trade and ${p.maxDailyUsd.toLocaleString("en-US")} a day`)
-                              : "Set every field yourself."}
+                            {id === "custom" && base && edited.length
+                              ? `${PRESET_LABELS[base]}, edited: ${edited.map((f) => MANDATE_FIELD_LABELS[f]).join(", ")}.`
+                              : p
+                                ? (p.line ??
+                                  `${p.mode === "enforce" ? "Enforce" : "Monitor"}, up to ${p.maxTxUsd.toLocaleString("en-US")} USD a trade and ${p.maxDailyUsd.toLocaleString("en-US")} a day`)
+                                : "Set every field yourself."}
                           </Choice>
                         );
                       })}
@@ -847,12 +991,13 @@ export function NewAgent() {
               <fieldset className="flex flex-col gap-2">
                 <legend className="mb-2 font-medium">
                   {onModule ? "Module mode" : "Vault mode"}
+                  {editedMark("mode")}
                 </legend>
                 <div className="grid gap-2 sm:grid-cols-2">
                   <Choice
                     name="mode"
                     checked={mode === "monitor"}
-                    onChange={() => custom(setMode)("monitor")}
+                    onChange={() => custom("mode", setMode)("monitor")}
                     title="Monitor"
                     disabled={onModule}
                   >
@@ -863,7 +1008,7 @@ export function NewAgent() {
                   <Choice
                     name="mode"
                     checked={mode === "enforce"}
-                    onChange={() => custom(setMode)("enforce")}
+                    onChange={() => custom("mode", setMode)("enforce")}
                     title="Enforce"
                   >
                     {onModule
@@ -875,6 +1020,7 @@ export function NewAgent() {
               <fieldset>
                 <legend className="mb-2 font-medium">
                   Tokens it may hold (<Token symbol="tUSDG" /> always)
+                  {editedMark("tokens")}
                 </legend>
                 <div className="flex flex-wrap gap-2">
                   {MANDATE_TOKENS.map((t) => (
@@ -886,7 +1032,11 @@ export function NewAgent() {
                         type="checkbox"
                         className="sr-only"
                         checked={tokens.includes(t)}
-                        onChange={() => (setPreset("custom"), toggle(t))}
+                        onChange={() => {
+                          // The token list is the owner's now, not the preset's addresses.
+                          setPresetRules((r) => ({ ...r, assets: undefined }));
+                          custom("tokens", toggle)(t);
+                        }}
                       />
                       <TokenLogo symbol={t} size={22} />
                       {t}
@@ -897,28 +1047,60 @@ export function NewAgent() {
               </fieldset>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Input
-                  label="Per-trade limit"
+                  label={<>Per-trade limit{editedMark("maxTx")}</>}
                   value={maxTx}
-                  onChange={custom(setMaxTx)}
+                  onChange={custom("maxTx", setMaxTx)}
                   inputMode="decimal"
                   suffix="USD"
                   error={limitError(maxTx)}
                 />
                 <Input
-                  label="Daily limit"
+                  label={<>Daily limit{editedMark("maxDaily")}</>}
                   value={maxDaily}
-                  onChange={custom(setMaxDaily)}
+                  onChange={custom("maxDaily", setMaxDaily)}
                   inputMode="decimal"
                   suffix="USD"
                   error={dailyLimitError(maxDaily, maxTx)}
                 />
               </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Input
+                  label={<>Maximum drawdown{editedMark("drawdown")}</>}
+                  hint="The largest fall in the vault's value over 24 hours. Used for disputes."
+                  value={drawdown}
+                  onChange={custom("drawdown", setDrawdown)}
+                  inputMode="decimal"
+                  suffix="%"
+                  error={percentError(drawdown, { min: 0.01 })}
+                />
+                <Input
+                  label={<>Maximum slippage{editedMark("slippage")}</>}
+                  hint="The largest loss one trade may cause, as a share of what it sends out."
+                  value={slippage}
+                  onChange={custom("slippage", setSlippage)}
+                  inputMode="decimal"
+                  suffix="%"
+                  error={percentError(slippage, { min: 0 })}
+                />
+              </div>
               <Input
-                label="Refund address"
-                hint="The one address the agent may send funds to. Defaults to your wallet."
+                label={<>Refund address{editedMark("refund")}</>}
+                hint={
+                  presetRules.destinations && presetRules.destinations.length === 0
+                    ? "This preset allows no refund address: the agent may not send funds anywhere. Type one to allow it."
+                    : "The one address the agent may send funds to. Defaults to your wallet."
+                }
                 value={refund}
-                onChange={setRefund}
-                placeholder={user ?? "0x…"}
+                onChange={(v) => {
+                  // A typed address is the owner's, not the preset's.
+                  setPresetRules((r) => ({ ...r, destinations: undefined }));
+                  custom("refund", setRefund)(v);
+                }}
+                placeholder={
+                  presetRules.destinations && presetRules.destinations.length === 0
+                    ? "None"
+                    : (user ?? "0x…")
+                }
                 error={addressError(refund, true)}
               />
               <Input
@@ -1100,16 +1282,32 @@ export function NewAgent() {
               <div className="mb-4 flex flex-col gap-3 rounded-lg border border-warn/30 bg-warn-soft p-4 text-sm">
                 <p>
                   You have an unfinished onboarding
-                  {unfinished.agentId ? ` of agent ${unfinished.agentId}` : ""}: next step,{" "}
+                  {unfinished.agentId ? ` of agent ${unfinished.agentId}` : ""}
+                  {unfinished.batch ? ", with a batch your wallet was sent still to confirm" : ""}:
+                  next step,{" "}
                   {labelsFor(unfinished)[
                     ONBOARDING_STEPS.indexOf(nextStep(unfinished)!)
                   ]?.toLowerCase()}
                   .
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <Button size="sm" onClick={() => run(unfinished)}>
-                    Resume onboarding
-                  </Button>
+                  {unfinished.batch && unfinished.batch.id === lostBatch ? (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        const { batch: _lost, ...rest } = unfinished;
+                        void _lost;
+                        setLostBatch(undefined);
+                        void run(rest);
+                      }}
+                    >
+                      Send it again
+                    </Button>
+                  ) : (
+                    <Button size="sm" onClick={() => run(unfinished)}>
+                      Resume onboarding
+                    </Button>
+                  )}
                   <Button size="sm" kind="secondary" onClick={startOver}>
                     Start a new agent instead
                   </Button>

@@ -2,8 +2,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
-import { encodeAbiParameters, encodeEventTopics, getAbiItem, type Abi, type AbiEvent } from "viem";
-import { bondedRegistryAbi, mandateVaultFactoryAbi } from "@bondedhq/shared";
+import {
+  decodeFunctionData,
+  encodeAbiParameters,
+  encodeEventTopics,
+  getAbiItem,
+  type Abi,
+  type AbiEvent,
+  type Hex,
+} from "viem";
+import { bondedRegistryAbi, mandateVaultFactoryAbi, suggestMandate } from "@bondedhq/shared";
 import type { OfficialPrefill } from "../components/preview-report";
 import { deployment } from "../config";
 import { byoaApi } from "../lib/byoa-api";
@@ -16,6 +24,19 @@ const chain = vi.hoisted(() => ({
   sendCalls: [] as unknown[],
   receipts: [] as unknown[][],
   writes: 0,
+  /** Each one-by-one transaction, in order: its function and arguments. */
+  written: [] as { functionName: string; args: unknown[] }[],
+  /** The receipt logs of the nth one-by-one transaction (1-based). */
+  txLogs: {} as Record<number, unknown[]>,
+  /** Which one-by-one prompts (1-based) the user turns down. */
+  rejectWrites: [] as number[],
+  /** Batch ids waited on, and how many waits time out first. */
+  waits: [] as string[],
+  waitTimeouts: 0,
+  /** Errors the next waits throw, in order (e.g. EIP-5792's unknown batch). */
+  waitErrors: [] as unknown[],
+  /** The chain's client, when a test needs one: its block and the logs it finds. */
+  client: undefined as unknown,
 }));
 vi.mock("wagmi", () => ({
   useAccount: () => ({
@@ -25,9 +46,12 @@ vi.mock("wagmi", () => ({
   }),
   useSignMessage: () => ({ signMessageAsync: async () => "0x5151" }),
   useWriteContract: () => ({
-    writeContractAsync: async () => {
+    writeContractAsync: async (call: { functionName: string; args: unknown[] }) => {
       chain.writes++;
-      return "0x1";
+      if (chain.rejectWrites.includes(chain.writes))
+        throw Object.assign(new Error("User rejected the request."), { code: 4001 });
+      chain.written.push({ functionName: call.functionName, args: call.args });
+      return `0x${chain.writes.toString(16)}`;
     },
   }),
   useBalance: () => ({ data: undefined }),
@@ -39,13 +63,26 @@ vi.mock("wagmi/actions", () => ({
     chain.sendCalls.push(args);
     return { id: `batch-${chain.sendCalls.length}` };
   },
-  waitForCallsStatus: async () => ({
-    status: "success",
-    receipts: [{ logs: chain.receipts[chain.sendCalls.length - 1] ?? [], transactionHash: "0xab" }],
-  }),
-  getPublicClient: () => undefined,
+  waitForCallsStatus: async (_: unknown, { id }: { id: string }) => {
+    chain.waits.push(id);
+    if (chain.waitErrors.length) throw chain.waitErrors.shift();
+    if (chain.waitTimeouts > 0) {
+      chain.waitTimeouts--;
+      throw new Error("Timed out while waiting for call bundle.");
+    }
+    return {
+      status: "success",
+      receipts: [
+        { logs: chain.receipts[Number(id.split("-")[1]) - 1] ?? [], transactionHash: "0xab" },
+      ],
+    };
+  },
+  getPublicClient: () => chain.client,
   readContract: async () => undefined,
-  waitForTransactionReceipt: async () => ({ status: "success", logs: [] }),
+  waitForTransactionReceipt: async (_: unknown, { hash }: { hash: string }) => ({
+    status: "success",
+    logs: chain.txLogs[Number(hash)] ?? [],
+  }),
 }));
 vi.mock("../wagmi", () => ({ wagmiConfig: {} }));
 vi.mock("../lib/self-serve", async (load) => ({
@@ -76,6 +113,32 @@ function log(abi: Abi, eventName: string, args: Record<string, unknown>, address
   };
 }
 
+const WALLET = "0x00000000000000000000000000000000000000a1";
+const VAULT = "0x00000000000000000000000000000000000000f1";
+const registered = (agentId = 77n) =>
+  log(
+    bondedRegistryAbi as Abi,
+    "Registered",
+    { agentId, agentURI: "x", owner: WALLET },
+    deployment.registry,
+  );
+const vaultCreated = (agentId = 77n) =>
+  log(
+    mandateVaultFactoryAbi as Abi,
+    "VaultCreated",
+    { vault: VAULT, agentId, guardian: WALLET, agent: WALLET, mandateHash: `0x${"1".repeat(64)}` },
+    deployment.factory,
+  );
+const stored = () =>
+  JSON.parse(
+    localStorage.getItem(`bonded:onboarding:${deployment.chainId}:${WALLET}`) ?? "null",
+  ) as {
+    agentId?: string;
+    vault?: string;
+    done: string[];
+    batch?: { id: string; calls: string[] };
+  } | null;
+
 function show(prefill?: OfficialPrefill) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
@@ -101,6 +164,13 @@ afterEach(() => {
   chain.sendCalls = [];
   chain.receipts = [];
   chain.writes = 0;
+  chain.written = [];
+  chain.txLogs = {};
+  chain.rejectWrites = [];
+  chain.waits = [];
+  chain.waitTimeouts = 0;
+  chain.waitErrors = [];
+  chain.client = undefined;
 });
 
 describe("Onboarding your own agent", () => {
@@ -236,6 +306,133 @@ describe("Onboarding, the wallet side", () => {
     expect(last[1]!.to).toBe(vault);
   });
 
+  it("saves a batch's id before waiting, and after a timeout follows that batch instead of sending it again", async () => {
+    chain.capabilities = { 46630: { atomic: { status: "supported" } } };
+    chain.receipts = [[registered()], [vaultCreated()]];
+    chain.waitTimeouts = 1;
+    show();
+    // The wallet's batching is known before onboarding starts.
+    await screen.findByText(/^3 wallet confirmations/);
+    fireEvent.click(await screen.findByRole("button", { name: "Onboard the agent" }));
+    await screen.findByRole("button", { name: "Resume onboarding" });
+    expect(screen.getByText(/Resume to keep following the same batch/)).toBeTruthy();
+    expect(screen.getByText(/with a batch your wallet was sent still to confirm/)).toBeTruthy();
+    expect(chain.sendCalls).toHaveLength(1);
+    expect(stored()).toMatchObject({
+      done: [],
+      batch: { id: "batch-1", calls: ["register", "faucet", "approveBond"] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Resume onboarding" }));
+    await waitFor(() => expect(screen.getByText("Agent 77 is set up.")).toBeTruthy());
+    // batch-1 was followed again, not re-sent: three batches in all, as without the timeout.
+    expect(chain.waits).toEqual(["batch-1", "batch-1", "batch-2", "batch-3"]);
+    expect(chain.sendCalls).toHaveLength(3);
+    expect(stored()).toBeNull();
+  });
+
+  describe("a batch the wallet no longer knows (EIP-5792 code 5730)", () => {
+    const unknownBatch = Object.assign(new Error("Unknown bundle id"), { code: 5730 });
+    const withChain = (logs: unknown[]) => {
+      const getLogs = vi.fn(async () => logs);
+      chain.client = { getBlockNumber: async () => 100n, getLogs };
+      return getLogs;
+    };
+    async function start() {
+      chain.capabilities = { 46630: { atomic: { status: "supported" } } };
+      chain.waitErrors = [unknownBatch];
+      show();
+      await screen.findByText(/^3 wallet confirmations/);
+      fireEvent.click(screen.getByRole("button", { name: "Onboard the agent" }));
+    }
+
+    it("finds its effects on chain and settles it as confirmed, without sending it again", async () => {
+      chain.receipts = [[], [vaultCreated()]];
+      // The agent this wallet registered after the batch was sent: the batch went through.
+      const getLogs = withChain([registered()]);
+      await start();
+      await waitFor(() => expect(screen.getByText("Agent 77 is set up.")).toBeTruthy());
+      expect(getLogs).toHaveBeenCalledWith(expect.objectContaining({ fromBlock: 100n }));
+      expect(chain.sendCalls).toHaveLength(3);
+      expect(chain.waits).toEqual(["batch-1", "batch-2", "batch-3"]);
+      expect(stored()).toBeNull();
+    });
+
+    it("with nothing from it on chain, keeps it and only sends it again when asked", async () => {
+      chain.receipts = [[], [registered()], [vaultCreated()]];
+      withChain([]);
+      await start();
+      expect(
+        await screen.findByText(
+          /Your wallet doesn't know this batch and nothing from it reached the chain/,
+        ),
+      ).toBeTruthy();
+      // Saved still, and never sent again on its own.
+      expect(stored()).toMatchObject({
+        done: [],
+        batch: { id: "batch-1", calls: ["register", "faucet", "approveBond"], fromBlock: "100" },
+      });
+      expect(chain.sendCalls).toHaveLength(1);
+      expect(screen.queryByRole("button", { name: "Resume onboarding" })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Send it again" }));
+      await waitFor(() => expect(screen.getByText("Agent 77 is set up.")).toBeTruthy());
+      // The first group once more (batch-2), then the other two.
+      expect(chain.sendCalls).toHaveLength(4);
+      expect((chain.sendCalls[1] as { calls: unknown[] }).calls).toHaveLength(3);
+      expect(stored()).toBeNull();
+    });
+  });
+
+  describe("one by one, each confirmed transaction is saved before the next prompt", () => {
+    // Without batching the order is: register, faucet, approve bond, create vault, stake,
+    // approve deposit, deposit.
+    it("keeps agent 77 when the prompt after register is turned down, and resumes without registering again", async () => {
+      chain.txLogs = { 1: [registered()] };
+      chain.rejectWrites = [2];
+      show();
+      fireEvent.click(await screen.findByRole("button", { name: "Onboard the agent" }));
+      await screen.findByRole("button", { name: "Resume onboarding" });
+      expect(stored()).toMatchObject({ agentId: "77", done: ["register"] });
+      expect(chain.written.map((w) => w.functionName)).toEqual(["register"]);
+      chain.txLogs = { 5: [vaultCreated()] };
+      fireEvent.click(screen.getByRole("button", { name: "Resume onboarding" }));
+      await waitFor(() => expect(screen.getByText("Agent 77 is set up.")).toBeTruthy());
+      const names = chain.written.map((w) => w.functionName);
+      expect(names.filter((n) => n === "register")).toHaveLength(1);
+      expect(names.slice(1)).toEqual([
+        "faucet",
+        "approve",
+        "createVault",
+        "stake",
+        "approve",
+        "deposit",
+      ]);
+      // The vault is created for the agent the first prompt registered.
+      expect(chain.written.find((w) => w.functionName === "createVault")!.args[3]).toBe(77n);
+      expect(stored()).toBeNull();
+    });
+
+    it("keeps the vault when staking is turned down after it was created, and resumes without a second vault", async () => {
+      chain.txLogs = { 1: [registered()], 4: [vaultCreated()] };
+      chain.rejectWrites = [5];
+      show();
+      fireEvent.click(await screen.findByRole("button", { name: "Onboard the agent" }));
+      await screen.findByRole("button", { name: "Resume onboarding" });
+      expect(stored()).toMatchObject({
+        agentId: "77",
+        vault: VAULT,
+        done: ["register", "faucet", "vault"],
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Resume onboarding" }));
+      await waitFor(() => expect(screen.getByText("Agent 77 is set up.")).toBeTruthy());
+      const names = chain.written.map((w) => w.functionName);
+      expect(names.filter((n) => n === "createVault")).toHaveLength(1);
+      expect(names.filter((n) => n === "register")).toHaveLength(1);
+      // After the resume: the bond again (its approval is re-sent), then the deposit, to that vault.
+      expect(names.slice(4)).toEqual(["approve", "stake", "approve", "deposit"]);
+      expect(chain.written.at(-2)!.args[0]).toBe(VAULT);
+    });
+  });
+
   it("explains the bond and recommends one for the cover wanted", () => {
     show();
     expect(screen.getByText(/the bond pays first, then the cover pool/)).toBeTruthy();
@@ -306,5 +503,104 @@ describe("Onboarding, the wallet side", () => {
     expect((screen.getByLabelText("Per-trade limit") as HTMLInputElement).value).toBe("1200");
     fireEvent.change(screen.getByLabelText("Per-trade limit"), { target: { value: "2000" } });
     expect(screen.getByRole("radio", { name: /^Custom/ })).toHaveProperty("checked", true);
+  });
+});
+
+describe("a mandate preset is the mandate that is submitted", () => {
+  // The suggestion exactly as the API builds it (Conservative: no destinations, 1% slippage,
+  // 10% drawdown), for an agent seen trading tTSLA up to 900 USD.
+  const suggestion = () =>
+    suggestMandate({
+      chainId: deployment.chainId,
+      market: {
+        usdg: deployment.usdg,
+        router: deployment.router,
+        tokens: { tTSLA: deployment.tsla, tAMZN: deployment.amzn, tNVDA: deployment.nvda },
+      },
+      trading: {
+        trades: 3,
+        tokens: ["tTSLA", "tUSDG"],
+        usedRouter: true,
+        transfers: 0,
+        approvals: 0,
+        largestTradeUsd: 900,
+        totalOutflowUsd: 2_000,
+      },
+      sources: ["preview"],
+    });
+  /** The params of the createVault call the wallet was actually sent, decoded. */
+  const createVaultParams = () => {
+    const call = (chain.sendCalls[1] as { calls: { data: Hex }[] }).calls[0]!;
+    const decoded = decodeFunctionData({ abi: mandateVaultFactoryAbi as Abi, data: call.data });
+    expect(decoded.functionName).toBe("createVault");
+    return (decoded.args as unknown[])[0] as {
+      mode: number;
+      assets: string[];
+      targets: string[];
+      destinations: string[];
+      maxTxNotionalUsd6: bigint;
+      maxDailyNotionalUsd6: bigint;
+      maxDrawdownBps: number;
+      maxSlippageBps: number;
+    };
+  };
+  async function onboardFromPreset(edit?: () => void) {
+    chain.capabilities = { 46630: { atomic: { status: "supported" } } };
+    chain.receipts = [[registered()], [vaultCreated()]];
+    saveSession(deployment.chainId, {
+      session: "sess",
+      wallet: WALLET,
+      expiresAt: iso(3_600_000),
+    });
+    vi.spyOn(byoaApi, "suggestedMandate").mockResolvedValue(suggestion());
+    show({
+      previewId: "p1",
+      mode: "tools",
+      connection: "url",
+      agentUrl: "https://agent.example/bonded",
+      codeHash: null,
+    });
+    await screen.findByText(/^3 wallet confirmations/);
+    await waitFor(() =>
+      expect(screen.getByRole("radio", { name: /^Conservative trader/ })).toHaveProperty(
+        "checked",
+        true,
+      ),
+    );
+    edit?.();
+    fireEvent.click(screen.getByRole("button", { name: "Onboard the agent" }));
+    await waitFor(() => expect(chain.sendCalls.length).toBeGreaterThanOrEqual(2));
+    return createVaultParams();
+  }
+
+  it("Conservative: its destinations, slippage and drawdown, not the form's defaults", async () => {
+    const params = await onboardFromPreset();
+    expect((screen.getByLabelText(/^Maximum slippage/) as HTMLInputElement).value).toBe("1");
+    expect((screen.getByLabelText(/^Maximum drawdown/) as HTMLInputElement).value).toBe("10");
+    expect(params.destinations).toEqual([]);
+    expect(params.maxSlippageBps).toBe(100);
+    expect(params.maxDrawdownBps).toBe(1000);
+    expect(params.mode).toBe(1);
+    expect(params.assets.map((a) => a.toLowerCase())).toEqual(
+      [deployment.usdg, deployment.tsla].map((a) => a.toLowerCase()),
+    );
+    expect(params.targets.map((a) => a.toLowerCase())).toEqual([deployment.router.toLowerCase()]);
+    // 900 USD with 1.25x headroom, rounded up to a hundred; four times that a day.
+    expect(params.maxTxNotionalUsd6).toBe(1_200n * 1_000_000n);
+    expect(params.maxDailyNotionalUsd6).toBe(4_800n * 1_000_000n);
+  });
+
+  it("an edit makes it Custom, marks the field, and changes only that rule", async () => {
+    const params = await onboardFromPreset(() => {
+      fireEvent.change(screen.getByLabelText(/^Maximum slippage/), { target: { value: "2" } });
+      expect(screen.getByRole("radio", { name: /^Custom/ })).toHaveProperty("checked", true);
+      expect(screen.getByLabelText("Maximum slippage(edited)")).toBeTruthy();
+      expect(screen.getByText("Conservative trader, edited: maximum slippage.")).toBeTruthy();
+    });
+    expect(params.maxSlippageBps).toBe(200);
+    // The rest is still the preset's.
+    expect(params.maxDrawdownBps).toBe(1000);
+    expect(params.destinations).toEqual([]);
+    expect(params.maxTxNotionalUsd6).toBe(1_200n * 1_000_000n);
   });
 });

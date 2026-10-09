@@ -59,6 +59,40 @@ describe("bond and cover in plain words", () => {
     ).toEqual({ mode: "enforce", tokens: ["tTSLA"], maxTx: "1200", maxDaily: "5000" });
   });
 
+  it("carries a preset's whole rules, not just its limits", () => {
+    const router = "0x00000000000000000000000000000000000000c1";
+    expect(
+      applyPreset({
+        id: "conservative",
+        label: "Conservative trader",
+        mode: "enforce",
+        tokens: ["tTSLA"],
+        maxTxUsd: 1_200,
+        maxDailyUsd: 4_800,
+        rules: {
+          mode: "enforce",
+          assets: ["0x00000000000000000000000000000000000000b1"],
+          targets: [{ address: router, functions: ["swap(address,address,uint256,address)"] }],
+          destinations: [],
+          maxTradeUsd: 1_200,
+          maxDailyUsd: 4_800,
+          maxDrawdownPct: 10,
+          maxSlippagePct: 1,
+        },
+      }),
+    ).toEqual({
+      mode: "enforce",
+      tokens: ["tTSLA"],
+      maxTx: "1200",
+      maxDaily: "4800",
+      drawdown: "10",
+      slippage: "1",
+      destinations: [],
+      assets: ["0x00000000000000000000000000000000000000b1"],
+      targets: [{ address: router, functions: ["swap(address,address,uint256,address)"] }],
+    });
+  });
+
   it("says where a suggested mandate came from", () => {
     const basis = {
       trades: 1,

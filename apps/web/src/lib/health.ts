@@ -271,7 +271,15 @@ export interface LaneStatus {
   queued?: number;
   oldestQueuedSeconds?: number | null;
   lastJobAgeSeconds: number | null;
+  /** Jobs being worked on now, and how long ago the oldest of them started. */
+  running?: number;
+  oldestRunningSeconds?: number | null;
+  /** Running jobs whose lease expired: probably stuck. Any makes the lane unhealthy. */
+  staleRunning?: number;
 }
+
+/** A lane is healthy only if the API says so and none of its running jobs looks stuck. */
+export const laneHealthy = (lane: LaneStatus) => lane.healthy && !(lane.staleRunning ?? 0);
 
 /** GET /status (public, cached). */
 export interface ServiceStatus {
@@ -297,7 +305,9 @@ export function overallStatus(
   if (failed) return { label: "Status unknown", tone: "neutral" };
   if (!s) return { label: "Checking status", tone: "neutral" };
   if (s.gateway.up === false) return { label: "Ratings are down", tone: "breach" };
-  if (!s.lanes.check.healthy || !s.lanes.remote.healthy)
+  if ((s.lanes.check.staleRunning ?? 0) > 0 || (s.lanes.remote.staleRunning ?? 0) > 0)
+    return { label: "A job looks stuck", tone: "warn" };
+  if (!laneHealthy(s.lanes.check) || !laneHealthy(s.lanes.remote))
     return { label: "Ratings are slow", tone: "warn" };
   return { label: "All systems normal", tone: "safe" };
 }

@@ -1,4 +1,5 @@
 import { RUNNER_PACKAGE } from "./byoa";
+import type { RemoteMode } from "@bondedhq/shared";
 import type { Connection } from "./byoa-api";
 
 /**
@@ -54,9 +55,13 @@ export const initWorks = (framework: Framework) => framework !== "python";
  * the runner and runs the connection check with the token; with `--url` it adds an Agent URL route
  * instead. The token goes in `BONDED_RUNNER_TOKEN`, not `--token`, so it isn't in the process
  * list. `--api` is added only when this page talks to another API than the runner's default.
+ * `--mode chain` is added for a chain-mode agent: the runner init starts must act the way the
+ * agent is registered, or the connection check rejects it. (`--url` only adds the route, so the
+ * mode doesn't change it.)
  */
 export function initCommand(input: {
   connection: Connection;
+  mode?: RemoteMode | null;
   token?: string | null;
   gatewayUrl?: string | null;
   apiUrl?: string | null;
@@ -65,6 +70,7 @@ export function initCommand(input: {
   return [
     ...(input.token ? [`BONDED_RUNNER_TOKEN=${input.token}`] : []),
     `npx ${RUNNER_PACKAGE} init`,
+    ...(input.mode === "chain" ? ["--mode chain"] : []),
     ...(input.gatewayUrl ? [`--gateway ${input.gatewayUrl}`] : []),
     ...(input.token && input.apiUrl && input.apiUrl !== RUNNER_DEFAULT_API
       ? [`--api ${input.apiUrl}`]

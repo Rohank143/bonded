@@ -218,6 +218,33 @@ describe("problem links", () => {
 });
 
 describe("status and notifications", () => {
+  it("shows running jobs, and says so when one looks stuck", async () => {
+    vi.spyOn(byoaApi, "status").mockResolvedValue(
+      status({
+        lanes: {
+          check: { healthy: true, lastJobAgeSeconds: 40, running: 1, oldestRunningSeconds: 120 },
+          remote: {
+            healthy: false,
+            lastJobAgeSeconds: 600,
+            running: 2,
+            oldestRunningSeconds: 1_800,
+            staleRunning: 1,
+          },
+        },
+      }),
+    );
+    wrap(<Status />);
+    expect(await screen.findByText("A job looks stuck")).toBeTruthy();
+    expect(
+      screen.getByText("Running, last finished under 2 min ago · 1 running · started 2 min ago"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        /Slow, last finished 10 min ago · 2 running · started 30 min ago.*a job looks stuck/,
+      ),
+    ).toBeTruthy();
+  });
+
   it("shows each service on the status page", async () => {
     vi.spyOn(byoaApi, "status").mockResolvedValue(
       status({
@@ -233,6 +260,55 @@ describe("status and notifications", () => {
     expect(screen.getByText(/Slow, last finished 2 h ago/)).toBeTruthy();
     expect(screen.getByText("2 waiting")).toBeTruthy();
     expect(screen.getByText("ec7759d")).toBeTruthy();
+  });
+
+  it("marks only what it shows read, and loads older ones from the cursor", async () => {
+    signedIn();
+    const item = (n: number) => ({
+      id: `n${n}`,
+      kind: "low-gas",
+      type: "low_gas",
+      code: "low-gas",
+      message: `Notice ${n}.`,
+      action: null,
+      createdAt: iso(-60_000 * (30 - n)),
+      agentId: "12",
+      subject: "46630:12",
+      read: false,
+    });
+    // 26 unread: the first page holds the newest 25, the 26th is behind the cursor.
+    const firstPage = Array.from({ length: 25 }, (_, k) => item(26 - k));
+    const inbox = vi
+      .spyOn(byoaApi, "inbox")
+      .mockImplementation(async (_s, page = {}) =>
+        page.before === "n2"
+          ? { items: [item(1)], unread: 26, next: null }
+          : { items: firstPage, unread: 26, next: "n2" },
+      );
+    const read = vi.spyOn(byoaApi, "markInboxRead").mockResolvedValue({ marked: 25 });
+    vi.spyOn(byoaApi, "ownerNotifications").mockResolvedValue({
+      webhook: null,
+      email: null,
+      emailAvailable: false,
+      muted: [],
+      types: ["low_gas"],
+    });
+    wrap(<Inbox />);
+    expect(await screen.findByText("Notice 26.")).toBeTruthy();
+    expect(screen.getByText("Notice 2.")).toBeTruthy();
+    expect(screen.queryByText("Notice 1.")).toBeNull();
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    // Exactly the 25 shown, by id: never "everything through the newest".
+    expect(read).toHaveBeenCalledWith("sess", { ids: firstPage.map((i) => i.id) });
+    expect(JSON.stringify(read.mock.calls)).not.toMatch(/"n1"|through/);
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    expect(await screen.findByText("Notice 1.")).toBeTruthy();
+    expect(inbox).toHaveBeenCalledWith("sess", { before: "n2" });
+    // The 26th is marked once it shows, and only it.
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    expect(read).toHaveBeenLastCalledWith("sess", { ids: ["n1"] });
+    // No more pages: no button.
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 
   it("lists the owner's notifications with links to the agent and the fix", async () => {
@@ -266,7 +342,7 @@ describe("status and notifications", () => {
     wrap(<Inbox />);
     expect(await screen.findByText("The agent key is low on gas.")).toBeTruthy();
     expect(screen.getByText("Send the agent key some ETH.")).toBeTruthy();
-    await waitFor(() => expect(read).toHaveBeenCalledWith("sess", { through: "41" }));
+    await waitFor(() => expect(read).toHaveBeenCalledWith("sess", { ids: ["41"] }));
     // Each type can be turned off; a muted one shows unticked.
     fireEvent.click(await screen.findByText("Choose what you're told about"));
     const boxes = screen.getAllByRole("checkbox") as HTMLInputElement[];

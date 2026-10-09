@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import type { RemoteMode } from "@bondedhq/shared";
 import type { Connection } from "../lib/byoa-api";
 import {
   FRAMEWORKS,
@@ -108,14 +109,35 @@ export function useFramework(initial?: Framework) {
 export function InitCommand({
   framework,
   connection,
+  mode,
+  teeUrl,
   token,
   gatewayUrl,
 }: {
   framework: Framework | undefined;
   connection: Connection;
+  /** How the agent is registered to act: init's runner must act the same way. */
+  mode?: RemoteMode | null;
+  /** A TEE-bound agent's TEE: init can't pass it to the runner, so it isn't offered. */
+  teeUrl?: string | null;
   token?: string | null;
   gatewayUrl?: string | null;
 }) {
+  if (connection === "runner" && teeUrl)
+    return (
+      <p className="text-xs text-muted">
+        Your agent is bound to a TEE ({teeUrl}). init can't pass the TEE's URL to the runner, so
+        TEE-bound agents use the runner command shown below: it carries{" "}
+        <code className="font-mono">--tee-url</code>
+        {mode === "chain" ? (
+          <>
+            {" "}
+            and <code className="font-mono">--mode chain</code>
+          </>
+        ) : null}
+        .
+      </p>
+    );
   if (framework && !initWorks(framework))
     return (
       <p className="text-xs text-muted">
@@ -132,6 +154,7 @@ export function InitCommand({
       }
       text={initCommand({
         connection,
+        mode: mode ?? null,
         token: token ?? null,
         gatewayUrl: gatewayUrl ?? null,
         apiUrl,

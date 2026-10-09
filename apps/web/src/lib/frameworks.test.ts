@@ -55,6 +55,16 @@ describe("framework-first answers", () => {
     expect(initCommand({ connection: "runner", token: "t", apiUrl: RUNNER_DEFAULT_API })).toBe(
       "BONDED_RUNNER_TOKEN=t npx @bondedhq/runner init",
     );
+    // A chain-mode agent's runner must act in chain mode; --url only adds the route.
+    expect(initCommand({ connection: "runner", mode: "tools", token: "t" })).toBe(
+      "BONDED_RUNNER_TOKEN=t npx @bondedhq/runner init",
+    );
+    expect(
+      initCommand({ connection: "runner", mode: "chain", token: "t", gatewayUrl: "https://gw" }),
+    ).toBe("BONDED_RUNNER_TOKEN=t npx @bondedhq/runner init --mode chain --gateway https://gw");
+    expect(initCommand({ connection: "url", mode: "chain" })).toBe(
+      "npx @bondedhq/runner init --url",
+    );
     expect(initWorks("python")).toBe(false);
     expect(initWorks("eliza")).toBe(true);
   });
