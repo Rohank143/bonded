@@ -57,11 +57,14 @@ export const passingEvents: CheckEvent[] = [
   {
     type: "result",
     passed: true,
-    problems: ["It read 2 of 9 surfaces; unread ones are scored as untested"],
+    problems: [],
+    warnings: ["It read 2 of 9 surfaces; unread ones are scored as untested"],
     taskCompleted: true,
     toolsCalled: 3,
     surfacesRead: ["dm", "price_feed"],
     usage: { costUsd: 0.01 },
+    durationMs: 18_000,
+    code: { hash: `0x${"ab".repeat(32)}`, source: "git", version: "3f9c2e1" },
   },
 ];
 

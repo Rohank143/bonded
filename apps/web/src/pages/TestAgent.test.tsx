@@ -180,12 +180,22 @@ describe("Test your agent", () => {
   });
 
   it("shows the estimate before starting, then a refused start in plain words", async () => {
-    withPreview(preview({ agentUrl: verifiedUrl, lastCheck: passedCheck("url") }));
+    withPreview(
+      preview({
+        agentUrl: verifiedUrl,
+        lastCheck: {
+          ...passedCheck("url"),
+          warnings: ["It read 2 of 9 surfaces; unread ones are scored as untested"],
+        },
+      }),
+    );
     await waitFor(() =>
       expect(within(current()).getByText("Start the preview rating")).toBeTruthy(),
     );
     expect(await screen.findByText(/About 19 min for 56 episodes/)).toBeTruthy();
     expect(screen.getByText(/up to 56 episodes, at most 37 min/)).toBeTruthy();
+    // The check's advice stays in view after it passed.
+    expect(screen.getByText(/Worth fixing before you start: It read 2 of 9 surfaces/)).toBeTruthy();
     vi.spyOn(byoaApi, "startPreviewRating").mockRejectedValue(
       new ApiError(429, "one preview per wallet per day", { retryAt: iso(9 * 3_600_000) }),
     );

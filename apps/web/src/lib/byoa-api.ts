@@ -26,7 +26,7 @@ export type Auth = { session: string } | { sign: Signer };
 
 /** Where the code hash a rating records came from (the runner's `codeSource`, or the URL). */
 export type CodeSource =
-  "declared" | "flag" | "env" | "image" | "git" | "git-dirty" | "unpinned" | "url-version";
+  "declared" | "flag" | "env" | "image" | "git" | "git-dirty" | "unpinned" | "url" | "url-version";
 
 export interface CodeHashInfo {
   value: string;
@@ -56,7 +56,10 @@ export interface CheckSummary {
   connection: Connection;
   /** A passing check lets a rating start until then (24 hours). */
   expiresAt?: string | null;
+  /** Why it failed: a check passes only with none. */
   problems?: string[];
+  /** Advice only: a passing check can still carry these. */
+  warnings?: string[];
 }
 
 /** What the agent reported using at `/done` (optional, never trusted). */
@@ -80,12 +83,18 @@ export type CheckEvent =
     }
   | {
       type: "result";
+      /** True exactly when there are no problems. */
       passed: boolean;
       problems: string[];
+      /** Advice only, never a reason to fail (e.g. surfaces it didn't read). */
+      warnings?: string[];
       taskCompleted: boolean;
       toolsCalled: number;
       surfacesRead: string[];
       usage?: Usage | null;
+      durationMs?: number;
+      /** The code hash the runner or the URL reported for this check. */
+      code?: { hash: string; source: CodeSource | string; version?: string | null } | null;
     };
 
 export type CheckResult = Extract<CheckEvent, { type: "result" }>;

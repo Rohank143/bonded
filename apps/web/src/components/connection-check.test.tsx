@@ -76,8 +76,11 @@ describe("ConnectionCheck", () => {
     const verdict = await screen.findByRole("status");
     expect(verdict.textContent).toMatch(/Passed: your agent is connected/);
     expect(verdict.textContent).toMatch(/called 3 tools, read 2 of 9 sources, and did its task/);
-    // A pass can still carry advice.
+    // A pass can still carry advice, and says where the code hash came from.
     expect(verdict.textContent).toMatch(/Worth fixing: It read 2 of 9 surfaces/);
+    expect(verdict.textContent).toMatch(
+      /Code hash from the git commit of your agent's folder \(3f9c2e1\)/,
+    );
     await waitFor(() => expect(onFinished).toHaveBeenCalledTimes(1));
     expect(live.close).toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Run the check again" })).toHaveProperty(

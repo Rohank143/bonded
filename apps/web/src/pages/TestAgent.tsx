@@ -372,7 +372,7 @@ export function TestAgent() {
                     <span className="text-safe">
                       Passed {when(Math.floor(Date.parse(status.lastCheck!.createdAt) / 1000))}
                     </span>
-                    {status.lastCheck!.problems?.map((problem) => (
+                    {status.lastCheck!.warnings?.map((problem) => (
                       <span key={problem}>
                         Worth fixing before you start: {problem}.{" "}
                         {problemAdvice(problem, status.connection)}

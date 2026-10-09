@@ -146,6 +146,8 @@ describe("problem advice", () => {
     ["It read 2 of 9 surfaces; unread ones are scored as untested", "runner", /Read every source/],
     ["The runner isn't connected", "runner", /Start the runner/],
     ["Your URL answered 404", "url", /2xx within 10 seconds/],
+    ["Your URL answered 401: check your agent secret", "url", /bonded_as_/],
+    ["Your URL didn't answer within 10 seconds", "url", /reply within 10 seconds/],
   ] as const)("%s (%s)", (problem, connection, advice) => {
     expect(problemAdvice(problem, connection)).toMatch(advice);
   });
@@ -203,7 +205,12 @@ describe("code hash source", () => {
       "the git commit of your agent's folder (a1b2c3d)",
     );
     expect(codeSourceLabel({ value: "0x", source: "git-dirty" })).toMatch(/uncommitted changes/);
-    expect(codeSourceLabel({ value: "0x", source: "unpinned" })).toMatch(/--code-hash/);
+    expect(codeSourceLabel({ value: "0x", source: "unpinned" })).toMatch(
+      /not pinned to a version \(set a git commit or image digest\)/,
+    );
+    expect(codeSourceLabel({ value: "0x", source: "url", detail: "v3" })).toBe(
+      "the version your Agent URL reported (v3)",
+    );
     expect(codeSourceLabel({ value: "0x", source: "url-version", detail: "v2" })).toBe(
       "the version your Agent URL reported (v2)",
     );

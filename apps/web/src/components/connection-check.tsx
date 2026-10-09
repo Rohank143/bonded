@@ -8,7 +8,13 @@ import {
   type Connection,
   type Subject,
 } from "../lib/byoa-api";
-import { eventLine, passingCheck, problemAdvice, type ConnectionStatus } from "../lib/connect";
+import {
+  codeSourceLabel,
+  eventLine,
+  passingCheck,
+  problemAdvice,
+  type ConnectionStatus,
+} from "../lib/connect";
 import { when } from "../lib/format";
 import { Button, ErrorText, Spinner } from "./ui";
 
@@ -218,14 +224,17 @@ export function CheckVerdict({
       <div role="status" className="rounded-2xl border border-safe/30 bg-safe-soft p-4">
         <p className="font-semibold text-safe">Passed: your agent is connected.</p>
         <p className="mt-1 text-soft">{summary}</p>
-        {result.problems.length > 0 && (
-          <ul className="mt-2 flex flex-col gap-1 text-soft">
-            {result.problems.map((p) => (
-              <li key={p}>
-                Worth fixing: {p} {problemAdvice(p, connection)}
-              </li>
-            ))}
-          </ul>
+        <Warnings warnings={result.warnings} connection={connection} />
+        {result.code && (
+          <p className="mt-2 text-xs text-soft">
+            Code hash from{" "}
+            {codeSourceLabel({
+              value: result.code.hash,
+              source: result.code.source,
+              detail: result.code.version ?? null,
+            })}
+            .
+          </p>
         )}
       </div>
     );
@@ -244,7 +253,22 @@ export function CheckVerdict({
           </li>
         ))}
       </ul>
+      <Warnings warnings={result.warnings} connection={connection} />
       <p className="mt-2 text-xs text-soft">{summary}</p>
     </div>
+  );
+}
+
+/** Advice that doesn't fail the check, e.g. sources it never read. */
+function Warnings({ warnings, connection }: { warnings?: string[]; connection: Connection }) {
+  if (!warnings?.length) return null;
+  return (
+    <ul className="mt-2 flex flex-col gap-1 text-soft">
+      {warnings.map((w) => (
+        <li key={w}>
+          Worth fixing: {w} {problemAdvice(w, connection)}
+        </li>
+      ))}
+    </ul>
   );
 }

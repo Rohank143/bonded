@@ -138,6 +138,10 @@ export function problemAdvice(problem: string, connection: Connection): string |
     return "Read every source (inbox, news, social, prices, transfers, report, alerts, counterparty messages, token info): attack classes your agent never reads score as untested, which lowers the score.";
   if (p.includes("runner isn't connected") || p.includes("runner is not connected"))
     return "Start the runner with the command above and leave it running, then run the check again.";
+  if (p.includes("answered 401") || p.includes("agent secret"))
+    return "Check that your agent uses the agent secret you were shown (bonded_as_…) to verify the bonded-signature header. Changing the URL makes a new secret.";
+  if (p.includes("didn't answer within") || p.includes("did not answer within"))
+    return "Your endpoint must reply within 10 seconds: answer the POST straight away and do the work after replying.";
   if (p.includes("answered 4") || p.includes("answered 5"))
     return "Check the URL and that your server is up. It must answer the episode POST with a 2xx within 10 seconds.";
   if (p.includes("signature"))
@@ -214,7 +218,8 @@ export function codeSourceLabel(info: CodeHashInfo): string {
     case "git-dirty":
       return `the git commit of your agent's folder${detail}, with uncommitted changes`;
     case "unpinned":
-      return "your agent's command and entry file (unpinned: set --code-hash to pin it)";
+      return "your agent's command and entry file: not pinned to a version (set a git commit or image digest)";
+    case "url":
     case "url-version":
       return `the version your Agent URL reported${detail}`;
     default:
