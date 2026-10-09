@@ -166,6 +166,8 @@ async function runPreview(
         attacks: [...attacks, ...(fresh?.attacks ?? [])],
         unpublished: new Set((fresh?.attacks ?? []).map((a) => a.id)),
         ...(fresh ? { heldOut: fresh.heldOut } : {}),
+        // Its held-out set is its own (each payload used once): the owner's report shows the text.
+        revealUnpublished: true,
         ...(row.code_hash ? { codeHash: row.code_hash as Hex } : {}),
         repeats: 1,
         controls: REMOTE_CONTROLS,

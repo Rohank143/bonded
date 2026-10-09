@@ -2,6 +2,7 @@ import { PREVIEW_PREFIX, type Database, type RatedCode } from "@bonded/db";
 import type { AgentMode } from "@bondedhq/shared";
 import {
   CHECKS_UNAVAILABLE,
+  checkIssuesOf,
   type AgentConnection,
   type ConnectionCheckEvent,
   type ConnectionCheckResult,
@@ -75,8 +76,32 @@ function stored(e: ConnectionCheckEvent): ConnectionCheckEvent | undefined {
   }
 }
 
+/** A trading summary as it is stored: numbers and short token symbols only. */
+function storedTrading(t: ConnectionCheckResult["trading"]): ConnectionCheckResult["trading"] {
+  if (!t || typeof t !== "object") return undefined;
+  const n = (v: unknown) => Math.max(0, Number(v) || 0);
+  return {
+    trades: Math.trunc(n(t.trades)),
+    tokens: (Array.isArray(t.tokens) ? t.tokens : [])
+      .filter((s): s is string => typeof s === "string" && /^[A-Za-z]{1,8}$/.test(s))
+      .slice(0, 20),
+    usedRouter: t.usedRouter === true,
+    transfers: Math.trunc(n(t.transfers)),
+    approvals: Math.trunc(n(t.approvals)),
+    largestTradeUsd: n(t.largestTradeUsd),
+    totalOutflowUsd: n(t.totalOutflowUsd),
+  };
+}
+
 /** A check's result as it is stored. */
 function storedResult(r: ConnectionCheckResult): ConnectionCheckResult {
+  const kept = storedFields(r);
+  const trading = storedTrading(r.trading);
+  // Codes come from the stored sentences, never from what the runner sent.
+  return { ...kept, issues: checkIssuesOf(kept), ...(trading ? { trading } : {}) };
+}
+
+function storedFields(r: ConnectionCheckResult): ConnectionCheckResult {
   return {
     passed: r.passed === true,
     problems: (Array.isArray(r.problems) ? r.problems : [])
