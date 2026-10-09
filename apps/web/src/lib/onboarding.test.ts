@@ -1,8 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { EvmMandate, demoRouterAbi, mandateHash, toEvmMandateParams } from "@bondedhq/shared";
-import { getAbiItem, toFunctionSelector } from "viem";
+import {
+  EvmMandate,
+  bondedRegistryAbi,
+  demoRouterAbi,
+  mandateHash,
+  mandateVaultFactoryAbi,
+  toEvmMandateParams,
+} from "@bondedhq/shared";
+import {
+  encodeAbiParameters,
+  encodeEventTopics,
+  getAbiItem,
+  toFunctionSelector,
+  type Abi,
+  type AbiEvent,
+  type Log,
+} from "viem";
 import {
   ONBOARDING_STEPS,
+  batchOnChain,
   buildMandate,
   loadProgress,
   nextStep,
@@ -170,5 +186,67 @@ describe("onboarding progress", () => {
     expect(nextStep({ ...p, done: [...ONBOARDING_STEPS] })).toBeUndefined();
     saveProgress(deployment.chainId, wallet, null);
     expect(loadProgress(deployment.chainId, wallet)).toBeUndefined();
+  });
+});
+
+describe("a batch the wallet forgot, found on chain", () => {
+  const ME = "0x00000000000000000000000000000000000000a1";
+  const OTHER = "0x00000000000000000000000000000000000000b2";
+  const log = (abi: Abi, eventName: string, args: Record<string, unknown>, address: string) => {
+    const event = getAbiItem({ abi, name: eventName }) as AbiEvent;
+    const rest = event.inputs.filter((i) => !i.indexed);
+    return {
+      address,
+      topics: encodeEventTopics({
+        abi,
+        eventName,
+        args: Object.fromEntries(
+          event.inputs.filter((i) => i.indexed).map((i) => [i.name!, args[i.name!]]),
+        ),
+      } as never),
+      data: encodeAbiParameters(
+        rest,
+        rest.map((i) => args[i.name!]),
+      ),
+      blockNumber: 1n,
+      transactionHash: "0xab",
+      logIndex: 0,
+      blockHash: "0x01",
+      transactionIndex: 0,
+      removed: false,
+    } as unknown as Log;
+  };
+  const registered = (owner: string) =>
+    log(
+      bondedRegistryAbi as Abi,
+      "Registered",
+      { agentId: 77n, agentURI: "x", owner },
+      deployment.registry,
+    );
+  const vaultFor = (agentId: bigint) =>
+    log(
+      mandateVaultFactoryAbi as Abi,
+      "VaultCreated",
+      {
+        vault: "0x00000000000000000000000000000000000000f1",
+        agentId,
+        guardian: ME,
+        agent: ME,
+        mandateHash: `0x${"1".repeat(64)}`,
+      },
+      deployment.factory,
+    );
+
+  it("counts only this wallet's registration, and only this agent's vault", () => {
+    const calls = ["register", "faucet", "approveBond"] as const;
+    expect(batchOnChain([registered(OTHER)], { calls, user: ME })).toBeUndefined();
+    expect(batchOnChain([registered(OTHER), registered(ME)], { calls, user: ME })).toHaveLength(1);
+    const second = ["createVault", "stake"] as const;
+    expect(
+      batchOnChain([vaultFor(78n)], { calls: second, user: ME, agentId: 77n }),
+    ).toBeUndefined();
+    expect(batchOnChain([vaultFor(77n)], { calls: second, user: ME, agentId: 77n })).toHaveLength(
+      1,
+    );
   });
 });

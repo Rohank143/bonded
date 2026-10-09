@@ -1,14 +1,25 @@
 import {
   EvmMandate,
+  bondedRegistryAbi,
   buildEvmMandate,
   demoRouterAbi,
+  mandateVaultAbi,
+  mandateVaultFactoryAbi,
+  operatorBondAbi,
   type EvmDeployment,
   type ModuleAccountType,
   type Protection,
   type RemoteAgentSpec,
   type SelfServeAgentKind,
 } from "@bondedhq/shared";
-import { getAbiItem, isAddress, toFunctionSelector } from "viem";
+import {
+  getAbiItem,
+  isAddress,
+  isAddressEqual,
+  parseEventLogs,
+  toFunctionSelector,
+  type Log,
+} from "viem";
 import { parseUsd } from "./format";
 import type { Connection } from "./byoa-api";
 import type { OnboardingCall } from "./wallet-help";
@@ -219,7 +230,12 @@ export interface OnboardingProgress {
    * `wallet_sendCalls`, and the calls in it. Saved before waiting on it, so a timeout or a reload
    * follows the same batch again (`wallet_getCallsStatus`) instead of sending it a second time.
    */
-  batch?: { id: string; calls: Exclude<OnboardingCall, "findModule">[] };
+  batch?: {
+    id: string;
+    calls: Exclude<OnboardingCall, "findModule">[];
+    /** The chain's block when it was sent (decimal): where to look for its effects. */
+    fromBlock?: string;
+  };
   done: OnboardingStep[];
 }
 
@@ -249,4 +265,53 @@ export function loadProgress(chainId: number, wallet: string): OnboardingProgres
 /** The first step still to do, or undefined when every step is done. */
 export function nextStep(progress: OnboardingProgress): OnboardingStep | undefined {
   return ONBOARDING_STEPS.find((s) => !progress.done.includes(s));
+}
+
+/**
+ * Whether an atomic batch the wallet no longer knows reached the chain anyway, from the logs of
+ * the onboarding's contracts since it was sent. A batch is all or nothing, so one effect only it
+ * makes proves all of it: the agent registered to this wallet, the vault created for this agent,
+ * the bond staked for it, or the deposit into its vault. Returns the logs to settle it with (as a
+ * receipt would carry them), or undefined when nothing from it is on chain.
+ */
+export function batchOnChain(
+  logs: Log[],
+  input: {
+    calls: readonly Exclude<OnboardingCall, "findModule">[];
+    user: string;
+    agentId?: bigint | undefined;
+    vault?: string | undefined;
+  },
+): Log[] | undefined {
+  const { calls, user, agentId, vault } = input;
+  const mine = (a: unknown) => typeof a === "string" && isAddressEqual(a as never, user as never);
+  const found = (picked: Log | undefined) => (picked ? [picked] : undefined);
+  if (calls.includes("register"))
+    return found(
+      parseEventLogs({ abi: bondedRegistryAbi, logs, eventName: "Registered" }).find((l) =>
+        mine((l.args as { owner: string }).owner),
+      ),
+    );
+  if (calls.includes("createVault"))
+    return found(
+      parseEventLogs({ abi: mandateVaultFactoryAbi, logs, eventName: "VaultCreated" }).find((l) => {
+        const a = l.args as { agentId: bigint; guardian: string };
+        return a.agentId === agentId && mine(a.guardian);
+      }),
+    );
+  if (calls.includes("stake"))
+    return found(
+      parseEventLogs({ abi: operatorBondAbi, logs, eventName: "Staked" }).find((l) => {
+        const a = l.args as { agentId: bigint; operator: string };
+        return a.agentId === agentId && mine(a.operator);
+      }),
+    );
+  if (calls.includes("deposit") && vault)
+    return found(
+      parseEventLogs({ abi: mandateVaultAbi, logs, eventName: "Deposit" }).find(
+        (l) =>
+          isAddressEqual(l.address, vault as never) && mine((l.args as { owner: string }).owner),
+      ),
+    );
+  return undefined;
 }

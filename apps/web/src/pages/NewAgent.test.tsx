@@ -33,6 +33,10 @@ const chain = vi.hoisted(() => ({
   /** Batch ids waited on, and how many waits time out first. */
   waits: [] as string[],
   waitTimeouts: 0,
+  /** Errors the next waits throw, in order (e.g. EIP-5792's unknown batch). */
+  waitErrors: [] as unknown[],
+  /** The chain's client, when a test needs one: its block and the logs it finds. */
+  client: undefined as unknown,
 }));
 vi.mock("wagmi", () => ({
   useAccount: () => ({
@@ -61,6 +65,7 @@ vi.mock("wagmi/actions", () => ({
   },
   waitForCallsStatus: async (_: unknown, { id }: { id: string }) => {
     chain.waits.push(id);
+    if (chain.waitErrors.length) throw chain.waitErrors.shift();
     if (chain.waitTimeouts > 0) {
       chain.waitTimeouts--;
       throw new Error("Timed out while waiting for call bundle.");
@@ -72,7 +77,7 @@ vi.mock("wagmi/actions", () => ({
       ],
     };
   },
-  getPublicClient: () => undefined,
+  getPublicClient: () => chain.client,
   readContract: async () => undefined,
   waitForTransactionReceipt: async (_: unknown, { hash }: { hash: string }) => ({
     status: "success",
@@ -164,6 +169,8 @@ afterEach(() => {
   chain.rejectWrites = [];
   chain.waits = [];
   chain.waitTimeouts = 0;
+  chain.waitErrors = [];
+  chain.client = undefined;
 });
 
 describe("Onboarding your own agent", () => {
@@ -321,6 +328,58 @@ describe("Onboarding, the wallet side", () => {
     expect(chain.waits).toEqual(["batch-1", "batch-1", "batch-2", "batch-3"]);
     expect(chain.sendCalls).toHaveLength(3);
     expect(stored()).toBeNull();
+  });
+
+  describe("a batch the wallet no longer knows (EIP-5792 code 5730)", () => {
+    const unknownBatch = Object.assign(new Error("Unknown bundle id"), { code: 5730 });
+    const withChain = (logs: unknown[]) => {
+      const getLogs = vi.fn(async () => logs);
+      chain.client = { getBlockNumber: async () => 100n, getLogs };
+      return getLogs;
+    };
+    async function start() {
+      chain.capabilities = { 46630: { atomic: { status: "supported" } } };
+      chain.waitErrors = [unknownBatch];
+      show();
+      await screen.findByText(/^3 wallet confirmations/);
+      fireEvent.click(screen.getByRole("button", { name: "Onboard the agent" }));
+    }
+
+    it("finds its effects on chain and settles it as confirmed, without sending it again", async () => {
+      chain.receipts = [[], [vaultCreated()]];
+      // The agent this wallet registered after the batch was sent: the batch went through.
+      const getLogs = withChain([registered()]);
+      await start();
+      await waitFor(() => expect(screen.getByText("Agent 77 is set up.")).toBeTruthy());
+      expect(getLogs).toHaveBeenCalledWith(expect.objectContaining({ fromBlock: 100n }));
+      expect(chain.sendCalls).toHaveLength(3);
+      expect(chain.waits).toEqual(["batch-1", "batch-2", "batch-3"]);
+      expect(stored()).toBeNull();
+    });
+
+    it("with nothing from it on chain, keeps it and only sends it again when asked", async () => {
+      chain.receipts = [[], [registered()], [vaultCreated()]];
+      withChain([]);
+      await start();
+      expect(
+        await screen.findByText(
+          /Your wallet doesn't know this batch and nothing from it reached the chain/,
+        ),
+      ).toBeTruthy();
+      // Saved still, and never sent again on its own.
+      expect(stored()).toMatchObject({
+        done: [],
+        batch: { id: "batch-1", calls: ["register", "faucet", "approveBond"], fromBlock: "100" },
+      });
+      expect(chain.sendCalls).toHaveLength(1);
+      expect(screen.queryByRole("button", { name: "Resume onboarding" })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Send it again" }));
+      await waitFor(() => expect(screen.getByText("Agent 77 is set up.")).toBeTruthy());
+      // The first group once more (batch-2), then the other two.
+      expect(chain.sendCalls).toHaveLength(4);
+      expect((chain.sendCalls[1] as { calls: unknown[] }).calls).toHaveLength(3);
+      expect(stored()).toBeNull();
+    });
   });
 
   describe("one by one, each confirmed transaction is saved before the next prompt", () => {

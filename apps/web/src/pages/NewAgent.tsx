@@ -36,6 +36,7 @@ import {
   MANDATE_TOKENS,
   ONBOARDING_STEPS,
   buildMandate,
+  batchOnChain,
   loadProgress,
   nextStep,
   parseAmount,
@@ -279,6 +280,9 @@ export function NewAgent() {
     mode?: RemoteMode;
   }>();
   const [busy, setBusy] = useState(false);
+  // A saved batch the wallet doesn't know and the chain shows nothing from: only the owner
+  // decides to send it again.
+  const [lostBatch, setLostBatch] = useState<string>();
 
   const refundAddress = refund.trim() || user || "";
   const key = (selfAgent ? user : agentKey.trim()) ?? "";
@@ -451,6 +455,10 @@ export function NewAgent() {
     if (batched && kinds.length > 1) {
       for (const k of kinds) mark(CALL_STEP[k], "active");
       let id: string | undefined;
+      // Where to look for the batch's effects, should the wallet forget it.
+      const fromBlock = await getPublicClient(wagmiConfig, { chainId: robinhoodTestnet.id })
+        ?.getBlockNumber()
+        .catch(() => undefined);
       try {
         ({ id } = await sendCalls(wagmiConfig, {
           calls: kinds.map((k) => encoded(onboardingCall(k, ctx()))),
@@ -466,8 +474,13 @@ export function NewAgent() {
       }
       if (id) {
         // Saved before waiting: a timeout or a reload follows this batch, it isn't sent again.
-        track({ id, calls: kinds });
-        await followBatch(id, kinds, settle, track);
+        const batch = {
+          id,
+          calls: kinds,
+          ...(fromBlock !== undefined ? { fromBlock: fromBlock.toString() } : {}),
+        };
+        track(batch);
+        await followBatch(batch, ctx, settle, track);
         return;
       }
     }
@@ -476,24 +489,56 @@ export function NewAgent() {
 
   /** Waits for a batch the wallet was sent (`wallet_getCallsStatus`), then settles it. */
   async function followBatch(
-    id: string,
-    kinds: TxCall[],
+    batch: NonNullable<OnboardingProgress["batch"]>,
+    ctx: () => CallContext,
     settle: (kinds: TxCall[], logs: Log[]) => void,
     track: (batch: OnboardingProgress["batch"]) => void,
   ) {
+    const { id, calls: kinds } = batch;
     let result: Awaited<ReturnType<typeof waitForCallsStatus>>;
     try {
       result = await waitForCallsStatus(wagmiConfig, { id });
     } catch (e) {
       const code =
         (e as { code?: number })?.code ?? (e as { cause?: { code?: number } })?.cause?.code;
-      // EIP-5792's "unknown bundle id": this wallet has no such batch, so it can't be followed.
+      // EIP-5792's "unknown bundle id": the wallet can't say what became of it, so the chain is
+      // asked. The batch stays saved until its effects are found, or the owner sends it again.
       if (code === 5730) {
+        const client = getPublicClient(wagmiConfig, { chainId: robinhoodTestnet.id });
+        if (!client || batch.fromBlock === undefined)
+          throw new Error(
+            "Your wallet doesn't know this batch, and the chain couldn't be checked for it. Check your wallet's activity before going on.",
+            { cause: e },
+          );
+        const c = ctx();
+        const logs = (await client.getLogs({
+          address: [
+            deployment.registry,
+            deployment.factory,
+            deployment.bond,
+            ...(c.vault ? [c.vault] : []),
+          ],
+          fromBlock: BigInt(batch.fromBlock),
+        })) as Log[];
+        const landed = batchOnChain(logs, {
+          calls: kinds,
+          user: c.user,
+          agentId: c.agentId,
+          vault: c.vault,
+        });
+        if (!landed) {
+          setLostBatch(id);
+          throw new Error(
+            "Your wallet doesn't know this batch and nothing from it reached the chain.",
+            { cause: e },
+          );
+        }
+        // It went through: settle it as if the wallet had confirmed it.
+        for (const k of kinds)
+          mark(CALL_STEP[k], "active", landed[0]?.transactionHash ?? undefined);
+        settle(kinds, landed);
         track(undefined);
-        throw new Error(
-          "Your wallet doesn't know the batch it was sent any more. Check its activity: if the batch didn't go through, resume to send it again.",
-          { cause: e },
-        );
+        return;
       }
       throw new Error(
         "Your wallet's batch hasn't confirmed yet. Resume to keep following the same batch: it won't be sent again.",
@@ -601,7 +646,7 @@ export function NewAgent() {
       if (progress.batch) {
         const pending = progress.batch;
         for (const k of pending.calls) mark(CALL_STEP[k], "active");
-        await followBatch(pending.id, pending.calls, settle, track);
+        await followBatch(pending, ctx, settle, track);
       }
       const groups = onboardingPlan({
         done: progress.done,
@@ -1246,9 +1291,23 @@ export function NewAgent() {
                   .
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <Button size="sm" onClick={() => run(unfinished)}>
-                    Resume onboarding
-                  </Button>
+                  {unfinished.batch && unfinished.batch.id === lostBatch ? (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        const { batch: _lost, ...rest } = unfinished;
+                        void _lost;
+                        setLostBatch(undefined);
+                        void run(rest);
+                      }}
+                    >
+                      Send it again
+                    </Button>
+                  ) : (
+                    <Button size="sm" onClick={() => run(unfinished)}>
+                      Resume onboarding
+                    </Button>
+                  )}
                   <Button size="sm" kind="secondary" onClick={startOver}>
                     Start a new agent instead
                   </Button>
