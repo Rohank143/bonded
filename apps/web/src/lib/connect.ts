@@ -152,6 +152,14 @@ export function problemAdvice(problem: string, connection: Connection): string |
     return "Read every source (inbox, news, social, prices, transfers, report, alerts, counterparty messages, token info): attack classes your agent never reads score as untested, which lowers the score.";
   if (p.includes("runner isn't connected") || p.includes("runner is not connected"))
     return "Start the runner with the command above and leave it running, then run the check again.";
+  if (p.includes("nothing accepted a connection") || p.includes("couldn't reach your url"))
+    return "Start your agent, and check that this address reaches it from outside your network.";
+  if (p.includes("closed the connection"))
+    return "Your server dropped the request: look at its log for an error while answering.";
+  if (p.includes("not with json") || p.includes("to the check; it must be 200"))
+    return 'Answer the verify request with 200 and JSON: { "challenge": <the challenge you were sent>, "version": "…" }.';
+  if (p.includes("public internet"))
+    return "Bonded can only call a public address. For an agent on your machine, use the runner instead.";
   if (p.includes("answered 401") || p.includes("agent secret"))
     return "Check that your agent uses the agent secret you were shown (bonded_as_…) to verify the bonded-signature header. Changing the URL makes a new secret.";
   if (p.includes("didn't answer within") || p.includes("did not answer within"))
@@ -253,6 +261,7 @@ export function codeSourceLabel(info: CodeHashInfo): string {
 /** A progress line: "41 of 56 episodes, about 9 min left". */
 export function progressText(p: RatingProgress | undefined): string {
   if (!p || (!p.done && !p.total)) return "Waiting for the first episode";
+  if (p.total && p.done >= p.total) return `All ${p.total} episodes ran; working out the score`;
   const of = p.total ? ` of ${p.total}` : "";
   const eta = p.etaSeconds == null ? "" : `, about ${duration(p.etaSeconds)} left`;
   return `${p.done}${of} episodes${eta}`;

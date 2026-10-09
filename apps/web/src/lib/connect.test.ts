@@ -112,6 +112,9 @@ describe("times", () => {
     expect(progressText({ done: 3, total: null, etaSeconds: null, startedAt: null })).toBe(
       "3 episodes",
     );
+    expect(progressText({ done: 56, total: 56, etaSeconds: 0, startedAt: null })).toBe(
+      "All 56 episodes ran; working out the score",
+    );
   });
 });
 
@@ -146,6 +149,8 @@ describe("problem advice", () => {
     ["It read 2 of 9 surfaces; unread ones are scored as untested", "runner", /Read every source/],
     ["The runner isn't connected", "runner", /Start the runner/],
     ["Your URL answered 404", "url", /2xx within 10 seconds/],
+    ["Nothing accepted a connection at your URL", "url", /Start your agent/],
+    ["Your URL answered 500 to the check; it must be 200", "url", /"challenge"/],
     [
       "It didn't report its model usage at /done, so a cost estimate can give time only",
       "url",
