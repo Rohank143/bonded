@@ -407,6 +407,7 @@ export function NewAgent() {
     kinds: TxCall[],
     ctx: () => CallContext,
     settle: (kinds: TxCall[], logs: Log[]) => void,
+    track: (batch: OnboardingProgress["batch"]) => void,
   ) {
     if (batched && kinds.length > 1) {
       for (const k of kinds) mark(CALL_STEP[k], "active");
@@ -425,20 +426,53 @@ export function NewAgent() {
         // The wallet can't batch after all: the same transactions, one by one, below.
       }
       if (id) {
-        const result = await waitForCallsStatus(wagmiConfig, { id });
-        if (result.status !== "success")
-          throw new Error("The batch of transactions failed, so none of them went through.");
-        const receipts = result.receipts ?? [];
-        const hash = receipts.at(-1)?.transactionHash;
-        for (const k of kinds) mark(CALL_STEP[k], "active", hash);
-        settle(
-          kinds,
-          receipts.flatMap((r) => r.logs as Log[]),
-        );
+        // Saved before waiting: a timeout or a reload follows this batch, it isn't sent again.
+        track({ id, calls: kinds });
+        await followBatch(id, kinds, settle, track);
         return;
       }
     }
     for (const k of kinds) settle([k], await send(CALL_STEP[k], onboardingCall(k, ctx())));
+  }
+
+  /** Waits for a batch the wallet was sent (`wallet_getCallsStatus`), then settles it. */
+  async function followBatch(
+    id: string,
+    kinds: TxCall[],
+    settle: (kinds: TxCall[], logs: Log[]) => void,
+    track: (batch: OnboardingProgress["batch"]) => void,
+  ) {
+    let result: Awaited<ReturnType<typeof waitForCallsStatus>>;
+    try {
+      result = await waitForCallsStatus(wagmiConfig, { id });
+    } catch (e) {
+      const code =
+        (e as { code?: number })?.code ?? (e as { cause?: { code?: number } })?.cause?.code;
+      // EIP-5792's "unknown bundle id": this wallet has no such batch, so it can't be followed.
+      if (code === 5730) {
+        track(undefined);
+        throw new Error(
+          "Your wallet doesn't know the batch it was sent any more. Check its activity: if the batch didn't go through, resume to send it again.",
+          { cause: e },
+        );
+      }
+      throw new Error(
+        "Your wallet's batch hasn't confirmed yet. Resume to keep following the same batch: it won't be sent again.",
+        { cause: e },
+      );
+    }
+    if (result.status !== "success") {
+      track(undefined);
+      throw new Error("The batch of transactions failed, so none of them went through.");
+    }
+    const receipts = result.receipts ?? [];
+    const hash = receipts.at(-1)?.transactionHash;
+    for (const k of kinds) mark(CALL_STEP[k], "active", hash);
+    settle(
+      kinds,
+      receipts.flatMap((r) => r.logs as Log[]),
+    );
+    track(undefined);
   }
 
   /**
@@ -463,15 +497,6 @@ export function NewAgent() {
     // A module guards funds already in the smart account: nothing to deposit.
     const onModulePath = progress.protection === "module";
     const depositValue = onModulePath ? 0n : parseAmount(progress.deposit)!;
-    const groups = onboardingPlan({
-      done: progress.done,
-      bond: bondValue,
-      deposit: depositValue,
-      module: onModulePath,
-    });
-    // Steps with nothing to send (no bond, no deposit) are done straight away.
-    const planned = new Set(groups.flat().map((c) => CALL_STEP[c]));
-    for (const step of ["faucet", "bond", "deposit"] as const) if (!planned.has(step)) finish(step);
     const ctx = (): CallContext => ({
       deployment,
       user,
@@ -526,12 +551,34 @@ export function NewAgent() {
       if (kinds.includes("stake")) finish("bond");
       if (kinds.includes("deposit")) finish("deposit");
     };
+    /** The pending batch, saved with the progress (or cleared once it has settled). */
+    const track = (batch: OnboardingProgress["batch"]) => {
+      progress = { ...progress, batch };
+      if (!batch) delete progress.batch;
+      save(progress);
+    };
     try {
+      // A batch sent before a timeout or a reload: follow it, don't send it again.
+      if (progress.batch) {
+        const pending = progress.batch;
+        for (const k of pending.calls) mark(CALL_STEP[k], "active");
+        await followBatch(pending.id, pending.calls, settle, track);
+      }
+      const groups = onboardingPlan({
+        done: progress.done,
+        bond: bondValue,
+        deposit: depositValue,
+        module: onModulePath,
+      });
+      // Steps with nothing to send (no bond, no deposit) are done straight away.
+      const planned = new Set(groups.flat().map((c) => CALL_STEP[c]));
+      for (const step of ["faucet", "bond", "deposit"] as const)
+        if (!planned.has(step)) finish(step);
       for (const group of groups) {
         if (group.includes("findModule")) await findModule();
         const kinds = group.filter((c): c is TxCall => c !== "findModule");
         if (!kinds.length) continue;
-        await sendGroup(kinds, ctx, settle);
+        await sendGroup(kinds, ctx, settle, track);
       }
       if (!progress.done.includes("ratings")) {
         mark("ratings", "active");
@@ -1111,7 +1158,9 @@ export function NewAgent() {
               <div className="mb-4 flex flex-col gap-3 rounded-lg border border-warn/30 bg-warn-soft p-4 text-sm">
                 <p>
                   You have an unfinished onboarding
-                  {unfinished.agentId ? ` of agent ${unfinished.agentId}` : ""}: next step,{" "}
+                  {unfinished.agentId ? ` of agent ${unfinished.agentId}` : ""}
+                  {unfinished.batch ? ", with a batch your wallet was sent still to confirm" : ""}:
+                  next step,{" "}
                   {labelsFor(unfinished)[
                     ONBOARDING_STEPS.indexOf(nextStep(unfinished)!)
                   ]?.toLowerCase()}

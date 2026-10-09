@@ -11,6 +11,7 @@ import {
 import { getAbiItem, isAddress, toFunctionSelector } from "viem";
 import { parseUsd } from "./format";
 import type { Connection } from "./byoa-api";
+import type { OnboardingCall } from "./wallet-help";
 
 /** Mandate tokens a self-serve vault can hold; tUSDG is the base asset and always included. */
 export const MANDATE_TOKENS = ["tTSLA", "tAMZN", "tNVDA"] as const;
@@ -209,6 +210,12 @@ export interface OnboardingProgress {
   agentId?: string;
   mandate?: EvmMandate;
   vault?: string;
+  /**
+   * An atomic batch (EIP-5792) the wallet was sent and that hasn't settled yet: its id, from
+   * `wallet_sendCalls`, and the calls in it. Saved before waiting on it, so a timeout or a reload
+   * follows the same batch again (`wallet_getCallsStatus`) instead of sending it a second time.
+   */
+  batch?: { id: string; calls: Exclude<OnboardingCall, "findModule">[] };
   done: OnboardingStep[];
 }
 

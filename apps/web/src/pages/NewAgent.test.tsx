@@ -22,6 +22,9 @@ const chain = vi.hoisted(() => ({
   txLogs: {} as Record<number, unknown[]>,
   /** Which one-by-one prompts (1-based) the user turns down. */
   rejectWrites: [] as number[],
+  /** Batch ids waited on, and how many waits time out first. */
+  waits: [] as string[],
+  waitTimeouts: 0,
 }));
 vi.mock("wagmi", () => ({
   useAccount: () => ({
@@ -48,10 +51,19 @@ vi.mock("wagmi/actions", () => ({
     chain.sendCalls.push(args);
     return { id: `batch-${chain.sendCalls.length}` };
   },
-  waitForCallsStatus: async () => ({
-    status: "success",
-    receipts: [{ logs: chain.receipts[chain.sendCalls.length - 1] ?? [], transactionHash: "0xab" }],
-  }),
+  waitForCallsStatus: async (_: unknown, { id }: { id: string }) => {
+    chain.waits.push(id);
+    if (chain.waitTimeouts > 0) {
+      chain.waitTimeouts--;
+      throw new Error("Timed out while waiting for call bundle.");
+    }
+    return {
+      status: "success",
+      receipts: [
+        { logs: chain.receipts[Number(id.split("-")[1]) - 1] ?? [], transactionHash: "0xab" },
+      ],
+    };
+  },
   getPublicClient: () => undefined,
   readContract: async () => undefined,
   waitForTransactionReceipt: async (_: unknown, { hash }: { hash: string }) => ({
@@ -111,6 +123,7 @@ const stored = () =>
     agentId?: string;
     vault?: string;
     done: string[];
+    batch?: { id: string; calls: string[] };
   } | null;
 
 function show(prefill?: OfficialPrefill) {
@@ -141,6 +154,8 @@ afterEach(() => {
   chain.written = [];
   chain.txLogs = {};
   chain.rejectWrites = [];
+  chain.waits = [];
+  chain.waitTimeouts = 0;
 });
 
 describe("Onboarding your own agent", () => {
@@ -274,6 +289,30 @@ describe("Onboarding, the wallet side", () => {
     // The deposit's batch goes to the vault the receipt named, not a guess.
     const last = (chain.sendCalls[2] as { calls: { to: string }[] }).calls;
     expect(last[1]!.to).toBe(vault);
+  });
+
+  it("saves a batch's id before waiting, and after a timeout follows that batch instead of sending it again", async () => {
+    chain.capabilities = { 46630: { atomic: { status: "supported" } } };
+    chain.receipts = [[registered()], [vaultCreated()]];
+    chain.waitTimeouts = 1;
+    show();
+    // The wallet's batching is known before onboarding starts.
+    await screen.findByText(/^3 wallet confirmations/);
+    fireEvent.click(await screen.findByRole("button", { name: "Onboard the agent" }));
+    await screen.findByRole("button", { name: "Resume onboarding" });
+    expect(screen.getByText(/Resume to keep following the same batch/)).toBeTruthy();
+    expect(screen.getByText(/with a batch your wallet was sent still to confirm/)).toBeTruthy();
+    expect(chain.sendCalls).toHaveLength(1);
+    expect(stored()).toMatchObject({
+      done: [],
+      batch: { id: "batch-1", calls: ["register", "faucet", "approveBond"] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Resume onboarding" }));
+    await waitFor(() => expect(screen.getByText("Agent 77 is set up.")).toBeTruthy());
+    // batch-1 was followed again, not re-sent: three batches in all, as without the timeout.
+    expect(chain.waits).toEqual(["batch-1", "batch-1", "batch-2", "batch-3"]);
+    expect(chain.sendCalls).toHaveLength(3);
+    expect(stored()).toBeNull();
   });
 
   describe("one by one, each confirmed transaction is saved before the next prompt", () => {
