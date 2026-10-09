@@ -477,7 +477,12 @@ export const api = {
     }>("/leaderboard"),
   score: (agentId: string) => request<ScoreRecord>(`/agents/${agentId}/score`),
   tee: (agentId: string) => request<TeeCheckRecord>(`/agents/${agentId}/tee`),
-  run: (runId: string) => request<RunRecord>(`/arena/runs/${runId}`),
+  /** A run. A preview's is shown only to its owner: pass their session. */
+  run: (runId: string, session?: string) =>
+    request<RunRecord>(
+      `/arena/runs/${runId}`,
+      session ? { headers: { Authorization: `Bearer ${session}` } } : undefined,
+    ),
   startRun: (token: string, agentId: string) =>
     post<{ runId: string }>("/arena/runs", token, { agentId }),
   /** No operator token needed; without one the API caps cover at 20,000 tUSDG (testnet). */

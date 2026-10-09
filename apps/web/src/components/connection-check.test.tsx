@@ -18,11 +18,13 @@ function liveCheck() {
   let drop!: (e: Error) => void;
   const close = vi.fn();
   vi.spyOn(byoaApi, "startCheck").mockResolvedValue({ checkId: "chk-9" });
-  const events = vi.spyOn(byoaApi, "checkEvents").mockImplementation((_id, onEvent, onError) => {
-    push = onEvent;
-    drop = onError!;
-    return close;
-  });
+  const events = vi
+    .spyOn(byoaApi, "checkEvents")
+    .mockImplementation((_id, _session, onEvent, onError) => {
+      push = onEvent;
+      drop = onError!;
+      return close;
+    });
   return {
     send: (e: CheckEvent) => act(() => push(e)),
     drop: (e: Error) => act(() => drop(e)),
@@ -62,7 +64,12 @@ describe("ConnectionCheck", () => {
     const { onFinished } = show();
     fireEvent.click(screen.getByRole("button", { name: "Run the connection check" }));
     expect(await screen.findByText("Starting the episode…")).toBeTruthy();
-    expect(live.events).toHaveBeenCalledWith("chk-9", expect.any(Function), expect.any(Function));
+    expect(live.events).toHaveBeenCalledWith(
+      "chk-9",
+      "s",
+      expect.any(Function),
+      expect.any(Function),
+    );
     live.send(passingEvents[0]!);
     live.send(passingEvents[1]!);
     expect(screen.getByText("Called read_inbox (read messages)")).toBeTruthy();
@@ -121,7 +128,7 @@ describe("ConnectionCheck", () => {
       await vi.advanceTimersByTimeAsync(2100);
     });
     vi.useRealTimers();
-    expect(read).toHaveBeenCalledWith("chk-9");
+    expect(read).toHaveBeenCalledWith("chk-9", "s");
     expect((await screen.findByRole("status")).textContent).toMatch(/Passed/);
   });
 

@@ -92,7 +92,6 @@ export function TestAgent() {
   const [connection, setConnection] = useState<Connection>("url");
   const [mode, setMode] = useState<RemoteMode>("tools");
   const [changing, setChanging] = useState(false);
-  const [holdSecret, setHoldSecret] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<unknown>(null);
   const [starting, setStarting] = useState(false);
@@ -124,7 +123,7 @@ export function TestAgent() {
           ? 15_000
           : 4_000,
   });
-  const run = useRatingRun(preview.data?.ratingId ?? undefined);
+  const run = useRatingRun(preview.data?.ratingId ?? undefined, 5000, session?.session);
   // The list beside the steps follows the open preview's status.
   const openStatus = preview.data?.status;
   const refetchList = previews.refetch;
@@ -204,8 +203,7 @@ export function TestAgent() {
         preview: previewId ? p : undefined,
         runFinished,
       });
-  // The agent secret is on screen and shown only once: stay on this step until it's saved.
-  const step: PreviewStep = holdSecret && computed === "check" ? "connect" : computed;
+  const step: PreviewStep = computed;
   const at = PREVIEW_STEPS.indexOf(step);
   const stateOf = (s: PreviewStep): StepState =>
     PREVIEW_STEPS.indexOf(s) < at ? "done" : s === step ? "current" : "later";
@@ -363,7 +361,6 @@ export function TestAgent() {
                   status={status}
                   connection={status.connection}
                   onChanged={() => preview.refetch()}
-                  onSecret={setHoldSecret}
                   autoCreate
                 />
               )}
@@ -469,6 +466,7 @@ export function TestAgent() {
               {p?.ratingId && subject && auth && (
                 <div className="flex flex-col gap-4">
                   <RatingLive
+                    session={session?.session}
                     runId={p.ratingId}
                     label="Your preview"
                     queueText={p.queue ? queueLine(p.queue.position) : null}

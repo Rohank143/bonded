@@ -86,7 +86,10 @@ export function RatingLive({
   queueText,
   doneText = "Finished.",
   onFinished,
+  session,
 }: {
+  /** The owner's session: a preview's run and every live stream are shown only to its owner. */
+  session?: string;
   runId: string;
   label: string;
   /** What to say once it's done, e.g. where the result is. */
@@ -95,16 +98,16 @@ export function RatingLive({
   queueText?: string | null;
   onFinished?: (status: "done" | "failed") => void;
 }) {
-  const run = useRatingRun(runId);
+  const run = useRatingRun(runId, 5000, session);
   const [live, setLive] = useState<RatingProgress>();
   const status = run.data?.status;
   const finished = status === "done" || status === "failed";
   const { permission, ask, notify } = useBrowserNotification();
   const told = useRef(false);
   useEffect(() => {
-    if (finished) return;
-    return byoaApi.ratingProgress(runId, setLive, () => {});
-  }, [runId, finished]);
+    if (finished || !session) return;
+    return byoaApi.ratingProgress(runId, session, setLive, () => {});
+  }, [runId, finished, session]);
   useEffect(() => {
     if (!finished || told.current) return;
     told.current = true;

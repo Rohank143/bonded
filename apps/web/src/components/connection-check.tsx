@@ -69,15 +69,18 @@ export function ConnectionCheck({
   }, [result, checkId, onFinished]);
 
   const follow = (id: string) => {
+    const session = auth.session;
+    if (!session) return;
     stop.current = byoaApi.checkEvents(
       id,
+      session,
       (event) => setEvents((list) => [...list, event]),
       // The stream dropped: read the check instead, every 2 seconds, until it has a result.
       () => {
         clearInterval(poll.current);
         poll.current = setInterval(() => {
           byoaApi
-            .check(id)
+            .check(id, session)
             .then((record) => setEvents(record.events))
             .catch(() => {});
         }, 2000);
@@ -128,7 +131,7 @@ export function ConnectionCheck({
       <div className="flex flex-wrap items-center gap-3">
         <Button
           loading={busy}
-          disabled={!ready || running}
+          disabled={!ready || running || !auth.session}
           onClick={() => void start()}
           kind={checkId || last ? "secondary" : "primary"}
         >
@@ -138,7 +141,13 @@ export function ConnectionCheck({
               ? "Run the check again"
               : "Run the connection check"}
         </Button>
-        {!ready && notReadyReason && <span className="text-xs text-muted">{notReadyReason}</span>}
+        {!auth.session ? (
+          <span className="text-xs text-muted">
+            Sign in first: the check is shown live to you only.
+          </span>
+        ) : (
+          !ready && notReadyReason && <span className="text-xs text-muted">{notReadyReason}</span>
+        )}
       </div>
       <ErrorText error={error} />
 

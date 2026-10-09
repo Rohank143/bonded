@@ -4,7 +4,6 @@ import { useSignMessage } from "wagmi";
 import type { BindingLevel, RemoteMode } from "@bonded/shared";
 import { api, type RatingAttempt, type SelfAgentRecord } from "../lib/api";
 import { BINDING_LABELS, expectedLine, lapseReason, runnerView } from "../lib/byoa";
-import { requestRating, revokeRunnerToken } from "../lib/self-serve";
 import { byoaApi, type Auth, type Connection, type Subject } from "../lib/byoa-api";
 import { useOwnerSession } from "../lib/owner-session";
 import {
@@ -95,7 +94,7 @@ export function ConnectAndCheck({
     setRevoking(true);
     setError(null);
     try {
-      await revokeRunnerToken(signMessageAsync, agentId);
+      await byoaApi.revokeRunnerToken(agentId, auth);
       await refresh();
     } catch (e) {
       setError(e);
@@ -155,7 +154,7 @@ export function ConnectAndCheck({
         {connection === "runner" && status.hasToken && (
           <div>
             <Button size="sm" kind="ghost" loading={revoking} onClick={() => void revoke()}>
-              {revoking ? "Sign in your wallet…" : "Revoke the runner token"}
+              {revoking && !session ? "Sign in your wallet…" : "Revoke the runner token"}
             </Button>
           </div>
         )}
@@ -210,6 +209,11 @@ function SignInOnce({ owner }: { owner: ReturnType<typeof useOwnerSession> }) {
   );
 }
 
+/** The public status with the owner's own view of the URL, when they have one. */
+function withOwnUrl(status: ConnectionStatus, url: string | undefined): ConnectionStatus {
+  return url && status.agentUrl ? { ...status, agentUrl: { ...status.agentUrl, url } } : status;
+}
+
 /** Right after onboarding: connect the new agent and check it, before its first rating. */
 export function NewAgentConnection({
   agentId,
@@ -228,6 +232,12 @@ export function NewAgentConnection({
     queryFn: () => api.runner(agentId),
     refetchInterval: 5_000,
   });
+  const ownUrl = useQuery({
+    queryKey: ["agent-url", agentId, owner.session?.session],
+    queryFn: () => byoaApi.agentUrl({ kind: "agent", agentId }, owner.session!.session),
+    enabled: Boolean(owner.session && runner.data?.agentUrl),
+    retry: false,
+  });
   if (runner.isPending) return <Loading what="its connection" />;
   if (runner.error)
     return <Unavailable error={runner.error} onRetry={() => void runner.refetch()} />;
@@ -236,7 +246,7 @@ export function NewAgentConnection({
       <SignInOnce owner={owner} />
       <ConnectAndCheck
         agentId={agentId}
-        status={statusFromRunner(runner.data, mode)}
+        status={withOwnUrl(statusFromRunner(runner.data, mode), ownUrl.data?.agentUrl?.url)}
         refresh={() => runner.refetch()}
         {...(owner.session ? { session: owner.session.session } : {})}
         {...(initialConnection ? { initialConnection } : {})}
@@ -289,7 +299,18 @@ export function ConnectAgent({
   const running = Boolean(runId) && finished !== runId;
 
   const mode: RemoteMode = record.mode ?? "tools";
-  const status = statusFromRunner(runner.data, mode, record.codeHash);
+  // The URL itself is only in the owner's own view (public views say only that one is set).
+  const ownUrl = useQuery({
+    queryKey: ["agent-url", agentId, owner.session?.session],
+    queryFn: () => byoaApi.agentUrl({ kind: "agent", agentId }, owner.session!.session),
+    enabled: Boolean(owner.session && !readOnly && runner.data?.agentUrl),
+    retry: false,
+  });
+  const publicStatus = statusFromRunner(runner.data, mode, record.codeHash);
+  const status: ConnectionStatus =
+    ownUrl.data?.agentUrl && publicStatus.agentUrl
+      ? { ...publicStatus, agentUrl: { ...publicStatus.agentUrl, url: ownUrl.data.agentUrl.url } }
+      : publicStatus;
   const connected = isConnected(status);
   const checked = passingCheck(status);
   const badge = connectionBadge(status, status.connection);
@@ -310,7 +331,12 @@ export function ConnectAgent({
     setBusy(forId);
     setError(undefined);
     try {
-      const { runId: id } = await requestRating(signMessageAsync, agentId);
+      const { runId: id } = await byoaApi.rateAgent(
+        agentId,
+        owner.session
+          ? { session: owner.session.session, sign: signMessageAsync }
+          : { sign: signMessageAsync },
+      );
       setRunId({ for: forId, id });
       onRated?.();
     } catch (e) {
@@ -502,7 +528,7 @@ export function ConnectAgent({
                   loading={working}
                   onClick={() => void rate()}
                 >
-                  {working ? "Sign in your wallet…" : "Rate my agent"}
+                  {working && !owner.session ? "Sign in your wallet…" : "Rate my agent"}
                 </Button>
                 {rateBlocked && <span className="text-xs text-muted">{rateBlocked}</span>}
                 {waiting && (
@@ -515,6 +541,7 @@ export function ConnectAgent({
               {runId && (
                 <RatingLive
                   key={runId}
+                  session={owner.session?.session}
                   runId={runId}
                   label="Your agent's rating"
                   doneText="The new score is above."

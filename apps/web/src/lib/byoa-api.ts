@@ -2,7 +2,7 @@ import type { RemoteMode } from "@bonded/shared";
 import { apiUrl, deployment } from "../config";
 import { request, type RunnerRecord } from "./api";
 import { byoaMessage, type ByoaAction } from "./byoa-messages";
-import { createRunnerToken, type Signer } from "./self-serve";
+import { createRunnerToken, requestRating, revokeRunnerToken, type Signer } from "./self-serve";
 
 /**
  * The API calls behind "Test your agent", Agent URL mode, connection checks, progress, cost
@@ -45,7 +45,9 @@ export interface CodeHashInfo {
 
 /** A registered Agent URL. Its secret is shown once, when it is registered, and never again. */
 export interface AgentUrlInfo {
-  url: string;
+  /** Only in the owner's own view: public views say only that one is set. */
+  url?: string;
+  configured?: boolean;
   verified?: boolean;
   verifiedAt: string | null;
   version: string | null;
@@ -53,6 +55,7 @@ export interface AgentUrlInfo {
 
 /** POST …/agent-url: Bonded challenged the URL and it answered. */
 export interface AgentUrlRegistered extends AgentUrlInfo {
+  url: string;
   /** Signs every call Bonded makes to the URL (`bonded_as_…`). Shown once. */
   secret: string;
   codeHash: CodeHashInfo | null;
@@ -61,7 +64,8 @@ export interface AgentUrlRegistered extends AgentUrlInfo {
 }
 
 export interface CheckSummary {
-  id: string;
+  /** Only in the owner's own view. */
+  id?: string;
   status: "running" | "passed" | "failed";
   createdAt: string;
   connection: Connection;
@@ -342,30 +346,61 @@ export const byoaApi = {
   /** GET /previews/:id. */
   preview: (session: string, id: string) =>
     request<PreviewRecord>(subjectPath({ kind: "preview", id }), bearer(session)),
-  /** POST …/runner-token: a runner token, shown once. An agent's goes through the existing call. */
+  /**
+   * POST …/runner-token: a runner token, shown once. With a session, no signature; an agent's
+   * owner without one signs the existing request.
+   */
   createRunnerToken: (
     subject: Subject,
     auth: Auth,
   ): Promise<{ token: string; gatewayUrl: string | null }> =>
-    subject.kind === "agent"
-      ? auth.sign
-        ? createRunnerToken(auth.sign, subject.agentId)
-        : Promise.reject(new Error("Connect the agent owner's wallet to make a runner token."))
+    subject.kind === "agent" && !auth.session && auth.sign
+      ? createRunnerToken(auth.sign, subject.agentId)
       : write("POST", `${subjectPath(subject)}/runner-token`, subject, auth, "runner-token"),
+  /** DELETE /self/agents/:id/runner-token, with the session (or the owner's signature). */
+  revokeRunnerToken: (agentId: string, auth: Auth): Promise<{ revoked: number }> =>
+    !auth.session && auth.sign
+      ? revokeRunnerToken(auth.sign, agentId)
+      : request<{ revoked: number }>(`/self/agents/${agentId}/runner-token`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json", ...bearer(auth.session!).headers },
+          body: "{}",
+        }),
+  /** POST /self/agents/:id/rate, with the session (or the owner's signature). */
+  rateAgent: (agentId: string, auth: Auth): Promise<{ runId: string }> =>
+    !auth.session && auth.sign
+      ? requestRating(auth.sign, agentId)
+      : request<{ runId: string }>(`/self/agents/${agentId}/rate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...bearer(auth.session!).headers },
+          body: "{}",
+        }),
+  /** GET …/agent-url: the owner's view of the Agent URL (the URL itself), with the session. */
+  agentUrl: (subject: Subject, session: string) =>
+    request<{ connection: Connection; agentUrl: (AgentUrlInfo & { url: string }) | null }>(
+      `${subjectPath(subject)}/agent-url`,
+      bearer(session),
+    ),
+  /** POST /streams/token: a short-lived token that opens one check's or rating's live stream. */
+  streamToken: (session: string, target: { checkId: string } | { runId: string }) =>
+    request<{ token: string; expiresAt: string }>("/streams/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...bearer(session).headers },
+      body: JSON.stringify(target),
+    }),
   /**
-   * POST …/agent-url/verify: challenge the registered URL again, signed with its stored secret
-   * (after the agent was given the secret, or redeployed). 422 with the reason otherwise.
+   * POST …/agent-url/verify: Bonded challenges the saved URL, signed with its secret, and the
+   * agent must echo it within 10 s (after it was given the secret, or after a redeploy). 422
+   * with the reason otherwise.
    */
   reverifyAgentUrl: (subject: Subject, auth: Auth, url: string) =>
-    write<{ verified: boolean; version: string | null; codeHash: string | null }>(
-      "POST",
-      `${subjectPath(subject)}/agent-url/verify`,
-      subject,
-      auth,
-      "agent-url",
-      {},
-      { url },
-    ),
+    write<{
+      verified: boolean;
+      url: string;
+      verifiedAt: string | null;
+      version: string | null;
+      codeHash: CodeHashInfo | null;
+    }>("POST", `${subjectPath(subject)}/agent-url/verify`, subject, auth, "agent-url", {}, { url }),
   /** DELETE …/agent-url: stop using the Agent URL; a registered agent goes back to its runner. */
   revokeAgentUrl: (subject: Subject, auth: Auth) =>
     write<{ revoked: number }>(
@@ -378,8 +413,8 @@ export const byoaApi = {
       { url: "none" },
     ),
   /**
-   * POST …/agent-url: register the agent's HTTPS endpoint. Bonded sends it a signed challenge
-   * and it must echo it within 10 s; refused (422) with the reason in a sentence otherwise.
+   * POST …/agent-url: save the agent's HTTPS endpoint and make its secret (shown once). Nothing
+   * calls the URL yet: the owner gives the agent the secret, then verifies (reverifyAgentUrl).
    */
   registerAgentUrl: (subject: Subject, auth: Auth, url: string) =>
     write<AgentUrlRegistered>(
@@ -394,14 +429,26 @@ export const byoaApi = {
   /** POST …/checks: start a connection check: one benign episode, never scored. */
   startCheck: (subject: Subject, auth: Auth) =>
     write<{ checkId: string }>("POST", `${subjectPath(subject)}/checks`, subject, auth, "check"),
-  /** GET /checks/:id: the events so far. */
-  check: (checkId: string) => request<CheckRecord>(`/checks/${encodeURIComponent(checkId)}`),
-  /** GET /checks/:id/events (SSE): each event as it happens, ending with `result`. */
+  /** GET /checks/:id: the events so far, for its owner. */
+  check: (checkId: string, session: string) =>
+    request<CheckRecord>(`/checks/${encodeURIComponent(checkId)}`, bearer(session)),
+  /**
+   * GET /checks/:id/events (SSE): each event as it happens, ending with `result`. Opened with a
+   * stream token (EventSource can't send the session); a check is over well within its life.
+   */
   checkEvents: (
     checkId: string,
+    session: string,
     onEvent: (event: CheckEvent) => void,
     onError?: (error: Error) => void,
-  ) => streamEvents<CheckEvent>(`/checks/${encodeURIComponent(checkId)}/events`, onEvent, onError),
+  ) =>
+    tokenStream<CheckEvent>(
+      session,
+      { checkId },
+      `/checks/${encodeURIComponent(checkId)}/events`,
+      onEvent,
+      onError,
+    ),
   /** GET …/estimate: from the latest passing check; 409 without one. */
   estimate: (subject: Subject, session?: string) =>
     request<CostEstimate>(`${subjectPath(subject)}/estimate`, maybeBearer(session)),
@@ -420,13 +467,19 @@ export const byoaApi = {
   /** GET /ratings/:id/progress (SSE): counts and time left, never verdicts. */
   ratingProgress: (
     runId: string,
+    session: string,
     onProgress: (progress: RatingProgress) => void,
     onError?: (error: Error) => void,
   ) =>
-    streamEvents<RatingProgress>(
+    tokenStream<RatingProgress>(
+      session,
+      { runId },
       `/ratings/${encodeURIComponent(runId)}/progress`,
       onProgress,
       onError,
+      // A rating outlives one token: reopen with a fresh one before it expires. Progress is a
+      // state, not a list of events, so reopening repeats nothing.
+      true,
     ),
   /** GET …/notifications: where the result is sent, masked. */
   notifications: (subject: Subject, session?: string) =>
@@ -451,3 +504,41 @@ export const byoaApi = {
       { webhook: input.webhookUrl ?? "none", email: input.email ?? "none" },
     ),
 };
+
+/**
+ * A live stream opened with a stream token from the session. With `refresh`, it is reopened
+ * with a new token 30 seconds before the old one expires.
+ */
+function tokenStream<T>(
+  session: string,
+  target: { checkId: string } | { runId: string },
+  path: string,
+  onEvent: (event: T) => void,
+  onError?: (error: Error) => void,
+  refresh = false,
+): () => void {
+  let closed = false;
+  let stop = () => {};
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const open = async () => {
+    try {
+      const { token, expiresAt } = await byoaApi.streamToken(session, target);
+      if (closed) return;
+      stop();
+      stop = streamEvents<T>(`${path}?token=${encodeURIComponent(token)}`, onEvent, onError);
+      if (refresh)
+        timer = setTimeout(
+          () => void open(),
+          Math.max(10_000, Date.parse(expiresAt) - Date.now() - 30_000),
+        );
+    } catch (e) {
+      if (!closed) onError?.(e instanceof Error ? e : new Error(String(e)));
+    }
+  };
+  void open();
+  return () => {
+    closed = true;
+    clearTimeout(timer);
+    stop();
+  };
+}

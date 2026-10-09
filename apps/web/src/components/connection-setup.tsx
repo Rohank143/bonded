@@ -1,13 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { RemoteMode } from "@bonded/shared";
 import { runnerCommand, runnerDockerCommand, runnerView } from "../lib/byoa";
-import {
-  byoaApi,
-  type AgentUrlRegistered,
-  type Auth,
-  type Connection,
-  type Subject,
-} from "../lib/byoa-api";
+import { byoaApi, type Auth, type Connection, type Subject } from "../lib/byoa-api";
 import {
   agentUrlError,
   codeSourceLabel,
@@ -239,8 +233,8 @@ export function ConnectRunner({
 }
 
 /**
- * Agent URL: paste the address, Bonded verifies it owns it (a signed challenge it must echo),
- * then shows the agent secret once.
+ * Agent URL, in two steps: save the address (Bonded makes the agent's secret, shown once), give
+ * the agent the secret, then verify: Bonded sends a signed challenge the agent must echo.
  */
 export function ConnectUrl({
   subject,
@@ -248,68 +242,64 @@ export function ConnectUrl({
   status,
   onChanged,
   initialUrl,
-  onSecret,
 }: {
   subject: Subject;
   auth: Auth;
   status: ConnectionStatus;
   onChanged: () => unknown;
   initialUrl?: string;
-  /**
-   * Told when a secret is on screen (true) and when the owner says it's saved (false), so a
-   * flow that moves on by itself can wait: the secret is never shown again.
-   */
-  onSecret?: (showing: boolean) => void;
 }) {
   const [url, setUrl] = useState(status.agentUrl?.url ?? initialUrl ?? "");
   const [touched, setTouched] = useState(false);
-  const [editing, setEditing] = useState(!status.agentUrl?.verifiedAt);
-  const [busy, setBusy] = useState(false);
+  const saved = status.agentUrl;
+  const [editing, setEditing] = useState(!saved);
+  const [busy, setBusy] = useState<"save" | "verify">();
   const [error, setError] = useState<unknown>(null);
-  const [registered, setRegistered] = useState<AgentUrlRegistered>();
+  // The secret, from this page's own save: it is never shown again.
+  const [secret, setSecret] = useState<string>();
+  const [verified, setVerified] = useState<{
+    version: string | null;
+    codeHash: ConnectionStatus["codeHash"];
+  }>();
   const invalid = agentUrlError(url);
-  const verify = async () => {
+  const save = async () => {
     setTouched(true);
     if (invalid) return;
-    setBusy(true);
+    setBusy("save");
     setError(null);
     try {
       const r = await byoaApi.registerAgentUrl(subject, auth, url.trim());
-      setRegistered(r);
+      setSecret(r.secret);
+      setVerified(undefined);
       setEditing(false);
-      onSecret?.(true);
       await onChanged();
     } catch (e) {
       setError(e);
     } finally {
-      setBusy(false);
+      setBusy(undefined);
     }
   };
-  // Saved but not yet verified: the agent needed its secret first. Challenge it again.
-  const reverify = async () => {
-    if (!registered) return;
-    setBusy(true);
+  const verify = async () => {
+    const target = saved?.url ?? url.trim();
+    setBusy("verify");
     setError(null);
     try {
-      const r = await byoaApi.reverifyAgentUrl(subject, auth, registered.url);
-      setRegistered({
-        ...registered,
-        verified: r.verified,
-        verifiedAt: new Date().toISOString(),
-        version: r.version,
-        problem: null,
-      });
+      const r = await byoaApi.reverifyAgentUrl(subject, auth, target);
+      setVerified({ version: r.version, codeHash: r.codeHash });
       await onChanged();
     } catch (e) {
       setError(e);
     } finally {
-      setBusy(false);
+      setBusy(undefined);
     }
   };
   const failure = error instanceof ApiError && error.status < 500 ? error.message : undefined;
   const advice = failure ? problemAdvice(failure, "url") : undefined;
-  const shown = registered ?? status.agentUrl;
-  const codeHash = registered?.codeHash ?? status.codeHash;
+  const isVerified = Boolean(verified) || Boolean(saved?.verifiedAt);
+  const codeHash = verified?.codeHash ?? status.codeHash;
+  const version = verified?.version ?? saved?.version ?? null;
+  const shownUrl = saved?.url ?? (secret ? url.trim() : undefined);
+  const signing = Boolean(busy) && !auth.session;
   return (
     <div className="flex flex-col gap-4 text-sm">
       {editing ? (
@@ -317,12 +307,12 @@ export function ConnectUrl({
           className="flex flex-col gap-3"
           onSubmit={(e) => {
             e.preventDefault();
-            void verify();
+            void save();
           }}
         >
           <Input
             label="Your agent's URL"
-            hint="Public https. Bonded POSTs each episode here, signed with your agent secret."
+            hint="Public https. Bonded POSTs each episode here, signed with your agent's secret."
             value={url}
             onChange={setUrl}
             placeholder="https://my-agent.example.com/bonded"
@@ -332,39 +322,46 @@ export function ConnectUrl({
             <Button
               type="submit"
               size="sm"
-              loading={busy}
+              loading={busy === "save"}
               disabled={Boolean(url) && Boolean(invalid)}
             >
-              {busy ? (signs(auth) ? "Sign in your wallet…" : "Verifying…") : "Verify it"}
+              {busy === "save" && signing ? "Sign in your wallet…" : "Save and get its secret"}
             </Button>
-            {status.agentUrl?.verifiedAt && (
+            {saved && (
               <Button size="sm" kind="ghost" onClick={() => setEditing(false)}>
                 Keep the current URL
               </Button>
             )}
           </div>
           <p className="text-xs text-muted">
-            To verify, Bonded sends{" "}
-            <code className="font-mono">{'{ "type": "verify", "challenge": "…" }'}</code>; your
-            agent answers 200 with the same challenge within 10 seconds. The handler snippet below
-            does it for you.
+            Saving calls nothing yet. Next you give your agent its secret, then Bonded checks the
+            URL is yours.{saved ? " Saving a new URL makes a new secret." : ""}
           </p>
         </form>
-      ) : registered && registered.verified === false ? (
-        <div className="flex flex-col gap-2 rounded-2xl border border-warn/30 bg-warn-soft p-4">
+      ) : isVerified ? (
+        <div className="flex flex-col gap-2 rounded-2xl border border-safe/30 bg-safe-soft p-4">
           <p className="flex flex-wrap items-center gap-2">
-            <Badge tone="warn" dot>
-              Saved, not verified yet
+            <Badge tone="safe" dot>
+              Verified
             </Badge>
-            <span className="font-mono text-xs break-all">{registered.url}</span>
+            {shownUrl && <span className="font-mono text-xs break-all">{shownUrl}</span>}
           </p>
           <p className="text-xs text-soft">
-            {registered.problem ? `${registered.problem}. ` : ""}Give your agent the secret below
-            (as BONDED_AGENT_SECRET), restart it, then verify.
+            It answered the challenge
+            {saved?.verifiedAt && !verified
+              ? ` ${when(Math.floor(Date.parse(saved.verifiedAt) / 1000))}`
+              : ""}
+            {version ? `, reporting version ${version}` : ", without a version"}.
+            {codeHash && ` Code hash from ${codeSourceLabel(codeHash)}.`}
           </p>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" loading={busy} onClick={() => void reverify()}>
-              {busy && !auth.session ? "Sign in your wallet…" : "Verify it now"}
+            <Button
+              size="sm"
+              kind="secondary"
+              loading={busy === "verify"}
+              onClick={() => void verify()}
+            >
+              {busy === "verify" && signing ? "Sign in your wallet…" : "Verify again"}
             </Button>
             <Button size="sm" kind="ghost" onClick={() => setEditing(true)}>
               Change the URL
@@ -372,27 +369,43 @@ export function ConnectUrl({
           </div>
         </div>
       ) : (
-        shown && (
-          <div className="flex flex-col gap-2 rounded-2xl border border-safe/30 bg-safe-soft p-4">
-            <p className="flex flex-wrap items-center gap-2">
-              <Badge tone="safe" dot>
-                Verified
-              </Badge>
-              <span className="font-mono text-xs break-all">{shown.url}</span>
-            </p>
+        <div className="flex flex-col gap-3 rounded-2xl border border-warn/30 bg-warn-soft p-4">
+          <p className="flex flex-wrap items-center gap-2">
+            <Badge tone="warn" dot>
+              Saved, not verified yet
+            </Badge>
+            {shownUrl && <span className="font-mono text-xs break-all">{shownUrl}</span>}
+          </p>
+          {secret ? (
+            <>
+              <p className="font-semibold">1. Add this secret to your agent</p>
+              <SecretOnce label="Your agent secret" value={secret}>
+                Set it as <code className="font-mono">BONDED_AGENT_SECRET</code> where your agent
+                runs (the handler below reads it from there), then restart or redeploy it. It checks
+                that each call really comes from Bonded.
+              </SecretOnce>
+              <p className="font-semibold">2. Verify</p>
+            </>
+          ) : (
             <p className="text-xs text-soft">
-              It answered the challenge
-              {shown.verifiedAt ? ` ${when(Math.floor(Date.parse(shown.verifiedAt) / 1000))}` : ""}
-              {shown.version ? `, reporting version ${shown.version}` : ", without a version"}.
-              {codeHash && ` Code hash from ${codeSourceLabel(codeHash)}.`}
+              Your agent needs the secret you were shown when you saved this URL. Lost it? Change
+              the URL (or save the same one again) to get a new one.
             </p>
-            <div>
-              <Button size="sm" kind="secondary" onClick={() => setEditing(true)}>
-                Change the URL
-              </Button>
-            </div>
+          )}
+          <p className="text-xs text-soft">
+            Bonded sends{" "}
+            <code className="font-mono">{'{ "type": "verify", "challenge": "…" }'}</code>, signed
+            with the secret; your agent answers 200 with the same challenge within 10 seconds.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" loading={busy === "verify"} onClick={() => void verify()}>
+              {busy === "verify" && signing ? "Sign in your wallet…" : "Verify it now"}
+            </Button>
+            <Button size="sm" kind="ghost" onClick={() => setEditing(true)}>
+              Change the URL
+            </Button>
           </div>
-        )
+        </div>
       )}
       {failure ? (
         <div role="alert" className="rounded-2xl border border-breach/35 bg-breach-soft p-4">
@@ -401,19 +414,6 @@ export function ConnectUrl({
         </div>
       ) : (
         <ErrorText error={error} />
-      )}
-      {registered && (
-        <SecretOnce label="Your agent secret" value={registered.secret}>
-          Set it as <code className="font-mono">BONDED_AGENT_SECRET</code> where your agent runs. It
-          checks that each call really comes from Bonded. Changing the URL makes a new secret.
-          {onSecret && (
-            <div className="mt-3">
-              <Button size="sm" onClick={() => onSecret(false)}>
-                I've saved it, continue
-              </Button>
-            </div>
-          )}
-        </SecretOnce>
       )}
       <Snippets connection="url" mode={status.mode} />
     </div>
@@ -476,7 +476,6 @@ export function ConnectStep(props: {
   showBadge?: boolean;
   /** A URL to start the form with (e.g. carried over from a preview). */
   initialUrl?: string;
-  onSecret?: (showing: boolean) => void;
 }) {
   // Keyed by what it connects, so a token or secret made for one agent never shows on another.
   const k =
@@ -491,7 +490,6 @@ export function ConnectStep(props: {
       status={props.status}
       onChanged={props.onChanged}
       {...(props.initialUrl ? { initialUrl: props.initialUrl } : {})}
-      {...(props.onSecret ? { onSecret: props.onSecret } : {})}
     />
   ) : (
     <ConnectRunner

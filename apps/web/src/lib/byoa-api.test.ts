@@ -135,6 +135,94 @@ describe("byoaApi", () => {
   });
 });
 
+describe("owner calls with the session", () => {
+  it("rates an agent, revokes its token and verifies its URL with the session, no signature", async () => {
+    const fetch = mockFetch(200, {});
+    const auth = {
+      session: "bonded_ss_x",
+      sign: vi.fn<(args: { message: string }) => Promise<`0x${string}`>>(),
+    };
+    await byoaApi.rateAgent("12", auth);
+    await byoaApi.revokeRunnerToken("12", auth);
+    await byoaApi.createRunnerToken({ kind: "agent", agentId: "12" }, auth);
+    await byoaApi.reverifyAgentUrl({ kind: "agent", agentId: "12" }, auth, "https://a.example");
+    await byoaApi.agentUrl({ kind: "agent", agentId: "12" }, "bonded_ss_x");
+    const calls = fetch.mock.calls.map((_, i) => sent(fetch, i));
+    expect(calls.map((c) => `${c.method} ${c.url.slice(apiUrl.length)}`)).toEqual([
+      "POST /self/agents/12/rate",
+      "DELETE /self/agents/12/runner-token",
+      "POST /self/agents/12/runner-token",
+      "POST /self/agents/12/agent-url/verify",
+      "GET /self/agents/12/agent-url",
+    ]);
+    for (const c of calls) expect(c.headers.Authorization).toBe("Bearer bonded_ss_x");
+    expect(auth.sign).not.toHaveBeenCalled();
+  });
+  it("sends the session for a preview's run", async () => {
+    const fetch = mockFetch(200, {});
+    const { api } = await import("./api");
+    await api.run("r1", "bonded_ss_x");
+    expect(sent(fetch).headers.Authorization).toBe("Bearer bonded_ss_x");
+  });
+});
+
+describe("token streams", () => {
+  class FakeSource {
+    static CLOSED = 2;
+    static all: FakeSource[] = [];
+    readyState = 1;
+    onmessage?: (m: { data: string }) => void;
+    onerror?: () => void;
+    closed = false;
+    constructor(readonly url: string) {
+      FakeSource.all.push(this);
+    }
+    close() {
+      this.closed = true;
+    }
+  }
+  it("opens a check's events with a stream token from the session", async () => {
+    vi.stubGlobal("EventSource", FakeSource);
+    const token = vi
+      .spyOn(byoaApi, "streamToken")
+      .mockResolvedValue({ token: "t 1", expiresAt: new Date(Date.now() + 300_000).toISOString() });
+    const events: unknown[] = [];
+    const stop = byoaApi.checkEvents("c1", "bonded_ss_x", (e) => events.push(e));
+    await vi.waitFor(() => expect(FakeSource.all.length).toBe(1));
+    expect(token).toHaveBeenCalledWith("bonded_ss_x", { checkId: "c1" });
+    expect(FakeSource.all[0]!.url).toBe(`${apiUrl}/checks/c1/events?token=t%201`);
+    FakeSource.all[0]!.onmessage!({ data: '{"type":"started"}' });
+    expect(events).toEqual([{ type: "started" }]);
+    stop();
+    expect(FakeSource.all[0]!.closed).toBe(true);
+    FakeSource.all = [];
+  });
+  it("reopens a rating's progress with a fresh token before the old one expires", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("EventSource", FakeSource);
+    const token = vi.spyOn(byoaApi, "streamToken").mockImplementation(async () => ({
+      token: `t${token.mock.calls.length}`,
+      expiresAt: new Date(Date.now() + 300_000).toISOString(),
+    }));
+    const stop = byoaApi.ratingProgress("r1", "bonded_ss_x", () => {});
+    await vi.advanceTimersByTimeAsync(0);
+    expect(FakeSource.all.map((s) => s.url)).toEqual([`${apiUrl}/ratings/r1/progress?token=t1`]);
+    await vi.advanceTimersByTimeAsync(271_000);
+    expect(FakeSource.all.map((s) => s.url.split("token=")[1])).toEqual(["t1", "t2"]);
+    expect(FakeSource.all[0]!.closed).toBe(true);
+    stop();
+    expect(FakeSource.all[1]!.closed).toBe(true);
+    vi.useRealTimers();
+    FakeSource.all = [];
+  });
+  it("tells when no token can be had, e.g. the session ended", async () => {
+    vi.spyOn(byoaApi, "streamToken").mockRejectedValue(new ApiError(401, "sign in"));
+    const onError = vi.fn();
+    byoaApi.checkEvents("c1", "s", () => {}, onError);
+    await vi.waitFor(() => expect(onError).toHaveBeenCalled());
+  });
+});
+
 describe("streamEvents", () => {
   class FakeSource {
     static CLOSED = 2;

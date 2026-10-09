@@ -38,7 +38,7 @@ describe("RatingLive", () => {
     vi.spyOn(api, "run").mockResolvedValue(running());
     let push!: (p: RatingProgress) => void;
     const close = vi.fn();
-    vi.spyOn(byoaApi, "ratingProgress").mockImplementation((_id, on) => {
+    vi.spyOn(byoaApi, "ratingProgress").mockImplementation((_id, _session, on) => {
       push = on;
       return close;
     });
@@ -46,7 +46,7 @@ describe("RatingLive", () => {
       permission: "default",
       requestPermission: vi.fn(async () => "granted"),
     });
-    wrap(<RatingLive runId="run-1" label="Your preview" />);
+    wrap(<RatingLive runId="run-1" label="Your preview" session="s" />);
     expect(await screen.findByText("Waiting for the first episode")).toBeTruthy();
     act(() => push({ done: 12, total: 56, etaSeconds: 900, startedAt: null }));
     expect(screen.getByText("12 of 56 episodes, about 15 min left")).toBeTruthy();
