@@ -75,6 +75,20 @@ export interface SandboxOptions {
 type ArenaWallet = WalletClient<Transport, Chain, Account>;
 
 /**
+ * anvil's command line for a sandbox. `--max-persisted-states 0` keeps old chain states out of
+ * ~/.foundry/anvil/tmp: by default anvil moves them there and never deletes the folder, even on a
+ * clean exit, so every rating left hundreds of megabytes to gigabytes behind. Recent states stay
+ * in memory, which covers the few blocks back the rating sandbox forks from.
+ */
+export function anvilArgs(port: number, fork: boolean): string[] {
+  const args = ["--port", String(port), "--silent", "--max-persisted-states", "0"];
+  // A chain id unique to this sandbox (its port is unique while it runs), so sandboxes
+  // started at the same time write separate deployment files instead of racing on one.
+  if (!fork) args.push("--chain-id", String(313_370_000 + port));
+  return args;
+}
+
+/**
  * An isolated chain for Arena episodes: a local anvil node, either fresh (with the protocol
  * deployed by the same scripts as production) or forking a live testnet. Nothing here can
  * touch a real network: anvil keeps every transaction local.
@@ -130,17 +144,10 @@ export class Sandbox {
     // A balance for the dev accounts that only this anvil has: how it is told apart from another
     // process's anvil that took the port first (on a fresh chain or a fork alike).
     const marker = 10_000 + randomInt(1, 1_000);
-    const args = ["--port", String(port), "--silent", "--balance", String(marker)];
+    const args = [...anvilArgs(port, Boolean(options.forkUrl)), "--balance", String(marker)];
     let proxy: ForkProxy | undefined;
-    // The chain id this sandbox's anvil will answer with: how it is told apart from another
-    // process's anvil that took the port first.
-    let expectedChainId: number | undefined;
-    if (!options.forkUrl) {
-      expectedChainId = 313_370_000 + port;
-      // A chain id unique to this sandbox (its port is unique while it runs), so sandboxes
-      // started at the same time write separate deployment files instead of racing on one.
-      args.push("--chain-id", String(313_370_000 + port));
-    }
+    // The chain id this sandbox's anvil will answer with (anvilArgs gives a fresh chain its own).
+    let expectedChainId: number | undefined = options.forkUrl ? undefined : 313_370_000 + port;
     if (options.forkUrl) {
       // Fork a few blocks behind the tip: some public RPCs load-balance across nodes that lag,
       // and a node that hasn't seen the tip yet can't serve state for it.

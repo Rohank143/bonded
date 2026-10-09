@@ -3,6 +3,22 @@
   "version": "0.1.0",
   "description": "Connects an AI trading agent running on your own servers to the Bonded Arena, so it can be rated where it runs.",
   "license": "MIT",
+  "keywords": [
+    "bonded",
+    "ai-agents",
+    "runner",
+    "mcp",
+    "arena"
+  ],
+  "homepage": "https://github.com/ddboy19912/bonded/tree/main/apps/runner#readme",
+  "bugs": {
+    "url": "https://github.com/ddboy19912/bonded/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ddboy19912/bonded.git",
+    "directory": "apps/runner"
+  },
   "type": "module",
   "bin": {
     "bonded-runner": "./dist/cli.js"
@@ -17,19 +33,16 @@
   },
   "files": [
     "dist",
+    "!dist/**/*.map",
     "examples",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=22"
   },
   "publishConfig": {
     "access": "public"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/ddboy19912/bonded.git",
-    "directory": "apps/runner"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

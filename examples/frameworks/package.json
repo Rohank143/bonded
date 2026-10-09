@@ -1,0 +1,26 @@
+{
+  "name": "@bonded/example-frameworks",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agents built with LangGraph, the Vercel AI SDK, ElizaOS and Coinbase AgentKit, rated by the Bonded Arena through @bondedhq/sdk's framework helpers, and an Agent URL endpoint.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src test",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@bondedhq/sdk": "workspace:*",
+    "@coinbase/agentkit": "0.10.4",
+    "@langchain/core": "1.2.12",
+    "@langchain/langgraph": "1.4.17",
+    "ai": "7.0.114",
+    "viem": "^2.56.9",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@bonded/arena": "workspace:*",
+    "@bondedhq/shared": "workspace:*"
+  }
+}

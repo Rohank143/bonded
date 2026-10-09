@@ -1,4 +1,10 @@
-import { EvmWalletProvider, type Network } from "@coinbase/agentkit";
+import {
+  type Action,
+  ActionProvider,
+  EvmWalletProvider,
+  type Network,
+  type WalletProvider,
+} from "@coinbase/agentkit";
 import { mandateVaultAbi } from "@bondedhq/shared";
 import {
   type Address,
@@ -17,6 +23,8 @@ import { BlockedByMandateError, BondedError, VaultFrozenError } from "./errors.j
 import { type GuardOptions, GuardedVault } from "./guarded.js";
 import { vaultRevertError } from "./revert.js";
 import type { MessageSigner } from "./sentinel.js";
+import { zod3FromJsonSchema } from "./json-schema-zod3.js";
+import { type EpisodeTools, type EpisodeToolsSource, resolveTools, resultText } from "./mcp.js";
 import { BondedVault } from "./vault.js";
 
 export interface BondedWalletProviderOptions {
@@ -216,4 +224,53 @@ function bypass(what: string): BondedError {
     "UNSUPPORTED",
     `the vault holds the funds and can't sign ${what}; a signature from the agent key would act outside the vault`,
   );
+}
+
+/**
+ * An AgentKit action provider whose actions are the episode's tools, named
+ * `BondedEpisodeActionProvider_<tool>` as AgentKit names its own. Each action returns what the
+ * Arena returned, as text; a failed call returns `Error: ...` so the model can react. Works on
+ * any network and with any wallet provider: the tools don't use the wallet.
+ *
+ * In tools mode the episode's writes (`swap`, `transfer`, `approve`) are tools too. In chain mode
+ * only the reads are, and writes are transactions to the episode vault: use a
+ * `BondedWalletProvider` for `episode.vault` with `episode.sessionKey` and `episode.endpoints.rpc`.
+ */
+export class BondedEpisodeActionProvider extends ActionProvider<WalletProvider> {
+  readonly #episode: EpisodeTools;
+
+  constructor(episode: EpisodeTools) {
+    super("bonded_episode", []);
+    this.#episode = episode;
+  }
+
+  override getActions(): Action[] {
+    return this.#episode.tools.map((t) => ({
+      name: `BondedEpisodeActionProvider_${t.name}`,
+      description: t.description,
+      schema: zod3FromJsonSchema(t.inputSchema) as unknown as Action["schema"],
+      invoke: async (args: Record<string, unknown>) => resultText(await t.call(args ?? {})),
+    }));
+  }
+
+  supportsNetwork(): boolean {
+    return true;
+  }
+}
+
+/**
+ * The episode's tools as an AgentKit action provider. With no argument it reads the episode from
+ * the runner's `BONDED_*` variables. Switch to it only while being rated:
+ *
+ * ```ts
+ * const actionProviders = isBondedEpisode()
+ *   ? [await bondedEpisodeActionProvider()]
+ *   : [erc20ActionProvider(), myProviders()];
+ * const kit = await AgentKit.from({ walletProvider, actionProviders });
+ * ```
+ */
+export async function bondedEpisodeActionProvider(
+  from?: EpisodeTools | EpisodeToolsSource,
+): Promise<BondedEpisodeActionProvider> {
+  return new BondedEpisodeActionProvider(await resolveTools(from));
 }

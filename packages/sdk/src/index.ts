@@ -2,7 +2,9 @@
  * @bondedhq/sdk: trade through a Bonded Mandate Vault from any TypeScript agent.
  *
  * Framework plugins live in subpaths, each with its framework as an optional peer dependency:
- * `@bondedhq/sdk/agentkit`, `@bondedhq/sdk/solana-agent-kit`, `@bondedhq/sdk/eliza`.
+ * `@bondedhq/sdk/agentkit`, `@bondedhq/sdk/solana-agent-kit`, `@bondedhq/sdk/eliza`,
+ * `@bondedhq/sdk/langchain`, `@bondedhq/sdk/ai-sdk`. The episode's tools over MCP are in
+ * `@bondedhq/sdk/mcp`, and the Agent URL handler in `@bondedhq/sdk/agent-url`.
  */
 export {
   BondedVault,
@@ -58,7 +60,13 @@ export {
   type SentinelVerdict,
 } from "./errors.js";
 export type { BreachType } from "@bondedhq/shared";
-export { bondedEpisodeEnv, fromBondedEnv, type BondedEpisode } from "./episode.js";
+export {
+  bondedEpisodeEnv,
+  episodeVault,
+  fromBondedEnv,
+  isBondedEpisode,
+  type BondedEpisode,
+} from "./episode.js";
 export {
   checkUnprotectedAllowances,
   deploymentTokens,
