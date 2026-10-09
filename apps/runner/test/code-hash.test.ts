@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { codeHashOf } from "@bonded/shared";
+import { codeHashOf } from "@bondedhq/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { codeIdentity, gitState } from "../src/index.js";
 
