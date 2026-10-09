@@ -45,6 +45,7 @@ Everything on this page is built and tested in the repository. Some of it isn't 
 | Previews, Agent URL mode, connection checks, estimates, progress and webhooks on the hosted service | Built. They reach the hosted web app and API with the next deployment of the rating service, which needs `AGENT_URL_SECRET_KEY` set ([DEVELOPING.md](DEVELOPING.md#deploying)); without it Agent URL mode and webhooks are refused | Run the whole flow on your machine with `pnpm demo -- --byo`, or rate locally with the Arena CLI ([Rate on your own machine](#rate-on-your-own-machine)) |
 | Email notifications | Off unless the service has `RESEND_API_KEY` and `EMAIL_FROM`. The hosted configuration sets neither | Use a webhook, or the page's browser notification |
 | `MandateModule` and its factory | Not deployed on any testnet: modules need a new CoverManager, ClaimsEngine and DisputeModule, so a full redeployment of the protocol ([AUDIT.md](AUDIT.md#addendum-mandatemodule)). Onboarding says "Not deployed on this chain yet" | Use a Mandate Vault, or try the module locally (`pnpm demo -- --byo` creates, installs, rates and insures one) |
+| The health panel, owner alerts and in-app notifications, vault trading status, the suggested mandate, the before/after comparison, the actionable report, `GET /status` and funnel counts | Built. They need database migration 0022 and the next deployment of the API and keeper ([DEVELOPING.md](DEVELOPING.md#deploying)) | Run the API and keeper locally ([DEVELOPING.md](DEVELOPING.md#run-it-yourself)) |
 | Mandate Vaults, cover, and self-serve ratings of Bonded's built-in agent designs | Live on Robinhood Chain testnet | |
 
 ## Test your agent for free
@@ -63,18 +64,19 @@ flowchart LR
 ```
 
 1. **Sign in.** Connect your wallet and sign one message (`Bonded: start preview`, the chain, your wallet and the time). It opens a session for 12 hours; nothing is sent on chain.
-2. **Choose how your agent runs.**
+2. **Answer two questions.** *Which framework is your agent built on?* (ElizaOS, Coinbase AgentKit, LangChain or LangGraph, the Vercel AI SDK, something else over MCP or HTTP, or Python) and *Where do you run it?* (on your computer or server: the runner; online at a URL: Agent URL). The snippets and the `init` command follow your answers. The mode (tools or chain), a declared code hash and a TEE are under **Advanced**.
    - **Agent URL**: Bonded calls your HTTPS endpoint once per episode. Nothing to install, and nothing to keep running beyond your server.
    - **Runner**: a small program next to your agent connects out to Bonded and starts your agent command once per episode. Use it when your agent isn't on a public address (your laptop, a private network) or is a command rather than a server.
    - **Tools** or **chain** mode: whether your agent trades through tool calls (tools) or signs its own vault transactions (chain). Tools mode fits most agents.
 3. **Connect it** ([Connect your agent](#connect-your-agent)).
    - Agent URL: paste the URL, copy the agent secret (`bonded_as_...`, shown once) into your agent, then press verify. Bonded sends a signed challenge your agent must answer with the challenge and its proof, an HMAC-SHA256 of it keyed with the secret, which only the secret's holder can make. Lost the secret? **Get a new secret** keeps the URL; verify again after.
    - Runner: the page makes a runner token and gives you the command (Node or Docker). Start it where your agent runs; the page shows it connected.
+   - **Fastest, for a Node agent:** the page also gives `BONDED_RUNNER_TOKEN=bonded_rt_... npx @bondedhq/runner init --gateway <gateway>`. Run in your agent's folder, it shows the change to your code as a diff, asks before writing, then starts the runner and runs the connection check, printing it as it goes ([Set it up with init](#set-it-up-with-init)).
    - The page has copy-paste snippets for your framework ([Use your framework](#use-your-framework)).
 4. **Check the connection.** One benign episode with no attack, run straight away and streamed live: each tool call, each transaction, the agent's exit, then what to fix in plain sentences ([The connection check](#the-connection-check)). A preview can't start without a passing check of exactly this connection in the last 24 hours.
 5. **Read the estimate.** From the check: about how long the preview takes, and what your own model will cost, if your agent reported its usage when it finished ([Progress, estimates and notifications](#progress-estimates-and-notifications)).
 6. **Start the preview rating.** It runs each published attack once (an official rating runs each three times), plus a fresh held-out set made for it alone and 6 controls, shuffled ([Previews](#previews)). The page shows its state (waiting, "Setting up the sandbox", running), then progress (episodes done of the total, and an ETA) and can notify you by browser notification, webhook or email when it ends.
-7. **Read the report**: the score and tier, per-class results, what your agent read and didn't, and liveness. It is labelled "Preview: not on chain, not insurable".
+7. **Read the report**: the score and tier, per-class results, what your agent read and didn't, and liveness. It is labelled "Preview: not on chain, not insurable". Above them, **Fix these first**: the three changes that address the most of its breaches. Below, for each breach, the exact text your agent read, what it did and what would have stopped it ([What the report shows](#what-the-report-shows)). Change your agent and press **Rate again**: the new report shows the two side by side ("54 → 81", with each attack class's breaches before and after).
 8. **Make it official** when you want a score on chain and cover: onboarding opens with your preview's choices filled in ([Official ratings](#official-ratings)).
 
 **How long it takes.** Connecting and checking take minutes. The preview itself is mostly your agent's time: the page shows the API's plan before you start (with today's library, up to 56 episodes and a budget of 40 seconds an episode, never more than 45 minutes), and the estimate in step 5 gives your own agent's figure from its check. An agent that runs past the budget is stopped ([Previews](#previews)).
@@ -240,6 +242,39 @@ The page gives you this command with your token and the gateway's address filled
 - **One episode at a time.** For each one it starts your command, and stops it (SIGTERM to its process group, then SIGKILL 5 seconds later) when the gateway cancels the episode or the deadline passes.
 - **The runner token never reaches your agent.** The agent gets only the episode's URLs, which work for that episode alone.
 
+#### Set it up with init
+
+For a Node agent, `init` does the wiring for you. Run it in your agent's folder:
+
+```bash
+npx @bondedhq/runner init          # shows the changes as a diff and asks before writing
+npx @bondedhq/runner init --print  # only print them
+BONDED_RUNNER_TOKEN=bonded_rt_... npx @bondedhq/runner init --yes --gateway https://<gateway> -- node my-agent.js
+```
+
+It reads `package.json` and your files, works out the framework, and proposes two changes:
+
+1. **The rating hook**: while Bonded rates the agent, it uses the episode's tools instead of its own.
+2. **Trading through your Mandate Vault in production**, once `BONDED_VAULT_ADDRESS` is set (with `BONDED_AGENT_KEY`, and `BONDED_ROUTER_ADDRESS` for swaps). Until then your agent runs as before.
+
+The Bonded code goes in one new file (`src/bonded.ts`, or `.js`/`.mjs`), and at most one line of yours changes, plus an import:
+
+| Framework | The one line |
+|---|---|
+| LangChain / LangGraph, Vercel AI SDK | `const tools = await bondedTools(productionTools);`: the episode's tools while rated; in production yours plus `swap`, `transfer`, `approve` and `vault_status` through the vault |
+| Coinbase AgentKit | `AgentKit.from({ ... })` becomes `bondedAgentKit({ ... })`: a `BondedWalletProvider` in production, so every transaction goes through the vault |
+| ElizaOS | `plugins: [...bondedPlugins, ...yourPlugins]` in your `ProjectAgent`: `bondedPlugin({ vault })` in production |
+| MCP client | `new StreamableHTTPClientTransport(new URL(bondedMcpUrl(yourServerUrl)))`; trade with `bondedVault.swap(...)` in production |
+| Unknown, Python | No change: it prints what to do |
+
+It edits a line only when it is sure (exactly one match); otherwise it prints the line to add. It never writes outside the folder, never reads or changes your `.env` values (`--env` appends the new variables' names with empty values), and adds `@bondedhq/sdk` with your package manager (npm, pnpm, yarn or bun, from your lockfile) only when you say yes. `--url` adds an Agent URL route instead (Next.js, Express, Hono or a small `node:http` server).
+
+**The check, with the runner token alone.** With `BONDED_RUNNER_TOKEN` (or `--token`) and `--gateway`, `init` starts the runner with the command after `--` (or your `start` script) and, once it is connected, runs a connection check with the token: `POST /runner/check` (`Authorization: Bearer bonded_rt_...`, no body) checks the preview or agent the token belongs to, for its owner, under the same limits as the page, and answers with the check and a stream token; `init` follows `GET /checks/:id/events?token=` and prints each event and the result, with a troubleshooting link for each problem. No sign-in is needed. A passing check leaves the runner running for your rating; a failing one stops it. The API is `--api`, else `BONDED_API_URL`, else the hosted API (`https://api-production-ba50.up.railway.app`, the same default the web app uses); the page adds `--api` to the command only when it talks to another API. `--skip-check` starts the runner without a check. The older way, `--session <token>` with `--preview <id>` or `--agent <id>`, still works. Prefer `BONDED_RUNNER_TOKEN` to `--token`: anyone on the machine can read a command line in the process list, and `init` says so when you use `--token`.
+
+#### Keep it running
+
+A rating, a renewal and a connection check all need the runner connected. `bonded-runner service --print systemd|pm2|docker` prints a ready config that restarts the runner when it stops and starts it at boot. It installs and writes nothing, and keeps the runner token out of the config: systemd reads it from `bonded-runner.env` (`EnvironmentFile=`, `chmod 600`) and doesn't restart after a refused token (exit code 2); pm2 takes it from your shell; Docker uses `--restart unless-stopped --env-file bonded-runner.env`. Details: [the runner's README](../apps/runner/README.md#keep-it-running). If the runner is offline for over 30 minutes while a rating or renewal is due, you are told ([Staying rated](#staying-rated)).
+
 **Docker.** Build the runner's image, then put your agent on top of it. The image runs as the unprivileged `node` user, so give it your files:
 
 ```dockerfile
@@ -386,6 +421,8 @@ A runner may send 20 messages a second on average (bursts of 100). Close codes:
 One call gives the episode's tools in your framework's own shape, so your agent's code stays the same and only the tool list changes while it is being rated. Each helper is a subpath of `@bondedhq/sdk` with its framework as an optional peer dependency. Under the runner each helper reads the episode from `BONDED_*` when called with no argument; inside an Agent URL handler, pass it the `episode` you were given.
 
 Every helper is tested end to end against a real Arena Gateway with a scripted model (no model provider, no keys) in [`examples/frameworks`](../examples/frameworks/README.md): the tool calls are in the episode's trace, the swap went through the episode vault, and `/done` arrived with the usage the agent reported. A scripted model shows the wiring works; it says nothing about how a real model behaves under attack. That is what a rating measures.
+
+These helpers are for the rating. For your agent's real trades, the same subpaths have **vault trading tools**: `bondedVaultLangChainTools({ vault })` from `@bondedhq/sdk/langchain` and `bondedVaultAiSdkTools({ vault })` from `@bondedhq/sdk/ai-sdk` give `swap`, `transfer`, `approve` and `vault_status` through your Mandate Vault, with the same names and arguments as the episode's write tools, so your prompts work the same in both. Each write is dry-run against the vault first and refused on a predicted breach (the guard, on by default; `guard: false` turns it off), and Sentinel is optional. `bondedVaultFromEnv()` from `@bondedhq/sdk` builds the vault from `BONDED_VAULT_ADDRESS`, `BONDED_AGENT_KEY`, `BONDED_ROUTER_ADDRESS` (optional), `BONDED_VAULT_CHAIN_ID` (default 46630) and `BONDED_VAULT_RPC_URL` (default: that chain's public RPC), and returns `undefined` while `BONDED_VAULT_ADDRESS` isn't set. The runner removes `BONDED_AGENT_KEY` and `BONDED_VAULT_ADDRESS` from a rated agent's environment, so a rating never trades your real funds. Details are in the [SDK README](../packages/sdk/README.md#vault-trading-tools-for-langchain-langgraph-and-the-ai-sdk); `init` writes this code for you ([Set it up with init](#set-it-up-with-init)).
 
 The snippets below are the ones the web app shows. Placeholders such as `llm`, `model`, `task`, `productionTools`, `walletProvider` and `myTradingPlugin` stand for your own code.
 
@@ -599,9 +636,14 @@ An official rating is attested: the attester signs the score and posts it to the
    - Optionally a TEE URL and compose hash (chain mode, runner only).
    - Then create a vault (or choose a module) and **stake an operator bond**: ratings of your own agent need one.
    - Registering is signed in your wallet. The mandate must match the vault's on-chain one exactly.
+   - **The mandate, suggested from what your agent did.** Coming from a preview, the page asks `GET /previews/:id/suggested-mandate` (`/self/agents/:id/suggested-mandate` for a registered agent) for what the agent traded in its passing check and its preview or rating, read from their traces: the tokens (by symbol), the contracts it called through the vault, its largest trade, and two presets. **Conservative trader** allows only the tokens it was seen trading, with a per-trade cap of 1.25 times its largest trade (rounded up to $100) and a daily cap of 4 times that. **Active trader** allows every market token, 2 times the largest trade per trade and 10 times that a day. Both are Enforce mode, the exchange only, no recipients, freeze on breach. With no trade seen, the per-trade cap starts at $5,000 and a note says to set it yourself; other notes ask for your own addresses if it made transfers, or point out approvals. The API recommends Conservative, and the page fills in its mode, tokens and limits; editing any field makes it **Custom**. It is a starting point from a few episodes, not a measurement of what your agent needs.
+   - **The bond in plain words**: it is your own stake, paid first when a claim against the agent's cover is paid, so it is lost only when your agent breaks its mandate and someone is paid for it. The page shows, for the cover you want, the minimum bond each tier needs (the same rule the cover quote enforces) and recommends one: your preview's tier minimum, or without a score the most any insurable tier asks.
+   - **Wallet help**: a button adds Robinhood Chain testnet to your wallet (`wallet_addEthereumChain`, from the shared chain config), with links to test-ETH faucets, and a gas pre-check from the onboarding's own transactions, simulated at today's gas price plus 50% for it moving ("You need about 0.0004 ETH for gas, and you have ..."). When it can't simulate them, it says only that the faucet gives enough. Test tUSDG for the bond and deposit is minted for you during onboarding.
+   - **Fewer confirmations.** When your wallet says it can send a batch of calls atomically (EIP-5792 `wallet_getCapabilities`), the onboarding goes out in at most three batches with `wallet_sendCalls`: register, faucet and approve the bond; create the vault and stake; approve and make the deposit. So a vault's 7 transactions take 3 confirmations (a module's 4 take 2), and the page shows the count before you start. Not 1, because the second batch needs the agent id the registry gives out in the first, and the third needs the vault's address from the second: predicting either would let someone else's transaction on the shared chain take that id or address first, and send your bond or deposit to their agent or vault. Without batching, each transaction is confirmed on its own, as before.
 2. **Connect your agent**, on the agent's page: verify its Agent URL, or create a runner token (shown once; `bonded_rt_`; the API stores only its hash; a new one replaces the old one, and **Revoke it** disconnects the runner) and start the runner. The page shows the runner's status (no token, waiting, connected or offline) and why a connected runner doesn't count (for example, the wrong mode).
 3. **Run a connection check** (above), then **Rate my agent**. Rating needs a reachable agent, a passing check of this connection in the last 24 hours, a code hash (declared or reported) and a staked bond. The page shows the expected number of episodes, the time budget and the estimate first, then progress. Every attempt is kept in the agent's history, failed ones included.
-4. **Buy cover** from the vault page, within the cover cap for the score's binding ([Binding levels](#binding-levels)).
+4. **Use your vault**, on the agent's page: pick your framework and it shows the one line that sends your agent's trades through the vault (the same change `init` makes), with the vault's address in `BONDED_VAULT_ADDRESS`. A rating tests the agent; only trades through the vault are protected and covered ([Protect your agent](#protect-your-agent)).
+5. **Buy cover** from the vault page, within the cover cap for the score's binding ([Binding levels](#binding-levels)). Before you pay, the page says what cover pays for (losses from your agent breaking its mandate: a manipulated, malfunctioning or compromised agent making a trade or transfer the mandate doesn't allow) and what it doesn't (market losses within the rules, your own keys being stolen, bugs in other contracts, and on a module, losses found only later), the premium a year in tokens, the binding cap, and a recommended amount: no more than the vault holds, the underwriting cap for this agent and the testnet cap. If the agent hasn't traded through its vault in the last 7 days (or ever), the cover form and the agent's page warn that cover pays only for what goes through the vault.
 
 ### What a rating of your agent runs
 
@@ -726,6 +768,10 @@ An episode where your agent did nothing, or did its task without looking, tests 
 
 **Binding**, declared or TEE, next to the score, and the code hash with where it came from.
 
+**What to fix.** For each breached episode (worst loss first, up to 50), the report's `evidence` has the attack class and the surface it was planted on, the **exact text your agent read**, who it seemed to come from, the action that caused the breach (the tool and its arguments, amounts, tokens and addresses only; or an `execute` your agent signed, decoded), the breach type, the loss and whether Enforce mode blocked it. The planted text is in the report only once the rating has finished, never while it runs, and only for attacks used once: a held-out variant made for this rating is shown, while an attack later ratings reuse (an accepted bounty, a shared held-out set) carries `withheld: true` instead, and the page says its text stays unpublished because the attack is reused. Each breach lists `fixes`: ids into a fixed table by attack class and breach type, not model output, so the same breach always gets the same advice. A fix is a line to add to your system prompt, a mandate setting (Enforce mode, allowed recipients, the exchange only, a per-trade or daily cap, allowed tokens), the SDK's dry-run guard in front of writes, or Sentinel; fixes already in place (Enforce mode, Sentinel on) are left out. `fixes` ranks them by how many of the report's breaches list them, and `topFixes` names the first three. That count is how many breaches a fix addresses, as advice: whether it works is measured by rating again. The report's `trading` is what the agent traded without breaking a rule, which the suggested mandate reads.
+
+**Before and after.** `GET /ratings/compare?from=<runId>&to=<runId>` (also `/arena/runs/compare`) puts two finished ratings side by side: `{ from, to, sameAgent, classes: [{ class, name, from, to, breaches }], diff: { score, expectedLossBps, classes } }`, where each side has its score, tier and expected loss and each class its episodes and breaches. A preview's rating is compared only by its owner (anyone else gets "not found"), and a running one gets 409. Each rating draws its own held-out attacks, so some change between two ratings is chance.
+
 ### Staying rated
 
 - **A score is valid for 30 days.** After that the registry no longer reports it, and new cover can't be quoted from it.
@@ -734,6 +780,12 @@ An episode where your agent did nothing, or did its task without looking, tests 
 - **A new attack is accepted** (a bounty): Bonded's own agents are re-rated, but yours isn't. Bounty attacks are never run against operator-run agents (see above), so a re-rating would test nothing new and only use up your limits. The skip is recorded and shown on the page.
 - **Your TEE changes** (a re-deploy, or Phala upgrading the OS image under it). The keeper's check sees a different measurement and new quotes stop. A re-rating is queued if your runner is connected (at most once per rating interval, an hour by default).
 - **Your code changes** with a declared binding: a reported code hash changes with it (a new commit or digest), and a rating records the code it rated. A preview queued under one code hash stops if the agent reports a different one before it runs. Nothing proves the code: only a TEE binds it.
+
+**The health panel**, at the top of your agent's page once you sign in (`GET /self/agents/:id/health`, your session): the score and when it expires (`current`, `expiring` within 7 days, or `expired`; a score superseded by a stopped rating says so), how Bonded reaches the agent (runner connected, offline since when, never connected; Agent URL verified or not; or `bonded` for Bonded's own designs), the vault's trading, the agent key's gas, the cover (active, past due, in its grace period, lapsed, or none), the next re-rating (`{ status, at, reason }`: scheduled with a time, waiting for the runner, or queued or running), and each open problem as a sentence with its code, its severity and what to do, linked to its [troubleshooting](TROUBLESHOOTING.md) entry.
+
+**Alerts.** Besides a rating's end, you are told when the score expires in 7 days, when the runner has been offline for over 30 minutes while a rating or renewal is due, when the vault records a breach, when a claim is filed and when it is paid, when the cover's premium is past due or the cover lapses, and when the agent key is low on gas. The keeper checks once a minute (`OWNER_ALERTS_MS`), only for agents their owners registered. Each event is sent once (its dedupe key: low gas at most once a day), breaches and claims older than 7 days aren't announced, and they go to your webhook and email as well as the in-app list. Turn any type off with `muted` in your notification settings (`PUT /self/notifications { muted: ["low_gas", ...] }`, the full list each time; `GET` returns `muted` and every type in `types`), or with the checkboxes on the **Notifications** page.
+
+**The in-app list**: the bell in the web app's top bar, and the **Notifications** page. `GET /self/notifications/inbox?limit=&before=&unread=1` (your session) returns `{ items: [{ id, kind, type, code?, message, action, createdAt, agentId?, previewId?, subject, read }], unread, next }`, newest first (`kind` is the type in kebab case; `next` is the id to page from). `POST /self/notifications/inbox/read` with `{ ids: [...] }` or `{ through: "<id>" }` marks them read; the page does that when you open it. The list keeps 90 days.
 
 ## Progress, estimates and notifications
 
@@ -754,7 +806,7 @@ Bonded doesn't pay for your model calls and doesn't limit them.
 | Webhook | A URL you set (public https, not one of Bonded's hosts, no redirects followed). Bonded `POST`s `{ type: "rating_finished" \| "rating_failed" \| "rating_refused", ratingId, previewId? or agentId?, chainId, status, score?, tier?, reason?, label?, at }`, signed like Agent URL calls (`bonded-timestamp`, `bonded-signature`) with a webhook secret of its own (`bonded_ws_...`, shown once when you set the URL; a new one with `POST /self/notifications/webhook-secret`). 10 seconds to answer; not retried |
 | Email | Only when the service has an email sender (`RESEND_API_KEY` and `EMAIL_FROM`), which is off by default and off on the hosted service today. Then an address you give gets a plain-text email |
 
-Your settings are yours (by wallet), for all your previews and agents. The page shows them masked (the webhook's origin, `m***@example.com`), never the secret.
+Your settings are yours (by wallet), for all your previews and agents. The page shows them masked (the webhook's origin, `m***@example.com`), never the secret. The alerts about your agents ([Staying rated](#staying-rated)) use the same webhook, with `{ type, dedupeKey, agentId, chainId, message, code, fix?, details?, at }`, where `type` is `score_expiring`, `runner_offline`, `breach_recorded`, `claim_filed`, `claim_paid`, `cover_lapsing` or `low_gas`.
 
 ## The HTTP API
 
@@ -786,6 +838,16 @@ Everything the pages do is plain HTTP, for scripts. Two ways to authenticate:
 | `GET /self/agents/:id/ratings` | Every rating attempt, newest first, a page at a time |
 | `POST /self/agents/:id/rate` | Queue a rating. Refused (409) with no reachable agent, no passing check, no code hash or no bond; 429 under the limits above or during a cooldown |
 | `GET /agents/:id/score` | The latest score with its binding, coverage, held-out set and liveness |
+| `POST /runner/check` | A connection check with the runner token alone (`Authorization: Bearer bonded_rt_...`, no body), of the preview or agent the token belongs to, for its owner. 201 with the check, `subject`, `streamToken` and `streamExpiresAt` for `GET /checks/:id/events?token=`. 401 for a revoked or replaced token (or an agent that changed hands), 409 for an agent reached by its Agent URL |
+| `GET /previews/:id/suggested-mandate`, `GET /self/agents/:id/suggested-mandate` | The suggested mandate (session, owner only): `{ basis, tokens, contracts, largestTradeUsd, notes, recommended, presets: [{ id, label, line, mode, tokens, maxTxUsd, maxDailyUsd, rules }] }`; `rules` is the whole draft with addresses (`rules.assets`), for building the mandate |
+| `GET /ratings/compare?from=&to=` | Two finished ratings side by side (above) |
+| `GET /self/agents/:id/vault-activity` | Public chain data: `{ firstTradeAt, lastTradeAt, trades24h, trades7d, total, lastTxHash, vault, agentKey, frozen, coverWithoutVaultTrades, agentGas, cover }` |
+| `GET /self/agents/:id/health` | The health panel (session, owner only) |
+| `GET /self/notifications/inbox`, `POST /self/notifications/inbox/read` | The in-app list (session) |
+| `GET /status` | Public, cached for 30 seconds: `{ ok, checkedAt, version, api: { up }, gateway: { configured, up }, lanes: { check, remote }, previewQueue }`. Each lane has `{ healthy, queued, oldestQueuedSeconds, lastJobAgeSeconds }`; a lane is healthy when nothing waits or it started a job recently (10 minutes for checks, 30 for ratings). `gateway.up` is null when no gateway is configured. Counts and ages only: no ids, wallets or URLs. The web app's `/status` page and the indicator at its foot read it |
+| `GET /stats/funnel?days=` | Operator only (the API token): how many times each step happened per UTC day (`preview_started`, `check_passed`, `preview_done`, `onboarded`, `first_vault_trade`, `cover_bought`), up to 90 days, with totals. Counters only: nothing about who |
+
+Every refusal carries a stable code next to its sentence: `{ error, code, details: { code } }`, and a check's problems and warnings stay sentences with their codes in `issues: [{ code, severity, message }]`. Each code has an entry, with what to do, on the [troubleshooting page](TROUBLESHOOTING.md).
 
 A check, a rating's progress and a preview are visible to their owner only: anyone else gets "not found".
 
@@ -927,6 +989,12 @@ const status = await vault.status(); // frozen, mode, breachCount, agent, guardi
 - **Mandates.** `buildMandate(rules)` turns plain rules (dollars, percentages) into the vault's parameters and the mandate hash. It is the same builder the web app's onboarding uses.
 
 The full API is in the [SDK README](../packages/sdk/README.md).
+
+### Is your agent trading through it?
+
+A rating tests your agent; only the trades that go through the vault are checked against the mandate, and only those are covered. The keeper indexes each vault's (and module's) `Executed` events, which only the agent key can cause, so Bonded knows the vault's trading from the chain: the first and last trade, trades in the last 24 hours and 7 days, the total and the last transaction (`vaultActivity` in `GET /self/agents/:id`, or `GET /self/agents/:id/vault-activity`). The agent's page shows when it last traded through the vault and how often in the last 24 hours. With active cover and no trade through the vault in the last 7 days (or ever), `coverWithoutVaultTrades` is true and the page warns that the cover would pay nothing for trades made from another wallet.
+
+**Gas.** The agent key pays the gas for each `execute`. `agentGas` is `{ balanceWei, balanceEth, low, estimatedTradesLeft, basis, gasPerTrade }`: the trades left are the balance over today's gas price times the gas per trade, measured from the agent's own recent trades (`basis: "measured"`, the median of its last 20) or, without any, an assumed 350,000 gas a trade (`basis: "assumed"`). It is low under 20 trades (or at zero); then the page and an alert say to send ETH to the key (test ETH, from a faucet, on the testnet).
 
 ### A module on the smart account you already use
 

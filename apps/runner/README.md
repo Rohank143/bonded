@@ -103,11 +103,18 @@ parser), one line `app.post("/bonded", (c) => bondedHandler(c.req.raw))` after `
 small `node:http` server (`src/bonded-server.ts`). The handler is in `src/bonded-agent-url.ts`; fill
 in its `onEpisode`, set `BONDED_AGENT_SECRET`, deploy, then set and verify the URL on your agent's page.
 
-**Connect straight away.** With your runner token (`--token` or `BONDED_RUNNER_TOKEN`) and
-`--gateway`, `init` then starts the runner with the command after `--` (or your `start` script).
-Add `--api <url> --session <token> --preview <id>` (or `--agent <id>`; or `BONDED_API_URL`,
-`BONDED_SESSION_TOKEN`) and it runs a connection check through it and prints each event and the
-result. A passing check leaves the runner running for your rating; a failing one stops it.
+**Connect straight away.** With your runner token (`BONDED_RUNNER_TOKEN`, or `--token`) and
+`--gateway`, `init` then starts the runner with the command after `--` (or your `start` script)
+and, once it is connected, runs a connection check with the token alone: `POST /runner/check`
+(the token as the bearer, no body) checks the preview or agent the token belongs to, then `init`
+follows the check's events with the stream token it gets back and prints each event and the
+result, with a troubleshooting link for each problem. No sign-in is needed. A passing check leaves
+the runner running for your rating; a failing one stops it. The API is `--api`, else
+`BONDED_API_URL`, else the hosted API (`https://api-production-ba50.up.railway.app`, the web app's
+default too); it must be https, except on localhost. `--skip-check` starts the runner without a
+check. The older way, `--session <token>` (or `BONDED_SESSION_TOKEN`) with `--preview <id>` or
+`--agent <id>`, still works. Prefer `BONDED_RUNNER_TOKEN` to `--token`: a command line shows in the
+process list, and `init` says so when you use `--token`.
 
 ```sh
 BONDED_RUNNER_TOKEN=... npx @bondedhq/runner init --yes --gateway https://arena.example.com -- node agent.js
@@ -122,8 +129,10 @@ BONDED_RUNNER_TOKEN=... npx @bondedhq/runner init --yes --gateway https://arena.
 | `--url` | Also add an Agent URL route |
 | `--env` | Append the new variables' names to `.env` |
 | `--skip-install` | Don't add `@bondedhq/sdk` |
-| `--token`, `--gateway`, `--mode` | Start the runner after applying |
-| `--api`, `--session`, `--preview` / `--agent` | Then run a connection check |
+| `--token`, `--gateway`, `--mode` | Start the runner after applying, and run a connection check with the token |
+| `--api` | The Bonded API for the check (default: the hosted API) |
+| `--skip-check` | Start the runner without a check |
+| `--session`, `--preview` / `--agent` | Check with a session instead of the token (the older way) |
 
 ## What your agent gets
 

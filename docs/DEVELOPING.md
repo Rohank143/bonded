@@ -116,6 +116,8 @@ pnpm format:check && pnpm --filter @bondedhq/shared abis:check && pnpm typecheck
 cd contracts/evm && forge fmt --check && forge test
 ```
 
+The troubleshooting page ([TROUBLESHOOTING.md](TROUBLESHOOTING.md)) is generated from the problem list in `packages/shared/src/problems.ts`: after changing it, run `pnpm docs:troubleshooting`. `pnpm test` fails while the committed page is out of date.
+
 ## Bring your own agent
 
 How an agent that runs on its operator's servers is protected and rated: [BRING-YOUR-OWN-AGENT.md](BRING-YOUR-OWN-AGENT.md). The pieces:
@@ -181,6 +183,8 @@ To run the rating service's gateway yourself, start the API in the `arena-worker
 | `RESEND_API_KEY`, `EMAIL_FROM` | unset (no email) | Notification email through Resend, only when both are set (arena-worker sends; the API accepts addresses only then) |
 | `AGENT_URL_ALLOW_LOOPBACK` | unset | `1` lets Agent URLs and webhooks be plain http on this machine (`localhost`, `127.0.0.1`): local runs only, never hosted. `pnpm demo -- --byo` sets up the same itself, with an ephemeral secret key |
 | `BONDED_OWN_HOSTS` | unset | Extra hosts (comma-separated) an Agent URL or webhook may not use, beyond Bonded's deployed hosts, the web origins, the gateway and the service's own Railway domain |
+| `OWNER_ALERTS_MS` | 60000 | How often the keeper sweeps owners' agents for alerts (score expiring, runner offline, breach, claim filed or paid, cover lapsing, low gas); at least 10000 |
+| `BONDED_VERSION` | unset (the deploy's commit, `RAILWAY_GIT_COMMIT_SHA`, first 12 characters) | The version `GET /status` reports, on the API |
 
 With the gateway on, the arena-worker runs two rating lanes, each with its own lock, so Bonded's own ratings never wait behind an operator's agent. The remote policy is read once (`remotePolicyFromEnv` in `apps/api/src/remote-policy.ts`) and used by the API, the worker, renewals and re-ratings alike. Its rating defaults come from `HOSTED_REMOTE_PROFILE` in `apps/arena/src/rate.ts`, which `pnpm arena rate --agent remote --profile hosted` also uses, so a local run with that profile predicts a hosted rating. Accepted bounties re-rate Bonded's own agents only: bounty attacks are never run against operator-run agents.
 
@@ -212,7 +216,7 @@ The hosted services run on Railway, from `.railway/railway.ts`; contracts deploy
 2. **Push the runner's image**: build `apps/runner/Dockerfile` from the repository root and push it to a public registry, so builders can put their agent `FROM` it instead of building it themselves.
 3. **Set the secret key, then apply the Railway configuration**, in this order:
    1. Set `AGENT_URL_SECRET_KEY` on the **api** service in Railway: 32 bytes, `openssl rand -hex 32`. The configuration keeps it with `preserve()` and gives the arena-worker the same value (`api.env.AGENT_URL_SECRET_KEY`). Without it Agent URL mode and webhooks are refused, with a message saying so; previews and checks through the runner still work. Changing it later makes every stored Agent URL and webhook secret unusable (owners set them again).
-   2. Merge and let the new image deploy (the migrations, 0020 and 0021 for this work, run on start).
+   2. Merge and let the new image deploy (the migrations run on start: 0020 and 0021 for this work, and 0022 for the launch round: `vault_trades`, the keeper's index of each vault's `Executed` events for its trading status and gas estimate; `owner_notifications`, the in-app list; `muted` in `notification_settings`; `claim_filed_at` in `handled_events`; and `funnel_daily`, counts per day with nothing about who). The keeper starts indexing trades from its existing cursor, so trades before the deploy aren't in the trading status.
    3. `railway config plan` (it must show nothing to destroy), then `railway config apply`. The configuration spells out `PREVIEW_PER_WALLET_DAILY=1` and `PREVIEW_DAILY=20` on the API and the arena-worker, gives the arena-worker its public domain on port 8080 (`GATEWAY_PORT`), sets `GATEWAY_TRUST_PROXY=1` on it (Railway's edge is one proxy hop), and sets `GATEWAY_PUBLIC_URL` on both.
    4. Optional settings, on both the API and the arena-worker, all with safe defaults: `PREVIEW_CREATES_PER_WALLET_DAILY`, `PREVIEW_RATING_MAX_MS`, `CHECKS_PER_WALLET_HOURLY`, `CHECKS_HOURLY`, `AGENT_URL_VERIFIES_PER_WALLET_HOURLY`, `AGENT_URL_VERIFIES_HOURLY`, `BONDED_OWN_HOSTS` (table above). Email stays off unless you set both `RESEND_API_KEY` and `EMAIL_FROM` (the configuration sets neither). Never set `AGENT_URL_ALLOW_LOOPBACK` on Railway.
    5. Check `GET /healthz` on the gateway's domain and `GET /health` on the API.
