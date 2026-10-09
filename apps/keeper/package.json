@@ -19,9 +19,9 @@
   },
   "dependencies": {
     "@bonded/db": "workspace:*",
-    "@bonded/shared": "workspace:*",
+    "@bondedhq/shared": "workspace:*",
     "viem": "^2.56.9",
-    "@bonded/solana": "workspace:*",
+    "@bondedhq/solana": "workspace:*",
     "@solana/web3.js": "^1.98.4"
   }
 }

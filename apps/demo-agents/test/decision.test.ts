@@ -1,4 +1,4 @@
-import type { AgentTask, ChatClient, ChatRequest } from "@bonded/shared";
+import type { AgentTask, ChatClient, ChatRequest } from "@bondedhq/shared";
 import { describe, expect, it } from "vitest";
 import {
   type DecisionModel,

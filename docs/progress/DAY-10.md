@@ -14,7 +14,7 @@ Plan reference: docs/PLAN.md Section 20, Day 10, and Section 10. Plain-language 
 ### Laya adapter (issue #12) and cascade (issue #32, first part)
 
 In `@bonded/demo-agents`:
-- `LayaSentinel` sends the same state and questions the model trained on. Training and serving share `sentinelState` and `sentinelQuestions` from `@bonded/shared`; the Kaggle files rebuilt from them are byte-identical to the uploaded ones.
+- `LayaSentinel` sends the same state and questions the model trained on. Training and serving share `sentinelState` and `sentinelQuestions` from `@bondedhq/shared`; the Kaggle files rebuilt from them are byte-identical to the uploaded ones.
 - `CascadeSentinel` asks Laya first and an LLM only when Laya is unsure (manipulated between 0.25 and 0.75, or action risk below 0.6 confidence). The band gets tuned on the fine-tune's held-out numbers.
 - `SentinelGuard` takes a Sentinel model or, as before, any decision model. The hardened agent now records untrusted tool outputs for it.
 - `LayaDecisionModel`: Laya behind the existing `DecisionModel` interface.

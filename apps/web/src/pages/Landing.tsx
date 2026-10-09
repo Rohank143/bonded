@@ -6,7 +6,7 @@ import {
   coverManagerAbi,
   coverPoolAbi,
   mandateVaultFactoryAbi,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { deployment, isLocal, networkName } from "../config";
 import { api } from "../lib/api";
 import { useClaims } from "../lib/chain";

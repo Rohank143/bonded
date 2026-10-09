@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mandateHash, toEvmMandateParams } from "@bonded/shared";
+import { mandateHash, toEvmMandateParams } from "@bondedhq/shared";
 import {
   ONBOARDING_STEPS,
   buildMandate,

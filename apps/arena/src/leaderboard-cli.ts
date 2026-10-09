@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { type LeaderboardEntry } from "@bonded/shared";
+import { type LeaderboardEntry } from "@bondedhq/shared";
 import { crosspostEvm } from "./crosspost.js";
 import { loadDotEnv } from "./env.js";
 import {

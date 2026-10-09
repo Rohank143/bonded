@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { EVM_CHAINS, type EvmChainKey, SOLANA_DEVNET } from "@bonded/shared";
+import { EVM_CHAINS, type EvmChainKey, SOLANA_DEVNET } from "@bondedhq/shared";
 import { Keypair } from "@solana/web3.js";
 import {
   AGENT_LINKS_FILE,

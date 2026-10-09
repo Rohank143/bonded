@@ -1,7 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { LlmHardenedAgent, LlmVulnerableAgent } from "@bonded/demo-agents";
-import { type ChatRequest, OpenAICompatibleClient } from "@bonded/shared";
+import { type ChatRequest, OpenAICompatibleClient } from "@bondedhq/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadAttackLibrary, rateAgent, runEpisode, Sandbox } from "../src/index.js";
 

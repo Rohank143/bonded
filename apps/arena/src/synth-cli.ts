@@ -5,7 +5,7 @@ import {
   OpenAICompatibleClient,
   SENTINEL_HELD_OUT_CLASSES,
   llmConfigFromEnv,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { loadDotEnv } from "./env.js";
 import { generateSynthetic, readSeedRows, TARGET_SETS, type TargetSet } from "./synthetic.js";
 

@@ -1,6 +1,6 @@
 import { useId, type ReactNode } from "react";
 import { Link } from "react-router";
-import { tierForScore } from "@bonded/shared";
+import { tierForScore } from "@bondedhq/shared";
 import { addressUrl, short, txUrl } from "../lib/format";
 import { explorerUrl } from "../config";
 import { describeError } from "../lib/errors";
