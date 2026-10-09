@@ -245,7 +245,7 @@ export function codeSourceLabel(info: CodeHashInfo): string {
     case "unpinned":
       return `your agent's command and entry file, not pinned to a version (set a git commit or image digest)${byRunner}`;
     case "url":
-    case "url-version":
+    case "url-version": // the older name
       return info.detail
         ? `the version your agent reported (${info.detail})`
         : "the version your agent reported";

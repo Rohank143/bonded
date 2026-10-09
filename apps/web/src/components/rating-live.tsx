@@ -8,7 +8,13 @@ import { ApiError } from "../lib/api";
 import { Badge, Button, ErrorText, Input, Skeleton } from "./ui";
 import { SecretOnce } from "./copy";
 
-const STATUS_LABELS = { queued: "Waiting", running: "Running", done: "Done", failed: "Stopped" };
+const STATUS_LABELS: Record<string, string> = {
+  queued: "Waiting",
+  starting: "Setting up",
+  running: "Running",
+  done: "Done",
+  failed: "Stopped",
+};
 
 /** What a rating will take, from the passing check, shown before it starts. */
 export function Estimate({
@@ -100,8 +106,10 @@ export function RatingLive({
 }) {
   const run = useRatingRun(runId, 5000, session);
   const [live, setLive] = useState<RatingProgress>();
-  const status = run.data?.status;
-  const finished = status === "done" || status === "failed";
+  const runStatus = run.data?.status;
+  const finished = runStatus === "done" || runStatus === "failed";
+  // The live stream says first when it moves on (queued, starting, running).
+  const status = finished ? runStatus : (live?.status ?? runStatus);
   const { permission, ask, notify } = useBrowserNotification();
   const told = useRef(false);
   useEffect(() => {
@@ -111,11 +119,12 @@ export function RatingLive({
   useEffect(() => {
     if (!finished || told.current) return;
     told.current = true;
+    const over = runStatus === "done" ? "done" : "failed";
     notify(
-      status === "done" ? `${label} finished` : `${label} stopped`,
-      status === "done" ? "Your report is ready." : (run.data?.error ?? "Open Bonded to see why."),
+      over === "done" ? `${label} finished` : `${label} stopped`,
+      over === "done" ? "Your report is ready." : (run.data?.error ?? "Open Bonded to see why."),
     );
-    onFinished?.(status);
+    onFinished?.(over);
     // Once per run.
   }, [finished]);
   const p: RatingProgress | undefined =
@@ -125,7 +134,7 @@ export function RatingLive({
     <div className="flex flex-col gap-3 text-sm">
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone={status === "failed" ? "breach" : status === "done" ? "safe" : "neutral"} dot>
-          {STATUS_LABELS[status ?? "queued"]}
+          {STATUS_LABELS[status ?? "queued"] ?? status}
         </Badge>
         <span aria-live="polite">
           {status === "done"
@@ -136,7 +145,9 @@ export function RatingLive({
                 : "It stopped."
               : status === "queued" || !status
                 ? (queueText ?? "Waiting to start.")
-                : progressText(p)}
+                : status === "starting"
+                  ? "Setting up the sandbox: a fresh chain, its vault and the attacks made for this rating."
+                  : progressText(p)}
         </span>
       </div>
       {!finished && (

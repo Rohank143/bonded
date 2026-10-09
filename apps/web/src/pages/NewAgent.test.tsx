@@ -105,7 +105,7 @@ describe("Onboarding your own agent", () => {
       mode: "tools",
       connection: "url",
       agentUrl: "https://agent.example/bonded",
-      codeHash: { value: `0x${"c".repeat(64)}`, source: "url-version", detail: "v1.4.2" },
+      codeHash: { value: `0x${"c".repeat(64)}`, source: "url", detail: "v1.4.2" },
     });
     expect((screen.getByLabelText("Your agent's URL") as HTMLInputElement).value).toBe(
       "https://agent.example/bonded",

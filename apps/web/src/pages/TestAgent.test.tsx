@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { deployment } from "../config";
@@ -80,6 +80,7 @@ beforeEach(() => {
     basis: "connection check chk-1",
   });
   vi.spyOn(byoaApi, "ratingProgress").mockReturnValue(() => {});
+  vi.spyOn(byoaApi, "previewEvents").mockReturnValue(() => {});
 });
 afterEach(() => {
   cleanup();
@@ -326,5 +327,50 @@ describe("Test your agent", () => {
     read.mockResolvedValue(preview());
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     await waitFor(() => expect(screen.getByLabelText("Your agent's URL")).toBeTruthy());
+  });
+
+  it("follows the preview's stream, and reads the record again when its status moves on", async () => {
+    let push!: (e: Parameters<Parameters<typeof byoaApi.previewEvents>[2]>[0]) => void;
+    vi.mocked(byoaApi.previewEvents).mockImplementation((_s, _id, on) => {
+      push = on;
+      return () => {};
+    });
+    vi.spyOn(api, "run").mockResolvedValue({ ...finishedRun(), status: "queued", report: null });
+    const queued = preview({
+      agentUrl: verifiedUrl,
+      lastCheck: passedCheck("url"),
+      ratingId: "run-1",
+      status: "queued",
+      queue: { position: 2 },
+    });
+    withPreview(queued);
+    expect(
+      await screen.findByText("Previews are busy; 2 are ahead of you. It starts on its own."),
+    ).toBeTruthy();
+    expect(byoaApi.previewEvents).toHaveBeenCalledWith(
+      "sess",
+      "p1",
+      expect.any(Function),
+      expect.any(Function),
+    );
+    vi.mocked(byoaApi.preview).mockResolvedValue({ ...queued, queue: { position: 1 } });
+    const reads = vi.mocked(byoaApi.preview).mock.calls.length;
+    act(() =>
+      push({
+        status: "queued",
+        ratingId: "run-1",
+        reason: null,
+        queue: { position: 1 },
+        progress: null,
+      }),
+    );
+    expect(await screen.findByText("Previews are busy; you're next in line.")).toBeTruthy();
+    vi.mocked(byoaApi.preview).mockResolvedValue({ ...queued, status: "starting", queue: null });
+    act(() =>
+      push({ status: "starting", ratingId: "run-1", reason: null, queue: null, progress: null }),
+    );
+    await waitFor(() =>
+      expect(vi.mocked(byoaApi.preview).mock.calls.length).toBeGreaterThan(reads),
+    );
   });
 });

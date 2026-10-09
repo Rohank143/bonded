@@ -30,7 +30,16 @@ export type Auth = { session: string; sign?: Signer } | { session?: string; sign
 
 /** Where the code hash a rating records came from (the runner's `codeSource`, or the URL). */
 export type CodeSource =
-  "declared" | "flag" | "env" | "image" | "git" | "git-dirty" | "unpinned" | "url" | "url-version";
+  | "declared"
+  | "flag"
+  | "env"
+  | "image"
+  | "git"
+  | "git-dirty"
+  | "unpinned"
+  | "url"
+  /** The older name of "url", still read. */
+  | "url-version";
 
 export interface CodeHashInfo {
   value: string;
@@ -139,7 +148,19 @@ export interface RatingProgress {
   done: number;
   total: number | null;
   etaSeconds: number | null;
+  /** When its setup started. */
   startedAt: string | null;
+  /** The rating's status, where the stream gives it ("starting": setting up the sandbox). */
+  status?: string;
+}
+
+/** GET /previews/:id/events: the preview's state as it changes. */
+export interface PreviewEvent {
+  status: PreviewStatus;
+  ratingId: string | null;
+  reason: string | null;
+  queue: { position: number } | null;
+  progress: RatingProgress | null;
 }
 
 /** Where a finished, failed or refused rating is announced. Shown masked; never the secret. */
@@ -157,6 +178,7 @@ export type PreviewStatus =
   | "checking"
   | "ready"
   | "queued"
+  | "starting"
   | "running"
   | "done"
   | "failed"
@@ -382,7 +404,10 @@ export const byoaApi = {
       bearer(session),
     ),
   /** POST /streams/token: a short-lived token that opens one check's or rating's live stream. */
-  streamToken: (session: string, target: { checkId: string } | { runId: string }) =>
+  streamToken: (
+    session: string,
+    target: { checkId: string } | { runId: string } | { previewId: string },
+  ) =>
     request<{ token: string; expiresAt: string }>("/streams/token", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...bearer(session).headers },
@@ -401,6 +426,38 @@ export const byoaApi = {
       version: string | null;
       codeHash: CodeHashInfo | null;
     }>("POST", `${subjectPath(subject)}/agent-url/verify`, subject, auth, "agent-url", {}, { url }),
+  /**
+   * POST …/agent-url/secret: a new secret for the saved URL, shown once. The old one stops
+   * working at once; the URL must be verified again, and checked again.
+   */
+  newAgentUrlSecret: (subject: Subject, auth: Auth, url: string) =>
+    write<AgentUrlRegistered>(
+      "POST",
+      `${subjectPath(subject)}/agent-url/secret`,
+      subject,
+      auth,
+      "agent-url",
+      {},
+      { url },
+    ),
+  /**
+   * GET /previews/:id/events (SSE): its status, queue place and progress as they change. Ends
+   * when it is over, or after 10 quiet minutes; reopened with a fresh token before one expires.
+   */
+  previewEvents: (
+    session: string,
+    previewId: string,
+    onEvent: (event: PreviewEvent) => void,
+    onError?: (error: Error) => void,
+  ) =>
+    tokenStream<PreviewEvent>(
+      session,
+      { previewId },
+      `/previews/${encodeURIComponent(previewId)}/events`,
+      onEvent,
+      onError,
+      true,
+    ),
   /** DELETE …/agent-url: stop using the Agent URL; a registered agent goes back to its runner. */
   revokeAgentUrl: (subject: Subject, auth: Auth) =>
     write<{ revoked: number }>(
@@ -511,7 +568,7 @@ export const byoaApi = {
  */
 function tokenStream<T>(
   session: string,
-  target: { checkId: string } | { runId: string },
+  target: { checkId: string } | { runId: string } | { previewId: string },
   path: string,
   onEvent: (event: T) => void,
   onError?: (error: Error) => void,

@@ -190,7 +190,7 @@ describe("ConnectAgent", () => {
       version: "v1.4.2",
       codeHash: {
         value: `0x${"a".repeat(64)}`,
-        source: "url-version",
+        source: "url",
         detail: "v1.4.2",
         reportedBy: "agent",
       },
@@ -261,7 +261,7 @@ describe("ConnectAgent", () => {
     signedIn();
     show();
     // Saved earlier, so its secret isn't shown again: the page says how to get a new one.
-    expect(await screen.findByText(/Lost it\? Change the URL/)).toBeTruthy();
+    expect(await screen.findByText(/if you no longer have it, get a new one below/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Verify it now" }));
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toMatch(/Your URL answered 404/);
@@ -494,5 +494,48 @@ describe("ConnectAgent", () => {
         expect.objectContaining({ session: "bonded_ss_owner" }),
       ),
     );
+  });
+
+  it("gets a new secret for a saved URL, after saying the old one stops at once", async () => {
+    vi.spyOn(api, "runner").mockResolvedValue(
+      runnerRecord({
+        connection: "url",
+        agentUrl: { configured: true, verifiedAt: new Date().toISOString(), version: "v1" },
+      }),
+    );
+    vi.spyOn(byoaApi, "agentUrl").mockResolvedValue({
+      connection: "url",
+      agentUrl: {
+        url: "https://agent.example/bonded",
+        verifiedAt: new Date().toISOString(),
+        version: "v1",
+      },
+    });
+    const renew = vi.spyOn(byoaApi, "newAgentUrlSecret").mockResolvedValue({
+      url: "https://agent.example/bonded",
+      verified: false,
+      verifiedAt: null,
+      version: null,
+      secret: "bonded_as_new",
+      codeHash: null,
+    });
+    signedIn();
+    show();
+    // The URL comes from the owner's own view.
+    expect((await screen.findAllByText("https://agent.example/bonded")).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Lost the secret? Get a new one" }));
+    expect(screen.getByText(/The current secret stops working at once/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Make a new secret" }));
+    await waitFor(() =>
+      expect(renew).toHaveBeenCalledWith(
+        { kind: "agent", agentId: "12" },
+        expect.objectContaining({ session: "bonded_ss_owner" }),
+        "https://agent.example/bonded",
+      ),
+    );
+    expect(await screen.findByText("bonded_as_new")).toBeTruthy();
+    // It must be verified again with the new secret.
+    expect(screen.getByText("Saved, not verified yet")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Verify it now" })).toBeTruthy();
   });
 });
