@@ -6,6 +6,9 @@ import {
   AGENT_URL_TIMESTAMP_HEADER,
   agentUrlCodeHash,
   agentUrlSignature,
+  agentUrlVerifyProof,
+  answerAgentUrlVerify,
+  checkAgentUrlVerifyProof,
   AgentUrlReplayGuard,
   codeHashOf,
   type EpisodeMessage,
@@ -193,6 +196,30 @@ describe("Agent URL signatures", () => {
         await verifyAgentUrlRequest({ secret: SECRET, body: text, headers, nowMs: NOW }),
       ).toMatchObject({ ok: false, status: 400 });
     }
+  });
+});
+
+describe("the verify proof", () => {
+  it("is hex HMAC-SHA256(secret, 'verify.' + challenge), and only the secret's holder can make it", async () => {
+    const challenge = "c".repeat(32);
+    const expected = createHmac("sha256", SECRET).update(`verify.${challenge}`).digest("hex");
+    expect(await agentUrlVerifyProof(SECRET, challenge)).toBe(expected);
+    const answer = await answerAgentUrlVerify(SECRET, { type: "verify", challenge }, "v3");
+    expect(answer).toEqual({ challenge, proof: expected, version: "v3" });
+    expect(await checkAgentUrlVerifyProof(SECRET, challenge, answer)).toBe(true);
+    expect(
+      await checkAgentUrlVerifyProof(SECRET, challenge, {
+        ...answer,
+        proof: expected.toUpperCase(),
+      }),
+    ).toBe(true);
+    // An echo of the challenge, a proof made with another secret or for another challenge: refused.
+    expect(await checkAgentUrlVerifyProof(SECRET, challenge, { challenge, proof: "" })).toBe(false);
+    const other = await agentUrlVerifyProof("bonded_as_another-secret-0000000000", challenge);
+    expect(await checkAgentUrlVerifyProof(SECRET, challenge, { challenge, proof: other })).toBe(
+      false,
+    );
+    expect(await checkAgentUrlVerifyProof(SECRET, "d".repeat(32), answer)).toBe(false);
   });
 });
 

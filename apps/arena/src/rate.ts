@@ -27,7 +27,7 @@ import {
 import { SpendingCap } from "./budget.js";
 import { datasetRows, type SentinelRow, writeDataset } from "./dataset.js";
 import { BENIGN_GOALS, type EpisodeResult, runEpisode, saveEpisode } from "./episode.js";
-import { RemoteAgent } from "./gateway/remote-agent.js";
+import { AgentUrlUnavailableError, bondedFailure, RemoteAgent } from "./gateway/remote-agent.js";
 import { episodeOutcome, sawAttack } from "./report.js";
 import type { Sandbox } from "./sandbox.js";
 import type { VerifiedTee } from "./tee.js";
@@ -470,6 +470,13 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
       worldSeed: `${worldSecret}:${index}`,
       ...(options.vault ? { vault: options.vault } : {}),
     });
+    // An episode Bonded couldn't deliver says nothing about the agent: stop, not the agent's
+    // failure (the rating service retries the rating).
+    const bonded = bondedFailure(result.agentSummary);
+    if (bonded)
+      throw new AgentUrlUnavailableError(
+        `stopped: Bonded couldn't call the agent's URL in episode ${index + 1} of ${jobs.length} (${bonded}); not the agent's fault`,
+      );
     cap.add(result.agentSummary.usage);
     episodes.push(result);
     if (tracesDir) saveEpisode(result, tracesDir);

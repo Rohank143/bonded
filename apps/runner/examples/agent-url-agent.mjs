@@ -11,7 +11,8 @@
  * and never acts on what it reads. Swap `work` for your own agent.
  *
  * Needs @modelcontextprotocol/sdk (npm install @modelcontextprotocol/sdk). Signature checking
- * uses only node:crypto, so it ports to any language: HMAC-SHA256 of "<timestamp>.<raw body>".
+ * uses only node:crypto, so it ports to any language: HMAC-SHA256 of "<timestamp>.<raw body>",
+ * and the verify answer's proof is HMAC-SHA256 of "verify.<challenge>".
  */
 import { Buffer } from "node:buffer";
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -109,8 +110,14 @@ const server = createServer((req, res) => {
       return void res.writeHead(400).end();
     }
     if (message.type === "verify") {
+      // The proof shows this server holds the secret: HMAC-SHA256 of "verify." + challenge.
+      const proof = createHmac("sha256", SECRET)
+        .update(`verify.${message.challenge}`)
+        .digest("hex");
       res.writeHead(200, { "content-type": "application/json" });
-      return void res.end(JSON.stringify({ challenge: message.challenge, version: VERSION }));
+      return void res.end(
+        JSON.stringify({ challenge: message.challenge, proof, version: VERSION }),
+      );
     }
     if (message.type === "cancel") {
       running.get(message.episodeId)?.abort();

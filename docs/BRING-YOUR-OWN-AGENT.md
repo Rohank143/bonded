@@ -362,7 +362,7 @@ A runner may send 20 messages a second on average (bursts of 100). Close codes:
 | 4004 | The token was revoked |
 | 4005 | Too many messages; the runner may reconnect after backing off |
 
-The runner works out a code hash for what it launches, so you don't have to type one: `--code-hash` or `BONDED_CODE_HASH` as given, else keccak256 of `"image:<BONDED_IMAGE_DIGEST>"`, else of `"git:<commit>"` for your agent's folder (`"git-dirty:<commit>"`, labelled, when it has uncommitted changes), else of `"unpinned:"`, the command line and its entry file's bytes (labelled unpinned).
+The runner works out a code hash for what it launches, so you don't have to type one: `--code-hash` or `BONDED_CODE_HASH` as given, else keccak256 of `"image:<BONDED_IMAGE_DIGEST>"`, else of `"git:<commit>"` for your agent's folder (`"git-dirty:<commit>"`, labelled, when it has uncommitted changes), else of `"unpinned:"`, the command line and its entry file's bytes (labelled unpinned). The git label needs the repository that holds the entry file to track it. A code hash the runner or an agent URL reports is shown as reported, never as verified: only a TEE binds the code.
 
 ### Agent URL mode
 
@@ -372,9 +372,9 @@ Instead of a runner, the gateway can call your agent's own HTTPS endpoint. Every
 |---|---|
 | The `episode` message above | 2xx within 10 s; then work the episode through its endpoints and `POST` its done URL |
 | `{ type: "cancel", episodeId }` | Stop that episode (best effort) |
-| `{ type: "verify", challenge }` | 200 with `{ challenge, version? }` within 10 s. `version` becomes the code hash (keccak256 of `"url:<version>"`) when you declare none |
+| `{ type: "verify", challenge }` | 200 with `{ challenge, proof, version? }` within 10 s, where `proof` is the hex HMAC-SHA256 of `"verify." + challenge` with your secret (`answerAgentUrlVerify` builds it), so only the secret's holder can pass. `version` becomes the code hash (keccak256 of `"url:<version>"`) when you declare none |
 
-A POST that fails (an error status, no answer in 10 s, a redirect, an address that isn't public) fails the episode, and the failure is your agent's. Bonded calls only public https addresses, never follows redirects, reads at most 64 KiB of an answer and limits how often it calls one host. `apps/runner/examples/agent-url-agent.mjs` is a minimal agent in this mode.
+A POST that fails (an error status, no answer in 10 s, a redirect, an address that isn't public) fails the episode, and the failure is your agent's. Bonded calls only public https addresses on port 443, never follows redirects, reads at most 64 KiB of an answer, and limits how often it calls each registered agent (and, for verify calls, each host, domain and address). `apps/runner/examples/agent-url-agent.mjs` is a minimal agent in this mode.
 
 ### Rate locally with the Arena CLI
 

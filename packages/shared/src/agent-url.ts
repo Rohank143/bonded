@@ -59,12 +59,16 @@ export const AgentUrlVerifyMessage = z.object({
 export type AgentUrlVerifyMessage = z.infer<typeof AgentUrlVerifyMessage>;
 
 /**
- * The agent's answer to `verify`. `version` names the agent's code version (a git commit, a
- * release tag, an image digest): with no declared code hash, the rating records
- * `agentUrlCodeHash(version)`.
+ * The agent's answer to `verify`: the challenge back, and `proof`, the hex
+ * HMAC-SHA256(secret, "verify." + challenge) (`agentUrlVerifyProof`), so only a holder of the
+ * secret can pass (an echo server can't). `version` names the agent's code version (a git
+ * commit, a release tag, an image digest): with no declared code hash, the rating records
+ * `agentUrlCodeHash(version)`, labelled as reported by the agent. `answerAgentUrlVerify` builds
+ * the whole answer.
  */
 export const AgentUrlVerifyAnswer = z.object({
   challenge: z.string().max(128),
+  proof: z.string().regex(/^[0-9a-fA-F]{64}$/, "64 hex digits"),
   version: z.string().min(1).max(200).optional(),
 });
 export type AgentUrlVerifyAnswer = z.infer<typeof AgentUrlVerifyAnswer>;
@@ -117,6 +121,49 @@ export async function agentUrlSignature(
   const key = await hmacKey(secret, "sign");
   const mac = await globalThis.crypto.subtle.sign("HMAC", key, signedPayload(timestamp, body));
   return `${AGENT_URL_SIGNATURE_VERSION}=${hex(new Uint8Array(mac))}`;
+}
+
+/** The ownership proof for a verify challenge: hex HMAC-SHA256(secret, "verify." + challenge). */
+export async function agentUrlVerifyProof(secret: string, challenge: string): Promise<string> {
+  const key = await hmacKey(secret, "sign");
+  const mac = await globalThis.crypto.subtle.sign(
+    "HMAC",
+    key,
+    encoder.encode(`verify.${challenge}`) as Uint8Array<ArrayBuffer>,
+  );
+  return hex(new Uint8Array(mac));
+}
+
+/** The answer an agent sends to a verify message: `{ challenge, proof, version? }`. */
+export async function answerAgentUrlVerify(
+  secret: string,
+  message: AgentUrlVerifyMessage,
+  version?: string,
+): Promise<AgentUrlVerifyAnswer> {
+  return {
+    challenge: message.challenge,
+    proof: await agentUrlVerifyProof(secret, message.challenge),
+    ...(version ? { version } : {}),
+  };
+}
+
+/**
+ * Whether a verify answer proves the secret: the challenge sent and its proof (compared in
+ * constant time). The gateway's check.
+ */
+export async function checkAgentUrlVerifyProof(
+  secret: string,
+  challenge: string,
+  answer: Pick<AgentUrlVerifyAnswer, "challenge" | "proof">,
+): Promise<boolean> {
+  if (answer.challenge !== challenge || !/^[0-9a-fA-F]{64}$/.test(answer.proof)) return false;
+  const key = await hmacKey(secret, "verify");
+  return globalThis.crypto.subtle.verify(
+    "HMAC",
+    key,
+    unhex(answer.proof),
+    encoder.encode(`verify.${challenge}`) as Uint8Array<ArrayBuffer>,
+  );
 }
 
 /** The two headers for a call to an agent URL, signed now (or at `nowMs`). */

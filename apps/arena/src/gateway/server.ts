@@ -24,7 +24,10 @@ import {
 import { type WebSocket, WebSocketServer } from "ws";
 import { publicAddress } from "../safe-fetch.js";
 import type { ArenaToolbox } from "../toolbox.js";
+import { addressGroup } from "./address.js";
 import { AgentUrlClient, type AgentUrlClientOptions } from "./agent-url.js";
+
+export { addressGroup };
 import { serveMcp } from "./mcp.js";
 import { handleRpc, type RpcBinding, RpcBudget } from "./rpc.js";
 import {
@@ -244,10 +247,24 @@ export class RunnerSession {
   }
 
   /** The code hash the runner worked out and its source, when it reported one in hello. */
-  get code(): { hash: `0x${string}`; source: NonNullable<HelloMessage["codeSource"]> } | undefined {
+  /**
+   * The code hash the runner worked out and its source, when it reported one in hello. Reported
+   * by the runner, never verified: show it as reported.
+   */
+  get code():
+    | {
+        hash: `0x${string}`;
+        source: NonNullable<HelloMessage["codeSource"]>;
+        reportedBy: "runner";
+      }
+    | undefined {
     const hello = this.hello;
     return hello?.codeHash
-      ? { hash: hello.codeHash, source: hello.codeSource ?? "unpinned" }
+      ? {
+          hash: hello.codeHash.toLowerCase() as `0x${string}`,
+          source: hello.codeSource ?? "unpinned",
+          reportedBy: "runner",
+        }
       : undefined;
   }
 
@@ -480,7 +497,7 @@ export class ArenaGateway {
     this.limits = { ...DEFAULT_GATEWAY_LIMITS, ...options.limits };
     this.log = options.log ?? (() => {});
     this.base = options.publicUrl?.replace(/\/+$/, "");
-    this.agentUrls = new AgentUrlClient(options.agentUrl);
+    this.agentUrls = new AgentUrlClient({ log: this.log, ...options.agentUrl });
     if (this.base) this.refuseOwnUrl(this.base);
   }
 
@@ -865,6 +882,9 @@ export class ArenaGateway {
         if (message.type !== "hello") return session.close(RUNNER_CLOSE.protocol, "hello first");
         if (message.protocol !== RUNNER_PROTOCOL_VERSION)
           return session.close(RUNNER_CLOSE.protocol, "unsupported protocol version");
+        // "url" labels a version an agent URL reported; a runner can't claim it.
+        if (message.codeSource === "url")
+          return session.close(RUNNER_CLOSE.protocol, "a runner can't report codeSource url");
         clearTimeout(helloTimer);
         session.hello = message;
         session.lastSeen = Date.now();
@@ -898,25 +918,6 @@ export class ArenaGateway {
     });
     ws.on("error", () => ws.terminate());
   }
-}
-
-/** An address for rate limits: IPv4 as is, IPv6 by its /64 (IPv4-mapped IPv6 as IPv4). */
-export function addressGroup(ip: string): string {
-  const bare = ip.replace(/^\[|\]$/g, "").replace(/%.*$/, "");
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(bare);
-  if (mapped) return mapped[1]!;
-  if (isIP(bare) !== 6) return bare;
-  // Expand :: to full groups, then keep the first four.
-  const [head, tail = ""] = bare.split("::");
-  const left = head ? head.split(":") : [];
-  const right = bare.includes("::") ? (tail ? tail.split(":") : []) : [];
-  const groups = bare.includes("::")
-    ? [...left, ...Array(8 - left.length - right.length).fill("0"), ...right]
-    : left;
-  return `${groups
-    .slice(0, 4)
-    .map((g) => g.toLowerCase().replace(/^0+(?=.)/, ""))
-    .join(":")}::/64`;
 }
 
 function reply(res: ServerResponse, status: number, body: unknown): void {

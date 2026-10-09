@@ -607,7 +607,7 @@ async function startAgentUrl(
   const agent = new RemoteAgent({
     gateway,
     sandbox,
-    transport: { kind: "url", url, secret },
+    transport: { kind: "url", url, secret, registration: "local" },
     mode,
     name: values.name ?? "remote/url",
     episodeTimeoutMs,
