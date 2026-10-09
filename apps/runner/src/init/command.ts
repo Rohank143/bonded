@@ -31,6 +31,9 @@ On yes it writes them and adds @bondedhq/sdk with your package manager.
   --url                also add an Agent URL route (Next.js, Express, Hono, or a node:http server)
   --env                append the new variables' names, with empty values, to .env
   --skip-install       don't add @bondedhq/sdk
+  --overwrite-generated
+                       rewrite files init wrote before even if you edited them (the diff shows
+                       what goes). Without it, an edited file is kept
 
 Connect right after (optional). With a runner token and the gateway, init starts the runner
 with the agent command after -- (or your package.json start script) and, once it is connected,
@@ -91,6 +94,7 @@ export async function initCommand(argv: string[], io: InitIO): Promise<number> {
         url: { type: "boolean", default: false },
         env: { type: "boolean", default: false },
         "skip-install": { type: "boolean", default: false },
+        "overwrite-generated": { type: "boolean", default: false },
         token: { type: "string" },
         gateway: { type: "string" },
         mode: { type: "string", default: "tools" },
@@ -121,7 +125,10 @@ export async function initCommand(argv: string[], io: InitIO): Promise<number> {
   }
   const root = resolve(io.cwd, positionals[0] ?? ".");
   const project = detectProject(root, values.framework as Framework | undefined);
-  const plan = planInit(project, { url: values.url });
+  const plan = planInit(project, {
+    url: values.url,
+    overwriteGenerated: values["overwrite-generated"],
+  });
   printPlan(project, plan, io.out);
 
   const install = values["skip-install"] ? [] : plan.install;

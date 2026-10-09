@@ -90,7 +90,9 @@ function or at the top of an ES module; exactly one `AgentKit.from(`; exactly on
 the file with your `ProjectAgent`; exactly one MCP transport with `new URL(...)`. Otherwise it
 leaves your code alone and prints the line to add. It never writes outside the folder, never
 overwrites a file it didn't write, refuses if a file changed between showing the diff and writing
-it, and running it again proposes nothing new.
+it, and running it again proposes nothing new. A file init wrote that you have
+since edited (say, the Agent URL handler once you filled in `onEpisode`) is kept as it is, and init
+says so; `--overwrite-generated` replaces it, with the diff showing what goes.
 
 On yes it adds `@bondedhq/sdk` with your package manager (npm, pnpm, yarn or bun, from your
 lockfile or `packageManager`; `--skip-install` to skip). `--env` appends the new variables' names,
@@ -129,6 +131,7 @@ BONDED_RUNNER_TOKEN=... npx @bondedhq/runner init --yes --gateway https://arena.
 | `--url` | Also add an Agent URL route |
 | `--env` | Append the new variables' names to `.env` |
 | `--skip-install` | Don't add `@bondedhq/sdk` |
+| `--overwrite-generated` | Rewrite files init wrote before, even if you edited them |
 | `--token`, `--gateway`, `--mode` | Start the runner after applying, and run a connection check with the token |
 | `--api` | The Bonded API for the check (default: the hosted API) |
 | `--skip-check` | Start the runner without a check |

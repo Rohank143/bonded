@@ -344,6 +344,44 @@ describe("initCommand", () => {
     expect(t.out.join("\n")).toMatch(/must be https/);
   });
 
+  it("keeps a generated file you edited: a rerun, plain or --yes, never deletes your onEpisode", async () => {
+    const dir = copy("express-ai-sdk");
+    const handler = join(dir, "src/bonded-agent-url.ts");
+    expect(await initCommand(["--url", "--yes", "--skip-install"], io(dir).io)).toBe(0);
+    // Implement the handler, keeping init's header line.
+    const implemented = readFileSync(handler, "utf8").replace(
+      /throw new Error\([^\n]*\);/,
+      "return { finalMessage: `ran ${episode.task.goal}` };",
+    );
+    expect(implemented).toContain("return { finalMessage");
+    writeFileSync(handler, implemented);
+
+    const plain = io(dir, [true]);
+    expect(await initCommand(["--url"], plain.io)).toBe(0);
+    expect(readFileSync(handler, "utf8")).toBe(implemented);
+    expect(plain.out.join("\n")).toMatch(/Kept your edited file src\/bonded-agent-url.ts/);
+    expect(plain.out.join("\n")).not.toMatch(/wrote src\/bonded-agent-url.ts/);
+
+    const yes = io(dir);
+    expect(await initCommand(["--url", "--yes", "--skip-install"], yes.io)).toBe(0);
+    expect(readFileSync(handler, "utf8")).toBe(implemented);
+    expect(yes.out.join("\n")).toMatch(/Kept your edited file src\/bonded-agent-url.ts/);
+
+    // Only on request, and the diff shows what goes.
+    const overwrite = io(dir);
+    expect(
+      await initCommand(
+        ["--url", "--yes", "--skip-install", "--overwrite-generated"],
+        overwrite.io,
+      ),
+    ).toBe(0);
+    expect(overwrite.out.join("\n")).toContain(
+      "-      return { finalMessage: `ran ${episode.task.goal}` };",
+    );
+    expect(overwrite.out).toContain("wrote src/bonded-agent-url.ts");
+    expect(readFileSync(handler, "utf8")).not.toContain("return { finalMessage");
+  });
+
   it("uses the command after -- over the start script", () => {
     const p = detectProject(fixture("langchain"));
     expect(agentCommand(p, ["node", "a.js"])).toEqual(["node", "a.js"]);

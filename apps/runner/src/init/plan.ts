@@ -28,9 +28,17 @@ export interface InitPlan {
 export interface PlanOptions {
   /** Also add an Agent URL route for the project's web framework. */
   url?: boolean;
+  /**
+   * Rewrite files init wrote before even when they were edited since (the diff shows what goes).
+   * Off by default: an edited file is kept.
+   */
+  overwriteGenerated?: boolean;
 }
 
-/** The first line of every file `init` writes, so a second run knows it may rewrite it. */
+/**
+ * The first line of every file `init` writes, so a second run knows the file is init's. It is
+ * rewritten only while it still holds exactly what init would write (or with --overwrite-generated).
+ */
 export const MARKER = "// Added by `bonded-runner init`";
 const GUIDE = "https://github.com/ddboy19912/bonded/blob/main/docs/BRING-YOUR-OWN-AGENT.md";
 
@@ -46,7 +54,7 @@ export function planInit(project: Project, options: PlanOptions = {}): InitPlan 
     env: [],
     install: project.hasSdk || project.framework === "python" ? [] : ["@bondedhq/sdk"],
   };
-  const files = new Files(project);
+  const files = new Files(project, options);
 
   if (project.framework === "python") {
     pythonPlan(plan);
@@ -110,7 +118,10 @@ export function planInit(project: Project, options: PlanOptions = {}): InitPlan 
 
 class Files {
   private readonly pending = new Map<string, string>();
-  constructor(readonly project: Project) {}
+  constructor(
+    readonly project: Project,
+    private readonly options: PlanOptions = {},
+  ) {}
 
   /** The text of a project file as it will be after the changes so far. */
   read(path: string): string | undefined {
@@ -125,7 +136,11 @@ class Files {
     return posix.join(this.project.sourceDir, `${name}.${ext}`);
   }
 
-  /** Proposes a new file, or rewrites one `init` wrote before. Someone else's file is left alone. */
+  /**
+   * Proposes a new file, or rewrites one `init` wrote before while it is unchanged. Someone
+   * else's file is left alone, and so is init's own once it was edited (unless
+   * --overwrite-generated): init can't tell an edit from an older template, so it keeps both.
+   */
   write(plan: InitPlan, path: string, text: string, why: string): boolean {
     const before = this.read(path);
     if (before !== undefined && !before.startsWith(MARKER)) {
@@ -133,6 +148,12 @@ class Files {
         `${path} already exists and wasn't written by init, so it was left alone. The file init would write is printed with --print; add it under another name.`,
       );
       return false;
+    }
+    if (before !== undefined && before !== text && !this.options.overwriteGenerated) {
+      plan.notes.push(
+        `Kept your edited file ${path}: it differs from what init writes now. To replace it, run init again with --overwrite-generated (the diff shows what would go).`,
+      );
+      return true;
     }
     this.change(plan, path, text, why);
     return true;
