@@ -1,5 +1,6 @@
 import type { RemoteMode } from "@bonded/shared";
 import { ApiError, type RunnerRecord } from "./api";
+import { isLocal } from "../config";
 import { SURFACE_LABELS } from "./byoa";
 import type {
   AgentUrlInfo,
@@ -116,7 +117,9 @@ export function duration(seconds: number): string {
 export function refusal(error: unknown, nowMs = Date.now()): string | undefined {
   if (!(error instanceof ApiError)) return undefined;
   const retryAt = typeof error.details.retryAt === "string" ? error.details.retryAt : undefined;
-  const position = typeof error.details.position === "number" ? error.details.position : undefined;
+  // The API puts a waiting rating's place in `queue.position` (how many are ahead of it).
+  const queue = error.details.queue as { position?: unknown } | undefined;
+  const position = typeof queue?.position === "number" ? queue.position : undefined;
   if (error.status === 429 && retryAt) {
     const wait = waitFor(retryAt, nowMs);
     if (/preview/i.test(error.message) && /wallet|today|daily|per day/i.test(error.message))
@@ -127,10 +130,11 @@ export function refusal(error: unknown, nowMs = Date.now()): string | undefined 
   return undefined;
 }
 
-/** Where a waiting preview stands. */
-export function queueLine(position: number): string {
-  if (position <= 1) return "Previews are busy; you're next in line.";
-  return `Previews are busy; ${position - 1} ${position === 2 ? "is" : "are"} ahead of you. It starts on its own.`;
+/** Where a waiting preview stands: `ahead` is how many ratings will run before it. */
+export function queueLine(ahead: number): string {
+  if (ahead <= 0) return "It's next: it starts in a moment.";
+  if (ahead === 1) return "Previews are busy; you're next in line.";
+  return `Previews are busy; ${ahead} are ahead of you. It starts on its own.`;
 }
 
 /** What to do about a problem the check found. The problem itself is the API's sentence. */
@@ -160,7 +164,9 @@ export function problemAdvice(problem: string, connection: Connection): string |
     return "Answer the POST straight away and keep working after replying; call done before the deadline.";
   if (p.includes("tls") || p.includes("certificate"))
     return "Your URL's certificate wasn't accepted. It needs a valid public certificate.";
-  if (p.includes("mode"))
+  if (/\bmodel usage\b|\busage\b/.test(p))
+    return "Send your model's usage with done ({ inputTokens, outputTokens, costUsd }) and the estimate shows what a rating costs you.";
+  if (/\bmode\b/.test(p))
     return "Start the runner in the mode you chose here (add --mode chain for chain mode).";
   return undefined;
 }
@@ -253,7 +259,11 @@ export function progressText(p: RatingProgress | undefined): string {
 }
 
 /** An Agent URL must be public https. The API checks again, more strictly, when it connects. */
-export function agentUrlError(text: string): string | null {
+export function agentUrlError(
+  text: string,
+  /** The local demo: its API accepts plain http on this machine, so the page does too. */
+  options: { allowLoopback?: boolean } = { allowLoopback: isLocal },
+): string | null {
   const t = text.trim();
   if (!t) return "Paste your agent's URL.";
   let url: URL;
@@ -262,6 +272,8 @@ export function agentUrlError(text: string): string | null {
   } catch {
     return "That isn't a URL. It looks like https://my-agent.example.com/bonded.";
   }
+  const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname.toLowerCase());
+  if (options.allowLoopback && loopback && ["http:", "https:"].includes(url.protocol)) return null;
   if (url.protocol !== "https:") return "It must start with https://.";
   if (url.username || url.password) return "Leave the user name and password out of the URL.";
   const host = url.hostname.toLowerCase();

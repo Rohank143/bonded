@@ -127,7 +127,7 @@ describe("Estimate", () => {
     );
     expect(await screen.findByText(/About 19 min for 56 episodes/)).toBeTruthy();
     expect(screen.getByText(/didn't report its usage/)).toBeTruthy();
-    expect(screen.getByText(/An estimate, from your connection check chk-1/)).toBeTruthy();
+    expect(screen.getByText(/An estimate, from your last connection check/)).toBeTruthy();
   });
   it("says it needs a passing check, and nothing when not asked for", async () => {
     vi.spyOn(byoaApi, "estimate").mockRejectedValue(new ApiError(409, "no passing check"));

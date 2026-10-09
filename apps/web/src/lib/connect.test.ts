@@ -125,11 +125,11 @@ describe("refusals", () => {
     expect(refusal(e, NOW)).toBe("10 checks an hour per wallet. Try again in 20 min.");
   });
   it("says where a queued preview stands", () => {
-    expect(refusal(new ApiError(409, "busy", { position: 1 }), NOW)).toBe(
+    expect(refusal(new ApiError(409, "busy", { queue: { position: 1 } }), NOW)).toBe(
       "Previews are busy; you're next in line.",
     );
-    expect(queueLine(3)).toBe("Previews are busy; 2 are ahead of you. It starts on its own.");
-    expect(queueLine(2)).toMatch(/1 is ahead/);
+    expect(queueLine(0)).toBe("It's next: it starts in a moment.");
+    expect(queueLine(2)).toBe("Previews are busy; 2 are ahead of you. It starts on its own.");
   });
   it("leaves other errors to the usual message", () => {
     expect(refusal(new ApiError(500, "boom"), NOW)).toBeUndefined();
@@ -146,6 +146,12 @@ describe("problem advice", () => {
     ["It read 2 of 9 surfaces; unread ones are scored as untested", "runner", /Read every source/],
     ["The runner isn't connected", "runner", /Start the runner/],
     ["Your URL answered 404", "url", /2xx within 10 seconds/],
+    [
+      "It didn't report its model usage at /done, so a cost estimate can give time only",
+      "url",
+      /usage with done/,
+    ],
+    ["The runner is connected in the wrong mode: chain", "runner", /--mode chain/],
     ["Your URL answered 401: check your agent secret", "url", /bonded_as_/],
     ["Your URL didn't answer within 10 seconds", "url", /reply within 10 seconds/],
   ] as const)("%s (%s)", (problem, connection, advice) => {
@@ -235,6 +241,9 @@ describe("inputs", () => {
     ])
       expect(agentUrlError(`https://${host}/x`)).toMatch(/use the runner/);
     expect(agentUrlError(" https://agent.example.com/bonded ")).toBeNull();
+    // The local demo's API takes an agent on this machine.
+    expect(agentUrlError("http://127.0.0.1:8811", { allowLoopback: true })).toBeNull();
+    expect(agentUrlError("http://10.0.0.1:8811", { allowLoopback: true })).toMatch(/https/);
   });
   it("checks the webhook and email, both optional", () => {
     expect(webhookError("")).toBeNull();

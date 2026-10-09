@@ -285,6 +285,27 @@ export function ConnectUrl({
       setBusy(false);
     }
   };
+  // Saved but not yet verified: the agent needed its secret first. Challenge it again.
+  const reverify = async () => {
+    if (!registered) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await byoaApi.reverifyAgentUrl(subject, auth, registered.url);
+      setRegistered({
+        ...registered,
+        verified: r.verified,
+        verifiedAt: new Date().toISOString(),
+        version: r.version,
+        problem: null,
+      });
+      await onChanged();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
   const failure = error instanceof ApiError && error.status < 500 ? error.message : undefined;
   const advice = failure ? problemAdvice(failure, "url") : undefined;
   const shown = registered ?? status.agentUrl;
@@ -329,6 +350,27 @@ export function ConnectUrl({
             does it for you.
           </p>
         </form>
+      ) : registered && registered.verified === false ? (
+        <div className="flex flex-col gap-2 rounded-2xl border border-warn/30 bg-warn-soft p-4">
+          <p className="flex flex-wrap items-center gap-2">
+            <Badge tone="warn" dot>
+              Saved, not verified yet
+            </Badge>
+            <span className="font-mono text-xs break-all">{registered.url}</span>
+          </p>
+          <p className="text-xs text-soft">
+            {registered.problem ? `${registered.problem}. ` : ""}Give your agent the secret below
+            (as BONDED_AGENT_SECRET), restart it, then verify.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" loading={busy} onClick={() => void reverify()}>
+              {busy && !auth.session ? "Sign in your wallet…" : "Verify it now"}
+            </Button>
+            <Button size="sm" kind="ghost" onClick={() => setEditing(true)}>
+              Change the URL
+            </Button>
+          </div>
+        </div>
       ) : (
         shown && (
           <div className="flex flex-col gap-2 rounded-2xl border border-safe/30 bg-safe-soft p-4">

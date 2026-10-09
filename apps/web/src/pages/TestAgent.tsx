@@ -115,6 +115,8 @@ export function TestAgent() {
     enabled: Boolean(session && previewId),
     retry: (n, e) => !(e instanceof ApiError && e.status < 500) && n < 2,
     // Fast while waiting for a runner or a URL, slower once it's rating.
+    // Also in a background tab: the steps move on when the runner connects or the rating ends.
+    refetchIntervalInBackground: true,
     refetchInterval: (q) =>
       q.state.data && FINISHED.includes(q.state.data.status)
         ? false
@@ -123,6 +125,12 @@ export function TestAgent() {
           : 4_000,
   });
   const run = useRatingRun(preview.data?.ratingId ?? undefined);
+  // The list beside the steps follows the open preview's status.
+  const openStatus = preview.data?.status;
+  const refetchList = previews.refetch;
+  useEffect(() => {
+    if (openStatus) void refetchList();
+  }, [openStatus, refetchList]);
 
   // A session the API no longer accepts: back to signing in, saying why.
   const authError = [previews.error, preview.error].find(
@@ -427,7 +435,7 @@ export function TestAgent() {
                   {blockedLine && <p className="text-warn">{blockedLine}</p>}
                   {!blocked && (allowance.data?.queued ?? 0) > 0 && (
                     <p className="text-xs text-muted">
-                      {queueLine(allowance.data!.queued + 1)} Official ratings go first.
+                      {queueLine(allowance.data!.queued)} Official ratings go first.
                     </p>
                   )}
                   {status?.connection === "runner" && !status.runner?.connected && (
@@ -536,6 +544,9 @@ export function TestAgent() {
                         }
                       >
                         {PREVIEW_STATUS[x.status]}
+                        {x.status === "done" && x.rating?.score !== undefined
+                          ? ` · ${x.rating.score}`
+                          : ""}
                       </Badge>
                     </span>
                     {x.id === previewId ? (

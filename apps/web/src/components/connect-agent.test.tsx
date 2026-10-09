@@ -451,4 +451,39 @@ describe("ConnectAgent", () => {
       ),
     );
   });
+
+  it("keeps a URL saved before its agent had the secret, and verifies it once it does", async () => {
+    vi.spyOn(api, "runner").mockResolvedValue(runnerRecord({ connection: "url" }));
+    vi.spyOn(byoaApi, "registerAgentUrl").mockResolvedValue({
+      url: "https://agent.example/bonded",
+      verified: false,
+      verifiedAt: null,
+      version: null,
+      secret: "bonded_as_first",
+      codeHash: null,
+      problem: "Your URL answered 401: check your agent secret",
+    });
+    const again = vi
+      .spyOn(byoaApi, "reverifyAgentUrl")
+      .mockResolvedValue({ verified: true, version: "v2", codeHash: null });
+    signedIn();
+    show();
+    fireEvent.change(await screen.findByLabelText("Your agent's URL"), {
+      target: { value: "https://agent.example/bonded" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Verify it" }));
+    expect(await screen.findByText("Saved, not verified yet")).toBeTruthy();
+    expect(screen.getByText("bonded_as_first")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Verify it now" }));
+    await waitFor(() =>
+      expect(again).toHaveBeenCalledWith(
+        { kind: "agent", agentId: "12" },
+        expect.objectContaining({ session: "bonded_ss_owner" }),
+        "https://agent.example/bonded",
+      ),
+    );
+    expect(await screen.findByText(/reporting version v2/)).toBeTruthy();
+    // The secret stays on screen until the page moves on.
+    expect(screen.getByText("bonded_as_first")).toBeTruthy();
+  });
 });

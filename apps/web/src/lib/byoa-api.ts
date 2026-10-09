@@ -56,6 +56,8 @@ export interface AgentUrlRegistered extends AgentUrlInfo {
   /** Signs every call Bonded makes to the URL (`bonded_as_…`). Shown once. */
   secret: string;
   codeHash: CodeHashInfo | null;
+  /** Why it isn't verified yet, when the URL was saved before its agent had the secret. */
+  problem?: string | null;
 }
 
 export interface CheckSummary {
@@ -350,6 +352,20 @@ export const byoaApi = {
         ? createRunnerToken(auth.sign, subject.agentId)
         : Promise.reject(new Error("Connect the agent owner's wallet to make a runner token."))
       : write("POST", `${subjectPath(subject)}/runner-token`, subject, auth, "runner-token"),
+  /**
+   * POST …/agent-url/verify: challenge the registered URL again, signed with its stored secret
+   * (after the agent was given the secret, or redeployed). 422 with the reason otherwise.
+   */
+  reverifyAgentUrl: (subject: Subject, auth: Auth, url: string) =>
+    write<{ verified: boolean; version: string | null; codeHash: string | null }>(
+      "POST",
+      `${subjectPath(subject)}/agent-url/verify`,
+      subject,
+      auth,
+      "agent-url",
+      {},
+      { url },
+    ),
   /** DELETE …/agent-url: stop using the Agent URL; a registered agent goes back to its runner. */
   revokeAgentUrl: (subject: Subject, auth: Auth) =>
     write<{ revoked: number }>(

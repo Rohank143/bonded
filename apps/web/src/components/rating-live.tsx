@@ -41,7 +41,7 @@ export function Estimate({
           <p>{estimateLines(estimate.data).time}</p>
           <p className="text-muted">{estimateLines(estimate.data).cost}</p>
           <p className="text-xs text-muted">
-            An estimate, from your {estimate.data.basis}. Attacked episodes can take longer.
+            An estimate, from your last connection check. Attacked episodes can take longer.
           </p>
         </>
       ) : (

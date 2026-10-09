@@ -17,6 +17,8 @@ export function useRatingRun(runId: string | undefined, intervalMs = 5000) {
     queryFn: () => api.run(runId!),
     enabled: Boolean(runId),
     refetchInterval: (q) => (finished(q.state.data?.status) ? false : intervalMs),
+    // Keep following in a background tab, so the browser notification can say it finished.
+    refetchIntervalInBackground: true,
   });
   const refreshedFor = useRef<string | undefined>(undefined);
   const status = run.data?.status;
