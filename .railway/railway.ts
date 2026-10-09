@@ -1,7 +1,7 @@
 import { defineRailway, github, postgres, preserve, project, service, volume } from "railway/iac";
 
 // Bonded's Railway project. One Docker image runs as three services; ROLE selects what each does.
-// See docs/SERVICES.md. Signing keys and the API token are secrets set in Railway, never here:
+// See docs/DEVELOPING.md ("Deploying"). Signing keys and the API token are secrets set in Railway, never here:
 // preserve() keeps the value already stored on Railway.
 export default defineRailway(() => {
   const repo = github("ddboy19912/bonded", { branch: "main", checkSuites: false });
@@ -19,7 +19,7 @@ export default defineRailway(() => {
     DATABASE_URL: Postgres.env.DATABASE_URL,
     RPC_URL: "https://rpc.testnet.chain.robinhood.com/rpc",
     DEPLOYMENT_FILE: "contracts/evm/deployments/46630.json",
-    // Complete set of agents the worker may rate; see docs/SERVICES.md.
+    // Complete set of agents the worker may rate; see docs/AGENTS.md.
     AGENTS_FILE: "config/agents.46630.json",
   };
   const role = (deploy: { healthcheckPath?: string; healthcheckTimeout?: number }) => ({

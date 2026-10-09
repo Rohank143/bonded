@@ -152,7 +152,7 @@ cd contracts/evm && forge test --match-path 'test/module/*'   # the module, diff
 
 The parity tests run Bonded's scripted vulnerable, hardened and partial agents through the gateway over MCP, over HTTP and in chain mode, and require the same verdict as in-process, episode by episode. The SDK's Solana tests need the programs built (`pnpm solana:build`) and `solana-test-validator`; without them they skip.
 
-`pnpm demo -- --byo` runs the whole hosted flow on your machine: the gateway, a runner token made through the API, the real runner with `examples/byo-agent`, and a rating; and an Enforce-mode module on the ERC-7579 reference account, rated and insured. It also runs the connection-check and preview lanes, with an ephemeral `AGENT_URL_SECRET_KEY` and plain-http Agent URLs allowed on this machine, so the **Test your agent** page works against it at http://localhost:5180/agents/test.
+`pnpm demo -- --byo` runs the whole hosted flow on your machine: the gateway, a runner token made through the API, the real runner with `examples/byo-agent`, a connection check, and a rating; and an Enforce-mode module on the ERC-7579 reference account, rated and insured. It also runs the connection-check and preview lanes, with an ephemeral `AGENT_URL_SECRET_KEY` and plain-http Agent URLs allowed on this machine (loopback, e.g. `http://127.0.0.1:8080/`), so the **Test your agent** page works against it, through a runner or an Agent URL, at http://localhost:5180/agents/test.
 
 To run a local API outside the demo with Agent URLs pointing at this machine, set `AGENT_URL_SECRET_KEY` (`openssl rand -hex 32`) and `AGENT_URL_ALLOW_LOOPBACK=1`. Never set the second on a hosted service.
 

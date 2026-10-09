@@ -47,7 +47,7 @@ Everything on this page is built and tested in the repository. Some of it isn't 
 | `MandateModule` and its factory | Not deployed on any testnet: modules need a new CoverManager, ClaimsEngine and DisputeModule, so a full redeployment of the protocol ([AUDIT.md](AUDIT.md#addendum-mandatemodule)). Onboarding says "Not deployed on this chain yet" | Use a Mandate Vault, or try the module locally (`pnpm demo -- --byo` creates, installs, rates and insures one) |
 | Mandate Vaults, cover, and self-serve ratings of Bonded's built-in agent designs | Live on Robinhood Chain testnet | |
 
-## Test your agent in 15 minutes
+## Test your agent for free
 
 The **Test your agent** page (`/agents/test` in the web app) takes you from nothing to a preview report. You need a browser wallet (to sign in, not to pay: a preview costs you nothing on chain) and your agent, either reachable at a public HTTPS address or able to run next to the runner.
 
@@ -68,16 +68,16 @@ flowchart LR
    - **Runner**: a small program next to your agent connects out to Bonded and starts your agent command once per episode. Use it when your agent isn't on a public address (your laptop, a private network) or is a command rather than a server.
    - **Tools** or **chain** mode: whether your agent trades through tool calls (tools) or signs its own vault transactions (chain). Tools mode fits most agents.
 3. **Connect it** ([Connect your agent](#connect-your-agent)).
-   - Agent URL: paste the URL, copy the agent secret (`bonded_as_...`, shown once) into your agent, then press verify. Bonded sends a signed challenge your agent must answer with a proof only the secret's holder can make.
+   - Agent URL: paste the URL, copy the agent secret (`bonded_as_...`, shown once) into your agent, then press verify. Bonded sends a signed challenge your agent must answer with the challenge and its proof, an HMAC-SHA256 of it keyed with the secret, which only the secret's holder can make. Lost the secret? **Get a new secret** keeps the URL; verify again after.
    - Runner: the page makes a runner token and gives you the command (Node or Docker). Start it where your agent runs; the page shows it connected.
    - The page has copy-paste snippets for your framework ([Use your framework](#use-your-framework)).
 4. **Check the connection.** One benign episode with no attack, run straight away and streamed live: each tool call, each transaction, the agent's exit, then what to fix in plain sentences ([The connection check](#the-connection-check)). A preview can't start without a passing check of exactly this connection in the last 24 hours.
 5. **Read the estimate.** From the check: about how long the preview takes, and what your own model will cost, if your agent reported its usage when it finished ([Progress, estimates and notifications](#progress-estimates-and-notifications)).
-6. **Start the preview rating.** It runs every published attack once, a held-out set made for it alone, and 6 controls, shuffled ([Previews](#previews)). The page shows progress (episodes done of the total, and an ETA) and can notify you by browser notification, webhook or email when it ends.
+6. **Start the preview rating.** It runs each published attack once (an official rating runs each three times), plus a fresh held-out set made for it alone and 6 controls, shuffled ([Previews](#previews)). The page shows its state (waiting, "Setting up the sandbox", running), then progress (episodes done of the total, and an ETA) and can notify you by browser notification, webhook or email when it ends.
 7. **Read the report**: the score and tier, per-class results, what your agent read and didn't, and liveness. It is labelled "Preview: not on chain, not insurable".
 8. **Make it official** when you want a score on chain and cover: onboarding opens with your preview's choices filled in ([Official ratings](#official-ratings)).
 
-**How long it takes.** Steps 1 to 5 take minutes. The preview itself is up to 56 episodes with today's library ([Previews](#previews)), so its length is mostly your agent's: 15 minutes holds for an agent that finishes an episode in about 15 seconds. The estimate in step 5 gives your own figure. A preview's time budget is 40 seconds an episode, about 37 minutes for 56 episodes, and never more than 45 minutes; an agent that takes longer than that is stopped ([Previews](#previews)).
+**How long it takes.** Connecting and checking take minutes. The preview itself is mostly your agent's time: the page shows the API's plan before you start (with today's library, up to 56 episodes and a budget of 40 seconds an episode, never more than 45 minutes), and the estimate in step 5 gives your own agent's figure from its check. An agent that runs past the budget is stopped ([Previews](#previews)).
 
 ## Connect your agent
 
@@ -126,7 +126,7 @@ sequenceDiagram
 Check the HMAC over the raw bytes as received (not re-encoded JSON), compare in constant time, refuse a timestamp more than 300 seconds from your clock, and refuse a signature you have accepted before (a replay). Answer `401` to anything that fails. `createBondedHandler` (below), `verifyAgentUrlRequest` in `@bonded/shared`, and the Python example all do this.
 
 **Register, then verify.** Two steps, because your agent needs its secret before it can answer the challenge:
-1. Save the URL (on the **Test your agent** page, or the agent's page). Bonded makes the agent secret, `bonded_as_` and 32 random bytes, and shows it **once**. It is stored only encrypted (AES-256-GCM under the service's `AGENT_URL_SECRET_KEY`), never logged and never returned again. Setting a new URL makes a new secret and the old URL stops working.
+1. Save the URL (on the **Test your agent** page, or the agent's page). Bonded makes the agent secret, `bonded_as_` and 32 random bytes, and shows it **once**. It is stored only encrypted (AES-256-GCM under the service's `AGENT_URL_SECRET_KEY`), never logged and never returned again. Setting a new URL makes a new secret and the old URL stops working. Lost the secret? **Get a new secret** (`POST …/agent-url/secret`) keeps the URL and shows a new secret once; the old one stops working at once (there is no overlap, since a lost secret may be in someone else's hands), so put the new one in your agent, verify again and run a new check.
 2. Put the secret in your agent (for example `BONDED_AGENT_SECRET`), deploy, and press **Verify**. Bonded sends the verify challenge. Until a verify passes, the URL can't be used for a check or a rating. Verify again after a redeploy to report a new version.
 
 **Limits.**
@@ -278,7 +278,7 @@ A rating records which code it rated. You don't have to type a code hash: the ru
 | `unpinned` | Nothing better: the command line and the bytes of its entry file (the first argument that is a file, up to 8 MiB). Labelled: set a commit or image digest instead | keccak256 of `"unpinned:"`, the command line as JSON, a newline and the file's bytes |
 | `url` (shown as "the version your agent reported") | The `version` in your Agent URL's verify answer | keccak256 of `"url:<version>"` |
 
-The runner tries them in that order, from `flag` down. The git label needs the repository that holds the entry file to track it; an untracked entry file falls through to `unpinned`. The runner prints what it chose when it starts: `[bonded-runner] code hash 0x… (git: <commit>)`.
+The runner tries them in that order, from `flag` down. The git label needs the repository that holds the entry file to track it; an untracked entry file falls through to `unpinned`. The runner prints what it chose when it starts: `[bonded-runner] code hash 0x… (git: <commit>)`, and sends what it was made from as `codeDetail` (the commit for git, the digest for image). The API shows it as `codeHash.detail` (for an Agent URL, the version), next to `source` and who reported it.
 
 An official rating needs a code hash: an Agent URL that reports no `version` can't be rated officially unless you register one. A preview can run without one.
 
@@ -494,7 +494,7 @@ A check is one episode with a benign task in a benign world and **no attack**, n
 
 A check passes when there are no problems: your agent was reached, called tools, finished on its own, did the trade its task names, and broke no rule doing it. Warnings never fail a check.
 
-**A rating needs one.** A preview, or an official rating you ask for, can only be queued with a passing check of the **same connection**: the same mode, runner token or Agent URL, and code hash, finished in the last 24 hours. Otherwise the API refuses: "Run a connection check first: a rating needs a passing check of this exact connection (the same runner token or Agent URL, mode and code) in the last 24 hours." A new runner token, a new URL or new code means a new check.
+**A rating needs one.** A preview, or an official rating you ask for, can only be queued with a passing check of the **same connection**: the same mode, runner token or Agent URL, and code hash, finished in the last 24 hours. Otherwise the API refuses: "Run a connection check first: a rating needs a passing check of this exact connection (the same runner token or Agent URL, mode and code) in the last 24 hours." A new runner token, a new URL, a new agent secret or new code means a new check.
 
 **Problems, and what to do.** The sentences are the ones the check returns.
 
@@ -523,7 +523,7 @@ A check passes when there are no problems: your agent was reached, called tools,
 
 | Problem | What to do |
 |---|---|
-| Your URL answered 401 (or 403): check that your agent uses the agent secret Bonded gave you | Use the `bonded_as_...` secret you were shown to check `bonded-signature`. Setting a new URL makes a new secret |
+| Your URL answered 401 (or 403): check that your agent uses the agent secret Bonded gave you | Use the `bonded_as_...` secret you were shown to check `bonded-signature`. Lost it? Get a new secret, then verify again |
 | Your URL answered N | Check the URL and that your server is up: it must answer with a 2xx (200 for verify) |
 | Your URL answered N to the check; it must be 200 | Answer verify with status 200 |
 | Your URL answered the check, but not with JSON | Answer verify with JSON: `{ "challenge", "proof", "version"? }` |
@@ -556,7 +556,7 @@ A check passes when there are no problems: your agent was reached, called tools,
 
 A preview is a rating of your agent with nothing to commit: it belongs to your wallet, not to an on-chain agent. No vault, no bond, no registration, no tokens.
 
-**What it runs.** The same judge and scoring model as an official rating of an operator-run agent, on a fork of the live chain:
+**What it runs.** A shorter rating, scored the same way: each published attack once (an official rating runs each three times), plus a fresh held-out set and 6 controls, with the same judge and scoring model as an official rating of an operator-run agent, on a fork of the live chain:
 
 | | Preview | Where it comes from |
 |---|---|---|
@@ -583,7 +583,7 @@ One run of each attack against three for an official rating means fewer trials, 
 
 A refusal says when you can try again. Bonded pays for previews in compute, which is why they are capped this tightly. Your agent's own model calls are yours.
 
-**Its states.** `created` (made, not yet checked), `checking` (a check is running), `ready` (a check passed), `queued` (waiting its turn; the page shows how many are ahead), `running`, `done`, `failed` (it stopped, with the reason), `refused` (it ran but liveness refused it: not attested even if it were official) and `stopped` (you stopped it: a queued rating is cancelled, and its runner token and Agent URL stop working; a running one can't be stopped and ends at its first failed episode).
+**Its states.** `created` (made, not yet checked), `checking` (a check is running), `ready` (a check passed), `queued` (waiting its turn; the page shows how many are ahead), `starting` ("Setting up the sandbox": a fresh chain, its vault and the attacks made for this preview), `running`, `done`, `failed` (it stopped, with the reason), `refused` (it ran but liveness refused it: not attested even if it were official) and `stopped` (you stopped it: a queued rating is cancelled, and its runner token and Agent URL stop working; a running one can't be stopped and ends at its first failed episode).
 
 **Make it official.** "Make it official" on the report opens onboarding with your preview's choices filled in: your own agent, its mode, how it connects (the Agent URL, or the runner) and a code hash if you declared one (a reported one stays automatic). You then register the agent, create its vault (or choose a module) and stake its bond. The official rating always runs again, from scratch and attested. The preview's runner token and Agent URL belong to the preview, so the registered agent gets its own and needs its own passing check. The preview's report stays linked to the agent.
 
@@ -737,14 +737,14 @@ An episode where your agent did nothing, or did its task without looking, tests 
 
 ## Progress, estimates and notifications
 
-**The estimate**, before you start. From your latest passing check, extrapolated to the rating's episode count: `{ episodes, perEpisode: { toolCalls, seconds, costUsd?, inputTokens?, outputTokens? }, total: { seconds, costUsd?, ... }, basis: "connection check <id>", usageReported, note }`. It is labelled an estimate, with its assumptions in `note`:
+**The estimate**, before you start. From the passing check of your connection as it is now (the one a rating would need), extrapolated to the rating's episode count: `{ episodes, perEpisode: { toolCalls, seconds, costUsd?, inputTokens?, outputTokens? }, total: { seconds, costUsd?, ... }, basis: "connection check <id>", usageReported, note }`. It is labelled an estimate, with its assumptions in `note`:
 - it comes from one benign episode, and attacked episodes can take more or less;
 - if your agent didn't report usage at `/done`, it gives time only;
 - if it reported tokens but no `costUsd`, it gives tokens only: multiply by your model's price.
 
 Bonded doesn't pay for your model calls and doesn't limit them.
 
-**Progress**, while it runs: `{ done, total, etaSeconds, startedAt, status }`. Counts and an ETA only: **no verdicts, breach counts or score until the rating has finished**, because you control your agent live and could adapt to which episodes are attacks. The ETA is the average time per episode so far times the episodes left. The page shows "41 of 56 episodes, about 9 min left"; the stream is `GET /ratings/:id/progress` (below).
+**Progress**, while it runs: `{ done, total, etaSeconds, startedAt, status }`. A rating (official or preview) goes from `queued` to `starting` (setting up the sandbox, its vault and the held-out set) to `running`. Counts and an ETA only: **no verdicts, breach counts or score until the rating has finished**, because you control your agent live and could adapt to which episodes are attacks. The ETA is the average time per episode so far, measured from the first episode (not the setup), times the episodes left. The page shows "41 of 56 episodes, about 9 min left"; the stream is `GET /ratings/:id/progress` (below).
 
 **Notifications** when a preview or an official rating of your agent finishes, fails or is refused. Sending never blocks or fails a rating, and each outcome is sent once.
 
@@ -771,12 +771,13 @@ Everything the pages do is plain HTTP, for scripts. Two ways to authenticate:
 | `POST`/`DELETE /previews/:id/runner-token` | A preview's runner token, shown once; or revoke it |
 | `POST /previews/:id/rate` | Queue the preview's rating (needs a passing check) |
 | `GET /previews/:id/report` | The labelled report: `{ label, attested: false, insurable: false, report }` |
-| `POST`/`GET`/`DELETE …/agent-url`, `POST …/agent-url/verify` | Set (secret returned once), read, revoke and verify the Agent URL of a preview (`/previews/:id`) or a registered agent (`/self/agents/:id`) |
+| `POST`/`GET`/`DELETE …/agent-url`, `POST …/agent-url/verify`, `POST …/agent-url/secret` | Set (secret returned once), read, revoke and verify the Agent URL of a preview (`/previews/:id`) or a registered agent (`/self/agents/:id`); get a new secret for the same URL (returned once; the old one stops at once, and the URL must be verified again) |
 | `POST`/`GET …/checks` | Run a connection check, or list the last 10 |
 | `GET /checks/:id`, `GET /checks/:id/events` | A check, and its live events as server-sent events (from the start or `Last-Event-ID`; the stream ends after the result) |
-| `GET …/estimate` | The cost estimate from the latest passing check |
+| `GET …/estimate` | The cost estimate from the passing check of this connection as it is now; without one, 409 "Run a connection check of this connection first: the estimate comes from it." |
 | `GET`/`PUT …/notifications`, `GET`/`PUT /self/notifications`, `POST /self/notifications/webhook-secret` | Notification settings (`{ webhookUrl?, email? }`, null clears) |
-| `POST /streams/token` | A token for `?token=`, good for one check's or rating's stream for 5 minutes (a browser's `EventSource` can't send headers) |
+| `GET /previews/:id/events` | A preview's status as server-sent events, each time it changes: `{ status, ratingId, reason, queue, progress }` (progress is counts and ETA only). It ends when the preview is over, or after 10 quiet minutes, and the client reconnects |
+| `POST /streams/token` | `{ checkId }`, `{ runId }` or `{ previewId }`: a token for `?token=`, good for that one check's, rating's or preview's stream for 5 minutes (a browser's `EventSource` can't send headers) |
 | `GET /ratings/:id/progress` | A rating's progress as server-sent events: counts and ETA only; it ends with the rating (or after 10 quiet minutes, and the client reconnects) |
 | `POST /self/agents` | Register (with `kind: "remote"`, `mode`, `connection?`, `codeHash?`, `tee?`, `protection?`, `previewId?`), signed by the agent's owner. A TEE is refused in tool mode or with an Agent URL |
 | `GET /self/agents/:id` | The registration, cover caps, the expected rating (`maxEpisodes`, `budgetSeconds`), the reported code and the agent's standing (superseded score, cooldown) |
@@ -799,9 +800,9 @@ pnpm build
 ```
 
 **The web flow, locally.** `pnpm demo -- --byo` runs the usual demo, then:
-- registers `examples/byo-agent` as an operator's own agent, makes its runner token through the API, starts the real runner and rates it through a local gateway;
+- registers `examples/byo-agent` as an operator's own agent, makes its runner token through the API, starts the real runner, runs a connection check through the check lane, and rates it through a local gateway;
 - protects a smart account (the ERC-7579 reference account) with an Enforce-mode module, then rates and insures it;
-- keeps running connection checks and previews asked for in the web app at http://localhost:5180 (Agent URLs may be plain http on this machine, with a secret key made for the run);
+- keeps running connection checks and previews asked for in the web app at http://localhost:5180, through a runner or an Agent URL (Agent URLs may be plain http on this machine, such as `http://127.0.0.1:8080/`, with a secret key made for the run);
 - prints both agents' pages.
 
 **The Arena CLI, with a runner.** Terminal 1 starts a local chain with the protocol deployed and a local Arena Gateway, then waits for your runner:
