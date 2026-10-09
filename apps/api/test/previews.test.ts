@@ -184,8 +184,8 @@ async function connect(token: string, mode: "tools" | "chain" = "tools", codeHas
       runnerVersion: "0.2.0",
       protocol: 1,
       mode,
-      ...(codeHash ? { codeHash, codeSource: "git" } : {}),
-    } as never,
+      ...(codeHash ? { codeHash: codeHash as `0x${string}`, codeSource: "git" as const } : {}),
+    },
   });
   await presence.flush();
   return identity;
@@ -1619,7 +1619,7 @@ describe("one sign-in for the agent page, local Agent URLs, and code details", (
         codeHash: hash(0xd1),
         codeSource: "git",
         codeDetail: "4f2a9c1",
-      } as never,
+      },
     });
     await presence.flush();
     expect(
