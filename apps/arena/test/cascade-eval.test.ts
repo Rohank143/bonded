@@ -131,3 +131,33 @@ it("stops paid scoring when cost is unknown or the cap is exceeded", async () =>
     scoreCascadeDataset([row("0")], primary, unknown, identity, { maxUsd: 1 }),
   ).rejects.toThrow(/report cost/);
 });
+
+it("retries a failed call, records every attempt and reports the retries", async () => {
+  const primary = { name: "laya", assess: async () => answer(0.1) };
+  let calls = 0;
+  const flaky = {
+    name: "llm",
+    assess: async () => {
+      calls++;
+      if (calls === 1) throw new Error("provider dropped the request");
+      return answer(0.1, 0.01);
+    },
+  };
+  const s = await scoreCascadeDataset([row("0")], primary, flaky, identity, { maxUsd: 1 });
+  expect(s.cases[0]!.llm).not.toBeNull();
+  expect(s.cases[0]!.attempts).toEqual({ primary: 1, llm: 2 });
+  expect(compareCascade(s, policy).retries).toMatchObject({ primary: 0, llm: 1 });
+
+  const down = {
+    name: "llm",
+    assess: async () => {
+      throw new Error("provider down");
+    },
+  };
+  const failed = await scoreCascadeDataset([row("0")], primary, down, identity, {
+    maxUsd: 1,
+    retries: 1,
+  });
+  expect(failed.cases[0]!.llm).toBeNull();
+  expect(failed.cases[0]!.attempts).toEqual({ primary: 1, llm: 2 });
+});
