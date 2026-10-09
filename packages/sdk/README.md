@@ -55,6 +55,9 @@ while `BONDED_VAULT_ADDRESS` isn't set, so the same code runs before the agent h
 throws `BondedError` (`CONFIG`) naming every missing or malformed variable. These names differ from
 the `BONDED_*` variables the runner sets for an episode, and the runner removes `BONDED_AGENT_KEY`
 and `BONDED_VAULT_ADDRESS` from a rated agent's environment, so a rating never trades real funds.
+If they come back anyway (a `.env` file reloaded with `node --env-file` or dotenv), it still returns
+`undefined` while the process is rated (a Bonded episode's variables are set) and warns once, and a
+production vault built earlier refuses to send (`BondedError` `RATED_PRODUCTION_VAULT`).
 `bonded-runner init` writes the code that uses it.
 
 ### Mandate modules on smart accounts

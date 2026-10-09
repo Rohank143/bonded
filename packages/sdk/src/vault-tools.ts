@@ -22,7 +22,14 @@ import {
   type TokenInfo,
 } from "./guarded.js";
 import type { EpisodeToolResult, ToolInputSchema } from "./mcp.js";
-import { type ActionResult, BondedVault } from "./vault.js";
+import {
+  type ActionResult,
+  BondedVault,
+  isRatedProcess,
+  markProductionVault,
+  ratedProductionVaultError,
+  refuseProductionVaultWhileRated,
+} from "./vault.js";
 
 export interface BondedVaultToolsOptions {
   /** The vault (or module), with the agent key to send from and a `router` for swaps. */
@@ -135,6 +142,8 @@ const DESCRIPTIONS: Record<BondedVaultToolName, string> = {
  * `bondedVaultLangChainTools` and `bondedVaultAiSdkTools` wrap these for their frameworks.
  */
 export function bondedVaultTools(options: BondedVaultToolsOptions): BondedVaultTool[] {
+  // While rated, the production vault's tools are refused outright: use the episode's tools.
+  refuseProductionVaultWhileRated(options.vault, "bondedVaultTools");
   const guard = options.guard ?? true;
   const tokens = tokenBook(options);
   // Sentinel sees symbols and whole units: the configured tokens, else the mandate's.
@@ -249,6 +258,7 @@ export function bondedVaultTools(options: BondedVaultToolsOptions): BondedVaultT
     inputSchema: SCHEMAS[name],
     call: async (args = {}, context) => {
       try {
+        refuseProductionVaultWhileRated(options.vault, name);
         const output = await run(name, args, context);
         return { ok: true, output, text: JSON.stringify(output) };
       } catch (error) {
@@ -356,13 +366,21 @@ async function tokenInfo(vault: BondedVault, address: Address): Promise<TokenInf
  * | `BONDED_VAULT_RPC_URL` | Default: the chain's public RPC |
  * | `BONDED_ROUTER_ADDRESS` | The swap venue your mandate allows (Bonded's `DemoRouter` on testnet) |
  *
- * These are different from the `BONDED_*` variables the runner sets for an episode, so a rating
- * never trades the production vault.
+ * These are different from the `BONDED_*` variables the runner sets for an episode, and the
+ * runner removes them from a rated agent's environment. If they come back anyway (a `.env` file
+ * reloaded with `node --env-file` or dotenv), this still returns undefined while the process is
+ * rated, and warns once: a rating never trades the production vault.
  */
 export function bondedVaultFromEnv(
   env: Record<string, string | undefined> = typeof process === "undefined" ? {} : process.env,
 ): BondedVault | undefined {
   const vault = env.BONDED_VAULT_ADDRESS?.trim();
+  // A rated process never builds the production vault, even when its variables are back (a
+  // .env file reloaded with `node --env-file` or dotenv): undefined, as if they weren't set.
+  if (isRatedProcess(env) || isRatedProcess()) {
+    if (vault || env.BONDED_AGENT_KEY?.trim()) warnRatedOnce();
+    return undefined;
+  }
   if (!vault) return undefined;
   const problems: string[] = [];
   if (!isAddress(vault, { strict: false })) problems.push("BONDED_VAULT_ADDRESS isn't an address");
@@ -381,7 +399,7 @@ export function bondedVaultFromEnv(
   if (router && !isAddress(router, { strict: false }))
     problems.push("BONDED_ROUTER_ADDRESS isn't an address");
   if (problems.length) throw new BondedError("CONFIG", problems.join("; "));
-  return new BondedVault({
+  const built = new BondedVault({
     vault: vault as Address,
     chain: defineChain({
       id: chainId,
@@ -393,4 +411,12 @@ export function bondedVaultFromEnv(
     account: privateKeyToAccount(key as Hex),
     ...(router ? { router: router as Address } : {}),
   });
+  return markProductionVault(built);
+}
+
+let warnedRated = false;
+function warnRatedOnce(): void {
+  if (warnedRated) return;
+  warnedRated = true;
+  console.warn(`[bonded] ${ratedProductionVaultError("bondedVaultFromEnv").message}`);
 }

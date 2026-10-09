@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/bonded.mjs
-@@ -0,0 +1,14 @@
+@@ -0,0 +1,17 @@
 +// Added by `bonded-runner init`: Bonded's rating check and guarded Mandate Vault. Edit it freely.
 +// Guide: https://github.com/ddboy19912/bonded/blob/main/docs/BRING-YOUR-OWN-AGENT.md
 +import { bondedVaultFromEnv, guarded, isBondedEpisode } from "@bondedhq/sdk";
@@ -8,11 +8,14 @@
 +/** True while Bonded rates the agent: use the episode's tools (BONDED_MCP_URL, BONDED_TOOLS_URL) then. */
 +export const rated = isBondedEpisode();
 +
-+const vault = bondedVaultFromEnv();
++// While Bonded rates the agent, the production vault is never built, even if a .env file put its
++// variables back: rated trades go through the episode's tools only.
++const vault = rated ? undefined : bondedVaultFromEnv();
 +
 +/**
 + * In production with BONDED_VAULT_ADDRESS set: your Mandate Vault, every write dry-run first and
 + * refused on a predicted breach. Trade with `await bondedVault.swap({ tokenIn, tokenOut, amountIn })`.
++ * Undefined while Bonded rates the agent.
 + */
 +export const bondedVault = vault ? guarded(vault) : undefined;
 

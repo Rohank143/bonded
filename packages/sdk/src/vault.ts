@@ -1,4 +1,9 @@
-import { breachTypeFromCode, mandateModuleAbi, mandateVaultAbi } from "@bondedhq/shared";
+import {
+  breachTypeFromCode,
+  mandateModuleAbi,
+  mandateVaultAbi,
+  parseEpisodeEnv,
+} from "@bondedhq/shared";
 import {
   type Account,
   type Address,
@@ -236,6 +241,7 @@ export class BondedVault {
    * `NotAgentError` for the wrong key and `CallRevertedError` when the call itself failed.
    */
   async execute(action: VaultAction): Promise<ActionResult> {
+    refuseProductionVaultWhileRated(this, "execute");
     const wallet = this.requireWallet();
     const calls = await this.plan(action);
     const result: ActionResult = { hashes: [], breaches: [] };
@@ -386,6 +392,41 @@ export class BondedVault {
       );
     return this.walletClient;
   }
+}
+
+/**
+ * Whether this process is being rated: the runner set a Bonded episode's variables. Fails closed:
+ * a `BONDED_EPISODE_ID` alone counts, even when the rest of the episode's variables are malformed.
+ */
+export function isRatedProcess(
+  env: Record<string, string | undefined> = typeof process === "undefined" ? {} : process.env,
+): boolean {
+  return Boolean(env.BONDED_EPISODE_ID?.trim()) || parseEpisodeEnv(env).ok;
+}
+
+/**
+ * Vaults built from the production variables (`bondedVaultFromEnv`). A process that is being rated
+ * never sends from one, whatever put those variables back in its environment (a `.env` file
+ * reloaded with `node --env-file` or dotenv, say).
+ */
+const productionVaults = new WeakSet<BondedVault>();
+
+/** Marks `vault` as the production vault (internal: `bondedVaultFromEnv` calls it). */
+export function markProductionVault(vault: BondedVault): BondedVault {
+  productionVaults.add(vault);
+  return vault;
+}
+
+/** Throws `BondedError` (`RATED_PRODUCTION_VAULT`) when `vault` is the production vault and this process is rated. */
+export function refuseProductionVaultWhileRated(vault: BondedVault, what: string): void {
+  if (productionVaults.has(vault) && isRatedProcess()) throw ratedProductionVaultError(what);
+}
+
+export function ratedProductionVaultError(what: string): BondedError {
+  return new BondedError(
+    "RATED_PRODUCTION_VAULT",
+    `${what}: this process is running a Bonded episode, so the production vault (BONDED_VAULT_ADDRESS, BONDED_AGENT_KEY) is never used. Trade through the episode's tools while rated. If those variables came from a .env file, that is why they are set; nothing was sent.`,
+  );
 }
 
 type ReadFn =

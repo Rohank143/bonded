@@ -1,24 +1,27 @@
 --- /dev/null
 +++ b/src/bonded.ts
-@@ -0,0 +1,19 @@
+@@ -0,0 +1,22 @@
 +// Added by `bonded-runner init`: Bonded's rating hook and Mandate Vault plugin. Edit it freely.
 +// Guide: https://github.com/ddboy19912/bonded/blob/main/docs/BRING-YOUR-OWN-AGENT.md
 +import { bondedVaultFromEnv, isBondedEpisode } from "@bondedhq/sdk";
 +import { bondedEpisodePlugin, bondedPlugin } from "@bondedhq/sdk/eliza";
 +
-+const vault = bondedVaultFromEnv();
++// While Bonded rates the agent, the production vault is never built, even if a .env file put its
++// variables back: rated trades go through the episode's tools only.
++const rated = isBondedEpisode();
++const vault = rated ? undefined : bondedVaultFromEnv();
 +
 +/**
 + * Bonded's plugin, for your agent's plugins:
++ * - while Bonded rates the agent: the episode's tools;
 + * - in production with BONDED_VAULT_ADDRESS set: BONDED_SWAP, BONDED_TRANSFER and BONDED_APPROVE
-+ *   through your Mandate Vault (each dry-run first) and the BONDED_VAULT provider; while Bonded
-+ *   rates the agent it swaps them for the episode's tools by itself;
-+ * - without a vault: the episode's tools while Bonded rates the agent, and nothing otherwise.
++ *   through your Mandate Vault (each dry-run first) and the BONDED_VAULT provider;
++ * - otherwise: nothing.
 + */
-+export const bondedPlugins = vault
-+  ? [bondedPlugin({ vault })]
-+  : isBondedEpisode()
-+    ? [bondedEpisodePlugin()]
++export const bondedPlugins = rated
++  ? [bondedEpisodePlugin()]
++  : vault
++    ? [bondedPlugin({ vault })]
 +    : [];
 
 --- a/src/index.ts

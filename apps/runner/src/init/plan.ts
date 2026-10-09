@@ -524,6 +524,10 @@ function mountRoute(
 
 const header = (what: string) => `${MARKER}: ${what}. Edit it freely.\n// Guide: ${GUIDE}\n`;
 
+/** Above every helper's production branch: why it is never reached while rated. */
+const RATED_COMMENT =
+  "// While Bonded rates the agent, the production vault is never built, even if a .env file put its\n// variables back: rated trades go through the episode's tools only.\n";
+
 function toolsHelper(framework: "langchain" | "ai-sdk", ts: boolean): string {
   const lc = framework === "langchain";
   const sub = lc ? "langchain" : "ai-sdk";
@@ -594,19 +598,20 @@ function elizaHelper(ts: boolean): string {
   return `${header("Bonded's rating hook and Mandate Vault plugin")}import { bondedVaultFromEnv, isBondedEpisode } from "@bondedhq/sdk";
 import { bondedEpisodePlugin, bondedPlugin } from "@bondedhq/sdk/eliza";
 
-const vault = bondedVaultFromEnv();
+${RATED_COMMENT}const rated = isBondedEpisode();
+const vault = rated ? undefined : bondedVaultFromEnv();
 
 /**
  * Bonded's plugin, for your agent's plugins:
+ * - while Bonded rates the agent: the episode's tools;
  * - in production with BONDED_VAULT_ADDRESS set: BONDED_SWAP, BONDED_TRANSFER and BONDED_APPROVE
- *   through your Mandate Vault (each dry-run first) and the BONDED_VAULT provider; while Bonded
- *   rates the agent it swaps them for the episode's tools by itself;
- * - without a vault: the episode's tools while Bonded rates the agent, and nothing otherwise.
+ *   through your Mandate Vault (each dry-run first) and the BONDED_VAULT provider;
+ * - otherwise: nothing.
  */
-export const bondedPlugins = vault
-  ? [bondedPlugin({ vault })]
-  : isBondedEpisode()
-    ? [bondedEpisodePlugin()]
+export const bondedPlugins = rated
+  ? [bondedEpisodePlugin()]
+  : vault
+    ? [bondedPlugin({ vault })]
     : [];
 `;
 }
@@ -619,11 +624,12 @@ export function bondedMcpUrl(productionUrl${ts ? ": string | URL" : ""})${ts ? "
   return isBondedEpisode() ? process.env.BONDED_MCP_URL${ts ? "!" : ""} : productionUrl;
 }
 
-const vault = bondedVaultFromEnv();
+${RATED_COMMENT}const vault = isBondedEpisode() ? undefined : bondedVaultFromEnv();
 
 /**
  * In production with BONDED_VAULT_ADDRESS set: your Mandate Vault, every write dry-run first and
  * refused on a predicted breach. Trade with \`await bondedVault.swap({ tokenIn, tokenOut, amountIn })\`.
+ * Undefined while Bonded rates the agent.
  */
 export const bondedVault = vault ? guarded(vault) : undefined;
 `;
@@ -636,11 +642,12 @@ function unknownHelper(ts: boolean): string {
 /** True while Bonded rates the agent: use the episode's tools (BONDED_MCP_URL, BONDED_TOOLS_URL) then. */
 export const rated = isBondedEpisode();
 
-const vault = bondedVaultFromEnv();
+${RATED_COMMENT}const vault = rated ? undefined : bondedVaultFromEnv();
 
 /**
  * In production with BONDED_VAULT_ADDRESS set: your Mandate Vault, every write dry-run first and
  * refused on a predicted breach. Trade with \`await bondedVault.swap({ tokenIn, tokenOut, amountIn })\`.
+ * Undefined while Bonded rates the agent.
  */
 export const bondedVault = vault ? guarded(vault) : undefined;
 `;

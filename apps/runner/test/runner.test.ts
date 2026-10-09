@@ -1,4 +1,13 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,8 +22,18 @@ import {
 import { type WebSocket, WebSocketServer } from "ws";
 import { afterEach, describe, expect, it } from "vitest";
 import { backoffDelay, gatewayUrlProblem, Runner, type RunnerOptions, Tail } from "../src/index.js";
+import { applyPlan } from "../src/init/apply.js";
+import { detectProject } from "../src/init/detect.js";
+import { planInit } from "../src/init/plan.js";
 
 const TOKEN = "runner-test-token-123456";
+
+/** A production vault's variables, as an agent's .env holds them (test values: Anvil's second key). */
+const PRODUCTION_VAULT = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+const PRODUCTION_KEY = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
+/** The SDK (built: tests run after `^build`) and dotenv, linked into a test agent's node_modules. */
+const SDK_DIR = realpathSync(join(import.meta.dirname, "../node_modules/@bondedhq/sdk"));
+const DOTENV_DIR = realpathSync(join(import.meta.dirname, "../node_modules/dotenv"));
 
 /**
  * Timing: these tests spawn real processes and sockets, which a loaded machine (the full pipeline,
@@ -222,6 +241,70 @@ describe("the runner", { timeout: TEST_MS }, () => {
       delete process.env.BONDED_VAULT_ADDRESS;
     }
   });
+
+  it.each([
+    ["node --env-file=.env", (agent: string) => [process.execPath, "--env-file=.env", agent]],
+    ["dotenv", (agent: string) => [process.execPath, agent, "dotenv"]],
+  ])(
+    "an agent that reloads its .env (%s) still can't get the production vault's signer",
+    async (_, command) => {
+      // An agent project, as init leaves it: its .env holds the production vault's variables.
+      const dir = mkdtempSync(join(tmpdir(), "bonded-runner-dotenv-"));
+      stops.push(async () => rmSync(dir, { recursive: true, force: true }));
+      writeFileSync(join(dir, "package.json"), '{ "name": "agent", "type": "module" }\n');
+      writeFileSync(
+        join(dir, ".env"),
+        `BONDED_VAULT_ADDRESS=${PRODUCTION_VAULT}\nBONDED_AGENT_KEY=${PRODUCTION_KEY}\n`,
+      );
+      mkdirSync(join(dir, "node_modules/@bondedhq"), { recursive: true });
+      symlinkSync(SDK_DIR, join(dir, "node_modules/@bondedhq/sdk"), "dir");
+      symlinkSync(DOTENV_DIR, join(dir, "node_modules/dotenv"), "dir");
+      applyPlan(dir, planInit(detectProject(dir)));
+      expect(readFileSync(join(dir, "bonded.js"), "utf8")).toContain("bondedVaultFromEnv");
+      writeFileSync(
+        join(dir, "agent.mjs"),
+        `if (process.argv[2] === "dotenv") (await import("dotenv")).default.config({ quiet: true });
+const sdk = await import("@bondedhq/sdk");
+const helper = await import("./bonded.js");
+console.log(JSON.stringify({
+  reloaded: process.env.BONDED_AGENT_KEY === "${PRODUCTION_KEY}",
+  rated: sdk.isBondedEpisode(),
+  fromEnv: sdk.bondedVaultFromEnv() ?? null,
+  helperRated: helper.rated,
+  helperVault: helper.bondedVault ?? null,
+}));
+`,
+      );
+      const { gateway } = await setup({ command: command("agent.mjs"), cwd: dir });
+      gateway.send(
+        episode({
+          contracts: {
+            exchange: "0x000000000000000000000000000000000000bEEF",
+            tokens: [
+              {
+                symbol: "tUSDG",
+                address: "0x1111111111111111111111111111111111111111",
+                decimals: 6,
+              },
+            ],
+          },
+        }),
+      );
+      await eventually(() => gateway.of("episode_done").length === 1);
+      const done = gateway.of("episode_done")[0]!;
+      expect(done.exitCode, done.stderrTail).toBe(0);
+      expect(JSON.parse(done.stdoutTail!)).toEqual({
+        // The .env put the production key back in the agent's environment...
+        reloaded: true,
+        rated: true,
+        // ...but neither the SDK nor init's helper builds a vault (a signer) from it while rated.
+        fromEnv: null,
+        helperRated: true,
+        helperVault: null,
+      });
+      expect(done.stderrTail).toMatch(/running a Bonded episode, so the production vault/);
+    },
+  );
 
   it("reports a failing agent's exit code and the last 4 KB of its output", async () => {
     const { gateway } = await setup({
