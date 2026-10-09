@@ -17,7 +17,14 @@ import type { Hex } from "viem";
 
 /** Through the operator's runner (its key), or by calling the agent's own HTTPS endpoint. */
 export type AgentConnection =
-  { kind: "runner"; key: string } | { kind: "url"; url: string; secret: string };
+  | { kind: "runner"; key: string }
+  | {
+      kind: "url";
+      url: string;
+      secret: string;
+      /** What it is registered to ("<chain>:<agent id>" or "preview:<id>"): its own rate limit. */
+      registration: string;
+    };
 
 /** What a connection check streams while it runs (docs/BRING-YOUR-OWN-AGENT.md). */
 export type ConnectionCheckEvent =

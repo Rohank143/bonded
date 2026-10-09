@@ -810,6 +810,14 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
       mode: k.mode,
       codeHash: k.codeHash,
       codeSource: k.codeSource,
+      // Never verified by Bonded: declared by the owner, or reported by the runner or agent.
+      codeReportedBy: !k.codeHash
+        ? null
+        : k.codeSource === "declared"
+          ? "owner"
+          : k.codeSource === "url-version"
+            ? "agent"
+            : "runner",
       result: k.result,
       startedAt: k.startedAt?.toISOString() ?? null,
       finishedAt: k.finishedAt?.toISOString() ?? null,

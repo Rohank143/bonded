@@ -788,7 +788,12 @@ describe("Agent URLs", () => {
           return passing(request);
         },
       });
-      expect(reached).toEqual({ kind: "url", url: "https://agent.example/bonded", secret });
+      expect(reached).toEqual({
+        kind: "url",
+        url: "https://agent.example/bonded",
+        secret,
+        registration: `preview:${preview.id}`,
+      });
       expect((await bodyOf(await get(`/checks/${check.checkId}`))).status).toBe("passed");
       const events = await (await get(`/checks/${check.checkId}/events`)).text();
       expect(events).not.toContain(secret);
@@ -895,7 +900,12 @@ describe("Agent URLs", () => {
       agentId: "preview:x",
       mode: "tools" as const,
       codeHash: hash(1),
-      connection: { kind: "url" as const, url: "https://a.example", secret: "s" },
+      connection: {
+        kind: "url" as const,
+        url: "https://a.example",
+        secret: "s",
+        registration: "preview:x",
+      },
     };
     const agent = factory(request, sandbox) as unknown as { transport: unknown };
     expect(agent.transport).toEqual(request.connection);
@@ -1276,13 +1286,24 @@ describe("round 2, as the web app calls it", () => {
     await pg.db.pool.query("UPDATE jobs SET status='failed' WHERE id=$1", [
       (await bodyOf(queued)).runId,
     ]);
-    const { bondedUrlFailure } = await import("../src/remote-agent.js");
-    expect(
-      bondedUrlFailure({ agentSummary: { finalMessage: "the agent's URL wasn't called: busy" } }),
-    ).toBe(true);
+    const { bondedUrlFailure, ratingFailure } = await import("../src/remote-agent.js");
+    const { AgentUrlUnavailableError } = await import("@bonded/arena");
+    // The gateway's own flag decides; what the agent's URL said never does.
+    expect(bondedUrlFailure({ agentSummary: { remote: { bondedProblem: "rate limit" } } })).toBe(
+      true,
+    );
     expect(
       bondedUrlFailure({ agentSummary: { finalMessage: "the agent's URL failed: 500" } }),
     ).toBe(false);
-    expect(bondedUrlFailure({ agentSummary: { remote: { urlCaused: "bonded" } } })).toBe(true);
+    expect(
+      bondedUrlFailure({ agentSummary: { finalMessage: "the agent's URL wasn't called" } }),
+    ).toBe(false);
+    // rateAgent stops such a rating with AgentUrlUnavailableError: retried, not charged.
+    expect(ratingFailure(new AgentUrlUnavailableError("stopped: Bonded couldn't call it"))).toEqual(
+      {
+        reason: "stopped: Bonded couldn't call it",
+        final: false,
+      },
+    );
   });
 });

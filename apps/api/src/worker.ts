@@ -345,7 +345,7 @@ async function runLocked(
           true,
         );
       }
-      reach = { kind: "url", url: live.url, secret };
+      reach = { kind: "url", url: live.url, secret, registration: row.agent_id };
     } else if (connection === "runner") reach = { kind: "runner", key: row.agent_id };
     // Reported code must still be what runs: a runner restarted with other code (or a URL that
     // now reports another version) isn't what this rating was queued for.

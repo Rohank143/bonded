@@ -308,6 +308,7 @@ async function reachFor(
       kind: "url",
       url: live.url,
       secret: secrets.decrypt(live.ciphertext, agentUrlContext(live.id)),
+      registration: key,
     };
   } catch {
     throw new RatingRefused("the Agent URL's secret can't be used; set the Agent URL again", true);
