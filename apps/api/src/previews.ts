@@ -576,7 +576,10 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
 
   // Agent URLs, checks, estimates and notification settings: for a preview or a registered agent.
 
-  /** Decrypt-free verification: send the challenge, signed with `secret`; the agent echoes it. */
+  /**
+   * Verification: send the `verify` challenge signed with `secret`; the agent must answer with the
+   * challenge and its proof (an HMAC of it with the same secret). The gateway's verifier checks it.
+   */
   async function challenge(url: string, secret: string, wallet: string) {
     let host: string;
     try {
@@ -704,7 +707,7 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
           codeHash: subject.declaredCode
             ? codeInfo({ hash: subject.declaredCode, source: "declared" })
             : codeInfo(
-                reported.codeHash ? { hash: reported.codeHash, source: "url-version" } : undefined,
+                reported.codeHash ? { hash: reported.codeHash, source: "url" } : undefined,
                 reported.version,
               ),
         });
@@ -850,9 +853,13 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
       `${base}/estimate`,
       handle(async (c) => {
         const subject = await ownedForRead(kind, c.req.param("id"), await reader(c));
-        const check = await db.latestPassingCheck(subject.key);
+        // The passing check of this connection as it is now, the one a rating would need.
+        const check = await db.passingCheck(subject.key, (await connectionNow(subject)).config);
         if (!check)
-          throw new Refused(409, "Run a connection check first: the estimate comes from it.");
+          throw new Refused(
+            409,
+            "Run a connection check of this connection first: the estimate comes from it.",
+          );
         const episodes =
           kind === "preview"
             ? previewPlan().episodes
@@ -901,7 +908,7 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
         ? null
         : k.codeSource === "declared"
           ? "owner"
-          : k.codeSource === "url-version"
+          : k.codeSource === "url"
             ? "agent"
             : "runner",
       result: k.result,

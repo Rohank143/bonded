@@ -795,7 +795,7 @@ describe("Agent URLs", () => {
         version: "v1.2.3",
         codeHash: {
           value: urlCodeHash("v1.2.3"),
-          source: "url-version",
+          source: "url",
           detail: "v1.2.3",
           reportedBy: "agent",
           label: "reported by the agent",
@@ -817,7 +817,7 @@ describe("Agent URLs", () => {
         verified: true,
         version: "v1.2.3",
       });
-      expect(page.code).toEqual({ hash: urlCodeHash("v1.2.3"), source: "url-version" });
+      expect(page.code).toEqual({ hash: urlCodeHash("v1.2.3"), source: "url" });
       // Its checks reach the agent by URL, with the secret, never the runner.
       let reached: unknown;
       const check = await bodyOf(await send("POST", `/previews/${preview.id}/checks`, {}, session));
@@ -1144,6 +1144,9 @@ describe("registered agents", () => {
     expect(estimate.perEpisode).not.toHaveProperty("costUsd");
     expect(estimate.total).not.toHaveProperty("costUsd");
     expect(estimate.note).toMatch(/didn't report its model usage/);
+    // The runner now runs other code: the check was of the old code, so there is no estimate.
+    await connect(token as string, "tools", hash(4));
+    expect((await get(`/previews/${preview.id}/estimate`, session)).status).toBe(409);
   });
 });
 
@@ -1245,7 +1248,7 @@ describe("round 2, as the web app calls it", () => {
       connection: "url",
       // Public: no URL, no check id.
       agentUrl: { configured: true, version: "v1.2.3", verifiedAt: expect.any(String) },
-      codeHash: { source: "url-version", reportedBy: "agent" },
+      codeHash: { source: "url", reportedBy: "agent" },
     });
     expect(JSON.stringify(runner)).not.toContain("bonded_as_");
     const check = await send(

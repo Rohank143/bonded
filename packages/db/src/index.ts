@@ -2029,7 +2029,7 @@ export class Database {
           [key],
         )
       ).rows[0];
-      return u?.code_hash ? { hash: u.code_hash, source: "url-version" } : undefined;
+      return u?.code_hash ? { hash: u.code_hash, source: "url" } : undefined;
     }
     const p = (
       await c.query(
@@ -2057,7 +2057,7 @@ export class Database {
       return {
         credentialId: u?.id ?? null,
         ready: Boolean(u?.verifiedAt),
-        code: u?.verifiedAt && u.codeHash ? { hash: u.codeHash, source: "url-version" } : undefined,
+        code: u?.verifiedAt && u.codeHash ? { hash: u.codeHash, source: "url" } : undefined,
       };
     }
     const token = (
@@ -2658,15 +2658,6 @@ export class Database {
         config.codeHash?.toLowerCase() ?? null,
         withinMs / 1000,
       ],
-    );
-    return r.rows[0] ? checkRow(r.rows[0]) : undefined;
-  }
-  /** The latest passing check of an agent or preview, whatever its connection. */
-  async latestPassingCheck(subject: string): Promise<ConnectionCheckRecord | undefined> {
-    const r = await this.pool.query(
-      `SELECT * FROM connection_checks WHERE subject=$1 AND status='passed'
-       ORDER BY finished_at DESC LIMIT 1`,
-      [subject],
     );
     return r.rows[0] ? checkRow(r.rows[0]) : undefined;
   }
