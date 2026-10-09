@@ -1,4 +1,4 @@
-import { type AttackSurface, surfaceTool } from "@bonded/shared";
+import { type AttackSurface, surfaceTool } from "@bondedhq/shared";
 import type { EpisodeResult } from "./episode.js";
 
 /**

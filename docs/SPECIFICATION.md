@@ -66,7 +66,7 @@ This is a fidelity (crime) policy for AI agents, the same established insurance 
 | **Cover** | Operator bond (first loss) + underwriting pool + parametric claims + dispute module | On-chain |
 | **Bonded Sentinel** | Per-action guard (T4 GPU: about 220 ms; CPU: about 2.5 s) on a fine-tuned Laya model. Advisory only; earns a premium discount | Off-chain service (GPU or CPU) |
 
-Supporting parts: TEE key custody, community attack bounties, public leaderboard, `@bonded/sdk`.
+Supporting parts: TEE key custody, community attack bounties, public leaderboard, `@bondedhq/sdk`.
 
 ### 3.3 Design principles
 
@@ -94,7 +94,7 @@ Supporting parts: TEE key custody, community attack bounties, public leaderboard
 
 1. The operator registers the agent: an ERC-8004 identity plus metadata (model family, framework, code hash).
 2. They write a **mandate** (allowed assets, contracts, destinations and limits) and choose Monitor or Enforce mode.
-3. They submit the agent to the Arena, either natively through `@bonded/sdk` or as a black box that accepts our RPC and data endpoints.
+3. They submit the agent to the Arena, either natively through `@bondedhq/sdk` or as a black box that accepts our RPC and data endpoints.
 4. The Arena runs about 200 episodes across 10 attack classes, with a live feed in the UI.
 5. Output: a Bonded Score, a per-class breakdown, expected loss and a premium quote. The signed attestation is posted to every chain's registry.
 6. The operator deploys a `MandateVault` through the factory and stakes the **operator bond** (at least 10% of the desired cover).
@@ -260,7 +260,7 @@ reconcile():                                 // permissionless; also runs before
 - The agent can never call the account or the module itself, in either mode.
 - The owner can move funds without passing through the module (a Safe owner's own `execTransaction` skips ERC-7579 hooks). The owner calls `sync()` afterwards; otherwise the next action records the drop as a Deferred breach and freezes the agent. That is why Deferred breaches on modules are not paid (Section 11.1).
 
-On a module, approving or transferring a token outside the asset list is also a T1 breach (a smart account usually holds other tokens; the vault keeps its rule); revoking an approval stays allowed on any token. An allowance the owner already gave an allowed contract on an unlisted token isn't protected, so `checkUnprotectedAllowances` (`@bonded/shared`, re-exported by the SDK) lists such allowances and the web app warns about them. The agent's key must not also be an owner, validator or ERC-1271 signer of the account, or it could sign approvals the account honours without any call through the module. The base asset must move exactly (no fee on transfer, no rebasing), because a premium counts only once it arrives in full. In Monitor mode a breaching call runs with the account's authority, which reaches further than a vault's (other installed modules, adapters that trust the account), and the payout would go to the account, whose owner could have asked for the breach: only Enforce-mode modules can hold cover (`ModuleMustEnforce`), and a module's disputes are paid only by the council's decision. Modules need a new CoverManager, ClaimsEngine and DisputeModule, so a chain gets them only through a full redeployment.
+On a module, approving or transferring a token outside the asset list is also a T1 breach (a smart account usually holds other tokens; the vault keeps its rule); revoking an approval stays allowed on any token. An allowance the owner already gave an allowed contract on an unlisted token isn't protected, so `checkUnprotectedAllowances` (`@bondedhq/shared`, re-exported by the SDK) lists such allowances and the web app warns about them. The agent's key must not also be an owner, validator or ERC-1271 signer of the account, or it could sign approvals the account honours without any call through the module. The base asset must move exactly (no fee on transfer, no rebasing), because a premium counts only once it arrives in full. In Monitor mode a breaching call runs with the account's authority, which reaches further than a vault's (other installed modules, adapters that trust the account), and the payout would go to the account, whose owner could have asked for the breach: only Enforce-mode modules can hold cover (`ModuleMustEnforce`), and a module's disputes are paid only by the council's decision. Modules need a new CoverManager, ClaimsEngine and DisputeModule, so a chain gets them only through a full redeployment.
 
 ### 6.4 Signed messages (EIP-712)
 
@@ -367,14 +367,14 @@ Reports say how many attacks the operator couldn't have studied in advance.
 
 | Adapter | How it works |
 |---|---|
-| **Native SDK** | The agent implements `ArenaAgent` from `@bonded/shared`; its tools route through the sandbox world. `vulnerable-agent` uses it |
+| **Native SDK** | The agent implements `ArenaAgent` from `@bondedhq/shared`; its tools route through the sandbox world. `vulnerable-agent` uses it |
 | **Black-box (bring your own agent)** | The agent runs on its operator's servers. A runner next to it starts it once per episode and gives it the episode's endpoints: tools over MCP or plain HTTP, and in chain mode an RPC endpoint and a session key for the episode's vault |
 | **Framework adapters** | ElizaOS plugin, Solana Agent Kit, Coinbase AgentKit templates |
 | **Decision-model agents** | Bots whose "brain" is Laya or Jev (typed decisions), wrapped with a trading loop. `DecisionModelAgent` behind a typed `DecisionModel` interface, running on any chat model until Laya is reachable |
 
 **Implementation.**
 - **Arena Gateway** (`apps/arena/src/gateway`, served by the `arena-worker`): one definition of the world (`AGENT_TOOLS`, the world simulator and the toolbox) served per episode behind a capability URL `/e/{t}/…` (32 random bytes): `mcp` (MCP over streamable HTTP), `tools` and `tools/{name}` (plain HTTP, described at `openapi.json`), `rpc` (chain mode only) and `done`. In tool mode the toolbox sends writes through the vault with the sandbox's key. In chain mode write tools aren't listed: the agent signs `MandateVault.execute(target, data)` itself, and the RPC proxy passes only an allowlist of standard reads plus raw transactions signed by the episode's key, to the episode's vault, with no ETH. Every tool call is logged with the attack surface it reads.
-- **Runner** (`apps/runner`, `@bonded/runner`): connects out to `/runner/connect` (WebSocket, https except to this machine) with a runner token (`bonded_rt_` and 32 random bytes; revoked whenever the agent is registered again, and valid only while its creator owns the agent), heartbeats every 15 s, reconnects with backoff, runs one episode at a time and stops the agent's process group (SIGTERM, then SIGKILL after 5 s) on cancel or deadline. The messages are zod schemas in `@bonded/shared` (`runner.ts`), used by both sides.
+- **Runner** (`apps/runner`, `@bondedhq/runner`): connects out to `/runner/connect` (WebSocket, https except to this machine) with a runner token (`bonded_rt_` and 32 random bytes; revoked whenever the agent is registered again, and valid only while its creator owns the agent), heartbeats every 15 s, reconnects with backoff, runs one episode at a time and stops the agent's process group (SIGTERM, then SIGKILL after 5 s) on cancel or deadline. The messages are zod schemas in `@bondedhq/shared` (`runner.ts`), used by both sides.
 - **`RemoteAgent`** implements `ArenaAgent`: it opens the episode at the gateway, sends it to the agent's runner and returns when the agent says it's done, exits or runs out of time (90 s in the rating service, 4 minutes by default elsewhere). Steps are the calls and transactions the gateway saw. `episode.ts`, `judge.ts` and `rate.ts` treat it like any other agent. Parity tests run the scripted vulnerable, hardened and partial agents through the gateway (MCP, HTTP and chain mode) and require the in-process verdicts, episode by episode.
 - **Binding.** The operator declares a code hash; a declared score attests how that code behaved under test, not what runs in production. A TEE binding needs chain mode (in tool mode the tool calls come from the runner, outside the TEE). The TEE derives a key for each rating (Bonded's TEE agent: `bonded/agent/v1/arena/<id>`) and attests it with evidence for `purpose=arena&key=<id>` under its own report-data domain; the episode's vault names that key, and a TEE that answers with its production key fails the rating, since the fork keeps the live chain id and a production signature there would be valid live. Every episode carries a fresh nonce; the runner forwards the TEE's evidence and the rating worker verifies it as in Section 12, against the operator's own compose hash, fetching the TEE URL over public https with no redirects. Every episode must show the same measurement and key, or the rating fails. Without a TEE the binding is "declared" (`teeMeasurement = 0`), and underwriting policy caps such an agent's cover lower (5,000 tUSDG against 20,000 when TEE-bound, configurable).
 - **What a rating runs.** The published library (`REMOTE_REPEATS`, 3 runs each by default), a held-out set made for that rating alone (up to one variant per class by default; model-drafted when a model is configured, otherwise deterministic rewrites; never reused, and its seed recorded), and 6 controls, shuffled together. The shared held-out set and accepted bounties are never run against an operator-run agent, since its operator sees everything it reads; so an accepted bounty doesn't re-rate one either. `HOSTED_REMOTE_PROFILE` holds these settings, and `pnpm arena rate --agent remote --profile hosted` runs them locally. Each episode has 90 s; the rating has 40 s per episode, at most 3 hours. Reports record, per surface, how many attack episodes planted content there and in how many the agent read it.
@@ -436,7 +436,7 @@ Bonded Score           S       = round(100 · e^(−EL / τ))              (τ =
 
 The λ values are illustrative priors. The model's inputs, not these numbers, are the product.
 
-**Implementation:** `scoreRating` in `@bonded/shared` implements this section and reproduces the table above.
+**Implementation:** `scoreRating` in `@bondedhq/shared` implements this section and reproduces the table above.
 - **A9's λ:** it isn't given here, so it's our assumption: 0.05 a year.
 - **Severity:** the larger of the measured loss and a prior set by the seeds' severity hints. In Enforce mode the prior is capped at per-trade cap ÷ vault value.
 
@@ -598,7 +598,7 @@ Storage is Postgres (Drizzle schema, SQL migrations that run on start); jobs run
 - Sends alerts to vault guardians.
 - **Restart-safe:** keeps a per-chain block cursor in Postgres and resumes from it, and checks on-chain state before filing, so a restart or sleep delays a claim but never loses or duplicates one. The contracts give it slack (7-day claim window, 3-day premium grace period), and `fileClaim` is permissionless, so a guardian can file if the keeper is down.
 
-### 14.3 SDK (`packages/sdk`, `@bonded/sdk`)
+### 14.3 SDK (`packages/sdk`, `@bondedhq/sdk`)
 
 TypeScript only (other languages connect to the Arena over MCP or HTTP). ESM, with framework plugins in subpath exports whose frameworks are optional peer dependencies.
 
@@ -609,7 +609,7 @@ TypeScript only (other languages connect to the Arena over MCP or HTTP). ESM, wi
 - **`buildMandate`**: plain rules to vault (or module) parameters and the mandate hash; the same builder the web app uses.
 - **`installMandateModule`**: the one batch that creates a module and installs it as executor and hook on a smart account.
 - **`fromBondedEnv`**: reads an Arena episode from the runner's `BONDED_*` environment.
-- **Plugins**: `@bonded/sdk/agentkit` (an AgentKit wallet provider whose every transaction goes through the vault), `@bonded/sdk/solana-agent-kit` (transfer and swap through the `bonded_vault` program, within what it checks), `@bonded/sdk/eliza` (`BONDED_SWAP`, `BONDED_TRANSFER`, `BONDED_APPROVE` and a vault-status provider).
+- **Plugins**: `@bondedhq/sdk/agentkit` (an AgentKit wallet provider whose every transaction goes through the vault), `@bondedhq/sdk/solana-agent-kit` (transfer and swap through the `bonded_vault` program, within what it checks), `@bondedhq/sdk/eliza` (`BONDED_SWAP`, `BONDED_TRANSFER`, `BONDED_APPROVE` and a vault-status provider).
 
 Tests run against anvil with the real contracts, and each plugin performs an allowed and a breaching action and checks the vault's breach log. An example agent is in `examples/byo-agent`: it reads every surface each episode, treats what it reads as untrusted data, and makes only the trade its task names.
 
@@ -639,7 +639,7 @@ Wallets: wagmi/viem (EVM) and Solana wallet adapter.
 | **Ethereum** | Sepolia | ERC-8004 registries (canonical if deployed, otherwise reference implementation) + BondedRegistry + a cover deployment |
 | **Solana** | Devnet | `bonded_vault`, `bonded_cover`, `bonded_registry` |
 
-**Testnet demo market.** The testnet deployment doesn't depend on third-party token or AMM addresses. `script/Deploy.s.sol` deploys its own market next to the protocol: tUSDG (6 decimals) and tTSLA/tAMZN/tNVDA (18 decimals, like Stock Tokens) with capped faucets, a `MockOracle`, and a `DemoRouter` that swaps at the oracle price minus 0.2%. Addresses are written to `contracts/evm/deployments/<chainId>.json` and read through `parseEvmDeployment` in `@bonded/shared`. `script/Smoke.s.sol` runs the full loop against any deployment; `pnpm demo:local` runs both on anvil.
+**Testnet demo market.** The testnet deployment doesn't depend on third-party token or AMM addresses. `script/Deploy.s.sol` deploys its own market next to the protocol: tUSDG (6 decimals) and tTSLA/tAMZN/tNVDA (18 decimals, like Stock Tokens) with capped faucets, a `MockOracle`, and a `DemoRouter` that swaps at the oracle price minus 0.2%. Addresses are written to `contracts/evm/deployments/<chainId>.json` and read through `parseEvmDeployment` in `@bondedhq/shared`. `script/Smoke.s.sol` runs the full loop against any deployment; `pnpm demo:local` runs both on anvil.
 
 **Robinhood Chain nuances.** Stock tokens are offered to non-US users. Agents that trade inside Robinhood *brokerage* accounts (the Trading MCP) are off-chain and custodial, so on-chain triggers can't see them.
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SENTINEL_HELD_OUT_CLASSES } from "@bonded/shared";
+import { SENTINEL_HELD_OUT_CLASSES } from "@bondedhq/shared";
 import type { SentinelModel } from "@bonded/demo-agents";
 import type { SentinelRow } from "../src/dataset.js";
 import {

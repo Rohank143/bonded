@@ -1,5 +1,5 @@
 {
-  "name": "@bonded/solana",
+  "name": "@bondedhq/solana",
   "version": "0.1.0",
   "description": "TypeScript client for the Bonded Solana programs: IDLs, addresses, account decoding and instructions.",
   "license": "MIT",

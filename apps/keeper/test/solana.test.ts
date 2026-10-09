@@ -1,4 +1,4 @@
-import type { Policy, Vault } from "@bonded/solana";
+import type { Policy, Vault } from "@bondedhq/solana";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { expect, it } from "vitest";
 import { parseSolanaKey, type SolanaClaimChain, SolanaKeeper } from "../src/solana.js";

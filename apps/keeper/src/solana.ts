@@ -8,7 +8,7 @@ import {
   fileClaimInstruction,
   type Policy,
   type Vault,
-} from "@bonded/solana";
+} from "@bondedhq/solana";
 import {
   Connection,
   Keypair,

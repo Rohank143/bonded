@@ -4,7 +4,7 @@ import { EvmMandate, type MandateMode } from "./schemas/mandate.js";
 /**
  * A mandate in the units people think in: dollars, percentages and function signatures. One
  * builder turns these rules into the canonical mandate for the web app's onboarding and for
- * `@bonded/sdk`, so a vault created from either hashes the same rules the same way.
+ * `@bondedhq/sdk`, so a vault created from either hashes the same rules the same way.
  */
 export interface EvmMandateRules {
   chainId: number;

@@ -1,11 +1,11 @@
 import type { Hono } from "hono";
 import type { Database } from "@bonded/db";
-import { CLASS_GROUPS, estimateObservedRates, type ObservedRates } from "@bonded/shared";
+import { CLASS_GROUPS, estimateObservedRates, type ObservedRates } from "@bondedhq/shared";
 
 /**
  * GET /stats/observed-rates: breaches production vaults recorded, per agent-year of rated
  * exposure, against what the published priors predict (`estimateObservedRates` in
- * @bonded/shared). Every rate comes with its counts and exposure. Pricing keeps the published
+ * @bondedhq/shared). Every rate comes with its counts and exposure. Pricing keeps the published
  * priors until the documented threshold is met; the response says whether it is.
  */
 export function observedRatesRoute(

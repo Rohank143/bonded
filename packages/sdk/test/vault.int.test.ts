@@ -1,5 +1,5 @@
 import { ANVIL_KEYS } from "@bonded/sandbox";
-import { mandateVaultAbi, testTokenAbi } from "@bonded/shared";
+import { mandateVaultAbi, testTokenAbi } from "@bondedhq/shared";
 import { parseUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";

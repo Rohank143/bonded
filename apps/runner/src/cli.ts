@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createRequire } from "node:module";
 import { parseArgs } from "node:util";
-import { AgentMode } from "@bonded/shared";
+import { AgentMode } from "@bondedhq/shared";
 import { Runner } from "./runner.js";
 import { gatewayUrlProblem } from "./tail.js";
 

@@ -12,7 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@bonded/shared": "workspace:*",
+    "@bondedhq/shared": "workspace:*",
     "@codemirror/lang-yaml": "6.1.3",
     "@fontsource-variable/jetbrains-mono": "5.3.0",
     "@fontsource-variable/manrope": "5.3.0",

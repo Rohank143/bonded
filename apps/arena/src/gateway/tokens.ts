@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { isWellFormedRunnerToken, RUNNER_TOKEN_PREFIX } from "@bonded/shared";
+import { isWellFormedRunnerToken, RUNNER_TOKEN_PREFIX } from "@bondedhq/shared";
 
 /**
  * The gateway's two kinds of secret:

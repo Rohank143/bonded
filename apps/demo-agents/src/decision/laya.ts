@@ -5,7 +5,7 @@ import {
   type SentinelQuestionSet,
   sentinelQuestions,
   sentinelState,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import type { ModelUsage } from "../usage.js";
 import {
   type Decision,

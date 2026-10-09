@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EvmMandate, demoRouterAbi, mandateHash, toEvmMandateParams } from "@bonded/shared";
+import { EvmMandate, demoRouterAbi, mandateHash, toEvmMandateParams } from "@bondedhq/shared";
 import { getAbiItem, toFunctionSelector } from "viem";
 import {
   ONBOARDING_STEPS,

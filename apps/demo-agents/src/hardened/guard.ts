@@ -8,7 +8,7 @@ import {
   SENTINEL_INPUT_CHARS,
   type SentinelInput,
   type ToolResult,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import type { ModelUsage } from "../usage.js";
 
 /**
@@ -27,7 +27,7 @@ export interface GuardContext {
   untrustedInputs: string[];
   /**
    * The same reads as `{tool, output}`, in the shape Sentinel's training data uses
-   * (`sentinelState` in @bonded/shared), so a fine-tuned model sees what it trained on.
+   * (`sentinelState` in @bondedhq/shared), so a fine-tuned model sees what it trained on.
    */
   untrustedCalls: SentinelInput[];
   /** USD traded so far in this run. */

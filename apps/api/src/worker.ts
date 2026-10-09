@@ -23,10 +23,10 @@ import {
   type AttackSpec,
   type ChatClient,
   type EvmMandateInput,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { z } from "zod";
 import { getAbiItem, hashTypedData, type Hex } from "viem";
-import { attestationTypedData, bondedDomain } from "@bonded/shared";
+import { attestationTypedData, bondedDomain } from "@bondedhq/shared";
 import type { ServiceChain } from "@bonded/keeper";
 import { ratingLibrary } from "./library.js";
 import { ratedAgent, sentinelCodeHash, type SentinelService } from "./sentinel.js";

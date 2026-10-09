@@ -13,7 +13,7 @@ import {
   type Account,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import type { EvmDeployment } from "@bonded/shared";
+import type { EvmDeployment } from "@bondedhq/shared";
 
 /** Durable callers can track the uncertain interval around an RPC broadcast. */
 export interface SendLifecycle {

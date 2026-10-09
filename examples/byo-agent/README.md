@@ -1,6 +1,6 @@
 # Bring your own agent: example
 
-A small trading agent that runs on your own server and keeps its funds in a Bonded Mandate Vault, using [`@bonded/sdk`](../../packages/sdk/README.md).
+A small trading agent that runs on your own server and keeps its funds in a Bonded Mandate Vault, using [`@bondedhq/sdk`](../../packages/sdk/README.md).
 
 It is the template to copy, so it shows the habits that keep an agent safe and score well:
 
