@@ -9,7 +9,7 @@ import {
   LlmDecisionModel,
   type SentinelModel,
 } from "@bonded/demo-agents";
-import { parseSentinelQuestionSet } from "@bonded/shared";
+import { parseSentinelQuestionSet } from "@bondedhq/shared";
 import { loadDotEnv } from "./env.js";
 import { evaluateSentinel } from "./sentinel-eval.js";
 import { readSeedRows } from "./synthetic.js";

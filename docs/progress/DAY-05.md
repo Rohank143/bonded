@@ -19,7 +19,7 @@ Plan reference: docs/PLAN.md Section 20, Day 5. Design record: `docs/decisions/0
   - A2: news
   - A6: operator-impersonation DM
   - A7: smuggled tool output
-- **`@bonded/shared`:**
+- **`@bondedhq/shared`:**
   - Typed contract ABIs generated from the Foundry build, with an `abis:check` in CI.
   - The agent tool interface.
   - `breachTypeFromCode`.
@@ -44,7 +44,7 @@ The scripted brain is a no-defences baseline, so 4 of 4 is the expected result. 
 
 ## Tests
 
-- **`@bonded/shared`:** 57 (7 new: agent tools, breach codes, ABIs, delivery).
+- **`@bondedhq/shared`:** 57 (7 new: agent tools, breach codes, ABIs, delivery).
 - **`@bonded/demo-agents`:** 19. They cover the instruction reader on realistic payloads, the scripted agent, and the Claude agent against a fake client: tool loop, errors, step limit, refusal, `pause_turn`, and one message per turn of results.
 - **`@bonded/arena`:** 23. They include integration tests on a fresh local chain:
   - the control is safe

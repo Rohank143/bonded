@@ -1,5 +1,5 @@
 import { Keypair } from "@solana/web3.js";
-import { type TeeEvidence, teeReportData } from "@bonded/shared";
+import { type TeeEvidence, teeReportData } from "@bondedhq/shared";
 import { bytesToHex, hexToBytes } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { TeeBackend } from "./backend.js";

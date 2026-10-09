@@ -10,7 +10,7 @@ import {
   bondedRegistryAbi,
   bountyBoardAbi,
   leaderboardHeadline,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { readLeaderboard, BountySpecError, parseBountySpec, specUri } from "@bonded/arena";
 import type { ServiceChain } from "@bonded/keeper";
 import type { Hex } from "viem";

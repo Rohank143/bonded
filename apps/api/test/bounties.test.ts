@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { ANVIL_KEYS, Sandbox, specUri } from "@bonded/arena";
 import { connectChain, type ServiceChain } from "@bonded/keeper";
-import { bountyBoardAbi, testTokenAbi } from "@bonded/shared";
+import { bountyBoardAbi, testTokenAbi } from "@bondedhq/shared";
 import { keccak256, toHex } from "viem";
 import { parse, stringify } from "yaml";
 import { ATTESTER_HUNTER_VERDICT, chainLibrary, workBountyOne } from "../src/bounty-worker.js";

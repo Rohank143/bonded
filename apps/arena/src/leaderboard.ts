@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Attestation, Leaderboard, LeaderboardEntry } from "@bonded/shared";
+import { Attestation, Leaderboard, LeaderboardEntry } from "@bondedhq/shared";
 import { keccak256, stringToBytes } from "viem";
 import type { RatingReport } from "./rate.js";
 

@@ -93,7 +93,7 @@ Because the router trades at oracle prices, the vault's slippage check (T3) beha
   - Asserts the 4,500 payout.
 - **`pnpm demo:local`:** runs the deploy, the record step and the smoke script against anvil.
 - **Committed files:** testnet and mainnet JSON files are committed; the local one is ignored.
-- **`@bonded/shared`:** `parseEvmDeployment` validates the file, so the API and keeper read addresses through one checked path.
+- **`@bondedhq/shared`:** `parseEvmDeployment` validates the file, so the API and keeper read addresses through one checked path.
 
 ## Known limits
 

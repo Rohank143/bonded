@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { AGENT_TOOLS, isAgentToolName } from "@bonded/shared";
+import { AGENT_TOOLS, isAgentToolName } from "@bondedhq/shared";
 import type { EpisodeResult } from "./episode.js";
 
 /**

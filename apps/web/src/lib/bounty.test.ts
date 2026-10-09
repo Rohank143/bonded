@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { keccak256, toHex } from "viem";
-import { BOUNTY_SPEC_EXAMPLE } from "@bonded/shared";
+import { BOUNTY_SPEC_EXAMPLE } from "@bondedhq/shared";
 import { checkSpec, commitmentIfReady, commitmentOf, isSalt, newSalt, specUriOf } from "./bounty";
 
 describe("bounty helpers", () => {

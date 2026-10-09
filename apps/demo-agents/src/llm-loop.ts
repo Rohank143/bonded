@@ -6,7 +6,7 @@ import {
   type ChatClient,
   type ChatMessage,
   type ChatResponse,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 
 /**
  * The generic tool-calling loop every LLM brain shares (ADR-006): it calls the model, runs

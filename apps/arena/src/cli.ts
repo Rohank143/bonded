@@ -21,7 +21,7 @@ import {
   EVM_CHAINS,
   type EvmMandateInput,
   parseSentinelQuestionSet,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { loadAttackLibrary } from "./attacks.js";
 import { runControls } from "./controls.js";
 import { loadDotEnv, usesLanguageModel } from "./env.js";

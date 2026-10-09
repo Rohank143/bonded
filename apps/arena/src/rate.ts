@@ -11,7 +11,7 @@ import {
   type Scoring,
   type Severity,
   scoreRating,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { keccak256, stringToBytes } from "viem";
 import {
   ATTESTATION_TTL_SECONDS,
