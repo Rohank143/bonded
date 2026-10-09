@@ -16,6 +16,12 @@ const chain = vi.hoisted(() => ({
   sendCalls: [] as unknown[],
   receipts: [] as unknown[][],
   writes: 0,
+  /** Each one-by-one transaction, in order: its function and arguments. */
+  written: [] as { functionName: string; args: unknown[] }[],
+  /** The receipt logs of the nth one-by-one transaction (1-based). */
+  txLogs: {} as Record<number, unknown[]>,
+  /** Which one-by-one prompts (1-based) the user turns down. */
+  rejectWrites: [] as number[],
 }));
 vi.mock("wagmi", () => ({
   useAccount: () => ({
@@ -25,9 +31,12 @@ vi.mock("wagmi", () => ({
   }),
   useSignMessage: () => ({ signMessageAsync: async () => "0x5151" }),
   useWriteContract: () => ({
-    writeContractAsync: async () => {
+    writeContractAsync: async (call: { functionName: string; args: unknown[] }) => {
       chain.writes++;
-      return "0x1";
+      if (chain.rejectWrites.includes(chain.writes))
+        throw Object.assign(new Error("User rejected the request."), { code: 4001 });
+      chain.written.push({ functionName: call.functionName, args: call.args });
+      return `0x${chain.writes.toString(16)}`;
     },
   }),
   useBalance: () => ({ data: undefined }),
@@ -45,7 +54,10 @@ vi.mock("wagmi/actions", () => ({
   }),
   getPublicClient: () => undefined,
   readContract: async () => undefined,
-  waitForTransactionReceipt: async () => ({ status: "success", logs: [] }),
+  waitForTransactionReceipt: async (_: unknown, { hash }: { hash: string }) => ({
+    status: "success",
+    logs: chain.txLogs[Number(hash)] ?? [],
+  }),
 }));
 vi.mock("../wagmi", () => ({ wagmiConfig: {} }));
 vi.mock("../lib/self-serve", async (load) => ({
@@ -76,6 +88,31 @@ function log(abi: Abi, eventName: string, args: Record<string, unknown>, address
   };
 }
 
+const WALLET = "0x00000000000000000000000000000000000000a1";
+const VAULT = "0x00000000000000000000000000000000000000f1";
+const registered = (agentId = 77n) =>
+  log(
+    bondedRegistryAbi as Abi,
+    "Registered",
+    { agentId, agentURI: "x", owner: WALLET },
+    deployment.registry,
+  );
+const vaultCreated = (agentId = 77n) =>
+  log(
+    mandateVaultFactoryAbi as Abi,
+    "VaultCreated",
+    { vault: VAULT, agentId, guardian: WALLET, agent: WALLET, mandateHash: `0x${"1".repeat(64)}` },
+    deployment.factory,
+  );
+const stored = () =>
+  JSON.parse(
+    localStorage.getItem(`bonded:onboarding:${deployment.chainId}:${WALLET}`) ?? "null",
+  ) as {
+    agentId?: string;
+    vault?: string;
+    done: string[];
+  } | null;
+
 function show(prefill?: OfficialPrefill) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
@@ -101,6 +138,9 @@ afterEach(() => {
   chain.sendCalls = [];
   chain.receipts = [];
   chain.writes = 0;
+  chain.written = [];
+  chain.txLogs = {};
+  chain.rejectWrites = [];
 });
 
 describe("Onboarding your own agent", () => {
@@ -234,6 +274,57 @@ describe("Onboarding, the wallet side", () => {
     // The deposit's batch goes to the vault the receipt named, not a guess.
     const last = (chain.sendCalls[2] as { calls: { to: string }[] }).calls;
     expect(last[1]!.to).toBe(vault);
+  });
+
+  describe("one by one, each confirmed transaction is saved before the next prompt", () => {
+    // Without batching the order is: register, faucet, approve bond, create vault, stake,
+    // approve deposit, deposit.
+    it("keeps agent 77 when the prompt after register is turned down, and resumes without registering again", async () => {
+      chain.txLogs = { 1: [registered()] };
+      chain.rejectWrites = [2];
+      show();
+      fireEvent.click(await screen.findByRole("button", { name: "Onboard the agent" }));
+      await screen.findByRole("button", { name: "Resume onboarding" });
+      expect(stored()).toMatchObject({ agentId: "77", done: ["register"] });
+      expect(chain.written.map((w) => w.functionName)).toEqual(["register"]);
+      chain.txLogs = { 5: [vaultCreated()] };
+      fireEvent.click(screen.getByRole("button", { name: "Resume onboarding" }));
+      await waitFor(() => expect(screen.getByText("Agent 77 is set up.")).toBeTruthy());
+      const names = chain.written.map((w) => w.functionName);
+      expect(names.filter((n) => n === "register")).toHaveLength(1);
+      expect(names.slice(1)).toEqual([
+        "faucet",
+        "approve",
+        "createVault",
+        "stake",
+        "approve",
+        "deposit",
+      ]);
+      // The vault is created for the agent the first prompt registered.
+      expect(chain.written.find((w) => w.functionName === "createVault")!.args[3]).toBe(77n);
+      expect(stored()).toBeNull();
+    });
+
+    it("keeps the vault when staking is turned down after it was created, and resumes without a second vault", async () => {
+      chain.txLogs = { 1: [registered()], 4: [vaultCreated()] };
+      chain.rejectWrites = [5];
+      show();
+      fireEvent.click(await screen.findByRole("button", { name: "Onboard the agent" }));
+      await screen.findByRole("button", { name: "Resume onboarding" });
+      expect(stored()).toMatchObject({
+        agentId: "77",
+        vault: VAULT,
+        done: ["register", "faucet", "vault"],
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Resume onboarding" }));
+      await waitFor(() => expect(screen.getByText("Agent 77 is set up.")).toBeTruthy());
+      const names = chain.written.map((w) => w.functionName);
+      expect(names.filter((n) => n === "createVault")).toHaveLength(1);
+      expect(names.filter((n) => n === "register")).toHaveLength(1);
+      // After the resume: the bond again (its approval is re-sent), then the deposit, to that vault.
+      expect(names.slice(4)).toEqual(["approve", "stake", "approve", "deposit"]);
+      expect(chain.written.at(-2)!.args[0]).toBe(VAULT);
+    });
   });
 
   it("explains the bond and recommends one for the cover wanted", () => {

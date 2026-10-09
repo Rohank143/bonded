@@ -112,6 +112,8 @@ import {
 } from "../components/ui";
 
 type Step = { label: string; state: "waiting" | "active" | "done"; hash?: Hex };
+/** An onboarding call that is a transaction (finding a module is a read). */
+type TxCall = Exclude<OnboardingCall, "findModule">;
 
 const STEPS = [
   "Register the agent",
@@ -397,16 +399,21 @@ export function NewAgent() {
   /**
    * Sends a group of transactions: as one atomic batch when the wallet can (EIP-5792), else one
    * by one. A wallet that turns the batch down for any reason but the user's own "no" gets the
-   * same transactions one by one.
+   * same transactions one by one. `settle` records what each confirmed transaction made (the
+   * agent id, the vault) before the next one is asked for: one by one, a later prompt the user
+   * turns down must not lose what an earlier one made. Only an atomic batch settles as a group.
    */
-  async function sendGroup(kinds: Exclude<OnboardingCall, "findModule">[], ctx: CallContext) {
-    const calls = kinds.map((k) => onboardingCall(k, ctx));
-    if (batched && calls.length > 1) {
+  async function sendGroup(
+    kinds: TxCall[],
+    ctx: () => CallContext,
+    settle: (kinds: TxCall[], logs: Log[]) => void,
+  ) {
+    if (batched && kinds.length > 1) {
       for (const k of kinds) mark(CALL_STEP[k], "active");
       let id: string | undefined;
       try {
         ({ id } = await sendCalls(wagmiConfig, {
-          calls: calls.map(encoded),
+          calls: kinds.map((k) => encoded(onboardingCall(k, ctx()))),
           chainId: robinhoodTestnet.id,
           forceAtomic: true,
         }));
@@ -424,17 +431,20 @@ export function NewAgent() {
         const receipts = result.receipts ?? [];
         const hash = receipts.at(-1)?.transactionHash;
         for (const k of kinds) mark(CALL_STEP[k], "active", hash);
-        return receipts.flatMap((r) => r.logs as Log[]);
+        settle(
+          kinds,
+          receipts.flatMap((r) => r.logs as Log[]),
+        );
+        return;
       }
     }
-    const logs: Log[] = [];
-    for (const [i, k] of kinds.entries()) logs.push(...(await send(CALL_STEP[k], calls[i]!)));
-    return logs;
+    for (const k of kinds) settle([k], await send(CALL_STEP[k], onboardingCall(k, ctx())));
   }
 
   /**
-   * Runs every step not yet done for `progress`, saving it after each group, so a rejected prompt
-   * or a reload resumes here instead of registering another agent.
+   * Runs every step not yet done for `progress`, saving it after each confirmed transaction (or
+   * atomic batch), so a rejected prompt or a reload resumes here instead of registering another
+   * agent.
    */
   async function run(progress: OnboardingProgress) {
     if (!user) return;
@@ -490,37 +500,38 @@ export function NewAgent() {
       });
     };
     if (progress.vault) remember(progress.vault as Address);
+    /** What confirmed transactions made, saved at once (by `finish`). */
+    const settle = (kinds: TxCall[], logs: Log[]) => {
+      if (kinds.includes("register")) {
+        const agentId = (
+          parseEventLogs({ abi: bondedRegistryAbi, logs, eventName: "Registered" })[0]?.args as {
+            agentId: bigint;
+          }
+        ).agentId;
+        // The mandate is frozen here, with the agent id, and reused by every later step.
+        const mandate = buildMandate(deployment, agentId, progress.form);
+        progress = { ...progress, agentId: agentId.toString(), mandate };
+        finish("register");
+      }
+      if (kinds.includes("createVault")) {
+        const vault = (
+          parseEventLogs({ abi: mandateVaultFactoryAbi, logs, eventName: "VaultCreated" })[0]
+            ?.args as { vault: Address }
+        ).vault;
+        progress = { ...progress, vault };
+        remember(vault);
+        finish("vault");
+      }
+      if (kinds.includes("faucet")) finish("faucet");
+      if (kinds.includes("stake")) finish("bond");
+      if (kinds.includes("deposit")) finish("deposit");
+    };
     try {
       for (const group of groups) {
         if (group.includes("findModule")) await findModule();
-        const kinds = group.filter(
-          (c): c is Exclude<OnboardingCall, "findModule"> => c !== "findModule",
-        );
+        const kinds = group.filter((c): c is TxCall => c !== "findModule");
         if (!kinds.length) continue;
-        const logs = await sendGroup(kinds, ctx());
-        if (kinds.includes("register")) {
-          const agentId = (
-            parseEventLogs({ abi: bondedRegistryAbi, logs, eventName: "Registered" })[0]?.args as {
-              agentId: bigint;
-            }
-          ).agentId;
-          // The mandate is frozen here, with the agent id, and reused by every later step.
-          const mandate = buildMandate(deployment, agentId, progress.form);
-          progress = { ...progress, agentId: agentId.toString(), mandate };
-          finish("register");
-        }
-        if (kinds.includes("createVault")) {
-          const vault = (
-            parseEventLogs({ abi: mandateVaultFactoryAbi, logs, eventName: "VaultCreated" })[0]
-              ?.args as { vault: Address }
-          ).vault;
-          progress = { ...progress, vault };
-          remember(vault);
-          finish("vault");
-        }
-        if (kinds.includes("faucet")) finish("faucet");
-        if (kinds.includes("stake")) finish("bond");
-        if (kinds.includes("deposit")) finish("deposit");
+        await sendGroup(kinds, ctx, settle);
       }
       if (!progress.done.includes("ratings")) {
         mark("ratings", "active");
