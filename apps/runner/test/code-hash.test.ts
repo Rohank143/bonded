@@ -99,6 +99,61 @@ describe("the runner's code hash", () => {
     ).toMatchObject({ codeSource: "git-dirty", codeHash: codeHashOf("git-dirty", clean!.commit) });
   });
 
+  it("labels git only when the repository tracks the entry file and nothing is uncommitted", () => {
+    const dir = tempDir();
+    const git = (...args: string[]) =>
+      execFileSync("git", args, {
+        cwd: dir,
+        stdio: "ignore",
+        env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1" },
+      });
+    git("init", "-q");
+    writeFileSync(join(dir, "README"), "repo\n");
+    git("add", "README");
+    git(
+      "-c",
+      "user.name=t",
+      "-c",
+      "user.email=t@t",
+      "-c",
+      "commit.gpgsign=false",
+      "commit",
+      "-qm",
+      "x",
+    );
+    // A clean repository whose commit says nothing about an untracked entry file: unpinned.
+    writeFileSync(join(dir, "agent.js"), "evil()\n");
+    const untracked = codeIdentity({ command: ["node", "agent.js"], env: {}, cwd: dir });
+    expect(untracked.codeSource).toBe("unpinned");
+    expect(gitState(dir, join(dir, "agent.js"))).toMatchObject({ entryTracked: false });
+    // Tracked and committed: git. Then modified: git-dirty.
+    git("add", "agent.js");
+    git(
+      "-c",
+      "user.name=t",
+      "-c",
+      "user.email=t@t",
+      "-c",
+      "commit.gpgsign=false",
+      "commit",
+      "-qm",
+      "y",
+    );
+    expect(codeIdentity({ command: ["node", "agent.js"], env: {}, cwd: dir }).codeSource).toBe(
+      "git",
+    );
+    writeFileSync(join(dir, "agent.js"), "changed()\n");
+    expect(codeIdentity({ command: ["node", "agent.js"], env: {}, cwd: dir }).codeSource).toBe(
+      "git-dirty",
+    );
+    // The runner's own folder being a clean repository doesn't pin an entry file elsewhere.
+    const outside = tempDir();
+    writeFileSync(join(outside, "agent.js"), "x\n");
+    expect(
+      codeIdentity({ command: ["node", join(outside, "agent.js")], env: {}, cwd: dir }).codeSource,
+    ).toBe("unpinned");
+  });
+
   it("otherwise hashes the command and its entry file's bytes, labelled unpinned", () => {
     const dir = tempDir();
     writeFileSync(join(dir, "agent.js"), "one");
@@ -118,6 +173,14 @@ describe("the runner's code hash", () => {
       git: noGit,
     });
     expect(otherArgs.codeHash).not.toBe(changed.codeHash);
+    // An interpreter given by path is not the entry file: its script is.
+    expect(
+      codeIdentity({ command: [process.execPath, "agent.js"], env: {}, cwd: dir, git: noGit })
+        .detail,
+    ).toContain("agent.js");
+    expect(
+      codeIdentity({ command: [process.execPath, "-e", "1"], env: {}, cwd: dir, git: noGit }),
+    ).toMatchObject({ detail: "the command line" });
     // With no file in the command, the command line alone.
     expect(codeIdentity({ command: ["my-agent"], env: {}, cwd: dir, git: noGit })).toMatchObject({
       codeSource: "unpinned",
