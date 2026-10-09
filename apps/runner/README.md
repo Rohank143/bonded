@@ -90,7 +90,9 @@ function or at the top of an ES module; exactly one `AgentKit.from(`; exactly on
 the file with your `ProjectAgent`; exactly one MCP transport with `new URL(...)`. Otherwise it
 leaves your code alone and prints the line to add. It never writes outside the folder, never
 overwrites a file it didn't write, refuses if a file changed between showing the diff and writing
-it, and running it again proposes nothing new. A file init wrote that you have
+it, and running it again proposes nothing new. If your project already has its own
+`src/bonded.ts`, init's helper goes in the first free one of `src/bonded-agent.ts`,
+`src/bonded-agent-2.ts`, ..., and every edit imports from there. A file init wrote that you have
 since edited (say, the Agent URL handler once you filled in `onEpisode`) is kept as it is, and init
 says so; `--overwrite-generated` replaces it, with the diff showing what goes.
 

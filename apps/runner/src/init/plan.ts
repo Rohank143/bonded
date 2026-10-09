@@ -61,7 +61,13 @@ export function planInit(project: Project, options: PlanOptions = {}): InitPlan 
     return plan;
   }
 
-  const helper = files.helperPath("bonded");
+  // src/bonded.ts, unless the project has its own file by that name: then the first free one
+  // of bonded-agent.ts, bonded-agent-2.ts, ..., so every import below names a file init wrote.
+  const helper = files.freeHelperPath("bonded", "bonded-agent");
+  if (helper !== files.helperPath("bonded"))
+    plan.notes.push(
+      `${files.helperPath("bonded")} is your own file, so init's helper is ${helper}; everything init adds imports from there.`,
+    );
   const ts = project.typescript;
   switch (project.framework) {
     case "langchain":
@@ -109,7 +115,7 @@ export function planInit(project: Project, options: PlanOptions = {}): InitPlan 
   plan.notes.push(
     "The vault's variables (BONDED_VAULT_ADDRESS, BONDED_AGENT_KEY, BONDED_ROUTER_ADDRESS, and BONDED_VAULT_RPC_URL / BONDED_VAULT_CHAIN_ID off Robinhood Chain testnet) are read in production only. Until BONDED_VAULT_ADDRESS is set the agent runs as before; while it is rated it never touches them.",
   );
-  if (options.url) urlPlan(plan, files, project);
+  if (options.url) urlPlan(plan, files, project, helper);
   return plan;
 }
 
@@ -134,6 +140,23 @@ class Files {
   helperPath(name: string): string {
     const ext = this.project.typescript ? "ts" : this.project.esm ? "js" : "mjs";
     return posix.join(this.project.sourceDir, `${name}.${ext}`);
+  }
+
+  /**
+   * The path for a new helper: `preferred` when it is free or init's own, else the first free
+   * (or init's own) of `fallback`, `fallback-2`, `fallback-3`, ...
+   */
+  freeHelperPath(preferred: string, fallback: string): string {
+    const usable = (path: string) => {
+      const text = this.read(path);
+      return text === undefined || text.startsWith(MARKER);
+    };
+    const first = this.helperPath(preferred);
+    if (usable(first)) return first;
+    for (let n = 1; ; n++) {
+      const path = this.helperPath(n === 1 ? fallback : `${fallback}-${n}`);
+      if (usable(path)) return path;
+    }
   }
 
   /**
@@ -431,13 +454,13 @@ function balanced(expression: string): boolean {
 // ---------------------------------------------------------------------------------------------
 // Agent URL routes.
 
-function urlPlan(plan: InitPlan, files: Files, project: Project): void {
+function urlPlan(plan: InitPlan, files: Files, project: Project, helper: string): void {
   const ts = project.typescript;
-  const handlerFile = files.helperPath("bonded-agent-url");
+  const handlerFile = files.freeHelperPath("bonded-agent-url", "bonded-agent-url");
   files.write(
     plan,
     handlerFile,
-    agentUrlHandler(project, handlerFile, ts),
+    agentUrlHandler(project, handlerFile, files.specifier(handlerFile, helper), ts),
     "the Agent URL handler",
   );
   plan.env.push("BONDED_AGENT_SECRET");
@@ -676,15 +699,15 @@ export const bondedVault = vault ? guarded(vault) : undefined;
 
 const EPISODE_HINT: Record<Framework, string[]> = {
   langchain: [
-    "const tools = await bondedTools(productionTools, episode); // from ./bonded",
+    "const tools = await bondedTools(productionTools, episode); // from HELPER",
     "const agent = createReactAgent({ llm, tools }); await agent.invoke(...);",
   ],
   "ai-sdk": [
-    "const tools = await bondedTools(productionTools, episode); // from ./bonded",
+    "const tools = await bondedTools(productionTools, episode); // from HELPER",
     "const result = await generateText({ model, tools, prompt: episode.task.goal, abortSignal: signal });",
   ],
   agentkit: [
-    "const kit = await bondedAgentKit({ walletProvider, actionProviders }, episode); // from ./bonded",
+    "const kit = await bondedAgentKit({ walletProvider, actionProviders }, episode); // from HELPER",
   ],
   eliza: [
     "bondedEpisodePlugin({ episode }) from @bondedhq/sdk/eliza is the runtime's plugin for it",
@@ -694,7 +717,7 @@ const EPISODE_HINT: Record<Framework, string[]> = {
   unknown: ["const tools = await connectEpisodeTools(episode); // from @bondedhq/sdk/mcp"],
 };
 
-function agentUrlHandler(project: Project, path: string, ts: boolean): string {
+function agentUrlHandler(project: Project, path: string, helper: string, ts: boolean): string {
   return `${header("Bonded's Agent URL handler")}import { ${ts ? "type BondedHandler, " : ""}createBondedHandler } from "@bondedhq/sdk/agent-url";
 
 let handler${ts ? ": BondedHandler | undefined" : ""};
@@ -710,7 +733,7 @@ export const bondedHandler${ts ? ": BondedHandler" : ""} = (request, context) =>
     ...(process.env.GIT_SHA ? { version: process.env.GIT_SHA } : {}),
     async onEpisode(episode, { signal }) {
       // Run your agent on episode.task.goal with the episode's tools, and stop when signal aborts:
-${EPISODE_HINT[project.framework].map((l) => `      //   ${l}\n`).join("")}      // Return { finalMessage, usage } when it has finished.
+${EPISODE_HINT[project.framework].map((l) => `      //   ${l.replace("HELPER", helper)}\n`).join("")}      // Return { finalMessage, usage } when it has finished.
       void signal;
       throw new Error("Connect your agent in ${path} (onEpisode) to be rated over its Agent URL");
     },

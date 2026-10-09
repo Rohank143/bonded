@@ -1,6 +1,17 @@
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { appendEnvNames, applyPlan, insideProject } from "../src/init/apply.js";
 import { agentCommand, initCommand } from "../src/init/command.js";
@@ -9,6 +20,8 @@ import { unifiedDiff } from "../src/init/diff.js";
 import { addImport, type InitPlan, planInit } from "../src/init/plan.js";
 
 const FIXTURES = join(import.meta.dirname, "fixtures");
+const REPO = join(import.meta.dirname, "../../..");
+const requireHere = createRequire(import.meta.url);
 const fixture = (name: string) => join(FIXTURES, name);
 
 /** What `init --print` shows for a plan: each diff, then what to do by hand. */
@@ -108,14 +121,72 @@ describe("planInit: the proposed diff, per framework", () => {
     expect(plan.manual[0]).toMatch(/isn't in an async function/);
   });
 
-  it("leaves a file it didn't write alone", () => {
+  it("leaves a file it didn't write alone, and names its own helper file instead", () => {
     const dir = copy("ai-sdk");
     writeFileSync(join(dir, "src/bonded.ts"), "export const mine = 1;\n");
     const plan = planInit(detectProject(dir));
     expect(plan.changes.find((c) => c.path === "src/bonded.ts")).toBeUndefined();
-    expect(plan.manual.join("\n")).toMatch(
-      /src\/bonded.ts already exists and wasn't written by init/,
+    expect(plan.changes.map((c) => c.path)).toEqual(["src/bonded-agent.ts", "src/index.ts"]);
+    expect(plan.notes.join("\n")).toMatch(
+      /src\/bonded.ts is your own file, so init's helper is src\/bonded-agent.ts/,
     );
+    // And the next free name when that one is taken too; a rerun picks the same file again.
+    writeFileSync(join(dir, "src/bonded-agent.ts"), "export const alsoMine = 1;\n");
+    const next = planInit(detectProject(dir));
+    expect(next.changes.map((c) => c.path)).toEqual(["src/bonded-agent-2.ts", "src/index.ts"]);
+    applyPlan(dir, next);
+    expect(planInit(detectProject(dir)).changes).toEqual([]);
+  });
+
+  it.each([
+    ["langchain", "src/bonded.ts", "src/bonded-agent.ts", "bondedTools"],
+    ["ai-sdk", "src/bonded.ts", "src/bonded-agent.ts", "bondedTools"],
+    ["agentkit", "src/bonded.ts", "src/bonded-agent.ts", "bondedAgentKit"],
+    ["eliza", "src/bonded.ts", "src/bonded-agent.ts", "bondedPlugins"],
+    ["mcp-js", "bonded.js", "bonded-agent.js", "bondedMcpUrl"],
+  ])("%s: with the project's own %s, every edit imports from %s", (name, own, helper, binding) => {
+    const dir = copy(name);
+    writeFileSync(join(dir, own), "export const mine = 1;\n");
+    const plan = planInit(detectProject(dir), { url: true });
+    expect(plan.changes.map((c) => c.path)).toContain(helper);
+    expect(plan.changes.map((c) => c.path)).not.toContain(own);
+    const base = helper.replace(/\.(ts|js)$/, "");
+    const imports = plan.changes
+      .filter((c) => c.path !== helper)
+      .flatMap((c) => [
+        ...c.after.matchAll(new RegExp(`import \\{ ${binding} \\} from "([^"]+)"`, "g")),
+      ])
+      .map((m) => m[1]!);
+    expect(imports.length).toBeGreaterThan(0);
+    for (const specifier of imports)
+      expect(specifier).toMatch(new RegExp(`${base.split("/").pop()}(\\.js)?$`));
+    expect(plan.manual.join("\n")).not.toContain(`${own} already exists`);
+  });
+
+  it("typechecks after apply when the project has its own src/bonded.ts", () => {
+    const dir = copy("ai-sdk-collision");
+    const own = readFileSync(join(dir, "src/bonded.ts"), "utf8");
+    applyPlan(dir, planInit(detectProject(dir)));
+    expect(readFileSync(join(dir, "src/bonded.ts"), "utf8")).toBe(own);
+    expect(readFileSync(join(dir, "src/index.ts"), "utf8")).toContain(
+      'import { bondedTools } from "./bonded-agent";',
+    );
+    // The packages the project would install, linked from this repository.
+    const link = (name: string, target: string) => {
+      mkdirSync(dirname(join(dir, "node_modules", name)), { recursive: true });
+      symlinkSync(target, join(dir, "node_modules", name), "dir");
+    };
+    const sdk = join(REPO, "packages/sdk");
+    link("@bondedhq/sdk", sdk);
+    link("ai", realpathSync(join(sdk, "node_modules/ai")));
+    link("@types/node", realpathSync(join(REPO, "node_modules/@types/node")));
+    const tsc = spawnSync(
+      process.execPath,
+      [requireHere.resolve("typescript/bin/tsc"), "-p", join(dir, "tsconfig.json")],
+      { encoding: "utf8" },
+    );
+    expect(tsc.stdout + tsc.stderr).toBe("");
+    expect(tsc.status).toBe(0);
   });
 });
 

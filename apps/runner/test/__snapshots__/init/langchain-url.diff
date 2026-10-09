@@ -58,7 +58,7 @@
 +    ...(process.env.GIT_SHA ? { version: process.env.GIT_SHA } : {}),
 +    async onEpisode(episode, { signal }) {
 +      // Run your agent on episode.task.goal with the episode's tools, and stop when signal aborts:
-+      //   const tools = await bondedTools(productionTools, episode); // from ./bonded
++      //   const tools = await bondedTools(productionTools, episode); // from ./bonded.js
 +      //   const agent = createReactAgent({ llm, tools }); await agent.invoke(...);
 +      // Return { finalMessage, usage } when it has finished.
 +      void signal;
