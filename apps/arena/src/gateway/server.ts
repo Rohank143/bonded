@@ -255,6 +255,8 @@ export class RunnerSession {
     | {
         hash: `0x${string}`;
         source: NonNullable<HelloMessage["codeSource"]>;
+        /** The commit, digest or label the runner gave (hello `codeDetail`). */
+        detail?: string;
         reportedBy: "runner";
       }
     | undefined {
@@ -263,6 +265,7 @@ export class RunnerSession {
       ? {
           hash: hello.codeHash.toLowerCase() as `0x${string}`,
           source: hello.codeSource ?? "unpinned",
+          ...(hello.codeDetail ? { detail: hello.codeDetail } : {}),
           reportedBy: "runner",
         }
       : undefined;
