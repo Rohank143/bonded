@@ -40,7 +40,15 @@ beforeAll(async () => {
       [TOKENS.chain]: "check-chain",
     }),
     // The agent URLs here are all on this machine, so they share one host's rate limit.
-    agentUrl: { allowLoopback: true, limits: { callsPerMinute: 10_000, callBurst: 1_000 } },
+    agentUrl: {
+      allowLoopback: true,
+      limits: {
+        callsPerMinute: 10_000,
+        callBurst: 1_000,
+        verifiesPerMinute: 10_000,
+        verifyBurst: 1_000,
+      },
+    },
   });
   await gateway.listen();
 });
@@ -72,7 +80,12 @@ async function agentAt(options: Omit<Parameters<typeof urlAgent>[0], "secret">):
   return at;
 }
 
-const byUrl = (url: string, secret = SECRET): AgentTransport => ({ kind: "url", url, secret });
+const byUrl = (url: string, secret = SECRET): AgentTransport => ({
+  kind: "url",
+  url,
+  secret,
+  registration: `check:${url}`,
+});
 const byRunner = (mode: "tools" | "chain"): AgentTransport => ({
   kind: "runner",
   key: `check-${mode}`,
@@ -121,14 +134,18 @@ describe("a connection check", () => {
       transport: "mcp",
       hello: { codeHash: code, codeSource: "git-dirty" },
     });
-    // The gateway shows the runner's reported code hash.
-    expect(gateway.runner("check-tools")?.code).toEqual({ hash: code, source: "git-dirty" });
+    // The gateway shows the runner's reported code hash, labelled as reported.
+    expect(gateway.runner("check-tools")?.code).toEqual({
+      hash: code,
+      source: "git-dirty",
+      reportedBy: "runner",
+    });
     const { result, events } = await check(byRunner("tools"));
     expect(result).toMatchObject({
       passed: true,
       problems: [],
       taskCompleted: true,
-      code: { hash: code, source: "git-dirty" },
+      code: { hash: code, source: "git-dirty", reportedBy: "runner" },
     });
     expect(result.toolsCalled).toBeGreaterThan(2);
     expect(result.surfacesRead.length).toBeGreaterThan(0);
@@ -160,7 +177,12 @@ describe("a connection check", () => {
       problems: [],
       taskCompleted: true,
       usage,
-      code: { hash: agentUrlCodeHash("v2.0.1"), source: "url", version: "v2.0.1" },
+      code: {
+        hash: agentUrlCodeHash("v2.0.1"),
+        source: "url",
+        version: "v2.0.1",
+        reportedBy: "agent",
+      },
     });
     expect(result.warnings.some((w) => /model usage/.test(w))).toBe(false);
     // Verified first, then the episode.
@@ -168,6 +190,25 @@ describe("a connection check", () => {
     expect(events[0]).toEqual({ type: "started" });
     expect(events.at(-2)).toMatchObject({ type: "done" });
     expect(events.at(-2)).not.toHaveProperty("exitCode");
+  });
+
+  it("lowercases a runner's code hash and refuses a runner claiming the url source", async () => {
+    await runner({
+      mode: "tools",
+      agent: new ScriptedVulnerableAgent(),
+      hello: { codeHash: `0x${"AB".repeat(32)}`, codeSource: "git" },
+    });
+    expect(gateway.runner("check-tools")?.code?.hash).toBe(`0x${"ab".repeat(32)}`);
+    const liar = await fakeRunner({
+      gateway: gateway.url,
+      token: TOKENS.chain,
+      mode: "chain",
+      hello: { codeHash: `0x${"cd".repeat(32)}`, codeSource: "url" },
+    });
+    cleanup.push(() => liar.close());
+    const closed = await new Promise<number>((resolve) => liar.socket.once("close", resolve));
+    expect(closed).toBe(4002);
+    expect(gateway.runner("check-chain")).toBeUndefined();
   });
 
   it("says when the agent never called a tool", async () => {

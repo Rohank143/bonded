@@ -4,5 +4,6 @@ export {
   type CodeIdentity,
   codeIdentity,
   type CodeIdentityOptions,
+  type GitState,
   gitState,
 } from "./code-hash.js";

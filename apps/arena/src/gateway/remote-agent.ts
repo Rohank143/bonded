@@ -41,7 +41,36 @@ import type { ArenaGateway, EpisodeActivity, GatewayEpisode } from "./server.js"
  *   the failure is the agent's. Cancels are POSTed the same way, best effort.
  */
 export type AgentTransport =
-  { kind: "runner"; key: string } | { kind: "url"; url: string; secret: string };
+  | { kind: "runner"; key: string }
+  | {
+      kind: "url";
+      url: string;
+      secret: string;
+      /**
+       * What the URL is registered to (the agent's `<chain>:<agentId>` or `preview:<id>`): its
+       * episodes run one at a time and share one rate limit, apart from every other agent's.
+       */
+      registration: string;
+    };
+
+/**
+ * Bonded couldn't call an agent URL for a reason of its own (its rate limit), so the episode
+ * didn't run and says nothing about the agent. rateAgent stops with this rather than count it.
+ */
+export class AgentUrlUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AgentUrlUnavailableError";
+  }
+}
+
+/** Why Bonded (not the agent) kept an episode from running, if it did. */
+export function bondedFailure(summary: object): string | undefined {
+  return (summary as { remote?: RemoteEpisode }).remote?.bondedProblem;
+}
+
+/** Attempts to deliver an episode when Bonded's own rate limit is in the way. */
+const URL_DELIVERY_ATTEMPTS = 3;
 
 /**
  * What happened in an episode, live: it started, each tool call and transaction (gateway
@@ -120,8 +149,16 @@ export interface RemoteEpisode {
    * answered 404"). The failure is the agent's.
    */
   urlProblem?: string;
-  /** The code hash the runner reported in its hello, and where it came from. */
-  code?: { hash: `0x${string}`; source: string };
+  /**
+   * Agent URL mode: Bonded couldn't call the URL for a reason of its own (a rate limit). The
+   * episode never ran, and is not the agent's failure (see AgentUrlUnavailableError).
+   */
+  bondedProblem?: string;
+  /**
+   * The code hash the runner reported in its hello, and where it came from. Reported by the
+   * runner, never verified: show it as such.
+   */
+  code?: { hash: `0x${string}`; source: string; reportedBy: "runner" };
   exitCode: number | null;
   signal?: string | null;
   durationMs: number;
@@ -178,7 +215,7 @@ export class RemoteAgent implements SelfSigningAgent {
   }
 
   /** The code hash the agent's runner last reported, if any (runner transport only). */
-  get code(): { hash: `0x${string}`; source: string } | undefined {
+  get code(): RemoteEpisode["code"] {
     return this.episodes.findLast((e) => e.code)?.code;
   }
 
@@ -458,7 +495,7 @@ export class RemoteAgent implements SelfSigningAgent {
     const client = gateway.agentUrls;
     const { episodeId } = record;
     const release = await client.acquire(
-      transport.url,
+      transport.registration,
       episodeId,
       this.options.runnerWaitMs ?? 60_000,
     );
@@ -468,10 +505,15 @@ export class RemoteAgent implements SelfSigningAgent {
     try {
       const opened = await this.openGatewayEpisode(episodeId, toolbox, signer, false, forkScope);
       episode = opened;
-      // The deadline runs from when the message is sent, as for a runner.
+      // Done or a stop may come before the POST's answer (the agent works while it answers). The
+      // deadline starts once the episode is delivered, so waiting for Bonded's own rate limit
+      // never eats into the agent's time.
+      let startDeadline!: () => void;
       const ended = new Promise<string>((resolve) => {
-        const timer = setTimeout(() => resolve("deadline"), timeoutMs);
-        cleanups.push(() => clearTimeout(timer));
+        startDeadline = () => {
+          const timer = setTimeout(() => resolve("deadline"), timeoutMs);
+          cleanups.push(() => clearTimeout(timer));
+        };
         const onAbort = () => resolve("aborted");
         toolbox.signal.addEventListener("abort", onAbort, { once: true });
         cleanups.push(() => toolbox.signal.removeEventListener("abort", onAbort));
@@ -479,19 +521,40 @@ export class RemoteAgent implements SelfSigningAgent {
       });
       const message = this.episodeMessage(episodeId, task, toolbox, opened, timeoutMs);
       this.emit({ type: "started", episodeId });
-      const call = await client.send(transport.url, transport.secret, message, {
-        waitMs: this.options.runnerWaitMs ?? 60_000,
-      });
+      // Only a call Bonded never made (its rate limit) is tried again: the agent didn't see it.
+      const deliver = () =>
+        client.send(transport.url, transport.secret, message, {
+          registration: transport.registration,
+          waitMs: client.limits.slotWaitMs,
+        });
+      let call = await deliver();
+      for (let attempt = 1; attempt < URL_DELIVERY_ATTEMPTS; attempt++) {
+        if (call.ok || call.caused !== "bonded") break;
+        call = await deliver();
+      }
       let why: string;
       if (!call.ok) {
-        record.urlProblem = call.problem;
-        why = call.caused === "agent" ? "url_failed" : "url_unavailable";
-      } else why = await ended;
+        if (call.caused === "agent") {
+          record.urlProblem = call.problem;
+          why = "url_failed";
+        } else {
+          record.bondedProblem = call.problem;
+          why = "url_unavailable";
+        }
+      } else {
+        startDeadline();
+        why = await ended;
+      }
       opened.close();
       // It may still be working (out of time, or the rating stopped): tell it to stop.
       if (call.ok && why !== "done")
         void client
-          .send(transport.url, transport.secret, { type: "cancel", episodeId })
+          .send(
+            transport.url,
+            transport.secret,
+            { type: "cancel", episodeId },
+            { registration: transport.registration },
+          )
           .catch(() => {});
       record.durationMs = Date.now() - started;
       collect(record, opened);
@@ -561,7 +624,10 @@ export class RemoteAgent implements SelfSigningAgent {
       case "url_failed":
         return withMessage("error", `the agent's URL failed: ${record.urlProblem}`);
       case "url_unavailable":
-        return withMessage("error", `the agent's URL wasn't called: ${record.urlProblem}`);
+        return withMessage(
+          "error",
+          `Bonded couldn't call the agent's URL (not the agent's fault): ${record.bondedProblem}`,
+        );
       default:
         return withMessage("error", "the episode was stopped");
     }
