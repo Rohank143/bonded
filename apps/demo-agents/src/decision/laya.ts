@@ -5,12 +5,13 @@ import {
   type SentinelQuestionSet,
   sentinelQuestions,
   sentinelState,
-} from "@bonded/shared";
-import type { ModelUsage } from "../usage.js";
+} from "@bondedhq/shared";
+import { mergeUsage, type ModelUsage } from "../usage.js";
 import {
   type Decision,
   type DecisionModel,
   type DecisionQuestion,
+  type DecisionOptions,
   allowedAnswers,
 } from "./model.js";
 
@@ -52,12 +53,41 @@ export interface SentinelAssessment {
   primaryLatencyMs?: number;
   /** Set by `CascadeSentinel` on escalation: the fallback's own time. `latencyMs` is the sum. */
   fallbackLatencyMs?: number;
+  /** This check's usage, independent of concurrent checks on the same model. */
+  usage?: ModelUsage;
+}
+
+export interface SentinelAssessOptions {
+  signal?: AbortSignal;
+  onUsage?: (usage: ModelUsage) => void;
+}
+
+/** Missing provider cost stays unknown even when that response omitted token counts too. */
+function checkUsage(parts: (ModelUsage | undefined)[]): ModelUsage | undefined {
+  const present = parts.filter((p): p is ModelUsage => p !== undefined);
+  const usage = mergeUsage(...present);
+  if (usage && present.some((p) => p.costUsd === undefined)) delete usage.costUsd;
+  return usage;
+}
+
+/** Path metadata survives an error; the API never stores the underlying error text. */
+export class SentinelAssessmentError extends Error {
+  constructor(
+    cause: unknown,
+    readonly metrics: Pick<
+      SentinelAssessment,
+      "escalated" | "primaryLatencyMs" | "fallbackLatencyMs"
+    >,
+  ) {
+    super("Sentinel assessment failed", { cause });
+    this.name = cause instanceof Error ? cause.name : "Error";
+  }
 }
 
 export interface SentinelModel {
   readonly name: string;
   readonly usage?: ModelUsage;
-  assess(fields: SentinelFields, options?: { signal?: AbortSignal }): Promise<SentinelAssessment>;
+  assess(fields: SentinelFields, options?: SentinelAssessOptions): Promise<SentinelAssessment>;
 }
 
 const probability = z.number().min(0).max(1);
@@ -141,7 +171,7 @@ export class LayaSentinel implements SentinelModel {
 
   async assess(
     fields: SentinelFields,
-    { signal }: { signal?: AbortSignal } = {},
+    { signal, onUsage }: SentinelAssessOptions = {},
   ): Promise<SentinelAssessment> {
     const started = performance.now();
     const raw = await postSystemOne(
@@ -157,6 +187,8 @@ export class LayaSentinel implements SentinelModel {
     if (!parsed.success) throw new Error(`Laya response not understood: ${parsed.error.message}`);
     const { answers, usage } = parsed.data;
     this.inputTokens += usage?.input_tokens ?? 0;
+    const checkUsage = { inputTokens: usage?.input_tokens ?? 0, outputTokens: 0, costUsd: 0 };
+    onUsage?.(checkUsage);
     const asked = (this.options.questions ?? "v1") === "v1";
     if (asked && !answers.action_risk) throw new Error("Laya response has no action_risk answer");
     return {
@@ -165,6 +197,7 @@ export class LayaSentinel implements SentinelModel {
       injection: answers.injection_in_inputs.noul,
       model: this.name,
       latencyMs: performance.now() - started,
+      usage: checkUsage,
     };
   }
 }
@@ -187,9 +220,17 @@ export class DecisionModelSentinel implements SentinelModel {
 
   async assess(
     fields: SentinelFields,
-    options: { signal?: AbortSignal } = {},
+    options: SentinelAssessOptions = {},
   ): Promise<SentinelAssessment> {
     const started = performance.now();
+    const parts: ModelUsage[] = [];
+    const decisionOptions = {
+      signal: options.signal,
+      onUsage: (usage: ModelUsage) => {
+        parts.push(usage);
+        options.onUsage?.(usage);
+      },
+    };
     const context = {
       mandate: fields.mandate,
       proposed_action: JSON.stringify(fields.proposedAction),
@@ -207,7 +248,7 @@ export class DecisionModelSentinel implements SentinelModel {
           instruction: `Is this statement true? ${SENTINEL_QUESTIONS[key].instructions}`,
           context,
         },
-        options,
+        decisionOptions,
       );
       return d.answer === "yes" ? d.confidence : 1 - d.confidence;
     };
@@ -220,7 +261,7 @@ export class DecisionModelSentinel implements SentinelModel {
         options: [...ACTION_RISKS],
         context,
       },
-      options,
+      decisionOptions,
     );
     if (!ACTION_RISKS.includes(risk.answer as ActionRisk))
       throw new Error(`${this.name} answered action_risk "${risk.answer}"`);
@@ -236,6 +277,7 @@ export class DecisionModelSentinel implements SentinelModel {
       },
       model: this.name,
       latencyMs: performance.now() - started,
+      usage: checkUsage(parts),
     };
   }
 }
@@ -258,6 +300,23 @@ export interface CascadeOptions {
 /** The "manipulated" scores a cascade sends to its second model by default. */
 export const DEFAULT_CASCADE_UNSURE_BAND: [number, number] = [0.25, 0.75];
 
+/** Open band: scores equal to an endpoint do not escalate. */
+export function validateCascadeOptions(options: CascadeOptions = {}) {
+  const band = options.unsureBand ?? DEFAULT_CASCADE_UNSURE_BAND;
+  const confidence = options.minRiskConfidence ?? 0.6;
+  if (
+    band.length !== 2 ||
+    !band.every(Number.isFinite) ||
+    band[0] < 0 ||
+    band[1] > 1 ||
+    band[0] >= band[1]
+  )
+    throw new Error("unsureBand must contain two increasing probabilities between 0 and 1");
+  if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1)
+    throw new Error("minRiskConfidence must be a probability between 0 and 1");
+  return { unsureBand: [...band] as [number, number], minRiskConfidence: confidence };
+}
+
 export class CascadeSentinel implements SentinelModel {
   readonly name: string;
   checks = 0;
@@ -271,8 +330,9 @@ export class CascadeSentinel implements SentinelModel {
     options: CascadeOptions = {},
   ) {
     this.name = `cascade/${primary.name}+${fallback.name}`;
-    this.band = options.unsureBand ?? DEFAULT_CASCADE_UNSURE_BAND;
-    this.minRiskConfidence = options.minRiskConfidence ?? 0.6;
+    const validated = validateCascadeOptions(options);
+    this.band = validated.unsureBand;
+    this.minRiskConfidence = validated.minRiskConfidence;
   }
 
   get usage(): ModelUsage | undefined {
@@ -290,19 +350,40 @@ export class CascadeSentinel implements SentinelModel {
 
   async assess(
     fields: SentinelFields,
-    options: { signal?: AbortSignal } = {},
+    options: SentinelAssessOptions = {},
   ): Promise<SentinelAssessment> {
     this.checks++;
-    const first = await this.primary.assess(fields, options);
-    if (!this.unsure(first)) return { ...first, primaryLatencyMs: first.latencyMs };
+    const started = performance.now();
+    let first: SentinelAssessment;
+    try {
+      first = await this.primary.assess(fields, options);
+    } catch (cause) {
+      throw new SentinelAssessmentError(cause, {
+        escalated: false,
+        primaryLatencyMs: performance.now() - started,
+      });
+    }
+    if (!this.unsure(first))
+      return { ...first, escalated: false, primaryLatencyMs: first.latencyMs };
     this.escalations++;
-    const second = await this.fallback.assess(fields, options);
+    const fallbackStarted = performance.now();
+    let second: SentinelAssessment;
+    try {
+      second = await this.fallback.assess(fields, options);
+    } catch (cause) {
+      throw new SentinelAssessmentError(cause, {
+        escalated: true,
+        primaryLatencyMs: first.latencyMs,
+        fallbackLatencyMs: performance.now() - fallbackStarted,
+      });
+    }
     return {
       ...second,
       latencyMs: first.latencyMs + second.latencyMs,
       primaryLatencyMs: first.latencyMs,
       fallbackLatencyMs: second.latencyMs,
       escalated: true,
+      usage: checkUsage([first.usage, second.usage]),
     };
   }
 }
@@ -326,7 +407,7 @@ export class LayaDecisionModel implements DecisionModel {
     return { inputTokens: this.inputTokens, outputTokens: 0, costUsd: 0 };
   }
 
-  async decide(question: DecisionQuestion, { signal }: { signal?: AbortSignal } = {}) {
+  async decide(question: DecisionQuestion, { signal, onUsage }: DecisionOptions = {}) {
     const started = performance.now();
     const criteria =
       question.type === "noul"
@@ -344,6 +425,7 @@ export class LayaDecisionModel implements DecisionModel {
       signal,
     )) as { answers?: Record<string, unknown>; usage?: { input_tokens?: number } };
     this.inputTokens += raw.usage?.input_tokens ?? 0;
+    onUsage?.({ inputTokens: raw.usage?.input_tokens ?? 0, outputTokens: 0, costUsd: 0 });
     const answer = raw.answers?.[question.key];
     let decision: Decision;
     if (question.type === "noul") {

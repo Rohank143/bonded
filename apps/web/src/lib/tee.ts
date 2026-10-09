@@ -1,4 +1,4 @@
-import { isTeeMeasurement } from "@bonded/shared";
+import { isTeeMeasurement } from "@bondedhq/shared";
 import type { Report } from "./api";
 
 export interface TeeView {

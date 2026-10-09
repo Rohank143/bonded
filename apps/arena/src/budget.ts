@@ -1,4 +1,4 @@
-import type { AgentRunSummary } from "@bonded/shared";
+import type { AgentRunSummary } from "@bondedhq/shared";
 
 /**
  * A per-run spending cap for model usage. A rating stops starting new episodes once the cap is

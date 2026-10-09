@@ -1,4 +1,4 @@
-import { address, fetchVault, TOKEN_PROGRAM } from "@bonded/solana";
+import { address, fetchVault, TOKEN_PROGRAM } from "@bondedhq/solana";
 import { createAssociatedTokenAccountIdempotentInstruction, getAccount } from "@solana/spl-token";
 import { type Keypair, PublicKey, TransactionInstruction } from "@solana/web3.js";
 import { executeAction, KeypairWallet, SolanaAgentKit } from "solana-agent-kit";

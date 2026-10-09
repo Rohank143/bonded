@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOUNTY_SPEC_EXAMPLE, parseBountySpec } from "@bonded/shared";
+import { BOUNTY_SPEC_EXAMPLE, parseBountySpec } from "@bondedhq/shared";
 import { checkSpec } from "./bounty";
 import { emptyForm, formToYaml, slug, withClass, yamlToForm } from "./spec-form";
 

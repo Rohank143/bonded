@@ -4,7 +4,7 @@ import {
   mandateVaultAbi,
   mandateVaultFactoryAbi,
   testTokenAbi,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { type Abi, type Address, type Chain, parseUnits } from "viem";
 import { buildMandate, type BuiltMandate, type EvmMandateRules } from "../src/index.js";
 import { MULTICALL3_ADDRESS, MULTICALL3_RUNTIME } from "./fixtures/multicall3.js";

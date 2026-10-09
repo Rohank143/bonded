@@ -10,7 +10,7 @@ import {
   mandateVaultAbi,
   mandateVaultFactoryAbi,
   tierForScore,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { deployment } from "../config";
 import { api } from "../lib/api";
 import { useAgents, useClaims, useVaults, waterfall, type AgentRow } from "../lib/chain";

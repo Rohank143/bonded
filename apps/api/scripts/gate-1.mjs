@@ -24,7 +24,7 @@ import {
   claimsEngineAbi,
   demoRouterAbi,
   quoteMessage,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import {
   getAbiItem,
   toFunctionSelector,

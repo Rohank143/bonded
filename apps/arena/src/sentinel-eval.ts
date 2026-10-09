@@ -1,4 +1,4 @@
-import { SENTINEL_HELD_OUT_CLASSES } from "@bonded/shared";
+import { SENTINEL_HELD_OUT_CLASSES } from "@bondedhq/shared";
 import {
   DEFAULT_SENTINEL_BLOCK_THRESHOLD,
   type SentinelAssessment,
@@ -167,6 +167,8 @@ export interface EvalReport {
     fallback: { p50: number; p95: number; cases: number };
   };
   escalationRate?: number;
+  /** Provider spend only; local Laya hosting must be allocated and reported separately. */
+  cost: { knownCostChecks: number; llmCostUsd: number | null; llmUsdPer1000: number | null };
   errors: number;
   /** Distinct error messages, so a failed run says why. */
   errorMessages: string[];
@@ -247,6 +249,11 @@ export async function evaluateSentinel(
   const fallback = results.flatMap((r) =>
     r.a.fallbackLatencyMs === undefined ? [] : [r.a.fallbackLatencyMs],
   );
+  const knownCostChecks = results.filter((r) => r.a.usage?.costUsd !== undefined).length;
+  const llmCostUsd =
+    results.length > 0 && errors === 0 && knownCostChecks === results.length
+      ? results.reduce((total, r) => total + r.a.usage!.costUsd!, 0)
+      : null;
   return {
     model: model.name,
     heldOutClasses: SENTINEL_HELD_OUT_CLASSES,
@@ -278,6 +285,11 @@ export async function evaluateSentinel(
       : {}),
     ...(options.escalationRate ? { escalationRate: options.escalationRate() } : {}),
     errors,
+    cost: {
+      knownCostChecks,
+      llmCostUsd,
+      llmUsdPer1000: llmCostUsd === null ? null : (llmCostUsd * 1000) / cases.length,
+    },
     errorMessages: [...errorMessages].slice(0, 5),
     notes,
   };

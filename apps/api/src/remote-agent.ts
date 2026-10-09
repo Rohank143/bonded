@@ -8,7 +8,7 @@ import {
   type Sandbox,
   type VerifiedTee,
 } from "@bonded/arena";
-import type { ArenaAgent, RemoteMode } from "@bonded/shared";
+import type { ArenaAgent, RemoteMode } from "@bondedhq/shared";
 import type { Hex } from "viem";
 
 /**

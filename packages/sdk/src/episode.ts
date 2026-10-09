@@ -1,4 +1,4 @@
-import { type AgentTask, EpisodeEnv, parseEpisodeEnv } from "@bonded/shared";
+import { type AgentTask, EpisodeEnv, parseEpisodeEnv } from "@bondedhq/shared";
 import type { Address, Hex } from "viem";
 import { BondedError } from "./errors.js";
 import type { TokenInfo } from "./guarded.js";
@@ -36,7 +36,7 @@ export interface BondedEpisode {
 }
 
 /**
- * The BONDED_* variables the runner sets for each episode. The schema lives in @bonded/shared,
+ * The BONDED_* variables the runner sets for each episode. The schema lives in @bondedhq/shared,
  * next to `episodeEnv` that writes them, so the runner, the gateway and the SDK can't drift.
  */
 export const bondedEpisodeEnv = EpisodeEnv;

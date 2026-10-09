@@ -1,19 +1,19 @@
-# @bonded/sdk
+# @bondedhq/sdk
 
 Trade through a Bonded Mandate Vault from any TypeScript agent, wherever it runs.
 
 The vault holds the agent's funds. The agent's key can only act through `MandateVault.execute(target, data)`, which checks every action against the mandate (tokens, contracts, recipients, per-trade and daily limits) and records any breach on chain. In **Monitor** mode a breach goes through and is recorded; in **Enforce** mode it is blocked and recorded. That breach log decides ratings and pays claims. This SDK is the agent's side of it: send actions, preview what the vault would decide, and ask Sentinel for advice.
 
 ```bash
-npm install @bonded/sdk viem
+npm install @bondedhq/sdk viem
 ```
 
-ESM only, Node 20 or later. Not yet published to npm; inside this repository use `"@bonded/sdk": "workspace:*"`.
+ESM only, Node 20 or later. Not yet published to npm; inside this repository use `"@bondedhq/sdk": "workspace:*"`.
 
 ## The vault
 
 ```ts
-import { BondedVault } from "@bonded/sdk";
+import { BondedVault } from "@bondedhq/sdk";
 import { privateKeyToAccount } from "viem/accounts";
 
 const vault = new BondedVault({
@@ -71,7 +71,7 @@ In Monitor mode a breaching action is **not** an error: it runs, and its breache
 ## The guard
 
 ```ts
-import { guarded } from "@bonded/sdk";
+import { guarded } from "@bondedhq/sdk";
 
 const safe = guarded(vault, {
   sentinel: { apiUrl: "https://your-bonded-api", mandate, tokens }, // optional
@@ -84,7 +84,7 @@ Before each write the guard runs the dry run and refuses a predicted breach; the
 ## Sentinel
 
 ```ts
-import { checkWithSentinel } from "@bonded/sdk";
+import { checkWithSentinel } from "@bondedhq/sdk";
 
 const verdict = await checkWithSentinel({
   apiUrl, chainId, agentId, vault: vault.address,
@@ -96,12 +96,12 @@ const verdict = await checkWithSentinel({
 // { blocked, manipulated, injection, blockThreshold, model, latencyMs, advice }
 ```
 
-Signs the check (EIP-191, the message from `@bonded/shared`) and calls `POST /sentinel/check`. Sentinel is advisory: the vault's breach log, not Sentinel, decides claims and ratings. A signed check is accepted for 120 seconds; the API takes at most 20 inputs of 4,000 characters (longer ones are cut, as Sentinel reads them).
+Signs the check (EIP-191, the message from `@bondedhq/shared`) and calls `POST /sentinel/check`. Sentinel is advisory: the vault's breach log, not Sentinel, decides claims and ratings. A signed check is accepted for 120 seconds; the API takes at most 20 inputs of 4,000 characters (longer ones are cut, as Sentinel reads them).
 
 ## Mandates
 
 ```ts
-import { buildMandate, describeMandate } from "@bonded/sdk";
+import { buildMandate, describeMandate } from "@bondedhq/sdk";
 
 const { mandate, mandateHash, params } = buildMandate({
   chainId: 46630, agentId: 12n, mode: "enforce",
@@ -120,7 +120,7 @@ The same builder the web app's onboarding uses, so both hash the same rules the 
 ## Running under the Bonded runner
 
 ```ts
-import { fromBondedEnv } from "@bonded/sdk";
+import { fromBondedEnv } from "@bondedhq/sdk";
 
 const episode = fromBondedEnv(); // { episodeId, task, mode, endpoints, vault, chainId, contracts, sessionKey?, deadlineMs }
 ```
@@ -131,7 +131,7 @@ When the Bonded runner starts your agent for an Arena episode, it sets `BONDED_*
 
 ```ts
 import { AgentKit, ViemWalletProvider, erc20ActionProvider } from "@coinbase/agentkit";
-import { BondedWalletProvider } from "@bonded/sdk/agentkit";
+import { BondedWalletProvider } from "@bondedhq/sdk/agentkit";
 
 const walletProvider = new BondedWalletProvider({
   wallet: new ViemWalletProvider(agentKeyWalletClient), // signs and pays gas
@@ -147,13 +147,13 @@ Every `sendTransaction` becomes `vault.execute(to, data)` from the agent key and
 
 ```ts
 import { SolanaAgentKit, KeypairWallet } from "solana-agent-kit";
-import { bondedVaultPlugin } from "@bonded/sdk/solana-agent-kit";
+import { bondedVaultPlugin } from "@bondedhq/sdk/solana-agent-kit";
 
 const agent = new SolanaAgentKit(new KeypairWallet(agentKey, rpcUrl), rpcUrl, {})
   .use(bondedVaultPlugin({ vault: vaultAddress, guard: true, swap: jupiterSwapBuilder }));
 ```
 
-Actions `BONDED_VAULT_TRANSFER`, `BONDED_VAULT_STATUS`, and `BONDED_VAULT_SWAP` when you pass a `swap` builder; methods `bondedVaultTransfer`, `bondedVaultSwap`, `bondedVaultExecute`, `bondedVaultStatus`. Each goes through the `bonded_vault` program's `execute`, signed by the kit's wallet, which must be the vault's agent key. `SolanaBondedVault` does the same without the kit, with a `dryRun` that simulates `execute` and reads the vault's own events. Needs `@bonded/solana`, `@solana/web3.js` and `solana-agent-kit` 2.
+Actions `BONDED_VAULT_TRANSFER`, `BONDED_VAULT_STATUS`, and `BONDED_VAULT_SWAP` when you pass a `swap` builder; methods `bondedVaultTransfer`, `bondedVaultSwap`, `bondedVaultExecute`, `bondedVaultStatus`. Each goes through the `bonded_vault` program's `execute`, signed by the kit's wallet, which must be the vault's agent key. `SolanaBondedVault` does the same without the kit, with a `dryRun` that simulates `execute` and reads the vault's own events. Needs `@bondedhq/solana`, `@solana/web3.js` and `solana-agent-kit` 2.
 
 What the Solana program checks, and so what works:
 
@@ -166,7 +166,7 @@ What the Solana program checks, and so what works:
 ## ElizaOS
 
 ```ts
-import { bondedPlugin } from "@bonded/sdk/eliza";
+import { bondedPlugin } from "@bondedhq/sdk/eliza";
 
 const plugin = bondedPlugin({ vault, tokens, sentinel: { apiUrl, mandate, tokens } });
 // character.plugins / project agent plugins: [plugin]
@@ -177,9 +177,9 @@ Actions `BONDED_SWAP`, `BONDED_TRANSFER` and `BONDED_APPROVE` through the vault,
 ## Development
 
 ```bash
-pnpm --filter @bonded/sdk test
+pnpm --filter @bondedhq/sdk test
 ```
 
-Tests run against a local anvil with the protocol deployed by the production scripts, and check allowed and breaching actions against the vault's breach log, for the core client and each framework. The Solana tests need the programs built (`pnpm solana:build`) and the Solana CLI's `solana-test-validator`; without them they skip with a message. `pnpm --filter @bonded/sdk typecheck` also checks the ElizaOS plugin against `@elizaos/core`'s own types.
+Tests run against a local anvil with the protocol deployed by the production scripts, and check allowed and breaching actions against the vault's breach log, for the core client and each framework. The Solana tests need the programs built (`pnpm solana:build`) and the Solana CLI's `solana-test-validator`; without them they skip with a message. `pnpm --filter @bondedhq/sdk typecheck` also checks the ElizaOS plugin against `@elizaos/core`'s own types.
 
 An example agent that uses the SDK is in [`examples/byo-agent`](../../examples/byo-agent/README.md).

@@ -60,7 +60,7 @@ import {
   type SentinelGuardOptions,
   type TokenInfo,
 } from "./guarded.js";
-import { SENTINEL_INPUT_CHARS } from "@bonded/shared";
+import { SENTINEL_INPUT_CHARS } from "@bondedhq/shared";
 import type { ActionResult, BondedVault } from "./vault.js";
 
 export interface BondedElizaOptions {

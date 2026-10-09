@@ -1,4 +1,4 @@
-import type { AgentRunSummary } from "@bonded/shared";
+import type { AgentRunSummary } from "@bondedhq/shared";
 
 /** Model usage as a run summary reports it. `costUsd` is set only when every call reported one. */
 export type ModelUsage = NonNullable<AgentRunSummary["usage"]>;

@@ -15,7 +15,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { loadDotEnv, specUri } from "@bonded/arena";
 import { connectChain } from "@bonded/keeper";
-import { EVM_CHAINS, bountyBoardAbi, parseBountySpec, parseEvmDeployment } from "@bonded/shared";
+import { EVM_CHAINS, bountyBoardAbi, parseBountySpec, parseEvmDeployment } from "@bondedhq/shared";
 import { bytesToHex, parseEther, parseEventLogs } from "viem";
 import { generatePrivateKey } from "viem/accounts";
 import { quoteApiUrl } from "../dist/demo-checks.js";
