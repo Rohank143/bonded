@@ -345,7 +345,7 @@ The runner and the gateway speak JSON over the WebSocket. Both parse every messa
 
 | Direction | Message | Contents |
 |---|---|---|
-| runner → gateway | `hello` (first) | `runnerVersion`, `protocol` (1), `mode`, `teeUrl?` |
+| runner → gateway | `hello` (first) | `runnerVersion`, `protocol` (1), `mode`, `teeUrl?`, `codeHash?` and `codeSource?` (the code version the runner worked out, below) |
 | runner → gateway | `ping` | Every 15 s; answered with `pong`. The token is checked again once per interval |
 | gateway → runner | `episode` | `episodeId`, `task`, `mode`, `endpoints` (`mcp`, `tools`, `openapi`, `rpc?`, `done`), `chainId`, `vault`, the market's `exchange` and `tokens`, `sessionKey?`, `deadlineMs`, `nonce?`, `teeKeyId?` |
 | runner → gateway | `tee_evidence` | When the episode has a `nonce`: the TEE's answer, unchanged, or an `error` |
@@ -362,6 +362,20 @@ A runner may send 20 messages a second on average (bursts of 100). Close codes:
 | 4004 | The token was revoked |
 | 4005 | Too many messages; the runner may reconnect after backing off |
 
+The runner works out a code hash for what it launches, so you don't have to type one: `--code-hash` or `BONDED_CODE_HASH` as given, else keccak256 of `"image:<BONDED_IMAGE_DIGEST>"`, else of `"git:<commit>"` for your agent's folder (`"git-dirty:<commit>"`, labelled, when it has uncommitted changes), else of `"unpinned:"`, the command line and its entry file's bytes (labelled unpinned).
+
+### Agent URL mode
+
+Instead of a runner, the gateway can call your agent's own HTTPS endpoint. Every call is a `POST` of JSON, signed with your agent secret (`bonded_as_...`): `bonded-timestamp` is unix seconds, `bonded-signature` is `v1=` and the hex HMAC-SHA256 of `<timestamp>.<raw body>`. Check both before acting (refuse a timestamp more than 5 minutes off, and a signature you've seen before); `verifyAgentUrlRequest` in `@bonded/shared` does all of it.
+
+| Body | Your answer |
+|---|---|
+| The `episode` message above | 2xx within 10 s; then work the episode through its endpoints and `POST` its done URL |
+| `{ type: "cancel", episodeId }` | Stop that episode (best effort) |
+| `{ type: "verify", challenge }` | 200 with `{ challenge, version? }` within 10 s. `version` becomes the code hash (keccak256 of `"url:<version>"`) when you declare none |
+
+A POST that fails (an error status, no answer in 10 s, a redirect, an address that isn't public) fails the episode, and the failure is your agent's. Bonded calls only public https addresses, never follows redirects, reads at most 64 KiB of an answer and limits how often it calls one host. `apps/runner/examples/agent-url-agent.mjs` is a minimal agent in this mode.
+
 ### Rate locally with the Arena CLI
 
 `pnpm arena rate --agent remote` (or `run`, for verdicts without a score) starts a local gateway and waits for your runner. It prints the runner command to use. Options beyond the usual `--repeats`, `--controls`, `--enforce` and `--fork`:
@@ -371,6 +385,7 @@ A runner may send 20 messages a second on average (bursts of 100). Close codes:
 | `--mode tools\|chain` | How your agent acts (default `tools`) |
 | `--profile local\|hosted` | `local` (default): the CLI's own settings, each overridable (1 run of each attack, 2 controls, 240 s episodes, one held-out variant per class). `hosted`: exactly what a hosted rating runs (3 runs, 6 controls, 90 s episodes, one held-out variant per class); it refuses `--repeats`, `--controls`, `--episode-timeout` and `--held-out-fresh`, since those would change it. `rate` only |
 | `--runner-token <t>` | The token your runner connects with (default: a fresh one, printed). At least 16 characters |
+| `--agent-url <url>`, `--agent-secret <s>` | Agent URL mode instead of a runner (http to this machine is allowed locally). The secret defaults to `BONDED_AGENT_SECRET`, else a fresh one, printed |
 | `--gateway-port <n>`, `--gateway-host <h>` | Where the local gateway listens (default `127.0.0.1:8789`) |
 | `--public-url <url>` | The address your runner and agent reach the gateway at, when it isn't `http://<host>:<port>` (for example behind a tunnel) |
 | `--runner-wait <s>` | How long to wait for the runner (default 300) |
@@ -378,6 +393,8 @@ A runner may send 20 messages a second on average (bursts of 100). Close codes:
 | `--name <name>` | The agent's name in the report (default `remote/local`) |
 | `--held-out-fresh <n>` | Variants per attack class made for this rating alone (default 1; 0 for none). Used payloads are recorded in `~/.config/bonded/held-out-used.txt` so none is reused |
 | `--held-out-model <id>`, `--held-out-max-usd <n>` | Draft those variants with a model (needs `OPENROUTER_API_KEY`; cap default $0.25). Without it they are deterministic rewrites |
+
+`pnpm arena check` (with the same remote options) runs a connection check instead: one benign episode, not scored, printing each tool call and transaction as it happens, then what went wrong in plain sentences (it never called a tool, it exited with an error, it didn't make its trade, the wrong mode) and what will cost it score (surfaces it didn't read). It exits 0 when the check passes.
 
 Either profile judges your agent by the hosted rules (exercised trials, liveness). The CLI prints which profile ran and any attack class that was never exercised. `--fork robinhood` or `--fork arbitrum` rates against a copy of the live testnet instead of a fresh chain. A local rating is signed by the sandbox's attester and posted to the sandbox's own registry (on a fork, signed only). It never reaches a live chain.
 

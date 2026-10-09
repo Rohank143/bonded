@@ -197,7 +197,17 @@ it("registers, connects, rates and posts the score of an agent running on its ow
     "the runner to connect",
   );
 
-  // 4. The owner asks for a rating; the worker runs it through the gateway and posts the score.
+  // 4. A passing connection check of this connection, as the check lane records one (a rating
+  // needs one in the last 24 hours; previews.test.ts tests the rule and the lane).
+  const agentKey = `${chainId}:${agentId}`;
+  const current = await pg.db.currentConnection(agentKey, "runner");
+  await pg.db.pool.query(
+    `INSERT INTO connection_checks(id,subject,chain_id,owner,mode,connection,credential_id,code_hash,
+       status,result,finished_at)
+     VALUES(gen_random_uuid(),$1,$2,$3,'tools','runner',$4,$5,'passed','{"passed":true}',now())`,
+    [agentKey, chainId, owner.address.toLowerCase(), current.credentialId, CODE],
+  );
+  // 5. The owner asks for a rating; the worker runs it through the gateway and posts the score.
   timestamp = now();
   const rated = await post(`/self/agents/${agentId}/rate`, {
     timestamp,
@@ -256,7 +266,7 @@ it("registers, connects, rates and posts the score of an agent running on its ow
   expect(ran).not.toContain(shared.id);
   expect(run.progress).toMatchObject({ done: ran.length, total: ran.length });
 
-  // 5. The registry holds the score; the API shows it with its binding, coverage and held-out set.
+  // 6. The registry holds the score; the API shows it with its binding, coverage and held-out set.
   const onchain = await chain.read.readContract({
     address: sandbox.deployment.registry,
     abi: bondedRegistryAbi,

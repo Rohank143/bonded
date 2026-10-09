@@ -28,7 +28,8 @@ describe("migrations 0014 to 0018", () => {
     const versions = (
       await db.pool.query("SELECT version FROM schema_migrations ORDER BY version")
     ).rows.map((r) => r.version);
-    expect(versions).toEqual(Array.from({ length: 18 }, (_, i) => i + 1));
+    // Numbered by their file names: 0019 is on another branch, so 20 and 21 follow 18 here.
+    expect(versions).toEqual([...Array.from({ length: 18 }, (_, i) => i + 1), 20, 21]);
     await db.migrate();
     const tables = (
       await db.pool.query(

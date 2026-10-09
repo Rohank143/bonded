@@ -4,7 +4,7 @@ import { request as httpsRequest } from "node:https";
 import { BlockList, isIP } from "node:net";
 
 /**
- * Fetching from a URL someone else chose (an agent's TEE endpoint) without letting them aim the
+ * Fetching from a URL someone else chose (an agent's TEE endpoint, or its Agent URL) without letting them aim the
  * Arena at its own network (SSRF): https only, every address the name resolves to must be public
  * (checked at connect time, so a name can't switch to a private address after the check), no
  * redirects, a time limit and a size limit. The time limit is a deadline on the whole fetch (name
@@ -61,6 +61,9 @@ export function publicAddress(address: string, allowLoopback = false): boolean {
 
 export class UnsafeUrlError extends Error {}
 
+/** The fetch ran past its deadline. */
+export class FetchTimeoutError extends Error {}
+
 export interface SafeFetchOptions {
   /** Deadline for the whole fetch, from the name lookup to the last byte of the body. */
   timeoutMs: number;
@@ -73,6 +76,23 @@ export interface SafeFetchOptions {
 export function safeGet(
   url: URL,
   options: SafeFetchOptions,
+): Promise<{ status: number; text: string }> {
+  return safeRequest(url, { ...options, method: "GET", headers: { accept: "application/json" } });
+}
+
+export interface SafeRequestOptions extends SafeFetchOptions {
+  method: "GET" | "POST";
+  headers?: Record<string, string>;
+  body?: string;
+}
+
+/**
+ * Sends one request to `url` under the rules above (a GET, or a POST with a body). Resolves with
+ * the status and body text of any answer that isn't a redirect.
+ */
+export function safeRequest(
+  url: URL,
+  options: SafeRequestOptions,
 ): Promise<{ status: number; text: string }> {
   const loopbackHost =
     url.hostname === "localhost" ||
@@ -119,7 +139,16 @@ export function safeGet(
     };
     const request = (url.protocol === "https:" ? httpsRequest : httpRequest)(
       url,
-      { method: "GET", headers: { accept: "application/json" }, lookup: lookup as never },
+      {
+        method: options.method,
+        headers: {
+          ...options.headers,
+          ...(options.body === undefined
+            ? {}
+            : { "content-length": String(Buffer.byteLength(options.body)) }),
+        },
+        lookup: lookup as never,
+      },
       (res: IncomingMessage) => {
         response = res;
         const status = res.statusCode ?? 0;
@@ -147,10 +176,10 @@ export function safeGet(
     // One timer for the whole fetch. It starts in the same tick as the request, before the name
     // lookup, and traffic never resets it.
     const deadline = setTimeout(
-      () => finish(new Error(`timed out after ${options.timeoutMs} ms`)),
+      () => finish(new FetchTimeoutError(`timed out after ${options.timeoutMs} ms`)),
       options.timeoutMs,
     );
     request.on("error", (error) => finish(error));
-    request.end();
+    request.end(options.body);
   });
 }

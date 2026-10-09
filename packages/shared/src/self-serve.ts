@@ -33,14 +33,25 @@ export type SelfServeAgentKind = SelfServeKind | typeof REMOTE_KIND;
 export const REMOTE_MODES = AgentMode.options;
 export type RemoteMode = AgentMode;
 
+/**
+ * How Bonded reaches the operator's agent for each episode: through `@bonded/runner`, which the
+ * operator runs next to the agent (the default), or by calling the agent's own HTTPS endpoint
+ * (Agent URL mode: no install).
+ */
+export const REMOTE_CONNECTIONS = ["runner", "url"] as const;
+export type RemoteConnection = (typeof REMOTE_CONNECTIONS)[number];
+
 /** What the operator declares about their agent when registering it. */
 export interface RemoteAgentSpec {
   /**
    * The operator's own hash of the code that runs (an image digest or a git commit, as 32 bytes).
-   * Optional: without it, ratings record the hash the runner or the Agent URL reports.
+   * Optional: without it, the hash the runner computes (or the version the Agent URL reports) is
+   * used and recorded on each rating, with where it came from.
    */
   codeHash?: string;
   mode: RemoteMode;
+  /** How Bonded reaches the agent (default "runner"). */
+  connection?: RemoteConnection;
   /** Where the agent runs in a TEE, and the compose hash published for that deployment. */
   tee?: { url: string; composeHash: string };
 }
@@ -90,17 +101,30 @@ export type SelfServeRequest =
   /** Create a runner token for the agent (it replaces the agent's current one). */
   | { action: "runner-token"; chainId: number; agentId: string; timestamp: number }
   /** Revoke the agent's runner token: a connected runner is disconnected. */
-  | { action: "revoke-runner-token"; chainId: number; agentId: string; timestamp: number };
+  | { action: "revoke-runner-token"; chainId: number; agentId: string; timestamp: number }
+  /**
+   * Sign in with a wallet, for a short session (previews, connection checks, Agent URLs and
+   * notification settings). Not tied to an agent: a preview needs no on-chain registration.
+   */
+  | { action: "sign-in"; chainId: number; wallet: string; timestamp: number };
 
 const TITLES: Record<SelfServeRequest["action"], string> = {
   register: "register agent for ratings",
   rate: "rate agent",
   "runner-token": "create runner token",
   "revoke-runner-token": "revoke runner token",
+  "sign-in": "start preview",
 };
 
 /** The exact text the owner signs. Addresses and hashes are lowercased so case can't differ. */
 export function selfServeMessage(request: SelfServeRequest): string {
+  if (request.action === "sign-in")
+    return byoaMessage({
+      action: "sign-in",
+      chainId: request.chainId,
+      wallet: request.wallet,
+      timestamp: request.timestamp,
+    });
   const lines = [
     `Bonded: ${TITLES[request.action]}`,
     `chain ${request.chainId}`,
@@ -115,10 +139,13 @@ export function selfServeMessage(request: SelfServeRequest): string {
     // Only for a module, so a vault registration reads as it always has.
     if (request.protection === "module") lines.push("protection module");
     if (request.kind === REMOTE_KIND) {
-      const { codeHash, mode, tee } = request.remote;
-      // Only when declared, so a registration signed with a code hash reads as it always has.
+      const { codeHash, mode, connection, tee } = request.remote;
+      // Only when declared, so a registration signed with a code hash reads as it always has;
+      // without one, the runner's or the Agent URL's reported hash is used and recorded.
       if (codeHash) lines.push(`code ${codeHash.toLowerCase()}`);
       lines.push(`mode ${mode}`);
+      // Only for Agent URL mode, so a runner registration reads as it always has.
+      if (connection === "url") lines.push("connection url");
       // The TEE's URL is signed exactly as sent; only its compose hash is lowercased.
       if (tee) lines.push(`tee ${tee.url}`, `compose ${tee.composeHash.toLowerCase()}`);
     }
@@ -126,5 +153,39 @@ export function selfServeMessage(request: SelfServeRequest): string {
     else if (request.sentinel) lines.push("sentinel on");
   }
   lines.push(`time ${request.timestamp}`);
+  return lines.join("\n");
+}
+
+/**
+ * Bring your own agent, round 2: what a wallet signs for the preview, Agent URL, check and
+ * notification calls, in the same format as `selfServeMessage` (a title, the chain, the agent or
+ * the wallet, any fields as "<name> <value>" in order, then the time). A preview's calls are made
+ * with the session that "start preview" opens; a registered agent's are each signed by its owner.
+ */
+export type ByoaAction = "sign-in" | "runner-token" | "agent-url" | "check" | "notifications";
+
+const BYOA_TITLES: Record<ByoaAction, string> = {
+  "sign-in": "start preview",
+  // The existing action: the same text `selfServeMessage` makes for it.
+  "runner-token": "create runner token",
+  "agent-url": "register agent url",
+  check: "start connection check",
+  notifications: "set notifications",
+};
+
+/** The exact text signed for a round-2 call. URLs and other fields are signed exactly as sent. */
+export function byoaMessage(input: {
+  action: ByoaAction;
+  chainId: number;
+  agentId?: string;
+  wallet?: string;
+  fields?: Record<string, string>;
+  timestamp: number;
+}): string {
+  const lines = [`Bonded: ${BYOA_TITLES[input.action]}`, `chain ${input.chainId}`];
+  if (input.agentId !== undefined) lines.push(`agent ${input.agentId}`);
+  if (input.wallet !== undefined) lines.push(`wallet ${input.wallet.toLowerCase()}`);
+  for (const [name, value] of Object.entries(input.fields ?? {})) lines.push(`${name} ${value}`);
+  lines.push(`time ${input.timestamp}`);
   return lines.join("\n");
 }

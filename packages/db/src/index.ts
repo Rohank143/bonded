@@ -213,6 +213,8 @@ export interface RunnerTokenRecord {
   config: unknown;
   /** Who made the token: the agent's registry owner when it was made. */
   createdBy: string;
+  /** A preview's token: the preview's id (agentKey is "preview:<id>"), its mode and owner. */
+  preview?: { id: string; mode: string; owner: string };
 }
 
 /** What a runner said when it connected. */
@@ -220,6 +222,9 @@ export interface RunnerHello {
   runnerVersion: string;
   mode: string;
   teeUrl?: string | undefined;
+  /** The code hash the runner computed for the agent it runs, and where it came from. */
+  codeHash?: string | undefined;
+  codeSource?: string | undefined;
 }
 
 /** An agent's runner token and runner, as the owner's page shows them. */
@@ -235,6 +240,9 @@ export interface RunnerStatus {
     runnerVersion: string | null;
     mode: string | null;
     teeUrl: string | null;
+    /** The code hash the runner reported, and its source (git, image, unpinned...). */
+    codeHash: string | null;
+    codeSource: string | null;
   } | null;
   /** The latest rating the live loop skipped, and why. */
   lastSkip: { cause: string; reason: string; at: Date } | null;
@@ -249,6 +257,20 @@ const RUNNER_CONNECTED = `EXISTS (SELECT 1 FROM runner_presence p JOIN runner_to
     AND t.created_by IS NOT DISTINCT FROM a.owner
     AND p.mode IS NOT DISTINCT FROM a.config->>'mode'
     AND p.last_heartbeat_at > now() - make_interval(secs => ${RUNNER_FRESH_MS / 1000}))`;
+
+/**
+ * SQL: whether agent `a` is reached by its Agent URL: registered so, or it has a live Agent URL
+ * (registering one switches a runner agent to URL mode; revoking it switches it back).
+ */
+const URL_CONNECTION = `(a.config->>'connection'='url' OR EXISTS (SELECT 1 FROM agent_urls u0
+  WHERE u0.owner_key=a.id AND u0.revoked_at IS NULL))`;
+/**
+ * SQL: whether agent `a` can be reached for a rating now: its Agent URL is set and verified (Agent
+ * URL mode), or its runner is connected.
+ */
+const CONNECTION_READY = `(CASE WHEN ${URL_CONNECTION}
+  THEN EXISTS (SELECT 1 FROM agent_urls u WHERE u.owner_key=a.id AND u.revoked_at IS NULL AND u.verified_at IS NOT NULL)
+  ELSE ${RUNNER_CONNECTED} END)`;
 
 /** Which ratings a worker takes (see `takeJob`). */
 export type RatingLane = "builtin" | "remote";
@@ -274,6 +296,9 @@ export interface RatingAttempt {
   createdAt: Date;
   /** The score, when the rating finished and was posted. */
   score: number | null;
+  /** The code hash it rated, and where that came from ("declared", or the runner's source). */
+  codeHash: string | null;
+  codeSource: string | null;
 }
 
 /** Where an operator-run agent stands after its ratings (migration 0017). */
@@ -306,6 +331,171 @@ export type RemoteRefusal =
 export function remoteCooldownMs(failures: number): number {
   return Math.min(48, 2 ** Math.max(0, failures - 1)) * 3_600_000;
 }
+
+/** Runner tokens and Agent URLs of a preview are keyed "preview:<id>" (migration 0020). */
+export const PREVIEW_PREFIX = "preview:";
+/** The key of a preview's runner token, Agent URL and checks. */
+export const previewKey = (id: string) => `${PREVIEW_PREFIX}${id}`;
+/** A preview's runner token works for this many days from the preview's creation. */
+export const PREVIEW_TOKEN_DAYS = 7;
+
+/** The code a rating or a check is about, and where that hash came from. */
+export interface RatedCode {
+  hash: string;
+  /** "declared" (the owner's), "url" (the Agent URL's version), or the runner's own source. */
+  source: string;
+}
+
+/** How Bonded reaches an operator's agent. */
+export type ConnectionKind = "runner" | "url";
+
+/** A preview (migration 0020). */
+export interface PreviewRecord {
+  id: string;
+  chainId: number;
+  owner: string;
+  mode: string;
+  connection: ConnectionKind;
+  codeHash: string | null;
+  status: string;
+  ratingId: string | null;
+  error: string | null;
+  upgradedTo: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** A live Agent URL. `ciphertext` is the encrypted agent secret: never returned to anyone. */
+export interface AgentUrlRecord {
+  id: string;
+  ownerKey: string;
+  url: string;
+  ciphertext: string;
+  createdBy: string;
+  createdAt: Date;
+  verifiedAt: Date | null;
+  version: string | null;
+  codeHash: string | null;
+}
+
+/** What a passing check must match for a rating to be queued. */
+export interface CheckConfig {
+  mode: string;
+  connection: ConnectionKind;
+  /** The runner token or Agent URL in use. */
+  credentialId: string | null;
+  codeHash: string | null;
+}
+
+/** A connection check (migration 0020). */
+export interface ConnectionCheckRecord {
+  id: string;
+  subject: string;
+  chainId: number;
+  owner: string;
+  mode: string;
+  connection: ConnectionKind;
+  credentialId: string | null;
+  codeHash: string | null;
+  codeSource: string | null;
+  status: "queued" | "running" | "passed" | "failed";
+  result: unknown;
+  createdAt: Date;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+}
+
+/** The connection an agent or preview has right now. */
+export interface CurrentConnection {
+  /** The live runner token or Agent URL, if any. */
+  credentialId: string | null;
+  /** Runner connected (in the right mode), or Agent URL verified. */
+  ready: boolean;
+  /** What the runner or URL reports about its code, if anything. */
+  code: RatedCode | undefined;
+}
+
+/** An owner's notification settings (migration 0021). */
+export interface NotificationSettingsRecord {
+  owner: string;
+  webhookUrl: string | null;
+  webhookSecretCiphertext: string | null;
+  email: string | null;
+  updatedAt: Date;
+}
+
+/** Limits on preview ratings, counted over the last 24 hours. */
+export interface PreviewQuota {
+  nowMs: number;
+  perWalletDaily: number;
+  daily: number;
+}
+
+/** Why a preview rating can't be queued now. */
+export type PreviewRefusal =
+  | { refused: "wallet-daily"; nextAt: Date }
+  | { refused: "daily"; nextAt: Date }
+  | { refused: "busy" };
+
+/** How a preview rating ended (`finishPreview`). */
+export interface PreviewOutcome {
+  status: "done" | "failed" | "refused";
+  error?: string;
+  /** For a failure: true when retrying can't help (default true). */
+  final?: boolean;
+  agentCaused?: boolean;
+  agentReport?: string;
+}
+
+const previewRow = (row: Record<string, unknown>): PreviewRecord => ({
+  id: row.id as string,
+  chainId: row.chain_id as number,
+  owner: row.owner as string,
+  mode: row.mode as string,
+  connection: row.connection as ConnectionKind,
+  codeHash: (row.code_hash as string | null) ?? null,
+  status: row.status as string,
+  ratingId: (row.rating_id as string | null) ?? null,
+  error: (row.error as string | null) ?? null,
+  upgradedTo: (row.upgraded_to as string | null) ?? null,
+  createdAt: row.created_at as Date,
+  updatedAt: row.updated_at as Date,
+});
+const checkRow = (row: Record<string, unknown>): ConnectionCheckRecord => ({
+  id: row.id as string,
+  subject: row.subject as string,
+  chainId: row.chain_id as number,
+  owner: row.owner as string,
+  mode: row.mode as string,
+  connection: row.connection as ConnectionKind,
+  credentialId: (row.credential_id as string | null) ?? null,
+  codeHash: (row.code_hash as string | null) ?? null,
+  codeSource: (row.code_source as string | null) ?? null,
+  status: row.status as ConnectionCheckRecord["status"],
+  result: row.result ?? null,
+  createdAt: row.created_at as Date,
+  startedAt: (row.started_at as Date | null) ?? null,
+  finishedAt: (row.finished_at as Date | null) ?? null,
+});
+const agentUrlRow = (row: Record<string, unknown>): AgentUrlRecord => ({
+  id: row.id as string,
+  ownerKey: row.owner_key as string,
+  url: row.url as string,
+  ciphertext: row.secret_ciphertext as string,
+  createdBy: row.created_by as string,
+  createdAt: row.created_at as Date,
+  verifiedAt: (row.verified_at as Date | null) ?? null,
+  version: (row.version as string | null) ?? null,
+  codeHash: (row.code_hash as string | null) ?? null,
+});
+/** What a check that the worker lost (it restarted mid-check) says. */
+const INTERRUPTED_CHECK = {
+  passed: false,
+  problems: ["The check was interrupted on Bonded's side, not by your agent. Run it again."],
+  taskCompleted: false,
+  toolsCalled: 0,
+  surfacesRead: [],
+};
 
 /** Raised when a caller tries to queue an agent outside the configured set. */
 export class AgentNotConfiguredError extends Error {}
@@ -356,12 +546,17 @@ export class Database {
       "0016_held_out_payloads.sql",
       "0017_agent_standing.sql",
       "0018_rating_registration.sql",
+      "0020_previews_and_checks.sql",
+      "0021_notifications.sql",
     ];
     await this.transaction(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(7001)");
       await c.query("CREATE TABLE IF NOT EXISTS schema_migrations (version integer PRIMARY KEY)");
-      for (const [index, file] of migrations.entries()) {
-        const version = index + 1;
+      for (const file of migrations) {
+        // A migration's version is the number its file name starts with, not its place in the
+        // list, so migrations made on separate branches (0019 and 0020, say) can land in either
+        // order: each runs once, whichever arrives first.
+        const version = Number(file.slice(0, 4));
         const done = await c.query("SELECT 1 FROM schema_migrations WHERE version=$1", [version]);
         if (!done.rowCount) {
           await c.query(await readFile(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
@@ -504,7 +699,14 @@ export class Database {
   async enqueueUserRating(
     id: string,
     chainId: number,
-    quota: { nowMs: number; perAgentMs: number; dailyCap: number; remote?: RemoteQuota },
+    quota: {
+      nowMs: number;
+      perAgentMs: number;
+      dailyCap: number;
+      remote?: RemoteQuota;
+      /** The code the rating is about, when the caller has settled it (0020). */
+      code?: RatedCode;
+    },
   ): Promise<
     { runId: string } | { refused: "hourly"; nextAt: Date } | { refused: "daily" } | RemoteRefusal
   > {
@@ -520,7 +722,7 @@ export class Database {
       if (quota.remote) {
         const refused = await this.remoteQuotaIn(c, id, quota.remote);
         if (refused) return refused;
-        return { runId: await this.enqueueIn(c, id, new Date(quota.nowMs)) };
+        return { runId: await this.enqueueIn(c, id, new Date(quota.nowMs), quota.code) };
       }
       const today = (
         await c.query(
@@ -544,7 +746,7 @@ export class Database {
     token: { hash: string; createdBy: string; signedAt: number },
   ): Promise<{ id: string; createdAt: Date } | { refused: "replayed" }> {
     return this.transaction(async (c) => {
-      await c.query("SELECT 1 FROM agents WHERE id=$1 FOR UPDATE", [agentKey]);
+      await this.lockSubject(c, agentKey);
       if (await this.runnerRequestSeen(c, agentKey, token.signedAt)) return { refused: "replayed" };
       await c.query(
         "UPDATE runner_tokens SET revoked_at=now(),revoked_signed_at=$2 WHERE agent_id=$1 AND revoked_at IS NULL",
@@ -564,7 +766,7 @@ export class Database {
     signedAt: number,
   ): Promise<{ revoked: number } | { refused: "replayed" }> {
     return this.transaction(async (c) => {
-      await c.query("SELECT 1 FROM agents WHERE id=$1 FOR UPDATE", [agentKey]);
+      await this.lockSubject(c, agentKey);
       if (await this.runnerRequestSeen(c, agentKey, signedAt)) return { refused: "replayed" };
       const r = await c.query(
         "UPDATE runner_tokens SET revoked_at=now(),revoked_signed_at=$2 WHERE agent_id=$1 AND revoked_at IS NULL",
@@ -595,14 +797,34 @@ export class Database {
       [hash],
     );
     const row = r.rows[0];
-    return (
-      row && {
+    if (row)
+      return {
         tokenId: row.id,
         agentKey: row.agent_id,
         chainId: row.chain_id,
         agentId: row.onchain,
         config: row.config,
         createdBy: row.created_by,
+      };
+    // A preview's token: live while the preview is open (PREVIEW_TOKEN_DAYS from its creation).
+    const p = (
+      await this.pool.query(
+        `SELECT t.id,t.agent_id,t.created_by,v.id AS preview,v.chain_id,v.mode,v.owner FROM runner_tokens t
+         JOIN previews v ON 'preview:'||v.id::text=t.agent_id
+         WHERE t.token_hash=$1 AND t.revoked_at IS NULL AND v.status<>'stopped'
+           AND v.created_at > now() - make_interval(days => $2)`,
+        [hash, PREVIEW_TOKEN_DAYS],
+      )
+    ).rows[0];
+    return (
+      p && {
+        tokenId: p.id,
+        agentKey: p.agent_id,
+        chainId: p.chain_id,
+        agentId: p.agent_id,
+        config: { kind: "preview", mode: p.mode },
+        createdBy: p.created_by,
+        preview: { id: p.preview, mode: p.mode, owner: p.owner },
       }
     );
   }
@@ -615,14 +837,23 @@ export class Database {
     const connection = randomUUID();
     const r = await this.pool.query(
       `INSERT INTO runner_presence(agent_id,token_id,connection_id,connected,connected_at,last_heartbeat_at,
-                                   disconnected_at,runner_version,mode,tee_url)
-       SELECT agent_id,id,$2,true,now(),now(),NULL,$3,$4,$5 FROM runner_tokens
+                                   disconnected_at,runner_version,mode,tee_url,code_hash,code_source)
+       SELECT agent_id,id,$2,true,now(),now(),NULL,$3,$4,$5,$6,$7 FROM runner_tokens
        WHERE agent_id=$1 AND revoked_at IS NULL
        ON CONFLICT(agent_id) DO UPDATE SET token_id=EXCLUDED.token_id,connection_id=EXCLUDED.connection_id,
          connected=true,connected_at=now(),last_heartbeat_at=now(),disconnected_at=NULL,
-         runner_version=EXCLUDED.runner_version,mode=EXCLUDED.mode,tee_url=EXCLUDED.tee_url
+         runner_version=EXCLUDED.runner_version,mode=EXCLUDED.mode,tee_url=EXCLUDED.tee_url,
+         code_hash=EXCLUDED.code_hash,code_source=EXCLUDED.code_source
        RETURNING agent_id`,
-      [agentKey, connection, hello.runnerVersion, hello.mode, hello.teeUrl ?? null],
+      [
+        agentKey,
+        connection,
+        hello.runnerVersion,
+        hello.mode,
+        hello.teeUrl ?? null,
+        hello.codeHash?.toLowerCase() ?? null,
+        hello.codeSource ?? null,
+      ],
     );
     return r.rowCount === 1 ? connection : undefined;
   }
@@ -654,6 +885,7 @@ export class Database {
   }
   /** Whether the agent has a connected runner on a live token right now. */
   async runnerIsConnected(agentKey: string): Promise<boolean> {
+    if (agentKey.startsWith(PREVIEW_PREFIX)) return this.previewRunnerConnected(agentKey);
     const r = await this.pool.query(
       `SELECT ${RUNNER_CONNECTED} AS ok FROM agents a WHERE a.id=$1`,
       [agentKey],
@@ -669,9 +901,11 @@ export class Database {
       ),
       this.pool.query(
         `SELECT p.*, (p.connected AND t.revoked_at IS NULL
-                      AND p.mode IS NOT DISTINCT FROM a.config->>'mode'
+                      AND p.mode IS NOT DISTINCT FROM coalesce(a.config->>'mode', v.mode)
                       AND p.last_heartbeat_at > now() - make_interval(secs => $2)) AS live
-         FROM runner_presence p JOIN runner_tokens t ON t.id=p.token_id JOIN agents a ON a.id=p.agent_id
+         FROM runner_presence p JOIN runner_tokens t ON t.id=p.token_id
+         LEFT JOIN agents a ON a.id=p.agent_id
+         LEFT JOIN previews v ON 'preview:'||v.id::text=p.agent_id
          WHERE p.agent_id=$1 AND t.revoked_at IS NULL`,
         [agentKey, RUNNER_FRESH_MS / 1000],
       ),
@@ -694,6 +928,8 @@ export class Database {
             runnerVersion: p.runner_version,
             mode: p.mode,
             teeUrl: p.tee_url,
+            codeHash: p.code_hash,
+            codeSource: p.code_source,
           }
         : null,
       lastSkip: s ? { cause: s.cause, reason: s.reason, at: s.created_at } : null,
@@ -751,7 +987,7 @@ export class Database {
   async remoteAgentsExpiring(chainId: number, beforeSeconds: number): Promise<string[]> {
     const r = await this.pool.query(
       `SELECT a.id FROM agents a
-       WHERE a.chain_id=$1 AND a.enabled AND a.config->>'kind'='remote' AND ${RUNNER_CONNECTED}
+       WHERE a.chain_id=$1 AND a.enabled AND a.config->>'kind'='remote' AND ${CONNECTION_READY}
          AND (SELECT (s.signed->'attestation'->>'expiresAt')::bigint FROM attestations s
               WHERE s.agent_id=a.id ORDER BY s.created_at DESC LIMIT 1) < $2
        ORDER BY a.id`,
@@ -879,6 +1115,17 @@ export class Database {
   }
   /** How far a rating has got: the episodes its worker has published (see `publish`). */
   async runProgress(runId: string): Promise<RunProgress> {
+    // Ratings of agents their operators run (and previews) keep their counts on the rating: their
+    // episodes are published only once the rating is over.
+    const own = (await this.pool.query("SELECT progress FROM ratings WHERE id=$1", [runId])).rows[0]
+      ?.progress as { done: number; total: number; startedAt: string; lastAt?: string } | null;
+    if (own)
+      return {
+        done: own.done,
+        total: own.total,
+        startedAt: new Date(own.startedAt),
+        lastAt: own.lastAt ? new Date(own.lastAt) : null,
+      };
     const r = await this.pool.query(
       `SELECT count(*)::int AS done, max((payload->>'total')::int) AS total,
          min(created_at) AS started, max(created_at) AS last
@@ -902,7 +1149,7 @@ export class Database {
     ).rows[0].n as number;
     const at = pageOf(q.page, total, limit);
     const r = await this.pool.query(
-      `SELECT r.id,r.status,r.error,r.agent_caused,r.agent_report,r.created_at,
+      `SELECT r.id,r.status,r.error,r.agent_caused,r.agent_report,r.created_at,r.code_hash,r.code_source,
          (s.signed->'attestation'->>'score')::int AS score
        FROM ratings r LEFT JOIN attestations s ON s.id=r.id
        WHERE r.agent_id=$1 ORDER BY r.created_at DESC, r.id LIMIT $2 OFFSET $3`,
@@ -916,6 +1163,8 @@ export class Database {
       agentReport: row.agent_report,
       createdAt: row.created_at,
       score: row.score,
+      codeHash: row.code_hash,
+      codeSource: row.code_source,
     }));
     return { items, page: at.page, pages: at.pages, total };
   }
@@ -1035,7 +1284,12 @@ export class Database {
     return this.transaction((c) => this.enqueueIn(c, agentId));
   }
   /** Queue a rating inside a caller's transaction. */
-  private async enqueueIn(c: Connection, agentId: string, createdAt?: Date): Promise<string> {
+  private async enqueueIn(
+    c: Connection,
+    agentId: string,
+    createdAt?: Date,
+    code?: RatedCode,
+  ): Promise<string> {
     const id = randomUUID();
     const agent = await c.query(
       "SELECT config,owner FROM agents WHERE id=$1 AND enabled FOR SHARE",
@@ -1043,10 +1297,22 @@ export class Database {
     );
     if (!agent.rowCount) throw new AgentNotConfiguredError("agent not configured");
     // The registration it rates and the owner it is charged to, fixed now (0018).
-    const { config, owner } = agent.rows[0] as { config: { kind?: unknown }; owner: string | null };
+    const { config, owner } = agent.rows[0] as {
+      config: { kind?: unknown; codeHash?: unknown; connection?: unknown };
+      owner: string | null;
+    };
+    // The code it rates (0020): declared at registration, or what the agent's runner or URL
+    // reports now, for an operator-run agent that declared none.
+    const rated =
+      code ??
+      (config?.kind !== "remote"
+        ? undefined
+        : typeof config.codeHash === "string"
+          ? { hash: config.codeHash, source: "declared" }
+          : await this.reportedCodeIn(c, agentId, await this.connectionOfIn(c, agentId, config)));
     await c.query(
-      `INSERT INTO ratings(id,agent_id,created_at,kind,charged_owner,config)
-       VALUES($1,$2,coalesce($3,now()),$4,$5,$6)`,
+      `INSERT INTO ratings(id,agent_id,created_at,kind,charged_owner,config,code_hash,code_source)
+       VALUES($1,$2,coalesce($3,now()),$4,$5,$6,$7,$8)`,
       [
         id,
         agentId,
@@ -1054,6 +1320,8 @@ export class Database {
         typeof config?.kind === "string" ? config.kind : "",
         owner,
         json(config),
+        rated?.hash.toLowerCase() ?? null,
+        rated?.source ?? null,
       ],
     );
     await c.query("INSERT INTO jobs(id) VALUES($1)", [id]);
@@ -1598,6 +1866,836 @@ export class Database {
       [chainId, submissionId],
     );
     return r.rows[0]?.status as string | undefined;
+  }
+  // Bring your own agent, round 2 (migrations 0020 and 0021): sessions, previews, Agent URLs,
+  // connection checks and notification settings.
+
+  /**
+   * How an operator-run agent is reached: by its Agent URL when registered so or when it has a
+   * live one (registering a URL switches it; revoking switches it back), else by its runner.
+   */
+  async connectionOf(key: string, config: unknown): Promise<ConnectionKind> {
+    return this.connectionOfIn(this.pool, key, config);
+  }
+  private async connectionOfIn(
+    c: Connection | pg.Pool,
+    key: string,
+    config: unknown,
+  ): Promise<ConnectionKind> {
+    if ((config as { connection?: unknown } | null)?.connection === "url") return "url";
+    const live = await c.query(
+      "SELECT 1 FROM agent_urls WHERE owner_key=$1 AND revoked_at IS NULL",
+      [key],
+    );
+    return live.rowCount ? "url" : "runner";
+  }
+  /** Record a signature as used; false when it already was (a replay). */
+  async useSignature(hash: string): Promise<boolean> {
+    const r = await this.pool.query(
+      "INSERT INTO used_signatures(hash) VALUES($1) ON CONFLICT DO NOTHING",
+      [hash],
+    );
+    return (r.rowCount ?? 0) > 0;
+  }
+  /**
+   * Whether `owner` may queue a preview rating now, by the same counts `enqueuePreviewRating`
+   * applies, and how many remote ratings and previews are waiting or running on the chain.
+   */
+  async previewAllowance(
+    owner: string,
+    chainId: number,
+    quota: PreviewQuota,
+  ): Promise<{ refusal?: PreviewRefusal; queued: number }> {
+    const since = new Date(quota.nowMs - 86_400_000);
+    const counts = (
+      await this.pool.query(
+        `SELECT count(*) FILTER (WHERE r.charged_owner=$2)::int AS wallet,
+           min(r.created_at) FILTER (WHERE r.charged_owner=$2) AS wallet_first,
+           count(*)::int AS lane, min(r.created_at) AS lane_first
+         FROM ratings r JOIN previews v ON v.id=r.preview_id
+         WHERE v.chain_id=$1 AND r.kind='preview' AND r.created_at>=$3`,
+        [chainId, owner.toLowerCase(), since],
+      )
+    ).rows[0];
+    const queued = await this.remoteQueue(chainId);
+    if (counts.wallet >= quota.perWalletDaily)
+      return {
+        refusal: {
+          refused: "wallet-daily",
+          nextAt: new Date(
+            ((counts.wallet_first as Date | null)?.getTime() ?? quota.nowMs) + 86_400_000,
+          ),
+        },
+        queued,
+      };
+    if (counts.lane >= quota.daily)
+      return {
+        refusal: {
+          refused: "daily",
+          nextAt: new Date(
+            ((counts.lane_first as Date | null)?.getTime() ?? quota.nowMs) + 86_400_000,
+          ),
+        },
+        queued,
+      };
+    return { queued };
+  }
+  /**
+   * Remote ratings and previews waiting or running on the chain; with `runId`, those ahead of it
+   * (official ratings always go first, then previews by when they were queued).
+   */
+  async remoteQueue(chainId: number, runId?: string): Promise<number> {
+    const r = await this.pool.query(
+      `WITH lane AS (
+         SELECT j.id, r.kind, j.available_at, j.status FROM jobs j JOIN ratings r ON r.id=j.id
+         LEFT JOIN agents a ON a.id=r.agent_id LEFT JOIN previews v ON v.id=r.preview_id
+         WHERE coalesce(a.chain_id, v.chain_id)=$1 AND (r.kind='remote' OR r.kind='preview')
+           AND j.status IN ('queued','running') AND j.attempts<3
+       ), me AS (SELECT * FROM lane WHERE id=$2::uuid)
+       SELECT count(*)::int AS n FROM lane l
+       WHERE $2::uuid IS NULL OR (l.id<>$2::uuid AND (l.status='running'
+         OR (SELECT kind FROM me)='preview' AND (l.kind='remote' OR l.available_at < (SELECT available_at FROM me))
+         OR (SELECT kind FROM me)='remote' AND l.kind='remote' AND l.available_at < (SELECT available_at FROM me)))`,
+      [chainId, runId ?? null],
+    );
+    return r.rows[0].n as number;
+  }
+  /** Lock an agent's or a preview's row for the rest of the caller's transaction. */
+  private async lockSubject(c: Connection, key: string) {
+    if (key.startsWith(PREVIEW_PREFIX))
+      await c.query("SELECT 1 FROM previews WHERE id::text=$1 FOR UPDATE", [
+        key.slice(PREVIEW_PREFIX.length),
+      ]);
+    else await c.query("SELECT 1 FROM agents WHERE id=$1 FOR UPDATE", [key]);
+  }
+  /** Whether a preview's runner is connected on its live token, in the preview's mode. */
+  private async previewRunnerConnected(key: string): Promise<boolean> {
+    const r = await this.pool.query(
+      `SELECT EXISTS (SELECT 1 FROM runner_presence p JOIN runner_tokens t ON t.id=p.token_id
+         JOIN previews v ON 'preview:'||v.id::text=p.agent_id
+         WHERE p.agent_id=$1 AND p.connected AND t.revoked_at IS NULL AND t.created_by=v.owner
+           AND p.mode IS NOT DISTINCT FROM v.mode
+           AND p.last_heartbeat_at > now() - make_interval(secs => $2)) AS ok`,
+      [key, RUNNER_FRESH_MS / 1000],
+    );
+    return r.rows[0]?.ok === true;
+  }
+  /** What the agent's (or preview's) connected runner or verified Agent URL reports about its code. */
+  private async reportedCodeIn(
+    c: Connection | pg.Pool,
+    key: string,
+    connection: ConnectionKind,
+  ): Promise<RatedCode | undefined> {
+    if (connection === "url") {
+      const u = (
+        await c.query(
+          "SELECT code_hash FROM agent_urls WHERE owner_key=$1 AND revoked_at IS NULL AND verified_at IS NOT NULL",
+          [key],
+        )
+      ).rows[0];
+      return u?.code_hash ? { hash: u.code_hash, source: "url-version" } : undefined;
+    }
+    const p = (
+      await c.query(
+        `SELECT p.code_hash,p.code_source FROM runner_presence p JOIN runner_tokens t ON t.id=p.token_id
+         WHERE p.agent_id=$1 AND p.connected AND t.revoked_at IS NULL
+           AND p.last_heartbeat_at > now() - make_interval(secs => $2)`,
+        [key, RUNNER_FRESH_MS / 1000],
+      )
+    ).rows[0];
+    return p?.code_hash ? { hash: p.code_hash, source: p.code_source ?? "runner" } : undefined;
+  }
+  /**
+   * The connection an agent or preview has now: its live runner token or Agent URL, whether it
+   * can be reached (runner connected in the right mode, or URL verified), and the code it reports.
+   */
+  async currentConnection(key: string, connection: ConnectionKind): Promise<CurrentConnection> {
+    if (connection === "url") {
+      const u = await this.agentUrl(key);
+      return {
+        credentialId: u?.id ?? null,
+        ready: Boolean(u?.verifiedAt),
+        code: u?.verifiedAt && u.codeHash ? { hash: u.codeHash, source: "url-version" } : undefined,
+      };
+    }
+    const token = (
+      await this.pool.query(
+        "SELECT id FROM runner_tokens WHERE agent_id=$1 AND revoked_at IS NULL",
+        [key],
+      )
+    ).rows[0];
+    const ready = Boolean(token) && (await this.runnerIsConnected(key));
+    return {
+      credentialId: token?.id ?? null,
+      ready,
+      code: ready ? await this.reportedCodeIn(this.pool, key, "runner") : undefined,
+    };
+  }
+
+  /**
+   * Open an owner session. Refused when this signature already opened one (a replay) or the
+   * wallet opened `perWalletHourly` sessions in the last hour.
+   */
+  async createSession(
+    s: { tokenHash: string; chainId: number; wallet: string; signatureHash: string; ttlMs: number },
+    perWalletHourly: number,
+  ): Promise<{ expiresAt: Date } | { refused: "replayed" | "too-many" }> {
+    const wallet = s.wallet.toLowerCase();
+    return this.transaction(async (c) => {
+      await c.query("SELECT pg_advisory_xact_lock(7011, hashtext($1))", [wallet]);
+      const seen = await c.query("SELECT 1 FROM owner_sessions WHERE signature_hash=$1", [
+        s.signatureHash,
+      ]);
+      if (seen.rowCount) return { refused: "replayed" as const };
+      const n = (
+        await c.query(
+          "SELECT count(*)::int AS n FROM owner_sessions WHERE wallet=$1 AND created_at > now() - interval '1 hour'",
+          [wallet],
+        )
+      ).rows[0].n as number;
+      if (n >= perWalletHourly) return { refused: "too-many" as const };
+      const r = await c.query(
+        `INSERT INTO owner_sessions(token_hash,chain_id,wallet,signature_hash,expires_at)
+         VALUES($1,$2,$3,$4,now()+make_interval(secs => $5)) RETURNING expires_at`,
+        [s.tokenHash, s.chainId, wallet, s.signatureHash, s.ttlMs / 1000],
+      );
+      return { expiresAt: r.rows[0].expires_at as Date };
+    });
+  }
+  /** The wallet of a live session on this chain, or undefined. */
+  async session(
+    tokenHash: string,
+    chainId: number,
+  ): Promise<{ wallet: string; expiresAt: Date } | undefined> {
+    const row = (
+      await this.pool.query(
+        `SELECT wallet,expires_at FROM owner_sessions
+         WHERE token_hash=$1 AND chain_id=$2 AND revoked_at IS NULL AND expires_at > now()`,
+        [tokenHash, chainId],
+      )
+    ).rows[0];
+    return row ? { wallet: row.wallet, expiresAt: row.expires_at } : undefined;
+  }
+  /** End a session. */
+  async revokeSession(tokenHash: string): Promise<boolean> {
+    const r = await this.pool.query(
+      "UPDATE owner_sessions SET revoked_at=now() WHERE token_hash=$1 AND revoked_at IS NULL",
+      [tokenHash],
+    );
+    return (r.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Create a preview for a wallet, unless it created `perWalletDaily` in the last 24 hours (then
+   * `nextAt` is when it may create another).
+   */
+  async createPreview(
+    p: {
+      chainId: number;
+      owner: string;
+      mode: string;
+      connection: ConnectionKind;
+      codeHash?: string;
+    },
+    quota: { nowMs: number; perWalletDaily: number },
+  ): Promise<PreviewRecord | { refused: "too-many"; nextAt: Date }> {
+    const owner = p.owner.toLowerCase();
+    return this.transaction(async (c) => {
+      await c.query("SELECT pg_advisory_xact_lock(7012, hashtext($1))", [owner]);
+      const since = new Date(quota.nowMs - 86_400_000);
+      const made = (
+        await c.query(
+          "SELECT count(*)::int AS n, min(created_at) AS first FROM previews WHERE owner=$1 AND chain_id=$2 AND created_at>=$3",
+          [owner, p.chainId, since],
+        )
+      ).rows[0];
+      if (made.n >= quota.perWalletDaily)
+        return {
+          refused: "too-many" as const,
+          nextAt: new Date((made.first as Date).getTime() + 86_400_000),
+        };
+      const r = await c.query(
+        `INSERT INTO previews(id,chain_id,owner,mode,connection,code_hash,created_at,updated_at)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$7) RETURNING *`,
+        [
+          randomUUID(),
+          p.chainId,
+          owner,
+          p.mode,
+          p.connection,
+          p.codeHash?.toLowerCase() ?? null,
+          new Date(quota.nowMs),
+        ],
+      );
+      return previewRow(r.rows[0]);
+    });
+  }
+  /** A preview by id. */
+  async preview(id: string): Promise<PreviewRecord | undefined> {
+    const r = await this.pool.query("SELECT * FROM previews WHERE id=$1", [id]);
+    return r.rows[0] ? previewRow(r.rows[0]) : undefined;
+  }
+  /** A wallet's previews, newest first, a numbered page at a time. */
+  async previewsOf(
+    owner: string,
+    chainId: number,
+    q: { page?: number; limit?: number } = {},
+  ): Promise<Page<PreviewRecord>> {
+    const limit = clampLimit(q.limit ?? 10);
+    const total = (
+      await this.pool.query(
+        "SELECT count(*)::int AS n FROM previews WHERE owner=$1 AND chain_id=$2",
+        [owner.toLowerCase(), chainId],
+      )
+    ).rows[0].n as number;
+    const at = pageOf(q.page, total, limit);
+    const r = await this.pool.query(
+      `SELECT * FROM previews WHERE owner=$1 AND chain_id=$2
+       ORDER BY created_at DESC, id LIMIT $3 OFFSET $4`,
+      [owner.toLowerCase(), chainId, limit, at.offset],
+    );
+    return { items: r.rows.map(previewRow), page: at.page, pages: at.pages, total };
+  }
+  /** Set a preview's status (and its error, cleared when not given). */
+  async setPreviewStatus(id: string, status: string, error?: string) {
+    await this.pool.query("UPDATE previews SET status=$2,error=$3,updated_at=now() WHERE id=$1", [
+      id,
+      status,
+      error ?? null,
+    ]);
+  }
+  /**
+   * Stop a preview: a queued rating is cancelled; a running one can't be (it finishes, or stops
+   * at its first failed episode). Its runner token and Agent URL stop working.
+   */
+  async stopPreview(id: string): Promise<{ stopped: true } | { refused: "running" }> {
+    return this.transaction(async (c) => {
+      await c.query("SELECT 1 FROM previews WHERE id=$1 FOR UPDATE", [id]);
+      const running = await c.query(
+        `SELECT 1 FROM jobs j JOIN ratings r ON r.id=j.id
+         WHERE r.preview_id=$1 AND j.status='running' AND j.lease_until>now()`,
+        [id],
+      );
+      if (running.rowCount) return { refused: "running" as const };
+      const cancelled = await c.query(
+        `UPDATE jobs j SET status='failed',lease_until=NULL FROM ratings r
+         WHERE j.id=r.id AND r.preview_id=$1 AND j.status IN ('queued','running') RETURNING j.id`,
+        [id],
+      );
+      for (const row of cancelled.rows)
+        await c.query(
+          "UPDATE ratings SET status='failed',error='stopped by its owner' WHERE id=$1",
+          [row.id],
+        );
+      await c.query("UPDATE previews SET status='stopped',updated_at=now() WHERE id=$1", [id]);
+      await c.query(
+        "UPDATE runner_tokens SET revoked_at=now() WHERE agent_id=$1 AND revoked_at IS NULL",
+        [previewKey(id)],
+      );
+      await c.query(
+        "UPDATE runner_presence SET connected=false,disconnected_at=now() WHERE agent_id=$1 AND connected",
+        [previewKey(id)],
+      );
+      await c.query(
+        "UPDATE agent_urls SET revoked_at=now() WHERE owner_key=$1 AND revoked_at IS NULL",
+        [previewKey(id)],
+      );
+      return { stopped: true as const };
+    });
+  }
+  /** Record that an agent was registered from this preview ("Make it official"). */
+  async linkPreviewUpgrade(id: string, owner: string, agentKey: string): Promise<boolean> {
+    const r = await this.pool.query(
+      "UPDATE previews SET upgraded_to=$3,updated_at=now() WHERE id=$1 AND owner=$2",
+      [id, owner.toLowerCase(), agentKey],
+    );
+    return (r.rowCount ?? 0) > 0;
+  }
+  /** The latest preview an agent was registered from, if any. */
+  async previewUpgradedTo(agentKey: string): Promise<PreviewRecord | undefined> {
+    const r = await this.pool.query(
+      "SELECT * FROM previews WHERE upgraded_to=$1 ORDER BY updated_at DESC LIMIT 1",
+      [agentKey],
+    );
+    return r.rows[0] ? previewRow(r.rows[0]) : undefined;
+  }
+
+  /**
+   * Queue a preview's rating, within the preview caps: `perWalletDaily` per wallet and `daily` on
+   * the chain, over the last 24 hours (`nextAt` is when one is free again). Refused while the
+   * preview already has one queued or running. The rating is not published to the public feed.
+   */
+  async enqueuePreviewRating(
+    previewId: string,
+    quota: PreviewQuota,
+    code?: RatedCode,
+  ): Promise<{ runId: string } | PreviewRefusal> {
+    return this.transaction(async (c) => {
+      const preview = (await c.query("SELECT * FROM previews WHERE id=$1 FOR UPDATE", [previewId]))
+        .rows[0];
+      if (!preview) throw new AgentNotConfiguredError("preview not found");
+      await c.query("SELECT pg_advisory_xact_lock(7014,$1)", [preview.chain_id]);
+      const busy = await c.query(
+        `SELECT 1 FROM ratings r JOIN jobs j ON j.id=r.id
+         WHERE r.preview_id=$1 AND j.status IN ('queued','running')`,
+        [previewId],
+      );
+      if (busy.rowCount) return { refused: "busy" as const };
+      const since = new Date(quota.nowMs - 86_400_000);
+      const counts = (
+        await c.query(
+          `SELECT count(*) FILTER (WHERE r.charged_owner=$2)::int AS wallet,
+             min(r.created_at) FILTER (WHERE r.charged_owner=$2) AS wallet_first,
+             count(*)::int AS lane, min(r.created_at) AS lane_first
+           FROM ratings r JOIN previews v ON v.id=r.preview_id
+           WHERE v.chain_id=$1 AND r.kind='preview' AND r.created_at>=$3`,
+          [preview.chain_id, preview.owner, since],
+        )
+      ).rows[0];
+      if (counts.wallet >= quota.perWalletDaily)
+        return {
+          refused: "wallet-daily" as const,
+          nextAt: new Date((counts.wallet_first as Date).getTime() + 86_400_000),
+        };
+      if (counts.lane >= quota.daily)
+        return {
+          refused: "daily" as const,
+          nextAt: new Date((counts.lane_first as Date).getTime() + 86_400_000),
+        };
+      const id = randomUUID();
+      const rated: RatedCode | undefined =
+        code ?? (preview.code_hash ? { hash: preview.code_hash, source: "declared" } : undefined);
+      await c.query(
+        `INSERT INTO ratings(id,agent_id,preview_id,created_at,kind,charged_owner,config,code_hash,code_source)
+         VALUES($1,NULL,$2,$3,'preview',$4,$5,$6,$7)`,
+        [
+          id,
+          previewId,
+          new Date(quota.nowMs),
+          preview.owner,
+          json({ kind: "preview", mode: preview.mode, connection: preview.connection }),
+          rated?.hash.toLowerCase() ?? null,
+          rated?.source ?? null,
+        ],
+      );
+      await c.query("INSERT INTO jobs(id) VALUES($1)", [id]);
+      await c.query(
+        "UPDATE previews SET status='queued',rating_id=$2,error=NULL,updated_at=now() WHERE id=$1",
+        [previewId, id],
+      );
+      return { runId: id };
+    });
+  }
+  /**
+   * Claim the next preview rating on the chain, one at a time and only when no rating of an
+   * operator-run agent is waiting or running: previews come after official ratings.
+   */
+  async takePreviewJob(chainId: number): Promise<{ id: string; token: string } | undefined> {
+    return this.transaction(async (c) => {
+      const exhausted = await c.query(
+        `WITH candidates AS (
+          SELECT j.id FROM jobs j JOIN ratings r ON r.id=j.id JOIN previews v ON v.id=r.preview_id
+          WHERE v.chain_id=$1 AND j.attempts>=3
+            AND (j.status='queued' OR (j.status='running' AND j.lease_until<now()))
+          FOR UPDATE OF j SKIP LOCKED
+        ) UPDATE jobs j SET status='failed',lease_until=NULL FROM candidates x WHERE j.id=x.id RETURNING j.id`,
+        [chainId],
+      );
+      for (const row of exhausted.rows) {
+        const r = await c.query(
+          "UPDATE ratings SET status='failed',error='rating abandoned after three attempts' WHERE id=$1 RETURNING preview_id",
+          [row.id],
+        );
+        await c.query(
+          "UPDATE previews SET status='failed',error='rating abandoned after three attempts',updated_at=now() WHERE id=$1",
+          [r.rows[0].preview_id],
+        );
+      }
+      const r = await c.query(
+        `UPDATE jobs SET status='running',token=$1,attempts=attempts+1,lease_until=now()+interval '60 seconds'
+         WHERE id=(SELECT j.id FROM jobs j JOIN ratings r ON r.id=j.id JOIN previews v ON v.id=r.preview_id
+           WHERE v.chain_id=$2 AND j.attempts<3
+             AND ((j.status='queued' AND j.available_at<=now()) OR (j.status='running' AND j.lease_until<now()))
+             AND NOT EXISTS (SELECT 1 FROM jobs j2 JOIN ratings r2 ON r2.id=j2.id JOIN agents a2 ON a2.id=r2.agent_id
+               WHERE a2.chain_id=$2 AND a2.enabled AND r2.kind='remote' AND j2.attempts<3
+                 AND ((j2.status='queued' AND j2.available_at<=now()) OR j2.status='running'))
+             AND NOT EXISTS (SELECT 1 FROM jobs j3 JOIN ratings r3 ON r3.id=j3.id
+               WHERE r3.kind='preview' AND j3.id<>j.id AND j3.status='running' AND j3.lease_until>now())
+           ORDER BY j.available_at FOR UPDATE OF j SKIP LOCKED LIMIT 1)
+         RETURNING id,token`,
+        [randomUUID(), chainId],
+      );
+      if (r.rows[0])
+        await c.query(
+          "UPDATE previews SET status='running',updated_at=now() WHERE id=(SELECT preview_id FROM ratings WHERE id=$1)",
+          [r.rows[0].id],
+        );
+      return r.rows[0];
+    });
+  }
+  /**
+   * Fence a preview rating's end: done, refused (its report is kept, not attested) or failed (a
+   * failure that isn't `final` is retried, up to three attempts). Returns the rating's status.
+   */
+  async finishPreview(job: { id: string; token: string }, outcome: PreviewOutcome) {
+    return this.transaction(async (c) => {
+      const failed = outcome.status !== "done";
+      const retry = outcome.status === "failed" && outcome.final === false;
+      const r = await c.query(
+        `UPDATE jobs SET status=CASE WHEN $3='queued' AND attempts>=3 THEN 'failed' ELSE $3 END,lease_until=NULL,
+           available_at=now()+interval '30 seconds'
+         WHERE id=$1 AND token=$2 AND status='running' AND lease_until>now() RETURNING status`,
+        [job.id, job.token, retry ? "queued" : failed ? "failed" : "done"],
+      );
+      if (!r.rowCount) throw new Error("job lease lost");
+      const status = r.rows[0].status as string;
+      const rating = (
+        await c.query(
+          "UPDATE ratings SET status=$2,error=$3,agent_caused=$4,agent_report=$5 WHERE id=$1 RETURNING preview_id",
+          [
+            job.id,
+            status,
+            outcome.error ?? null,
+            Boolean(failed && outcome.agentCaused),
+            outcome.agentReport ?? null,
+          ],
+        )
+      ).rows[0];
+      await c.query("UPDATE previews SET status=$2,error=$3,updated_at=now() WHERE id=$1", [
+        rating.preview_id,
+        status === "queued" ? "queued" : outcome.status,
+        outcome.error ?? null,
+      ]);
+      return status;
+    });
+  }
+  /** Record a running rating's progress (counts only) under its lease. */
+  async setRatingProgress(
+    job: { id: string; token: string },
+    progress: { done: number; total: number; startedAt: Date },
+  ) {
+    await this.pool.query(
+      `UPDATE ratings r SET progress=$3 FROM jobs j
+       WHERE r.id=$1 AND j.id=r.id AND j.token=$2 AND j.status='running' AND j.lease_until>now()`,
+      [
+        job.id,
+        job.token,
+        json({
+          done: progress.done,
+          total: progress.total,
+          startedAt: progress.startedAt.toISOString(),
+          lastAt: new Date().toISOString(),
+        }),
+      ],
+    );
+  }
+
+  /**
+   * Store a new Agent URL for an agent or preview, with its encrypted secret, replacing (revoking)
+   * the live one in the same transaction.
+   */
+  async createAgentUrl(
+    ownerKey: string,
+    u: { url: string; ciphertext: string; createdBy: string; id?: string },
+  ): Promise<{ id: string; createdAt: Date }> {
+    return this.transaction(async (c) => {
+      await this.lockSubject(c, ownerKey);
+      await c.query(
+        "UPDATE agent_urls SET revoked_at=now() WHERE owner_key=$1 AND revoked_at IS NULL",
+        [ownerKey],
+      );
+      const r = await c.query(
+        `INSERT INTO agent_urls(id,owner_key,url,secret_ciphertext,created_by) VALUES($1,$2,$3,$4,$5)
+         RETURNING id,created_at`,
+        [u.id ?? randomUUID(), ownerKey, u.url, u.ciphertext, u.createdBy.toLowerCase()],
+      );
+      return { id: r.rows[0].id as string, createdAt: r.rows[0].created_at as Date };
+    });
+  }
+  /** The live Agent URL of an agent or preview. */
+  async agentUrl(ownerKey: string): Promise<AgentUrlRecord | undefined> {
+    const r = await this.pool.query(
+      "SELECT * FROM agent_urls WHERE owner_key=$1 AND revoked_at IS NULL",
+      [ownerKey],
+    );
+    return r.rows[0] ? agentUrlRow(r.rows[0]) : undefined;
+  }
+  /** Mark a live Agent URL verified, with the version it reported and its code hash. */
+  async markAgentUrlVerified(
+    id: string,
+    reported: { version: string | null; codeHash: string | null },
+  ): Promise<boolean> {
+    const r = await this.pool.query(
+      `UPDATE agent_urls SET verified_at=now(),version=$2,code_hash=$3
+       WHERE id=$1 AND revoked_at IS NULL`,
+      [id, reported.version, reported.codeHash?.toLowerCase() ?? null],
+    );
+    return (r.rowCount ?? 0) > 0;
+  }
+  /** Revoke an agent's or preview's Agent URL (and so its secret). */
+  async revokeAgentUrls(ownerKey: string, c?: Connection): Promise<number> {
+    const r = await (c ?? this.pool).query(
+      "UPDATE agent_urls SET revoked_at=now() WHERE owner_key=$1 AND revoked_at IS NULL",
+      [ownerKey],
+    );
+    return r.rowCount ?? 0;
+  }
+
+  /**
+   * Create a connection check, within its caps: one queued or running per agent or preview,
+   * `perWalletHourly` per owner and `hourly` on the chain in the last hour. With `immediate`, the
+   * check is stored as already failed with that result (the runner isn't connected, say): it
+   * counts, but takes no turn in the lane.
+   */
+  async createCheck(
+    input: {
+      subject: string;
+      chainId: number;
+      owner: string;
+      mode: string;
+      connection: ConnectionKind;
+      credentialId: string | null;
+      code?: RatedCode | undefined;
+    },
+    caps: { perWalletHourly: number; hourly: number },
+    immediate?: unknown,
+  ): Promise<
+    | ConnectionCheckRecord
+    | { refused: "busy" }
+    | { refused: "wallet-hourly" | "hourly"; nextAt: Date }
+  > {
+    const owner = input.owner.toLowerCase();
+    return this.transaction(async (c) => {
+      await c.query("SELECT pg_advisory_xact_lock(7013,$1)", [input.chainId]);
+      const busy = await c.query(
+        `SELECT 1 FROM connection_checks WHERE subject=$1
+           AND (status='queued' OR (status='running' AND lease_until>now()))`,
+        [input.subject],
+      );
+      if (busy.rowCount) return { refused: "busy" as const };
+      const counts = (
+        await c.query(
+          `SELECT count(*) FILTER (WHERE owner=$2)::int AS wallet,
+             min(created_at) FILTER (WHERE owner=$2) AS wallet_first,
+             count(*)::int AS lane, min(created_at) AS lane_first
+           FROM connection_checks WHERE chain_id=$1 AND created_at > now() - interval '1 hour'`,
+          [input.chainId, owner],
+        )
+      ).rows[0];
+      if (counts.wallet >= caps.perWalletHourly)
+        return {
+          refused: "wallet-hourly" as const,
+          nextAt: new Date((counts.wallet_first as Date).getTime() + 3_600_000),
+        };
+      if (counts.lane >= caps.hourly)
+        return {
+          refused: "hourly" as const,
+          nextAt: new Date((counts.lane_first as Date).getTime() + 3_600_000),
+        };
+      const r = await c.query(
+        `INSERT INTO connection_checks(id,subject,chain_id,owner,mode,connection,credential_id,code_hash,
+                                       code_source,status,result,finished_at)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,CASE WHEN $10='failed' THEN now() END) RETURNING *`,
+        [
+          randomUUID(),
+          input.subject,
+          input.chainId,
+          owner,
+          input.mode,
+          input.connection,
+          input.credentialId,
+          input.code?.hash.toLowerCase() ?? null,
+          input.code?.source ?? null,
+          immediate === undefined ? "queued" : "failed",
+          immediate === undefined ? null : json(immediate),
+        ],
+      );
+      if (immediate !== undefined)
+        await c.query("INSERT INTO connection_check_events(check_id,event) VALUES($1,$2)", [
+          r.rows[0].id,
+          json({ type: "result", ...(immediate as object) }),
+        ]);
+      return checkRow(r.rows[0]);
+    });
+  }
+  /** A check by id. */
+  async check(id: string): Promise<ConnectionCheckRecord | undefined> {
+    const r = await this.pool.query("SELECT * FROM connection_checks WHERE id=$1", [id]);
+    return r.rows[0] ? checkRow(r.rows[0]) : undefined;
+  }
+  /** A check's events after event id `after`, oldest first. */
+  async checkEvents(
+    id: string,
+    after = "0",
+    limit = 200,
+  ): Promise<{ id: string; event: unknown }[]> {
+    const r = await this.pool.query(
+      `SELECT id::text AS id,event FROM connection_check_events
+       WHERE check_id=$1 AND id>$2::bigint ORDER BY id LIMIT $3`,
+      [id, after, limit],
+    );
+    return r.rows.map((row) => ({ id: row.id as string, event: row.event }));
+  }
+  /** The latest checks of an agent or preview, newest first. */
+  async checksOf(subject: string, limit = 5): Promise<ConnectionCheckRecord[]> {
+    const r = await this.pool.query(
+      "SELECT * FROM connection_checks WHERE subject=$1 ORDER BY created_at DESC, id LIMIT $2",
+      [subject, limit],
+    );
+    return r.rows.map(checkRow);
+  }
+  /**
+   * The latest passing check of this connection within `withinMs` (default 24 hours): same mode,
+   * connection, runner token or URL, and code hash.
+   */
+  async passingCheck(
+    subject: string,
+    config: CheckConfig,
+    withinMs = 86_400_000,
+  ): Promise<ConnectionCheckRecord | undefined> {
+    const r = await this.pool.query(
+      `SELECT * FROM connection_checks WHERE subject=$1 AND status='passed' AND mode=$2 AND connection=$3
+         AND credential_id IS NOT DISTINCT FROM $4::uuid AND code_hash IS NOT DISTINCT FROM $5
+         AND finished_at > now() - make_interval(secs => $6)
+       ORDER BY finished_at DESC LIMIT 1`,
+      [
+        subject,
+        config.mode,
+        config.connection,
+        config.credentialId,
+        config.codeHash?.toLowerCase() ?? null,
+        withinMs / 1000,
+      ],
+    );
+    return r.rows[0] ? checkRow(r.rows[0]) : undefined;
+  }
+  /** The latest passing check of an agent or preview, whatever its connection. */
+  async latestPassingCheck(subject: string): Promise<ConnectionCheckRecord | undefined> {
+    const r = await this.pool.query(
+      `SELECT * FROM connection_checks WHERE subject=$1 AND status='passed'
+       ORDER BY finished_at DESC LIMIT 1`,
+      [subject],
+    );
+    return r.rows[0] ? checkRow(r.rows[0]) : undefined;
+  }
+  /**
+   * Claim the oldest queued check on the chain (a lease of `leaseMs`). A running check whose
+   * lease ran out first is failed as interrupted: a check is cheap to run again, never retried.
+   */
+  async takeCheck(
+    chainId: number,
+    leaseMs = 180_000,
+  ): Promise<{ id: string; token: string } | undefined> {
+    return this.transaction(async (c) => {
+      const lost = await c.query(
+        `UPDATE connection_checks SET status='failed',result=$2,finished_at=now(),lease_until=NULL
+         WHERE chain_id=$1 AND status='running' AND lease_until<now() RETURNING id`,
+        [chainId, json(INTERRUPTED_CHECK)],
+      );
+      for (const row of lost.rows)
+        await c.query("INSERT INTO connection_check_events(check_id,event) VALUES($1,$2)", [
+          row.id,
+          json({ type: "result", ...INTERRUPTED_CHECK }),
+        ]);
+      const r = await c.query(
+        `UPDATE connection_checks SET status='running',token=$1,started_at=now(),
+           lease_until=now()+make_interval(secs => $3)
+         WHERE id=(SELECT id FROM connection_checks WHERE chain_id=$2 AND status='queued'
+                   ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1)
+         RETURNING id,token`,
+        [randomUUID(), chainId, leaseMs / 1000],
+      );
+      return r.rows[0];
+    });
+  }
+  /** Append an event to a running check (dropped once the check's lease is gone). */
+  async addCheckEvent(job: { id: string; token: string }, event: unknown): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO connection_check_events(check_id,event)
+       SELECT $1,$3 FROM connection_checks WHERE id=$1 AND token=$2 AND status='running'`,
+      [job.id, job.token, json(event)],
+    );
+  }
+  /**
+   * Store a check's result: passed or failed. `code` replaces the code recorded at creation when
+   * the check learned it (the runner reported it during the check).
+   */
+  async finishCheck(
+    job: { id: string; token: string },
+    result: { passed: boolean } & Record<string, unknown>,
+    code?: RatedCode,
+  ): Promise<boolean> {
+    const r = await this.pool.query(
+      `UPDATE connection_checks SET status=$3,result=$4,finished_at=now(),lease_until=NULL,
+         code_hash=coalesce($5,code_hash),code_source=coalesce($6,code_source)
+       WHERE id=$1 AND token=$2 AND status='running' RETURNING id`,
+      [
+        job.id,
+        job.token,
+        result.passed ? "passed" : "failed",
+        json(result),
+        code?.hash.toLowerCase() ?? null,
+        code?.source ?? null,
+      ],
+    );
+    return (r.rowCount ?? 0) > 0;
+  }
+
+  /** An owner's notification settings, if they saved any. */
+  async notificationSettings(owner: string): Promise<NotificationSettingsRecord | undefined> {
+    const row = (
+      await this.pool.query("SELECT * FROM notification_settings WHERE owner=$1", [
+        owner.toLowerCase(),
+      ])
+    ).rows[0];
+    return row
+      ? {
+          owner: row.owner,
+          webhookUrl: row.webhook_url,
+          webhookSecretCiphertext: row.webhook_secret_ciphertext,
+          email: row.email,
+          updatedAt: row.updated_at,
+        }
+      : undefined;
+  }
+  /** Save an owner's notification settings; fields left out are kept. */
+  async saveNotificationSettings(
+    owner: string,
+    patch: {
+      webhookUrl?: string | null;
+      webhookSecretCiphertext?: string | null;
+      email?: string | null;
+    },
+  ): Promise<NotificationSettingsRecord> {
+    const has = (k: keyof typeof patch) => Object.hasOwn(patch, k);
+    await this.pool.query(
+      `INSERT INTO notification_settings(owner,webhook_url,webhook_secret_ciphertext,email)
+       VALUES($1,$2,$3,$4)
+       ON CONFLICT(owner) DO UPDATE SET
+         webhook_url=CASE WHEN $5 THEN EXCLUDED.webhook_url ELSE notification_settings.webhook_url END,
+         webhook_secret_ciphertext=CASE WHEN $6 THEN EXCLUDED.webhook_secret_ciphertext
+                                        ELSE notification_settings.webhook_secret_ciphertext END,
+         email=CASE WHEN $7 THEN EXCLUDED.email ELSE notification_settings.email END,
+         updated_at=now()`,
+      [
+        owner.toLowerCase(),
+        patch.webhookUrl ?? null,
+        patch.webhookSecretCiphertext ?? null,
+        patch.email ?? null,
+        has("webhookUrl"),
+        has("webhookSecretCiphertext"),
+        has("email"),
+      ],
+    );
+    return (await this.notificationSettings(owner))!;
+  }
+  /** Claim the right to send one notification for a rating's outcome: true only the first time. */
+  async claimNotification(ratingId: string, type: string): Promise<boolean> {
+    const r = await this.pool.query(
+      "INSERT INTO notifications_sent(rating_id,type) VALUES($1,$2) ON CONFLICT DO NOTHING",
+      [ratingId, type],
+    );
+    return (r.rowCount ?? 0) > 0;
   }
   /** Close idle clients and wait for borrowed clients to return. Drain streams first. */
   async close() {
