@@ -160,6 +160,22 @@ describe("Agent URL signatures", () => {
     ).toBe(true);
   });
 
+  it("refuses more than four signatures in one header", async () => {
+    const headers = await signAgentUrlRequest(SECRET, body, NOW);
+    const sig = headers[AGENT_URL_SIGNATURE_HEADER]!;
+    const pad = `v1=${"0".repeat(64)}`;
+    const many = (n: number) => ({
+      ...headers,
+      [AGENT_URL_SIGNATURE_HEADER]: [...Array(n - 1).fill(pad), sig].join(","),
+    });
+    expect(
+      (await verifyAgentUrlRequest({ secret: SECRET, body, headers: many(4), nowMs: NOW })).ok,
+    ).toBe(true);
+    expect(
+      await verifyAgentUrlRequest({ secret: SECRET, body, headers: many(5), nowMs: NOW }),
+    ).toMatchObject({ ok: false, reason: "too many signatures" });
+  });
+
   it("parses verify and cancel, and refuses a signed body that isn't a Bonded message", async () => {
     for (const message of [
       { type: "verify", challenge: "c".repeat(32) },

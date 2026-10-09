@@ -24,6 +24,8 @@ import { CancelMessage, codeHashOf, EpisodeMessage } from "./runner.js";
 export const AGENT_URL_TIMESTAMP_HEADER = "bonded-timestamp";
 /** Header with the signature: `v1=<hex>` (several, comma-separated, while a secret rotates). */
 export const AGENT_URL_SIGNATURE_HEADER = "bonded-signature";
+/** Most `v1=` values a signature header may carry (more than one only while a secret rotates). */
+export const AGENT_URL_MAX_SIGNATURES = 4;
 /** The signature scheme's version tag. */
 export const AGENT_URL_SIGNATURE_VERSION = "v1";
 /** Every agent secret starts with this, so one is recognisable in a config file or a log. */
@@ -220,6 +222,7 @@ export async function verifyAgentUrlRequest(
     .map((part) => part.slice(AGENT_URL_SIGNATURE_VERSION.length + 1))
     .filter((value) => /^[0-9a-f]{64}$/i.test(value));
   if (signatures.length === 0) return refuse(401, "no v1 signature");
+  if (signatures.length > AGENT_URL_MAX_SIGNATURES) return refuse(401, "too many signatures");
   const payload = signedPayload(timestamp, options.body);
   const secrets = Array.isArray(options.secret) ? options.secret : [options.secret];
   let matched: string | undefined;
