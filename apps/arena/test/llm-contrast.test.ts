@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ChatClient, ChatRequest } from "@bonded/shared";
+import type { ChatClient, ChatRequest } from "@bondedhq/shared";
 import { afterEach, expect, it } from "vitest";
 import type { ContrastRow } from "../src/contrast.js";
 import { generateLlmContrast, LLM_DISGUISES } from "../src/llm-contrast.js";

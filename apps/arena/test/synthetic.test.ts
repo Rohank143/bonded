@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ChatClient, ChatRequest } from "@bonded/shared";
+import type { ChatClient, ChatRequest } from "@bondedhq/shared";
 import type { SentinelRow } from "../src/dataset.js";
 import {
   SELL_TARGETS,

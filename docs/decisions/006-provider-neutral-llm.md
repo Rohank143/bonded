@@ -23,7 +23,7 @@ Two things changed that:
 
 ### 1. One OpenAI-compatible client for every LLM job
 
-`@bonded/shared` has a `ChatClient` interface in the OpenAI chat-completions format (messages, function tools, tool calls). `OpenAICompatibleClient` implements it with plain `fetch`, with no vendor SDK.
+`@bondedhq/shared` has a `ChatClient` interface in the OpenAI chat-completions format (messages, function tools, tool calls). `OpenAICompatibleClient` implements it with plain `fetch`, with no vendor SDK.
 
 That format is served by OpenRouter, OpenAI, DeepSeek, Gemini's compatible endpoint, and local servers such as Ollama and vLLM. So every current and future LLM job (demo agents, the attacker, the grey-area judge, synthetic data) runs on any model with no code change.
 

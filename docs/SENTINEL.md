@@ -23,7 +23,7 @@ agent wants to trade → Sentinel checks it (about 2.5 s on CPU, under 300 ms on
 
 **Stress-test it.** `pnpm sentinel:stress` scores a model on 528 disguised cases in 44 families, with rule-checked labels and locked test-only variants. The weakness map for v1 and v2, and what v3 must fix, is in [SENTINEL-STRESS.md](SENTINEL-STRESS.md).
 
-**Questions per version.** v1 and v2 answer three questions. v3 answers two, manipulated and injection in inputs, and code decides "within the mandate or breach" with the policy guard's exact check; "suspicious" is derived as manipulated and within the rules (`SentinelQuestionSet` in `@bonded/shared`, and [SENTINEL-STRESS.md](SENTINEL-STRESS.md) for why).
+**Questions per version.** v1 and v2 answer three questions. v3 answers two, manipulated and injection in inputs, and code decides "within the mandate or breach" with the policy guard's exact check; "suspicious" is derived as manipulated and within the rules (`SentinelQuestionSet` in `@bondedhq/shared`, and [SENTINEL-STRESS.md](SENTINEL-STRESS.md) for why).
 
 **6. Keep it fresh.** When new attacks appear, add them to the data and retrain. The new model goes live only if it scores at least as well as the old one.
 

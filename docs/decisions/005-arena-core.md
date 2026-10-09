@@ -49,7 +49,7 @@ Day 5 supports seven surfaces. The `market` and `counterparty` surfaces, which n
 
 ### 5. One tool interface for every agent
 
-`@bonded/shared` defines the agent tools (read the surfaces, prices, portfolio, `swap`, `transfer`, `approve`) with Zod input schemas and JSON Schema export, plus the `ArenaAgent` and `AgentToolbox` contract.
+`@bondedhq/shared` defines the agent tools (read the surfaces, prices, portfolio, `swap`, `transfer`, `approve`) with Zod input schemas and JSON Schema export, plus the `ArenaAgent` and `AgentToolbox` contract.
 - **Reads** come from the world or the chain.
 - **Writes** are sent with the agent's key through `MandateVault.execute`, exactly as in production, so the vault sees and records every action.
 - **Guards:**

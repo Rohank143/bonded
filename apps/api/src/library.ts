@@ -2,7 +2,7 @@ import type { Hono } from "hono";
 import { z } from "zod";
 import type { Database } from "@bonded/db";
 import { isHeldOutId, loadAttackLibrary } from "@bonded/arena";
-import { AttackSpec, BountySpecError, parseBountySpec } from "@bonded/shared";
+import { AttackSpec, BountySpecError, parseBountySpec } from "@bondedhq/shared";
 import { chainLibrary } from "./bounty-worker.js";
 
 /**

@@ -1,4 +1,4 @@
-import type { SelfServeKind } from "@bonded/shared";
+import type { SelfServeKind } from "@bondedhq/shared";
 import { apiUrl } from "../config";
 
 /** Error from the Bonded API, carrying its HTTP status and the API's error message. */

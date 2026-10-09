@@ -1,5 +1,5 @@
 import { connect, type AddressInfo } from "node:net";
-import { TeeEvidence, teeReportData } from "@bonded/shared";
+import { TeeEvidence, teeReportData } from "@bondedhq/shared";
 import { bytesToHex } from "viem";
 import { afterEach, describe, expect, it } from "vitest";
 import { type TeeBackend, AgentIdentity, createTeeServer, MockBackend } from "../src/index.js";

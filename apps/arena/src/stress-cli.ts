@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 import { LayaSentinel } from "@bonded/demo-agents";
-import { parseSentinelQuestionSet } from "@bonded/shared";
+import { parseSentinelQuestionSet } from "@bondedhq/shared";
 import { loadDotEnv } from "./env.js";
 import { buildStressSuite, OUT_OF_SCOPE, type StressCase } from "./stress.js";
 import { evaluateStress } from "./stress-eval.js";

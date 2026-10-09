@@ -1,4 +1,4 @@
-import { mandateHash, selfServeMessage } from "@bonded/shared";
+import { mandateHash, selfServeMessage } from "@bondedhq/shared";
 import type { Hex } from "viem";
 import { deployment } from "../config";
 import { api } from "./api";

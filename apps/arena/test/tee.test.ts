@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { teeMeasurement, teeReportData } from "@bonded/shared";
+import { teeMeasurement, teeReportData } from "@bondedhq/shared";
 import { describe, expect, it } from "vitest";
 import {
   APPROVED_OS_IMAGES,

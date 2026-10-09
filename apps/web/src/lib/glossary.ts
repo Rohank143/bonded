@@ -1,4 +1,4 @@
-import { TIER_RULES, type Tier } from "@bonded/shared";
+import { TIER_RULES, type Tier } from "@bondedhq/shared";
 
 /** Plain-language meanings of the words the app uses, shown in tooltips (see `Term`). */
 export const GLOSSARY = {

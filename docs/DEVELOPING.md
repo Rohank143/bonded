@@ -101,7 +101,7 @@ A deploy writes `contracts/evm/deployments/<chainId>.json` only after checking e
 ### Checks before a pull request
 
 ```bash
-pnpm format:check && pnpm --filter @bonded/shared abis:check && pnpm typecheck && pnpm lint && pnpm test
+pnpm format:check && pnpm --filter @bondedhq/shared abis:check && pnpm typecheck && pnpm lint && pnpm test
 cd contracts/evm && forge fmt --check && forge test
 ```
 

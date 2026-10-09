@@ -48,7 +48,7 @@ import {
   demoRouterAbi,
   quoteMessage,
   tierForScore,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import {
   formatUnits,
   getAbiItem,
