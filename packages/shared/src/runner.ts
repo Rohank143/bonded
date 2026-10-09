@@ -1,3 +1,4 @@
+import { keccak256, stringToBytes } from "viem";
 import { z } from "zod";
 import type { AgentTask } from "./agent.js";
 import { evmAddress } from "./schemas/common.js";
@@ -157,6 +158,27 @@ export const ServerToRunner = z.discriminatedUnion("type", [
 ]);
 export type ServerToRunner = z.infer<typeof ServerToRunner>;
 
+/**
+ * Where an agent's code hash came from, when it wasn't declared:
+ * - flag, env: the runner's `--code-hash` or BONDED_CODE_HASH (passed through as given);
+ * - image: BONDED_IMAGE_DIGEST, a container image digest;
+ * - git: the commit of the agent's working tree; git-dirty: the same, with uncommitted changes;
+ * - unpinned: nothing better, so the command line and the bytes of its entry file;
+ * - url: the `version` an Agent URL answered verify with.
+ */
+export const CodeSource = z.enum(["flag", "env", "image", "git", "git-dirty", "unpinned", "url"]);
+export type CodeSource = z.infer<typeof CodeSource>;
+
+/** A derived code hash: keccak256 of `"<source>:<value>"` (the value as UTF-8, or raw bytes). */
+export function codeHashOf(source: CodeSource, value: string | Uint8Array): `0x${string}` {
+  if (typeof value === "string") return keccak256(stringToBytes(`${source}:${value}`));
+  const prefix = stringToBytes(`${source}:`);
+  const bytes = new Uint8Array(prefix.length + value.length);
+  bytes.set(prefix, 0);
+  bytes.set(value, prefix.length);
+  return keccak256(bytes);
+}
+
 // Runner → server.
 
 export const HelloMessage = z.object({
@@ -165,6 +187,22 @@ export const HelloMessage = z.object({
   protocol: z.number().int().positive(),
   mode: AgentMode,
   teeUrl: url.optional(),
+  /**
+   * The code version the runner launches, as a code hash it worked out (runner `codeIdentity`):
+   * used when the operator declared none. Older runners don't send it.
+   */
+  codeHash: z
+    .string()
+    .regex(/^0x[0-9a-fA-F]{64}$/, "must be 32 bytes of hex")
+    .transform((value) => value as `0x${string}`)
+    .optional(),
+  /** Where `codeHash` came from (a git commit, an image digest, ...). */
+  codeSource: CodeSource.optional(),
+  /**
+   * What it was made from: the commit for git and git-dirty, the digest for image, a label
+   * otherwise. Reported by the runner, never verified.
+   */
+  codeDetail: text(200).optional(),
 });
 export const PingMessage = z.object({ type: z.literal("ping"), at: z.number().optional() });
 /**

@@ -54,6 +54,11 @@ describe("fetching an operator's TEE URL", () => {
       "::ffff:10.0.0.1",
       "fd00::1",
       "fe80::1",
+      // Address forms that can carry an IPv4 address: 6to4, Teredo, IPv4-compatible, NAT64.
+      "2002:a00:1::1",
+      "2001:0:4136:e378::1",
+      "::a00:1",
+      "64:ff9b:1::a00:1",
       "224.0.0.1",
       "not-an-ip",
     ])

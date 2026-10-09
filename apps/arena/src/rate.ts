@@ -27,7 +27,7 @@ import {
 import { SpendingCap } from "./budget.js";
 import { datasetRows, type SentinelRow, writeDataset } from "./dataset.js";
 import { BENIGN_GOALS, type EpisodeResult, runEpisode, saveEpisode } from "./episode.js";
-import { RemoteAgent } from "./gateway/remote-agent.js";
+import { AgentUrlUnavailableError, bondedFailure, RemoteAgent } from "./gateway/remote-agent.js";
 import { episodeOutcome, sawAttack } from "./report.js";
 import type { Sandbox } from "./sandbox.js";
 import type { VerifiedTee } from "./tee.js";
@@ -101,6 +101,40 @@ export interface RatingOptions {
   sentinel?: RatingSentinel;
   /** Called after each episode, e.g. for progress output. */
   onEpisode?: (result: EpisodeResult, index: number, total: number) => void | Promise<void>;
+  /**
+   * Called before the first episode and after each one with counts and an ETA only: safe to show
+   * an operator while the rating runs (unlike `onEpisode`'s results, which say which episodes
+   * were attacks and how they went).
+   */
+  onProgress?: (progress: RatingProgress) => void | Promise<void>;
+}
+
+/** How far a rating has got: counts and time only, never a verdict. */
+export interface RatingProgress {
+  /** Episodes finished. */
+  done: number;
+  /** Episodes planned (a spending cap or the rating service may stop it sooner). */
+  total: number;
+  /** Seconds left at the average pace so far; null before the first episode finishes. */
+  etaSeconds: number | null;
+  /** When the rating started (ISO 8601). */
+  startedAt: string;
+}
+
+/** Progress at `nowMs` for a rating started at `startedMs`. */
+export function ratingProgress(
+  startedMs: number,
+  done: number,
+  total: number,
+  nowMs: number = Date.now(),
+): RatingProgress {
+  const elapsed = Math.max(0, nowMs - startedMs);
+  return {
+    done,
+    total,
+    etaSeconds: done > 0 ? Math.round(((elapsed / done) * Math.max(0, total - done)) / 1000) : null,
+    startedAt: new Date(startedMs).toISOString(),
+  };
 }
 
 export interface ClassResult {
@@ -428,6 +462,9 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
   const episodes: EpisodeResult[] = [];
   const rows: SentinelRow[] = [];
   let stoppedEarly: string | null = null;
+  // Progress runs from the first episode, after the setup above.
+  const episodesStarted = Date.now();
+  await options.onProgress?.(ratingProgress(episodesStarted, 0, jobs.length));
   for (const [index, job] of jobs.entries()) {
     if (cap.exceeded) {
       stoppedEarly = `spending cap of $${options.maxUsd} reached after ${index} of ${jobs.length} episodes`;
@@ -440,11 +477,19 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
       worldSeed: `${worldSecret}:${index}`,
       ...(options.vault ? { vault: options.vault } : {}),
     });
+    // An episode Bonded couldn't deliver says nothing about the agent: stop, not the agent's
+    // failure (the rating service retries the rating).
+    const bonded = bondedFailure(result.agentSummary);
+    if (bonded)
+      throw new AgentUrlUnavailableError(
+        `stopped: Bonded couldn't call the agent's URL in episode ${index + 1} of ${jobs.length} (${bonded}); not the agent's fault`,
+      );
     cap.add(result.agentSummary.usage);
     episodes.push(result);
     if (tracesDir) saveEpisode(result, tracesDir);
     rows.push(...datasetRows(result));
     await options.onEpisode?.(result, index, jobs.length);
+    await options.onProgress?.(ratingProgress(episodesStarted, index + 1, jobs.length));
   }
 
   const mode = profile.mandate.mode;

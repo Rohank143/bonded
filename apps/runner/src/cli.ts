@@ -2,6 +2,7 @@
 import { createRequire } from "node:module";
 import { parseArgs } from "node:util";
 import { AgentMode } from "@bondedhq/shared";
+import { codeIdentity } from "./code-hash.js";
 import { Runner } from "./runner.js";
 import { gatewayUrlProblem } from "./tail.js";
 
@@ -19,6 +20,10 @@ Arena sends, the runner starts your agent command with the episode in its enviro
                       chain: reads are tool calls; trades are transactions your agent signs and
                       sends to its vault through BONDED_RPC_URL
   --tee-url <url>     your agent's TEE endpoint; the runner fetches its evidence for each episode
+  --code-hash <0x..>  the code version you are rating (or BONDED_CODE_HASH). Without it the runner
+                      works one out: BONDED_IMAGE_DIGEST, else the git commit of your agent's
+                      folder (labelled dirty with uncommitted changes), else a hash of the
+                      command and its entry file (labelled unpinned)
   --quiet             don't copy the agent's output to this terminal
   --version           print the runner's version
 
@@ -33,6 +38,7 @@ async function main(): Promise<number> {
       token: { type: "string" },
       mode: { type: "string", default: "tools" },
       "tee-url": { type: "string" },
+      "code-hash": { type: "string" },
       quiet: { type: "boolean", default: false },
       version: { type: "boolean", default: false },
       help: { type: "boolean", default: false },
@@ -65,7 +71,15 @@ async function main(): Promise<number> {
     console.error(problem);
     return 1;
   }
+  const code = codeIdentity({
+    command: positionals,
+    ...(values["code-hash"] ? { flag: values["code-hash"] } : {}),
+  });
+  console.error(
+    `[bonded-runner] code hash ${code.codeHash} (${code.codeSource}: ${code.detail}${code.codeSource === "git-dirty" ? ", with uncommitted changes" : ""})`,
+  );
   const runner = new Runner({
+    code,
     gateway,
     token,
     mode: mode.data,

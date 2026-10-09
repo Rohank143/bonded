@@ -97,6 +97,12 @@ export interface FakeRunnerOptions {
   transport?: Transport;
   /** How often it pings (default 5 s). */
   pingMs?: number;
+  /** Extra hello fields (a code hash). */
+  hello?: {
+    codeHash?: `0x${string}`;
+    codeSource?: "git" | "git-dirty" | "unpinned" | "url";
+    codeDetail?: string;
+  };
 }
 
 /** A runner that runs each episode's brain in-process, over the gateway's real endpoints. */
@@ -127,6 +133,7 @@ export async function fakeRunner(options: FakeRunnerOptions): Promise<FakeRunner
     runnerVersion: "test",
     protocol: RUNNER_PROTOCOL_VERSION,
     mode: options.mode,
+    ...options.hello,
   });
   const ping = setInterval(
     () => runner.send({ type: "ping", at: Date.now() }),

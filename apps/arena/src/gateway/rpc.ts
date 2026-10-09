@@ -98,6 +98,8 @@ export interface RpcBinding {
    * spent, the agent's calls are refused here, before they reach the fork.
    */
   forkScope?: { readonly exhausted: boolean };
+  /** Told what became of each transaction the agent sent: sent, or refused and why. */
+  onTransaction?: (outcome: { ok: boolean; reason?: string }) => void;
 }
 
 /**
@@ -319,7 +321,10 @@ async function sendRaw(
   if (params.length !== 1 || typeof raw !== "string" || !/^0x[0-9a-fA-F]+$/.test(raw))
     return failure(id, -32602, "expected one signed transaction as hex");
   const checked = await checkTransaction(raw as TransactionSerialized, binding);
-  if ("error" in checked) return failure(id, -32000, checked.error);
+  if ("error" in checked) {
+    binding.onTransaction?.({ ok: false, reason: checked.error });
+    return failure(id, -32000, checked.error);
+  }
 
   let response: RpcResponse | undefined;
   const result = await binding.toolbox.recordTransaction(checked.call, async () => {
@@ -327,6 +332,9 @@ async function sendRaw(
     if ("error" in response) throw new Error(response.error.message);
     return response.result as `0x${string}`;
   });
+  binding.onTransaction?.(
+    result.ok ? { ok: true } : { ok: false, reason: result.error.slice(0, 500) },
+  );
   // No response means the transaction was never sent: the step cap or the episode's end.
   if (!response) return failure(id, -32000, result.ok ? "not sent" : result.error);
   return response;

@@ -22,7 +22,12 @@ import {
   toolSurface,
 } from "@bondedhq/shared";
 import { type WebSocket, WebSocketServer } from "ws";
+import { publicAddress } from "../safe-fetch.js";
 import type { ArenaToolbox } from "../toolbox.js";
+import { addressGroup } from "./address.js";
+import { AgentUrlClient, type AgentUrlClientOptions } from "./agent-url.js";
+
+export { addressGroup };
 import { serveMcp } from "./mcp.js";
 import { handleRpc, type RpcBinding, RpcBudget } from "./rpc.js";
 import {
@@ -179,6 +184,11 @@ export interface GatewayOptions {
   clientVersion?: string;
   log?: (message: string) => void;
   limits?: Partial<GatewayLimits>;
+  /**
+   * Agent URL mode: how the gateway calls agents' own endpoints (gateway/agent-url.ts). The
+   * gateway's own URL is always refused as an agent URL.
+   */
+  agentUrl?: AgentUrlClientOptions;
 }
 
 /** One tool call as the gateway saw it. */
@@ -189,6 +199,22 @@ export interface ToolRead {
   ok: boolean;
   at: number;
 }
+
+/**
+ * What an episode's agent did, as it happens: each tool call, and in chain mode each transaction
+ * it sent (or tried to). For a connection check's live view; a rating never shows these while it
+ * runs.
+ */
+export type EpisodeActivity =
+  | {
+      type: "tool";
+      name: string;
+      /** The attack surface the tool reads, or null for a write or a lookup. */
+      surface: AttackSurface | null;
+      ok: boolean;
+      error?: string;
+    }
+  | { type: "tx"; ok: boolean; reason?: string };
 
 type RunnerMessageListener = (message: RunnerToServer) => void;
 
@@ -218,6 +244,31 @@ export class RunnerSession {
 
   get closed(): string | undefined {
     return this.closedReason;
+  }
+
+  /** The code hash the runner worked out and its source, when it reported one in hello. */
+  /**
+   * The code hash the runner worked out and its source, when it reported one in hello. Reported
+   * by the runner, never verified: show it as reported.
+   */
+  get code():
+    | {
+        hash: `0x${string}`;
+        source: NonNullable<HelloMessage["codeSource"]>;
+        /** The commit, digest or label the runner gave (hello `codeDetail`). */
+        detail?: string;
+        reportedBy: "runner";
+      }
+    | undefined {
+    const hello = this.hello;
+    return hello?.codeHash
+      ? {
+          hash: hello.codeHash.toLowerCase() as `0x${string}`,
+          source: hello.codeSource ?? "unpinned",
+          ...(hello.codeDetail ? { detail: hello.codeDetail } : {}),
+          reportedBy: "runner",
+        }
+      : undefined;
   }
 
   send(message: ServerToRunner): boolean {
@@ -278,6 +329,7 @@ export class GatewayEpisode {
   private gas: RpcBudget | undefined;
   private requests: RpcBudget | undefined;
   private finish!: (body: DoneRequest) => void;
+  private readonly activityListeners = new Set<(activity: EpisodeActivity) => void>();
   private openGate!: () => void;
   private readonly gate: Promise<void>;
 
@@ -366,14 +418,45 @@ export class GatewayEpisode {
     return this.budget;
   }
 
+  /** Listens to the episode's tool calls and transactions as they happen. */
+  onActivity(listener: (activity: EpisodeActivity) => void): () => void {
+    this.activityListeners.add(listener);
+    return () => this.activityListeners.delete(listener);
+  }
+
+  /** @internal */
+  emitActivity(activity: EpisodeActivity): void {
+    for (const listener of [...this.activityListeners]) {
+      try {
+        listener(activity);
+      } catch {
+        // A listener's failure is its own.
+      }
+    }
+  }
+
   /** A tool call from MCP or HTTP: logged with its surface, then run by the toolbox. */
   async callTool(name: string, args: unknown): Promise<ToolResult> {
     if (this.closed || this.finished) return { ok: false, error: "the episode is over" };
-    if (this.mode === "chain" && isAgentToolName(name) && AGENT_TOOLS[name].writes)
+    const surface = toolSurface(name) ?? null;
+    if (this.mode === "chain" && isAgentToolName(name) && AGENT_TOOLS[name].writes) {
+      this.emitActivity({ type: "tool", name, surface, ok: false, error: CHAIN_MODE_WRITE });
       return { ok: false, error: CHAIN_MODE_WRITE };
+    }
     const result = await this.spec.toolbox.call(name, args);
-    const surface = toolSurface(name);
-    this.reads.push({ tool: name, ...(surface ? { surface } : {}), ok: result.ok, at: Date.now() });
+    this.reads.push({
+      tool: name,
+      ...(surface ? { surface } : {}),
+      ok: result.ok,
+      at: Date.now(),
+    });
+    this.emitActivity({
+      type: "tool",
+      name,
+      surface,
+      ok: result.ok,
+      ...(result.ok ? {} : { error: result.error.slice(0, 500) }),
+    });
     return result;
   }
 }
@@ -410,11 +493,24 @@ export class ArenaGateway {
   /** Token hashes that passed a check, with when (oldest first, bounded). */
   private readonly validTokens = new Map<string, number>();
   private readonly log: (message: string) => void;
+  /** Calls agents' own URLs (Agent URL mode), with one rate limit per host for everyone. */
+  readonly agentUrls: AgentUrlClient;
 
   constructor(private readonly options: GatewayOptions) {
     this.limits = { ...DEFAULT_GATEWAY_LIMITS, ...options.limits };
     this.log = options.log ?? (() => {});
     this.base = options.publicUrl?.replace(/\/+$/, "");
+    this.agentUrls = new AgentUrlClient({ log: this.log, ...options.agentUrl });
+    if (this.base) this.refuseOwnUrl(this.base);
+  }
+
+  /** The gateway's own URL is never an agent URL: the whole host, unless it is this machine. */
+  private refuseOwnUrl(base: string): void {
+    const url = new URL(base);
+    const bare = url.hostname.replace(/^\[|\]$/g, "");
+    const local = url.hostname === "localhost" || (isIP(bare) !== 0 && !publicAddress(bare));
+    if (local) this.agentUrls.refuseOrigin(url.origin);
+    else this.agentUrls.refuseHost(url.hostname);
   }
 
   /** Starts listening. Returns the base URL (the public URL when one was given). */
@@ -434,6 +530,7 @@ export class ArenaGateway {
     const address = server.address();
     const port = typeof address === "object" && address ? address.port : options.port;
     this.base ??= `http://${host.includes(":") ? `[${host}]` : host}:${port}`;
+    this.refuseOwnUrl(this.base);
     return this.base;
   }
 
@@ -589,6 +686,7 @@ export class ArenaGateway {
           budget: episode.rpcBudget(this.limits),
           gas: episode.gasBudget(this.limits),
           signal: episode.signal,
+          onTransaction: (outcome) => episode.emitActivity({ type: "tx", ...outcome }),
         },
         {
           batch: this.limits.rpcBatch,
@@ -603,6 +701,13 @@ export class ArenaGateway {
       );
       return reply(res, 200, response);
     }
+    if (route === "rpc" && !episode.spec.chain)
+      // An agent set up for chain mode in a tool-mode episode: say so to a live view.
+      episode.emitActivity({
+        type: "tx",
+        ok: false,
+        reason: "this episode is in tools mode, which has no RPC endpoint: trades are tool calls",
+      });
     if (route === "done" && method === "POST") {
       const parsed = DoneRequest.safeParse(await readJson(req, this.limits.bodyBytes, {}));
       if (!parsed.success) throw new HttpError(400, "body must be { finalMessage?, usage? }");
@@ -780,6 +885,9 @@ export class ArenaGateway {
         if (message.type !== "hello") return session.close(RUNNER_CLOSE.protocol, "hello first");
         if (message.protocol !== RUNNER_PROTOCOL_VERSION)
           return session.close(RUNNER_CLOSE.protocol, "unsupported protocol version");
+        // "url" labels a version an agent URL reported; a runner can't claim it.
+        if (message.codeSource === "url")
+          return session.close(RUNNER_CLOSE.protocol, "a runner can't report codeSource url");
         clearTimeout(helloTimer);
         session.hello = message;
         session.lastSeen = Date.now();
@@ -813,25 +921,6 @@ export class ArenaGateway {
     });
     ws.on("error", () => ws.terminate());
   }
-}
-
-/** An address for rate limits: IPv4 as is, IPv6 by its /64 (IPv4-mapped IPv6 as IPv4). */
-export function addressGroup(ip: string): string {
-  const bare = ip.replace(/^\[|\]$/g, "").replace(/%.*$/, "");
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(bare);
-  if (mapped) return mapped[1]!;
-  if (isIP(bare) !== 6) return bare;
-  // Expand :: to full groups, then keep the first four.
-  const [head, tail = ""] = bare.split("::");
-  const left = head ? head.split(":") : [];
-  const right = bare.includes("::") ? (tail ? tail.split(":") : []) : [];
-  const groups = bare.includes("::")
-    ? [...left, ...Array(8 - left.length - right.length).fill("0"), ...right]
-    : left;
-  return `${groups
-    .slice(0, 4)
-    .map((g) => g.toLowerCase().replace(/^0+(?=.)/, ""))
-    .join(":")}::/64`;
 }
 
 function reply(res: ServerResponse, status: number, body: unknown): void {

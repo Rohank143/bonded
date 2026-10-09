@@ -17,7 +17,7 @@ import type { Sandbox } from "../sandbox.js";
 import { ArenaToolbox } from "../toolbox.js";
 import { marketTokens } from "../vault.js";
 import { liveClientVersion } from "./rpc.js";
-import type { ArenaGateway, GatewayEpisode } from "./server.js";
+import type { ArenaGateway, EpisodeActivity, GatewayEpisode } from "./server.js";
 
 /**
  * An agent that runs on its operator's own servers, rated through the Arena Gateway. To the
@@ -32,14 +32,76 @@ import type { ArenaGateway, GatewayEpisode } from "./server.js";
  *
  * Steps are the tool calls and transactions the gateway saw (the toolbox trace), never what the
  * agent claims.
+ *
+ * Two ways to reach the agent (`transport`):
+ * - runner: its runner, connected to the gateway, launches it for each episode;
+ * - url: Agent URL mode. The gateway POSTs the signed episode message to the agent's own HTTPS
+ *   endpoint, which must answer 2xx within 10 s; the agent then uses the episode's endpoints and
+ *   posts /done. A failed POST (refused, non-2xx, timed out, not allowed) fails the episode, and
+ *   the failure is the agent's. Cancels are POSTed the same way, best effort.
  */
+export type AgentTransport =
+  | { kind: "runner"; key: string }
+  | {
+      kind: "url";
+      url: string;
+      secret: string;
+      /**
+       * What the URL is registered to (the agent's `<chain>:<agentId>` or `preview:<id>`): its
+       * episodes run one at a time and share one rate limit, apart from every other agent's.
+       */
+      registration: string;
+    };
+
+/**
+ * Bonded couldn't call an agent URL for a reason of its own (its rate limit), so the episode
+ * didn't run and says nothing about the agent. rateAgent stops with this rather than count it.
+ */
+export class AgentUrlUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AgentUrlUnavailableError";
+  }
+}
+
+/** Why Bonded (not the agent) kept an episode from running, if it did. */
+export function bondedFailure(summary: object): string | undefined {
+  return (summary as { remote?: RemoteEpisode }).remote?.bondedProblem;
+}
+
+/** Attempts to deliver an episode when Bonded's own rate limit is in the way. */
+const URL_DELIVERY_ATTEMPTS = 3;
+
+/**
+ * What happened in an episode, live: it started, each tool call and transaction (gateway
+ * `EpisodeActivity`), and how it ended. For connection checks: never show these to an operator
+ * while a rating runs (they could adapt to which episodes are attacks).
+ */
+export type RemoteEpisodeEvent =
+  | { type: "started"; episodeId: string }
+  | EpisodeActivity
+  | {
+      type: "done";
+      exitCode?: number | null;
+      durationMs: number;
+      stdoutTail?: string;
+      stderrTail?: string;
+    };
+
 export interface RemoteAgentOptions {
   gateway: ArenaGateway;
   /** The sandbox the rating runs in (chain mode forwards RPC to it and funds the agent's key). */
   sandbox: Sandbox;
-  /** The key of the runner to use: what its runner token maps to (RunnerIdentity.key). */
-  runner: string;
+  /**
+   * The key of the runner to use: what its runner token maps to (RunnerIdentity.key). Shorthand
+   * for `transport: { kind: "runner", key }`.
+   */
+  runner?: string;
+  /** How the agent is reached: its runner, or its own URL (Agent URL mode). */
+  transport?: AgentTransport;
   mode: AgentMode;
+  /** Live events for each episode (connection checks only; see RemoteEpisodeEvent). */
+  onEvent?: (event: RemoteEpisodeEvent) => void;
   /** How the agent is named in reports (default "remote/<runner>"). */
   name?: string;
   /**
@@ -47,7 +109,10 @@ export interface RemoteAgentOptions {
    * The agent is told it, and cancelled when it runs out.
    */
   episodeTimeoutMs?: number;
-  /** How long to wait for the runner to be connected and idle before failing an episode. */
+  /**
+   * How long to wait for the runner to be connected and idle (or, by URL, for the agent's previous
+   * episode to end) before failing an episode.
+   */
   runnerWaitMs?: number;
   /**
    * A TEE-bound agent: every episode carries a fresh nonce, the runner answers with the TEE's
@@ -77,6 +142,23 @@ export interface RemoteAgentOptions {
 /** What a remote episode adds to the agent's summary (kept in the episode's trace record). */
 export interface RemoteEpisode {
   episodeId: string;
+  /** How the agent was reached. Older records don't have it (runner). */
+  transport?: AgentTransport["kind"];
+  /**
+   * Agent URL mode: why the episode's POST failed, as a sentence for the operator ("Your URL
+   * answered 404"). The failure is the agent's.
+   */
+  urlProblem?: string;
+  /**
+   * Agent URL mode: Bonded couldn't call the URL for a reason of its own (a rate limit). The
+   * episode never ran, and is not the agent's failure (see AgentUrlUnavailableError).
+   */
+  bondedProblem?: string;
+  /**
+   * The code hash the runner reported in its hello, and where it came from. Reported by the
+   * runner, never verified: show it as such.
+   */
+  code?: { hash: `0x${string}`; source: string; detail?: string; reportedBy: "runner" };
   exitCode: number | null;
   signal?: string | null;
   durationMs: number;
@@ -115,9 +197,26 @@ export class RemoteAgent implements SelfSigningAgent {
   readonly episodes: RemoteEpisode[] = [];
   private pendingKey: { key: `0x${string}`; address: `0x${string}` } | undefined;
   private running = false;
+  readonly transport: AgentTransport;
 
   constructor(private readonly options: RemoteAgentOptions) {
-    this.name = options.name ?? `remote/${options.runner}`;
+    const transport =
+      options.transport ??
+      (options.runner !== undefined ? { kind: "runner" as const, key: options.runner } : undefined);
+    if (!transport) throw new Error("a remote agent needs a runner key or an agent URL");
+    if (transport.kind === "url" && options.tee)
+      throw new Error("a TEE-bound agent connects through the runner, not an agent URL");
+    this.transport = transport;
+    this.name =
+      options.name ??
+      (transport.kind === "runner"
+        ? `remote/${transport.key}`
+        : `remote/${new URL(transport.url).hostname}`);
+  }
+
+  /** The code hash the agent's runner last reported, if any (runner transport only). */
+  get code(): RemoteEpisode["code"] {
+    return this.episodes.findLast((e) => e.code)?.code;
   }
 
   get mode(): AgentMode {
@@ -152,12 +251,98 @@ export class RemoteAgent implements SelfSigningAgent {
     }
   }
 
+  private emit(event: RemoteEpisodeEvent): void {
+    try {
+      this.options.onEvent?.(event);
+    } catch {
+      // A listener's failure is its own.
+    }
+  }
+
+  /** The episode's gateway endpoints, behind a fresh capability token. */
+  private async openGatewayEpisode(
+    episodeId: string,
+    toolbox: ArenaToolbox,
+    signer: `0x${string}` | undefined,
+    gated: boolean,
+    forkScope: ReturnType<Sandbox["forkScope"]>,
+  ): Promise<GatewayEpisode> {
+    const { gateway, sandbox, mode } = this.options;
+    const clientVersion =
+      mode === "chain"
+        ? ((sandbox.forkUrl ? await liveClientVersion(sandbox.forkUrl) : undefined) ??
+          gateway.clientVersion)
+        : undefined;
+    const opened = gateway.openEpisode({
+      episodeId,
+      toolbox,
+      mode,
+      gated,
+      ...(mode === "chain"
+        ? {
+            chain: {
+              upstream: sandbox.rpcUrl,
+              chainId: sandbox.chain.id,
+              vault: toolbox.vault,
+              agent: signer!,
+              ...(forkScope ? { forkScope } : {}),
+              ...(clientVersion ? { clientVersion } : {}),
+            },
+          }
+        : {}),
+    });
+    if (this.options.onEvent) opened.onActivity((activity) => this.emit(activity));
+    return opened;
+  }
+
+  /** The `episode` message: the same for the runner and an agent URL. */
+  private episodeMessage(
+    episodeId: string,
+    task: AgentTask,
+    toolbox: ArenaToolbox,
+    opened: GatewayEpisode,
+    timeoutMs: number,
+    nonce?: `0x${string}`,
+  ): EpisodeMessage {
+    const { sandbox, mode } = this.options;
+    return {
+      type: "episode",
+      episodeId,
+      task,
+      mode,
+      endpoints: opened.endpoints,
+      chainId: sandbox.chain.id,
+      vault: toolbox.vault,
+      contracts: {
+        exchange: sandbox.deployment.router,
+        tokens: marketTokens(sandbox).map(({ symbol, address, decimals }) => ({
+          symbol,
+          address,
+          decimals,
+        })),
+      },
+      ...(mode === "chain" && !this.options.agentAddress && this.pendingKey
+        ? { sessionKey: this.pendingKey.key }
+        : {}),
+      deadlineMs: timeoutMs,
+      ...(nonce ? { nonce } : {}),
+      ...(nonce && this.options.tee?.keyId ? { teeKeyId: this.options.tee.keyId } : {}),
+    };
+  }
+
   private async runEpisode(task: AgentTask, toolbox: ArenaToolbox): Promise<RemoteRunSummary> {
     const { gateway, sandbox, mode } = this.options;
     const timeoutMs = this.options.episodeTimeoutMs ?? DEFAULT_TIMEOUT_MS;
     const episodeId = randomUUID();
     const started = Date.now();
-    const record: RemoteEpisode = { episodeId, exitCode: null, durationMs: 0, reads: {} };
+    const transport = this.transport;
+    const record: RemoteEpisode = {
+      episodeId,
+      transport: transport.kind,
+      exitCode: null,
+      durationMs: 0,
+      reads: {},
+    };
     this.episodes.push(record);
 
     const signer =
@@ -165,11 +350,16 @@ export class RemoteAgent implements SelfSigningAgent {
     if (mode === "chain" && !signer)
       throw new Error("chain mode needs the episode's vault to name the agent's key");
 
+    if (transport.kind === "url")
+      return this.runUrlEpisode(transport, task, toolbox, record, signer, started, timeoutMs);
+
     const runner = await gateway.acquireRunner(
-      this.options.runner,
+      transport.key,
       episodeId,
       this.options.runnerWaitMs ?? 60_000,
     );
+    const code = runner.code;
+    if (code) record.code = code;
     let episode: GatewayEpisode | undefined;
     let sent = false;
     // On a budgeted fork, what the agent's reads cost the live chain is charged to it alone.
@@ -199,29 +389,13 @@ export class RemoteAgent implements SelfSigningAgent {
         ? (`0x${randomBytes(32).toString("hex")}` as const)
         : undefined;
       if (nonce) record.nonce = nonce;
-      const clientVersion =
-        mode === "chain"
-          ? ((sandbox.forkUrl ? await liveClientVersion(sandbox.forkUrl) : undefined) ??
-            gateway.clientVersion)
-          : undefined;
-      const opened = gateway.openEpisode({
+      const opened = await this.openGatewayEpisode(
         episodeId,
         toolbox,
-        mode,
-        gated: Boolean(nonce),
-        ...(mode === "chain"
-          ? {
-              chain: {
-                upstream: sandbox.rpcUrl,
-                chainId: sandbox.chain.id,
-                vault: toolbox.vault,
-                agent: signer!,
-                ...(forkScope ? { forkScope } : {}),
-                ...(clientVersion ? { clientVersion } : {}),
-              },
-            }
-          : {}),
-      });
+        signer,
+        Boolean(nonce),
+        forkScope,
+      );
       episode = opened;
 
       // Everything that can end the episode, as one race.
@@ -255,29 +429,8 @@ export class RemoteAgent implements SelfSigningAgent {
         }
       });
 
-      const message: EpisodeMessage = {
-        type: "episode",
-        episodeId,
-        task,
-        mode,
-        endpoints: opened.endpoints,
-        chainId: sandbox.chain.id,
-        vault: toolbox.vault,
-        contracts: {
-          exchange: sandbox.deployment.router,
-          tokens: marketTokens(sandbox).map(({ symbol, address, decimals }) => ({
-            symbol,
-            address,
-            decimals,
-          })),
-        },
-        ...(mode === "chain" && !this.options.agentAddress && this.pendingKey
-          ? { sessionKey: this.pendingKey.key }
-          : {}),
-        deadlineMs: timeoutMs,
-        ...(nonce ? { nonce } : {}),
-        ...(nonce && this.options.tee?.keyId ? { teeKeyId: this.options.tee.keyId } : {}),
-      };
+      const message = this.episodeMessage(episodeId, task, toolbox, opened, timeoutMs, nonce);
+      this.emit({ type: "started", episodeId });
       if (!runner.send(message)) throw new Error("the runner disconnected");
       sent = true;
       const why = await ended;
@@ -300,10 +453,14 @@ export class RemoteAgent implements SelfSigningAgent {
         if (exited.error) record.runnerError ??= exited.error;
       }
       record.durationMs = Date.now() - started;
-      for (const read of opened.reads)
-        if (read.surface && read.ok)
-          record.reads[read.surface] = (record.reads[read.surface] ?? 0) + 1;
-      if (opened.finished?.usage) record.reportedUsage = opened.finished.usage;
+      collect(record, opened);
+      this.emit({
+        type: "done",
+        exitCode: record.exitCode,
+        durationMs: record.durationMs,
+        ...(record.stdoutTail ? { stdoutTail: record.stdoutTail } : {}),
+        ...(record.stderrTail ? { stderrTail: record.stderrTail } : {}),
+      });
 
       return { ...this.summarise(why, record, opened, toolbox, timeoutMs), remote: record };
     } finally {
@@ -317,6 +474,101 @@ export class RemoteAgent implements SelfSigningAgent {
       // Free the runner only once its process is gone, so the next episode can't overlap it.
       if (!sent || exited || runner.closed) gateway.releaseRunner(runner, episodeId);
       else void exit.then(() => gateway.releaseRunner(runner, episodeId));
+    }
+  }
+
+  /**
+   * Agent URL mode: POST the signed episode to the agent's URL, then wait for /done, the
+   * deadline, or the rating to stop. A failed POST ends the episode at once, as the agent's
+   * failure.
+   */
+  private async runUrlEpisode(
+    transport: Extract<AgentTransport, { kind: "url" }>,
+    task: AgentTask,
+    toolbox: ArenaToolbox,
+    record: RemoteEpisode,
+    signer: `0x${string}` | undefined,
+    started: number,
+    timeoutMs: number,
+  ): Promise<RemoteRunSummary> {
+    const { gateway, sandbox } = this.options;
+    const client = gateway.agentUrls;
+    const { episodeId } = record;
+    const release = await client.acquire(
+      transport.registration,
+      episodeId,
+      this.options.runnerWaitMs ?? 60_000,
+    );
+    const forkScope = sandbox.forkScope();
+    const cleanups: (() => void)[] = [];
+    let episode: GatewayEpisode | undefined;
+    try {
+      const opened = await this.openGatewayEpisode(episodeId, toolbox, signer, false, forkScope);
+      episode = opened;
+      // Done or a stop may come before the POST's answer (the agent works while it answers). The
+      // deadline starts once the episode is delivered, so waiting for Bonded's own rate limit
+      // never eats into the agent's time.
+      let startDeadline!: () => void;
+      const ended = new Promise<string>((resolve) => {
+        startDeadline = () => {
+          const timer = setTimeout(() => resolve("deadline"), timeoutMs);
+          cleanups.push(() => clearTimeout(timer));
+        };
+        const onAbort = () => resolve("aborted");
+        toolbox.signal.addEventListener("abort", onAbort, { once: true });
+        cleanups.push(() => toolbox.signal.removeEventListener("abort", onAbort));
+        void opened.done.then(() => resolve("done"));
+      });
+      const message = this.episodeMessage(episodeId, task, toolbox, opened, timeoutMs);
+      this.emit({ type: "started", episodeId });
+      // Only a call Bonded never made (its rate limit) is tried again: the agent didn't see it.
+      const deliver = () =>
+        client.send(transport.url, transport.secret, message, {
+          registration: transport.registration,
+          waitMs: client.limits.slotWaitMs,
+        });
+      let call = await deliver();
+      for (let attempt = 1; attempt < URL_DELIVERY_ATTEMPTS; attempt++) {
+        if (call.ok || call.caused !== "bonded") break;
+        call = await deliver();
+      }
+      let why: string;
+      if (!call.ok) {
+        if (call.caused === "agent") {
+          record.urlProblem = call.problem;
+          why = "url_failed";
+        } else {
+          record.bondedProblem = call.problem;
+          why = "url_unavailable";
+        }
+      } else {
+        startDeadline();
+        why = await ended;
+      }
+      opened.close();
+      // It may still be working (out of time, or the rating stopped): tell it to stop.
+      if (call.ok && why !== "done")
+        void client
+          .send(
+            transport.url,
+            transport.secret,
+            { type: "cancel", episodeId },
+            { registration: transport.registration },
+          )
+          .catch(() => {});
+      record.durationMs = Date.now() - started;
+      collect(record, opened);
+      this.emit({ type: "done", durationMs: record.durationMs });
+      return { ...this.summarise(why, record, opened, toolbox, timeoutMs), remote: record };
+    } finally {
+      for (const cleanup of cleanups) cleanup();
+      episode?.close();
+      if (forkScope) {
+        forkScope.close();
+        record.forkFetches = forkScope.used;
+        if (forkScope.exhausted) record.budgetExhausted = true;
+      }
+      release();
     }
   }
 
@@ -369,8 +621,22 @@ export class RemoteAgent implements SelfSigningAgent {
         return withMessage("error", "the agent's runner disconnected during the episode");
       case "tee_refused":
         return withMessage("error", record.runnerError ?? "TEE evidence refused");
+      case "url_failed":
+        return withMessage("error", `the agent's URL failed: ${record.urlProblem}`);
+      case "url_unavailable":
+        return withMessage(
+          "error",
+          `Bonded couldn't call the agent's URL (not the agent's fault): ${record.bondedProblem}`,
+        );
       default:
         return withMessage("error", "the episode was stopped");
     }
   }
+}
+
+/** Coverage and reported usage from the gateway's log of the episode. */
+function collect(record: RemoteEpisode, episode: GatewayEpisode): void {
+  for (const read of episode.reads)
+    if (read.surface && read.ok) record.reads[read.surface] = (record.reads[read.surface] ?? 0) + 1;
+  if (episode.finished?.usage) record.reportedUsage = episode.finished.usage;
 }
