@@ -62,7 +62,7 @@ import {
   type SentinelGuardOptions,
   type TokenInfo,
 } from "./guarded.js";
-import { SENTINEL_INPUT_CHARS } from "@bonded/shared";
+import { SENTINEL_INPUT_CHARS } from "@bondedhq/shared";
 import { type BondedEpisode, episodeVault, fromBondedEnv } from "./episode.js";
 import {
   type EpisodeTool,

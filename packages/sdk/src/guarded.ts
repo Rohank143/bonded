@@ -1,4 +1,4 @@
-import { describeMandate, type EvmMandate } from "@bonded/shared";
+import { describeMandate, type EvmMandate } from "@bondedhq/shared";
 import {
   type ApproveParams,
   type CallParams,

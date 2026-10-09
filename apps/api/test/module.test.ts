@@ -17,7 +17,7 @@ import {
   toEvmMandateParams,
   withMandateCommitment,
   type SelfServeRequest,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { parseEventLogs, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { createApi } from "../src/index.js";

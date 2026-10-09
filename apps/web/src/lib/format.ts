@@ -1,5 +1,5 @@
 import { formatUnits, parseUnits } from "viem";
-import { tierForScore } from "@bonded/shared";
+import { tierForScore } from "@bondedhq/shared";
 import { USD_DECIMALS, explorerUrl } from "../config";
 
 /** Format a 6-decimal base-asset amount as dollars, e.g. 1234567890n → "1,234.57". */

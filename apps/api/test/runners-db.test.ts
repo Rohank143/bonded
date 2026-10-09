@@ -23,12 +23,12 @@ beforeAll(async () => {
 }, 120_000);
 afterAll(() => pg?.stop());
 
-describe("migrations 0014 to 0018", () => {
+describe("migrations 0014 to 0019", () => {
   it("apply once, in order, and again is a no-op", async () => {
     const versions = (
       await db.pool.query("SELECT version FROM schema_migrations ORDER BY version")
     ).rows.map((r) => r.version);
-    expect(versions).toEqual(Array.from({ length: 18 }, (_, i) => i + 1));
+    expect(versions).toEqual(Array.from({ length: 19 }, (_, i) => i + 1));
     await db.migrate();
     const tables = (
       await db.pool.query(

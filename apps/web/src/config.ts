@@ -1,5 +1,5 @@
 import { defineChain } from "viem";
-import { EVM_CHAINS, parseEvmDeployment } from "@bonded/shared";
+import { EVM_CHAINS, parseEvmDeployment } from "@bondedhq/shared";
 import deploymentJson from "../../../contracts/evm/deployments/46630.json?raw";
 
 /**

@@ -14,9 +14,9 @@ FROM node:22-bookworm-slim AS build
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 WORKDIR /src
 COPY . .
-RUN pnpm install --frozen-lockfile --filter "@bonded/runner..." \
-  && pnpm exec turbo run build --filter=@bonded/runner \
-  && pnpm --filter @bonded/runner deploy --legacy --prod /out
+RUN pnpm install --frozen-lockfile --filter "@bondedhq/runner..." \
+  && pnpm exec turbo run build --filter=@bondedhq/runner \
+  && pnpm --filter @bondedhq/runner deploy --legacy --prod /out
 
 FROM node:22-bookworm-slim
 WORKDIR /runner

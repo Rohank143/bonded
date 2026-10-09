@@ -36,7 +36,7 @@ jobs:
       - run: pnpm format:check
       - run: forge build
         working-directory: contracts/evm
-      - run: pnpm --filter @bonded/shared abis:check
+      - run: pnpm --filter @bondedhq/shared abis:check
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test

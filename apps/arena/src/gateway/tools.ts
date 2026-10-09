@@ -5,7 +5,7 @@ import {
   type AgentToolName,
   agentToolJsonSchema,
   DoneRequest,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { z } from "zod";
 
 /**

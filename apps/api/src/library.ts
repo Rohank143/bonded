@@ -9,7 +9,7 @@ import {
   BountySpecError,
   Severity,
   parseBountySpec,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { chainLibrary } from "./bounty-worker.js";
 
 /**

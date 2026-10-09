@@ -20,7 +20,7 @@ import {
   type ServerToRunner,
   type ToolResult,
   toolSurface,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { type WebSocket, WebSocketServer } from "ws";
 import { publicAddress } from "../safe-fetch.js";
 import type { ArenaToolbox } from "../toolbox.js";

@@ -8,7 +8,7 @@ import {
   type AttackSpec,
   type ChatClient,
   DEFAULT_ASK,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { renderPayload } from "./attacks.js";
 import { runEpisode } from "./episode.js";
 import { generateHeldOut, heldOutId } from "./held-out.js";

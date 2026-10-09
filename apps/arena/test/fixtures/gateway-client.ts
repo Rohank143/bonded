@@ -10,7 +10,7 @@ import {
   type RunnerToServer,
   ServerToRunner,
   type ToolResult,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { WebSocket } from "ws";
 import { ownKeyWriter } from "./own-key-writes.js";
 

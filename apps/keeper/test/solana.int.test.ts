@@ -1,4 +1,4 @@
-import { claimable, fetchCoverConfig, fetchPolicies, fetchVaults } from "@bonded/solana";
+import { claimable, fetchCoverConfig, fetchPolicies, fetchVaults } from "@bondedhq/solana";
 import { Connection } from "@solana/web3.js";
 import { describe, expect, it } from "vitest";
 import { connectSolana, parseSolanaKey, SolanaKeeper } from "../src/solana.js";

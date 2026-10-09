@@ -1,4 +1,4 @@
-import { bindingOf, type BindingLevel } from "@bonded/shared";
+import { bindingOf, type BindingLevel } from "@bondedhq/shared";
 
 /**
  * What the API adds to a score or a rating so a reader doesn't have to dig in the report (bring

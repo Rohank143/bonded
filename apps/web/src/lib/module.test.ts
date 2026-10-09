@@ -5,7 +5,7 @@ import {
   erc7579Batch,
   toEvmMandateParams,
   type ModuleInstallPlan,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { buildMandate } from "./onboarding";
 import { installSteps } from "./module";
 import { deployment } from "../config";

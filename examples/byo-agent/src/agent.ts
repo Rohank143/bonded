@@ -5,7 +5,7 @@ import {
   type SentinelGuardOptions,
   type TokenInfo,
   type VaultAction,
-} from "@bonded/sdk";
+} from "@bondedhq/sdk";
 import { type Address, erc20Abi, parseUnits } from "viem";
 
 /**

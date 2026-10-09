@@ -7,7 +7,7 @@ import {
   type VerifiedTee,
 } from "@bonded/arena";
 import { connectChain, type ServiceChain } from "@bonded/keeper";
-import { attestationMessage, bondedRegistryAbi, mandateHash } from "@bonded/shared";
+import { attestationMessage, bondedRegistryAbi, mandateHash } from "@bondedhq/shared";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { type Attest, runTeeChecks, teeQuoteBlock } from "../src/tee-watch.js";
 import { postgres } from "./postgres.js";

@@ -6,7 +6,7 @@ import {
 } from "@bonded/arena";
 import type { Database, RemoteQuota, TeeCheckRow } from "@bonded/db";
 import type { ServiceChain } from "@bonded/keeper";
-import { bondedRegistryAbi, isTeeMeasurement } from "@bonded/shared";
+import { bondedRegistryAbi, isTeeMeasurement } from "@bondedhq/shared";
 import { z } from "zod";
 import { agentConfig } from "./worker.js";
 

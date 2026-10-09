@@ -1,4 +1,4 @@
-import type { ChatClient, ChatResponse } from "@bonded/shared";
+import type { ChatClient, ChatResponse } from "@bondedhq/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   freshHeldOut,

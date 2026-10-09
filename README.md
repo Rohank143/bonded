@@ -44,7 +44,7 @@ How the parts fit together: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). What e
 
 - **Anyone, in the web app** (with a browser wallet on Robinhood testnet): onboard an agent (register it, create its vault, stake a bond); rate it with one of Bonded's built-in agent designs against your vault; buy cover; simulate a breach and watch the claim pay; deposit; underwrite the cover pool; submit a bounty attack; browse agents, scores, reports, the leaderboard and claims.
 - **Anyone, locally:** run the whole loop with `pnpm demo`, or rate the built-in agents with `pnpm arena rate`.
-- **Your own agent, built and tested, not live yet:** rate an agent in any framework or language where it runs, through `@bonded/runner` and the Arena Gateway, with a declared or TEE-bound score; protect it with `@bonded/sdk` (plugins for Coinbase AgentKit, Solana Agent Kit and ElizaOS) or a module on its smart account. Locally this works today (`pnpm arena rate --agent remote`, or the whole hosted flow with `pnpm demo --byo`); the hosted gateway, the npm packages and the module's testnet deployment are still to come. Guide: [docs/BRING-YOUR-OWN-AGENT.md](docs/BRING-YOUR-OWN-AGENT.md). Status by piece: [What works today and what's coming](docs/AGENTS.md#what-works-today-and-whats-coming).
+- **Your own agent, built and tested, not live yet:** rate an agent in any framework or language where it runs, through `@bondedhq/runner` and the Arena Gateway, with a declared or TEE-bound score; protect it with `@bondedhq/sdk` (plugins for Coinbase AgentKit, Solana Agent Kit and ElizaOS) or a module on its smart account. Locally this works today (`pnpm arena rate --agent remote`, or the whole hosted flow with `pnpm demo --byo`); the hosted gateway, the npm packages and the module's testnet deployment are still to come. Guide: [docs/BRING-YOUR-OWN-AGENT.md](docs/BRING-YOUR-OWN-AGENT.md). Status by piece: [What works today and what's coming](docs/AGENTS.md#what-works-today-and-whats-coming).
 
 ## Results (measured, with their assumptions)
 
@@ -105,12 +105,12 @@ Agent B's score of 96 is the same signed attestation on all four chains ([eviden
 | `contracts/evm` | Solidity contracts (Foundry): vault, smart-account module, cover, pool, bond, claims, registry, disputes, bounties. [Its README](contracts/evm/README.md) explains each one |
 | `contracts/solana` | Anchor programs: registry, vault, cover |
 | `apps/arena` | The Arena: attack library runner, sandbox, judge, ratings, and the Arena Gateway that serves episodes to agents running elsewhere |
-| `apps/runner` | `@bonded/runner`: connects an agent on its operator's servers to the Arena Gateway |
+| `apps/runner` | `@bondedhq/runner`: connects an agent on its operator's servers to the Arena Gateway |
 | `apps/demo-agents` | The agents Bonded rates ([docs/AGENTS.md](docs/AGENTS.md)) |
 | `apps/api` | API, keeper, rating and bounty workers, demo scripts |
 | `apps/web` | The web app |
 | `packages/shared` | Schemas, scoring maths, ABIs, chain and deployment data, the runner protocol |
-| `packages/sdk` | `@bonded/sdk`: trade through a vault or module from any TypeScript agent, with plugins for AgentKit, Solana Agent Kit and ElizaOS |
+| `packages/sdk` | `@bondedhq/sdk`: trade through a vault or module from any TypeScript agent, with plugins for AgentKit, Solana Agent Kit and ElizaOS |
 | `packages/sandbox` | Local chains with the protocol deployed, for the Arena and tests |
 | `examples/byo-agent` | The template for your own agent: it trades through its vault with the SDK, reads everything it can as untrusted data, and is rated through the runner |
 | `services/sentinel`, `services/tee-agent` | The Sentinel guard service; the TEE agent for Phala Cloud |

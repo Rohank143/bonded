@@ -19,7 +19,7 @@ export const SELF_SERVE_KIND_LABELS: Record<SelfServeKind, string> = {
 
 /**
  * The operator's own agent (bring your own agent, docs/BRING-YOUR-OWN-AGENT.md): any code, run
- * wherever the operator runs it, rated through the Arena Gateway by `@bonded/runner`.
+ * wherever the operator runs it, rated through the Arena Gateway by `@bondedhq/runner`.
  */
 export const REMOTE_KIND = "remote";
 /** A built-in design, or the operator's own agent. */
