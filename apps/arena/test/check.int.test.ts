@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { ScriptedVulnerableAgent } from "@bonded/demo-agents";
-import { agentUrlCodeHash, type ArenaAgent, type EpisodeMessage } from "@bonded/shared";
+import { agentUrlCodeHash, type ArenaAgent, type EpisodeMessage } from "@bondedhq/shared";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   type AgentTransport,
