@@ -576,7 +576,10 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
 
   // Agent URLs, checks, estimates and notification settings: for a preview or a registered agent.
 
-  /** Decrypt-free verification: send the challenge, signed with `secret`; the agent echoes it. */
+  /**
+   * Verification: send the `verify` challenge signed with `secret`; the agent must answer with the
+   * challenge and its proof (an HMAC of it with the same secret). The gateway's verifier checks it.
+   */
   async function challenge(url: string, secret: string, wallet: string) {
     let host: string;
     try {
@@ -704,10 +707,53 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
           codeHash: subject.declaredCode
             ? codeInfo({ hash: subject.declaredCode, source: "declared" })
             : codeInfo(
-                reported.codeHash ? { hash: reported.codeHash, source: "url-version" } : undefined,
+                reported.codeHash ? { hash: reported.codeHash, source: "url" } : undefined,
                 reported.version,
               ),
         });
+      }),
+    );
+    /**
+     * A new secret for the same URL ("Get a new secret"), returned once. The old secret stops
+     * working at once (no overlap: a lost secret may be someone else's), and the URL must be
+     * verified again with the new one before it can be checked or rated.
+     */
+    app.post(
+      `${base}/agent-url/secret`,
+      handle(async (c) => {
+        const live0 =
+          kind === "agent"
+            ? await db.agentUrl(`${chainId}:${uint.parse(c.req.param("id"))}`)
+            : undefined;
+        const { wallet } = await writer(c, kind, "agent-url", () => ({ url: live0?.url ?? "" }));
+        const subject = await subjectOf(kind, c.req.param("id"), wallet);
+        if (!options.secrets) throw new Refused(409, SECRET_KEY_MISSING);
+        const live = await db.agentUrl(subject.key);
+        if (!live) throw new Refused(404, "Set your Agent URL first.");
+        const secret = newAgentSecret();
+        const id = randomUUID();
+        const made = await db.createAgentUrl(subject.key, {
+          id,
+          url: live.url,
+          ciphertext: options.secrets.encrypt(secret, agentUrlContext(id)),
+          createdBy: wallet,
+        });
+        c.header("Cache-Control", "no-store");
+        return c.json(
+          {
+            agentUrlId: made.id,
+            url: live.url,
+            verified: false,
+            verifiedAt: null,
+            version: null,
+            secret,
+            codeHash: subject.declaredCode
+              ? codeInfo({ hash: subject.declaredCode, source: "declared" })
+              : null,
+            createdAt: made.createdAt.toISOString(),
+          },
+          201,
+        );
       }),
     );
     /** Revoke the Agent URL and its secret (a registered agent goes back to its runner). */
@@ -807,9 +853,13 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
       `${base}/estimate`,
       handle(async (c) => {
         const subject = await ownedForRead(kind, c.req.param("id"), await reader(c));
-        const check = await db.latestPassingCheck(subject.key);
+        // The passing check of this connection as it is now, the one a rating would need.
+        const check = await db.passingCheck(subject.key, (await connectionNow(subject)).config);
         if (!check)
-          throw new Refused(409, "Run a connection check first: the estimate comes from it.");
+          throw new Refused(
+            409,
+            "Run a connection check of this connection first: the estimate comes from it.",
+          );
         const episodes =
           kind === "preview"
             ? previewPlan().episodes
@@ -858,7 +908,7 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
         ? null
         : k.codeSource === "declared"
           ? "owner"
-          : k.codeSource === "url-version"
+          : k.codeSource === "url"
             ? "agent"
             : "runner",
       result: k.result,
@@ -874,7 +924,7 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
    * EventSource, which can't send headers, a stream token from POST /streams/token (`?token=`):
    * good for that one check or rating, for a few minutes, so the browser's reconnects work.
    */
-  async function streamViewer(c: Context, kind: "check" | "rating", id: string) {
+  async function streamViewer(c: Context, kind: "check" | "rating" | "preview", id: string) {
     const token = c.req.query("token");
     if (token) {
       const held = streamTokens.get(token);
@@ -889,7 +939,7 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
   /** Stream tokens: whose, what they open, when they expire (this process's memory). */
   const streamTokens = new Map<
     string,
-    { wallet: string; kind: "check" | "rating"; id: string; expires: number }
+    { wallet: string; kind: "check" | "rating" | "preview"; id: string; expires: number }
   >();
   const STREAM_TOKEN_MS = 5 * 60_000;
   /** The owner of a check, or "not found" for anyone else. */
@@ -923,13 +973,18 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
     handle(async (c) => {
       const { wallet, body } = await writer(c, "preview", "sign-in");
       const input = z
-        .union([z.strictObject({ checkId: uuid }), z.strictObject({ runId: uuid })])
+        .union([
+          z.strictObject({ checkId: uuid }),
+          z.strictObject({ runId: uuid }),
+          z.strictObject({ previewId: uuid }),
+        ])
         .parse(body);
       if ("checkId" in input) {
         const check = await db.check(input.checkId);
         if (!check || check.chainId !== chainId || check.owner !== wallet)
           throw new Refused(404, "That check wasn't found.");
-      } else await ownRating(input.runId, wallet);
+      } else if ("runId" in input) await ownRating(input.runId, wallet);
+      else await previewSubject(input.previewId, wallet);
       if (streamTokens.size > 10_000)
         for (const [k, v] of streamTokens) if (v.expires < Date.now()) streamTokens.delete(k);
       const token = randomBytes(24).toString("base64url");
@@ -938,7 +993,9 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
         token,
         "checkId" in input
           ? { wallet, kind: "check", id: input.checkId, expires }
-          : { wallet, kind: "rating", id: input.runId, expires },
+          : "runId" in input
+            ? { wallet, kind: "rating", id: input.runId, expires }
+            : { wallet, kind: "preview", id: input.previewId, expires },
       );
       return c.json({ token, expiresAt: new Date(expires).toISOString() }, 201);
     }),
@@ -983,6 +1040,62 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
           maxMs: 5 * 60_000,
           client: clientAddress(c.req.raw.headers),
           key: `check:${check.id}`,
+        },
+      );
+    }),
+  );
+
+  /**
+   * A preview's status as server-sent events (plain messages), so its page needn't poll:
+   * `{ status, ratingId, reason, queue, progress }` each time it changes (created, checking,
+   * ready, queued, starting, running, done, failed, refused, stopped). Progress is counts and an
+   * ETA only. The owner's only: a session, or a stream token for the preview.
+   */
+  app.get(
+    "/previews/:id/events",
+    handle(async (c) => {
+      limited(c, options.reads);
+      const raw = c.req.param("id") ?? "";
+      const subject = await previewSubject(raw, await streamViewer(c, "preview", raw));
+      let last = "";
+      let quietSince = Date.now();
+      return options.streams.open(
+        c,
+        async () => {
+          const p = (await db.preview(subject.id))!;
+          const rating = p.ratingId
+            ? ((await db.pool.query("SELECT status FROM ratings WHERE id=$1", [p.ratingId])).rows[0]
+                ?.status as string | undefined)
+            : undefined;
+          const state = {
+            status: p.status,
+            ratingId: p.ratingId,
+            reason: p.error,
+            queue:
+              p.status === "queued" && p.ratingId
+                ? { position: await db.remoteQueue(chainId, p.ratingId) }
+                : null,
+            progress:
+              p.ratingId && rating
+                ? { ...(await progressOf(p.ratingId, rating)), status: rating }
+                : null,
+          };
+          const key = JSON.stringify(state);
+          const changed = key !== last;
+          last = key;
+          if (changed) quietSince = Date.now();
+          const over = ["done", "failed", "refused", "stopped"].includes(p.status);
+          return {
+            events: changed ? [{ data: state }] : [],
+            // Ends when the preview is over, or after 10 quiet minutes (the browser reconnects).
+            done: over || Date.now() - quietSince > 10 * 60_000,
+          };
+        },
+        {
+          intervalMs: 1000,
+          maxMs: 60 * 60_000,
+          client: clientAddress(c.req.raw.headers),
+          key: `preview:${subject.id}`,
         },
       );
     }),
@@ -1060,7 +1173,9 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
 
   async function progressOf(runId: string, status: string) {
     const p = await db.runProgress(runId);
-    const elapsed = p.startedAt && p.lastAt ? p.lastAt.getTime() - p.startedAt.getTime() : 0;
+    // Measured from the first episode: setting up says nothing about the pace of episodes.
+    const from = p.episodesStartedAt;
+    const elapsed = from && p.lastAt ? p.lastAt.getTime() - from.getTime() : 0;
     const etaSeconds =
       status === "running" && p.total && p.done > 0
         ? Math.round(((elapsed / p.done) * (p.total - p.done)) / 1000)

@@ -111,6 +111,8 @@ async function runPreview(
   let outcome: PreviewOutcome;
   let score: { score: number; tier: string } | undefined;
   try {
+    // Setting up (the sandbox, the held-out set): "starting", then "running".
+    await db.markStarting(job);
     const reach = await reachFor(db, key, row.connection, options.secrets);
     if (row.code_source && row.code_source !== "declared") {
       const now = await db.currentConnection(key, row.connection);
@@ -150,9 +152,7 @@ async function runPreview(
             })
           : undefined;
       await check();
-      await db.withLease(job, (c) =>
-        c.query("UPDATE ratings SET status='running' WHERE id=$1", [job.id]),
-      );
+      await db.markRunning(job);
       const started = Date.now();
       const budget =
         options.budgetMs ??

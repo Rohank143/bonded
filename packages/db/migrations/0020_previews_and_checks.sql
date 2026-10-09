@@ -1,7 +1,7 @@
 -- Bring your own agent, round 2 (docs/BRING-YOUR-OWN-AGENT.md): previews, Agent URLs, connection
 -- checks and the code hash the runner reports. Independent of 0019.
 --
--- Owner sessions: a wallet signs "Bonded: sign in" once and gets a short-lived session for the
+-- Owner sessions: a wallet signs "Bonded: start preview" once and gets a short-lived session for the
 -- preview, check, Agent URL and notification routes. Only the token's sha256 is kept; each
 -- signature can open one session (signature_hash is unique), so a captured one can't be replayed.
 CREATE TABLE owner_sessions (
@@ -29,7 +29,8 @@ CREATE TABLE previews (
   connection text NOT NULL CHECK (connection IN ('runner', 'url')),
   code_hash text,
   status text NOT NULL DEFAULT 'created' CHECK (status IN
-    ('created', 'checking', 'ready', 'queued', 'running', 'done', 'failed', 'refused', 'stopped')),
+    ('created', 'checking', 'ready', 'queued', 'starting', 'running', 'done', 'failed', 'refused',
+     'stopped')),
   rating_id uuid,
   error text,
   upgraded_to text,

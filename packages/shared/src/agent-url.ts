@@ -9,8 +9,10 @@ import { CancelMessage, codeHashOf, EpisodeMessage } from "./runner.js";
  *   agent answers 2xx within AGENT_URL_ANSWER_MS (it may keep working after it answers), then
  *   uses the episode's endpoints and posts to its done URL, exactly as a runner-launched agent;
  * - cancel: `POST <agent url>` with `{ type: "cancel", episodeId }` (best effort);
- * - verify, at registration and before a connection check: `POST <agent url>` with
- *   `{ type: "verify", challenge }`; the agent answers 200 with `{ challenge, version? }`.
+ * - verify, once the agent has its secret (and again whenever its owner asks): `POST <agent url>`
+ *   with `{ type: "verify", challenge }`; the agent answers 200 with `{ challenge, proof,
+ *   version? }`, where `proof` is HMAC-SHA256(secret, "verify." + challenge), so only a holder of
+ *   the secret passes.
  *
  * Every call is signed with the agent secret (shown once when the URL is registered):
  * `bonded-timestamp` is unix seconds, and `bonded-signature` is `v1=` and the hex HMAC-SHA256 of
@@ -51,7 +53,7 @@ export function newAgentSecret(): string {
   return `${AGENT_SECRET_PREFIX}${base64url(bytes)}`;
 }
 
-/** The ownership check. `challenge` is random; the agent sends it back. */
+/** The ownership check. `challenge` is random; the agent sends it back with its proof. */
 export const AgentUrlVerifyMessage = z.object({
   type: z.literal("verify"),
   challenge: z.string().min(16).max(128),

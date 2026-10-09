@@ -82,7 +82,8 @@ export const CHECKS_UNAVAILABLE =
 
 /**
  * Verify an Agent URL with the gateway's `verifyAgentUrl`: a signed `verify` challenge the agent
- * must echo within 10 s, through `client` (its per-host rate limit and refused hosts are shared
+ * must answer within 10 s with the challenge and its proof (an HMAC of it with the agent secret,
+ * so an echo server can't pass), through `client` (its per-host rate limit and refused hosts are shared
  * with everything else that calls agent URLs from this process).
  */
 export function gatewayUrlVerifier(client: AgentUrlClient): AgentUrlVerifier {
@@ -120,7 +121,7 @@ export function gatewayCheckRunner(gateway: ArenaGateway): ConnectionCheckRunner
       ...(result.code
         ? {
             codeHash: result.code.hash,
-            codeSource: result.code.source === "url" ? "url-version" : result.code.source,
+            codeSource: result.code.source,
           }
         : {}),
     };
@@ -167,22 +168,25 @@ const CHECK_VALID_MS = 86_400_000;
 
 /** A code hash, where it came from, and (for an Agent URL) the version it was made from. */
 export function codeInfo(code: RatedCode | undefined, version?: string | null) {
+  // One name for an Agent URL's reported version, "url" (as @bonded/shared's CodeSource); an
+  // earlier "url-version" is read as it.
+  if (code?.source === "url-version") code = { ...code, source: "url" };
   return code
     ? {
         value: code.hash.toLowerCase(),
         source: code.source,
-        detail: code.source === "url-version" ? (version ?? null) : (code.detail ?? null),
+        detail: code.source === "url" ? (version ?? null) : (code.detail ?? null),
         // Who says so: never verified by Bonded, only declared or reported.
         reportedBy:
           code.source === "declared"
             ? ("owner" as const)
-            : code.source === "url-version"
+            : code.source === "url"
               ? ("agent" as const)
               : ("runner" as const),
         label:
           code.source === "declared"
             ? "declared by the owner"
-            : code.source === "url-version"
+            : code.source === "url"
               ? "reported by the agent"
               : "reported by the runner",
       }

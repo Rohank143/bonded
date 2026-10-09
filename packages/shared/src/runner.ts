@@ -198,6 +198,11 @@ export const HelloMessage = z.object({
     .optional(),
   /** Where `codeHash` came from (a git commit, an image digest, ...). */
   codeSource: CodeSource.optional(),
+  /**
+   * What it was made from: the commit for git and git-dirty, the digest for image, a label
+   * otherwise. Reported by the runner, never verified.
+   */
+  codeDetail: text(200).optional(),
 });
 export const PingMessage = z.object({ type: z.literal("ping"), at: z.number().optional() });
 /**

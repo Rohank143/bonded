@@ -70,6 +70,8 @@ export interface CheckResult {
     hash: `0x${string}`;
     source: string;
     version?: string;
+    /** The runner's commit, digest or label (hello `codeDetail`). */
+    detail?: string;
     /** Who said so: the runner or the agent URL. Never verified; show it as reported. */
     reportedBy: "runner" | "agent";
   };

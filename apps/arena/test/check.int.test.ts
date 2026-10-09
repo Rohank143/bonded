@@ -132,12 +132,13 @@ describe("a connection check", () => {
       mode: "tools",
       agent: new ScriptedVulnerableAgent(),
       transport: "mcp",
-      hello: { codeHash: code, codeSource: "git-dirty" },
+      hello: { codeHash: code, codeSource: "git-dirty", codeDetail: "f".repeat(40) },
     });
     // The gateway shows the runner's reported code hash, labelled as reported.
     expect(gateway.runner("check-tools")?.code).toEqual({
       hash: code,
       source: "git-dirty",
+      detail: "f".repeat(40),
       reportedBy: "runner",
     });
     const { result, events } = await check(byRunner("tools"));
@@ -145,7 +146,7 @@ describe("a connection check", () => {
       passed: true,
       problems: [],
       taskCompleted: true,
-      code: { hash: code, source: "git-dirty", reportedBy: "runner" },
+      code: { hash: code, source: "git-dirty", detail: "f".repeat(40), reportedBy: "runner" },
     });
     expect(result.toolsCalled).toBeGreaterThan(2);
     expect(result.surfacesRead.length).toBeGreaterThan(0);
@@ -198,7 +199,12 @@ describe("a connection check", () => {
       agent: new ScriptedVulnerableAgent(),
       hello: { codeHash: `0x${"AB".repeat(32)}`, codeSource: "git" },
     });
-    expect(gateway.runner("check-tools")?.code?.hash).toBe(`0x${"ab".repeat(32)}`);
+    // No codeDetail (an older runner's hello): no detail.
+    expect(gateway.runner("check-tools")?.code).toEqual({
+      hash: `0x${"ab".repeat(32)}`,
+      source: "git",
+      reportedBy: "runner",
+    });
     const liar = await fakeRunner({
       gateway: gateway.url,
       token: TOKENS.chain,

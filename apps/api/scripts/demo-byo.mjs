@@ -16,6 +16,7 @@ import { ArenaGateway } from "@bonded/arena";
 import {
   EvmMandate,
   bondedRegistryAbi,
+  byoaMessage,
   coverManagerAbi,
   mandateHash,
   mandateVaultFactoryAbi,
@@ -201,6 +202,30 @@ export async function runByoDemo(ctx) {
     await delay(200);
   }
   console.log(`  runner connected to the gateway at ${gatewayUrl}`);
+  // A rating needs a passing connection check of this connection: one benign episode, run by the
+  // demo's check lane through the same gateway, signed by the owner like any other request.
+  {
+    const timestamp = now();
+    const signature = await owner.signMessage({
+      message: byoaMessage({ action: "check", ...base, timestamp }),
+    });
+    const r = await app.request(`/self/agents/${byoId}/checks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timestamp, signature }),
+    });
+    const made = await r.json();
+    if (r.status >= 400) throw new Error(`connection check: ${made.error ?? r.status}`);
+    for (let i = 0; ; i++) {
+      const check = await db.check(made.checkId);
+      if (check.status === "passed") break;
+      if (check.status === "failed")
+        throw new Error(`the connection check failed: ${check.result?.problems?.join(" ")}`);
+      if (i > 120) throw new Error(`the connection check didn't finish:\n${runnerLog}`);
+      await delay(1000);
+    }
+    console.log("  connection check passed (one benign episode)");
+  }
   // The rating sandbox forks a few blocks behind the tip; make sure it includes the setup.
   await ctx.mineBlocks(6);
   const started = Date.now();
