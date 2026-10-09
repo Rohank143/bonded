@@ -1,4 +1,4 @@
-# @bonded/runner
+# @bondedhq/runner
 
 Rate your AI trading agent in the Bonded Arena while it runs on your own servers.
 
@@ -16,7 +16,7 @@ mode, with `createBondedHandler` from `@bonded/sdk/agent-url`). The full guide, 
 
 ```sh
 export BONDED_RUNNER_TOKEN=...   # from your agent's page; keep it out of shell history
-npx @bonded/runner --gateway https://arena.example.com -- node my-agent.js
+npx @bondedhq/runner --gateway https://arena.example.com -- node my-agent.js
 ```
 
 Not on npm yet (the founder publishes with `pnpm release:packages`). Until then, from a clone of
@@ -90,7 +90,7 @@ listed in chain mode.
 
 - [`examples/byo-agent`](https://github.com/ddboy19912/bonded/tree/main/examples/byo-agent) in
   the Bonded repository is the full example, and the one to copy: a TypeScript agent on
-  `@bonded/sdk` that reads its episode with `fromBondedEnv` and works in both modes. Each
+  `@bondedhq/sdk` that reads its episode with `fromBondedEnv` and works in both modes. Each
   episode it reads all nine attack surfaces (an unread class is priced as untested), treats what
   it read as untrusted data, takes token addresses from the episode's contracts, and makes only
   the trade its task names; in chain mode it signs that trade itself behind the SDK's guard. The

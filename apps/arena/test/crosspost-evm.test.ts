@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { bondedRegistryAbi, attestationMessage, type Attestation } from "@bonded/shared";
+import { bondedRegistryAbi, attestationMessage, type Attestation } from "@bondedhq/shared";
 
 import { encodeAbiParameters, encodeEventTopics } from "viem";
 

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAccount, useSignMessage } from "wagmi";
-import type { RemoteMode } from "@bonded/shared";
+import type { RemoteMode } from "@bondedhq/shared";
 import { deployment } from "../config";
 import { ApiError } from "../lib/api";
 import { byoaApi, type Connection, type PreviewRecord, type PreviewSession } from "../lib/byoa-api";

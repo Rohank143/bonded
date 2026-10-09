@@ -1,10 +1,14 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { ANVIL_KEYS, Sandbox, createAgentVault, type AgentVault } from "@bonded/arena";
 import { connectChain, type ServiceChain } from "@bonded/keeper";
-import type { SentinelModel } from "@bonded/demo-agents";
+import { CascadeSentinel, type SentinelModel } from "@bonded/demo-agents";
 import { asEntryPoint, deployReferenceAccount } from "@bonded/sandbox";
-import { checkWithSentinel, installMandateModule } from "@bonded/sdk";
-import { sentinelCheckDigest, sentinelCheckMessage, type SentinelCheckBody } from "@bonded/shared";
+import { checkWithSentinel, installMandateModule } from "@bondedhq/sdk";
+import {
+  sentinelCheckDigest,
+  sentinelCheckMessage,
+  type SentinelCheckBody,
+} from "@bondedhq/shared";
 import { privateKeyToAccount } from "viem/accounts";
 import { createApi } from "../src/index.js";
 import {
@@ -14,7 +18,7 @@ import {
   type SentinelService,
 } from "../src/sentinel.js";
 import { agentConfig, ratedCodeHash, workOne } from "../src/worker.js";
-import { bondedRegistryAbi, mandateVaultAbi } from "@bonded/shared";
+import { bondedRegistryAbi, mandateVaultAbi } from "@bondedhq/shared";
 import { postgres } from "./postgres.js";
 
 let pg: Awaited<ReturnType<typeof postgres>>;
@@ -96,6 +100,7 @@ async function check(
     signer?: typeof agentKey;
     signed?: SentinelCheckBody;
     at?: number;
+    target?: typeof app;
   } = {},
 ) {
   const v = options.v ?? vault;
@@ -110,7 +115,7 @@ async function check(
       timestamp,
     }),
   });
-  return app.request("/sentinel/check", {
+  return (options.target ?? app).request("/sentinel/check", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ agentId, vault: v.address, timestamp, signature, ...body }),
@@ -314,6 +319,96 @@ it("attests a combined code hash whenever Sentinel is on, and refuses Sentinel w
     }).success,
   ).toBe(false);
 });
+
+it("runs both cascade paths and persists a failed fallback without a safe verdict", async () => {
+  let fail = false;
+  const cascade = new CascadeSentinel(
+    {
+      name: "primary",
+      async assess(fields, options) {
+        const usage = { inputTokens: 10, outputTokens: 0, costUsd: 0 };
+        options?.onUsage?.(usage);
+        return {
+          manipulated: fields.untrustedInputs.some((i) => /send everything/.test(i.output))
+            ? 0.5
+            : 0.05,
+          model: "primary",
+          latencyMs: 5,
+          usage,
+        };
+      },
+    },
+    {
+      name: "fallback",
+      async assess(_fields, options) {
+        const usage = { inputTokens: 20, outputTokens: 2, costUsd: 0.002 };
+        options?.onUsage?.(usage);
+        if (fail) throw new Error("private provider detail");
+        return { manipulated: 0.95, model: "fallback", latencyMs: 10, usage };
+      },
+    },
+  );
+  const pipelineHash = `0x${"bc".repeat(32)}` as const;
+  const target = createApi({
+    db: pg.db,
+    chain,
+    attesterKey: ANVIL_KEYS.deployer,
+    apiToken: "test-api-token-at-least-24-characters",
+    sentinel: {
+      model: cascade,
+      info: {
+        model: "primary",
+        questions: "v3",
+        blockThreshold: 0.7,
+        pipelineHash,
+        fallback: { model: "fallback", questions: "v1", unsureBand: [0.25, 0.75] },
+      },
+    },
+    sentinelLimits: { perAgent: 100, now: () => clock },
+  });
+  try {
+    expect(await json(await check(benign, { target }))).toMatchObject({
+      blocked: false,
+      escalated: false,
+      primaryLatencyMs: 5,
+    });
+    expect(await json(await check(planted, { target }))).toMatchObject({
+      blocked: true,
+      escalated: true,
+      primaryLatencyMs: 5,
+      fallbackLatencyMs: 10,
+    });
+    expect((await json(await target.request("/sentinel"))).metrics24h).toMatchObject({
+      checks: 2,
+      escalations: 1,
+      escalationRate: 0.5,
+      llmUsdPer1000: 1,
+    });
+    fail = true;
+    expect((await check(planted, { target })).status).toBe(503);
+    const failed = (
+      await pg.db.pool.query(
+        "SELECT * FROM sentinel_checks WHERE pipeline_hash=$1 AND status='error'",
+        [pipelineHash],
+      )
+    ).rows[0];
+    expect(failed).toMatchObject({
+      manipulated: null,
+      blocked: null,
+      escalated: true,
+      primary_latency_ms: 5,
+      llm_cost_usd: null,
+    });
+    expect(JSON.stringify(failed)).not.toMatch(/private provider detail|send everything/);
+    expect((await json(await target.request("/sentinel"))).metrics24h).toMatchObject({
+      checks: 3,
+      errors: 1,
+      llmUsdPer1000: null,
+    });
+  } finally {
+    target.close();
+  }
+}, 60_000);
 
 it("answers the SDK's checkWithSentinel, as an agent outside Bonded would call it", async () => {
   clock += 120_000;

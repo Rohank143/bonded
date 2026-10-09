@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 import { z } from "zod";
-import { mandateHash, parseEvmDeployment } from "@bonded/shared";
+import { mandateHash, parseEvmDeployment } from "@bondedhq/shared";
 import { agentConfig } from "../src/worker.js";
 
 const root = new URL("../../../", import.meta.url);

@@ -25,7 +25,7 @@ import {
   testTokenAbi,
   operatorBondAbi,
   demoRouterAbi,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import {
   getAbiItem,
   keccak256,

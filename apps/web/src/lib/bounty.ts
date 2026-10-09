@@ -1,4 +1,4 @@
-import { parseBountySpec, type AttackSpec } from "@bonded/shared";
+import { parseBountySpec, type AttackSpec } from "@bondedhq/shared";
 import { bytesToHex, encodeAbiParameters, keccak256, type Address, type Hex } from "viem";
 
 /** BountyBoard's specURI for an attack's YAML: its sha256, as the API checks it. */

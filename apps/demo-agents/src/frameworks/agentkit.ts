@@ -1,7 +1,7 @@
 import { AgentKit, customActionProvider, type WalletProvider } from "@coinbase/agentkit";
 import { getLangChainTools } from "@coinbase/agentkit-langchain";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import type { AgentRunSummary, AgentTask, AgentToolbox, ArenaAgent } from "@bonded/shared";
+import type { AgentRunSummary, AgentTask, AgentToolbox, ArenaAgent } from "@bondedhq/shared";
 import { ARENA_ACTIONS, ArenaBridge } from "./actions.js";
 import { openRouterModel, runLangGraphAgent } from "./langgraph.js";
 

@@ -1,6 +1,6 @@
 import { Link, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ATTACK_CLASSES } from "@bonded/shared";
+import { ATTACK_CLASSES } from "@bondedhq/shared";
 import { api, ApiError, type EpisodeDetail } from "../lib/api";
 import { dollars, rulingView } from "../lib/ruling";
 import { at } from "../lib/format";

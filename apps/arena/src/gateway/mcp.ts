@@ -6,7 +6,7 @@ import {
   type CallToolResult,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import type { AgentMode, ToolResult } from "@bonded/shared";
+import type { AgentMode, ToolResult } from "@bondedhq/shared";
 import { toolList } from "./tools.js";
 
 /**

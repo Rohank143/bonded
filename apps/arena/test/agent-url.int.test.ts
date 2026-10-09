@@ -1,5 +1,5 @@
 import { ScriptedVulnerableAgent } from "@bonded/demo-agents";
-import { mandateVaultAbi } from "@bonded/shared";
+import { mandateVaultAbi } from "@bondedhq/shared";
 import { privateKeyToAccount } from "viem/accounts";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {

@@ -5,7 +5,7 @@ import {
   type Network,
   type WalletProvider,
 } from "@coinbase/agentkit";
-import { mandateVaultAbi } from "@bonded/shared";
+import { mandateVaultAbi } from "@bondedhq/shared";
 import {
   type Address,
   encodeFunctionData,

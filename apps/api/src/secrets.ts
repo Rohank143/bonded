@@ -14,8 +14,8 @@ import {
  * so a ciphertext copied to another row doesn't decrypt. They are never logged or returned again.
  */
 
-/** Prefix of an agent secret (Agent URL mode): @bonded/shared's. */
-export { AGENT_SECRET_PREFIX } from "@bonded/shared";
+/** Prefix of an agent secret (Agent URL mode): @bondedhq/shared's. */
+export { AGENT_SECRET_PREFIX } from "@bondedhq/shared";
 /** Prefix of a webhook signing secret. */
 export const WEBHOOK_SECRET_PREFIX = "bonded_ws_";
 
@@ -97,7 +97,7 @@ export const webhookContext = (owner: string) => `webhook:${owner.toLowerCase()}
 /**
  * Checks a signed webhook call's headers: `bonded-timestamp` and `bonded-signature:
  * v1=<hex HMAC-SHA256(secret, "<timestamp>.<raw body>")>`, as `signAgentUrlRequest` in
- * @bonded/shared makes them (for tests and receivers written in TypeScript).
+ * @bondedhq/shared makes them (for tests and receivers written in TypeScript).
  */
 export function verifySignature(
   secret: string,

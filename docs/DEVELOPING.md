@@ -38,7 +38,7 @@ pnpm demo             # THE demo, in one command: local chain, API, keeper and w
                       # Agent A and Agent B, buys cover, plants an address-poisoning attack,
                       # Agent A falls for it, the keeper's claim pays (bond first, then pool),
                       # then serves the web app at http://localhost:5180 (Ctrl-C stops it all)
-pnpm demo -- --byo    # also: your own agent (examples/byo-agent) connected through @bonded/runner
+pnpm demo -- --byo    # also: your own agent (examples/byo-agent) connected through @bondedhq/runner
                       # and a local Arena Gateway, rated with a held-out set of its own; and a
                       # smart account (ERC-7579 reference account) protected by an Enforce-mode
                       # mandate module, rated and covered. Prints both agents' pages, and keeps
@@ -112,7 +112,7 @@ A deploy writes `contracts/evm/deployments/<chainId>.json` only after checking e
 ### Checks before a pull request
 
 ```bash
-pnpm format:check && pnpm --filter @bonded/shared abis:check && pnpm typecheck && pnpm lint && pnpm test
+pnpm format:check && pnpm --filter @bondedhq/shared abis:check && pnpm typecheck && pnpm lint && pnpm test
 cd contracts/evm && forge fmt --check && forge test
 ```
 
@@ -123,12 +123,12 @@ How an agent that runs on its operator's servers is protected and rated: [BRING-
 | Path | Package | What it is |
 |---|---|---|
 | `apps/arena/src/gateway` | part of `@bonded/arena` | The Arena Gateway (MCP, HTTP, chain-mode RPC, the runner's WebSocket) and `RemoteAgent` |
-| `apps/runner` | `@bonded/runner` (publishable, with a `bonded-runner` bin and a Dockerfile) | Connects an agent to the gateway and starts it per episode, and works out its code hash (`src/code-hash.ts`). `examples/mcp-agent.mjs` is the smallest tool-mode agent, over MCP; `examples/agent-url-agent.mjs` the same for Agent URL mode |
+| `apps/runner` | `@bondedhq/runner` (publishable, with a `bonded-runner` bin and a Dockerfile) | Connects an agent to the gateway and starts it per episode, and works out its code hash (`src/code-hash.ts`). `examples/mcp-agent.mjs` is the smallest tool-mode agent, over MCP; `examples/agent-url-agent.mjs` the same for Agent URL mode |
 | `apps/arena/src/gateway/agent-url.ts`, `apps/arena/src/check.ts`, `apps/arena/src/safe-fetch.ts` | part of `@bonded/arena` | Agent URL calls (signed, rate-limited, public https only), the connection check, and the fetch rules for URLs an operator chose |
 | `apps/api/src/{previews,sessions,connections,check-worker,preview-worker,notifications,secrets,remote-policy}.ts` | part of `@bonded/api` | Owner sessions, previews, Agent URL registration, checks and their lane, estimates, progress streams, notifications, secret encryption, and the caps |
-| `packages/sdk` | `@bonded/sdk` (publishable) | The vault and module client, dry runs, the guard, the Sentinel client, the mandate builder, the AgentKit, Solana Agent Kit and ElizaOS plugins, the episode's tools for LangChain, the AI SDK, ElizaOS, AgentKit and MCP (with the `bonded-mcp-config` bin), and the Agent URL handler |
+| `packages/sdk` | `@bondedhq/sdk` (publishable) | The vault and module client, dry runs, the guard, the Sentinel client, the mandate builder, the AgentKit, Solana Agent Kit and ElizaOS plugins, the episode's tools for LangChain, the AI SDK, ElizaOS, AgentKit and MCP (with the `bonded-mcp-config` bin), and the Agent URL handler |
 | `packages/sandbox` | `@bonded/sandbox` (private) | Local chains with the protocol deployed by the production scripts, shared by the Arena's and the SDK's tests |
-| `packages/shared/src/runner.ts`, `agent-url.ts` | `@bonded/shared` (publishable) | The runner protocol's messages, as zod schemas both sides parse with, and the Agent URL protocol (signing, verifying, the verify proof; also published alone as `@bonded/shared/agent-url`) |
+| `packages/shared/src/runner.ts`, `agent-url.ts` | `@bondedhq/shared` (publishable) | The runner protocol's messages, as zod schemas both sides parse with, and the Agent URL protocol (signing, verifying, the verify proof; also published alone as `@bondedhq/shared/agent-url`) |
 | `examples/byo-agent` | `@bonded/example-byo-agent` (private) | The full example, and the template to copy: an agent on its own server that trades through its vault with the SDK. When the runner starts it, it runs an episode in either mode: it reads all nine attack surfaces, treats them as untrusted data, and makes only the trade its task names (guarded by the SDK's dry run in chain mode). The Arena's runner end-to-end test rates it through the real gateway and runner |
 | `examples/frameworks` | `@bonded/example-frameworks` (private) | LangGraph, AI SDK, ElizaOS and AgentKit agents and an Agent URL server, each rated through a real gateway with a scripted model |
 | `examples/python-agent-url` | | An Agent URL endpoint in plain Python (standard library only), with `selfcheck.py` |
@@ -137,8 +137,8 @@ How an agent that runs on its operator's servers is protected and rated: [BRING-
 Their tests run with `pnpm test` (the contracts' with `forge test`). To run one part:
 
 ```bash
-pnpm --filter @bonded/runner test                 # the runner against a fake gateway
-pnpm --filter @bonded/sdk test                    # vault, module and plugins on anvil
+pnpm --filter @bondedhq/runner test                 # the runner against a fake gateway
+pnpm --filter @bondedhq/sdk test                    # vault, module and plugins on anvil
 pnpm --filter @bonded/example-byo-agent test      # the example, both modes
 pnpm --filter @bonded/example-frameworks test     # every framework helper and both Agent URL
                                                   # examples against a real gateway (the Python
@@ -208,7 +208,7 @@ To enable WalletConnect QR/mobile connections, create a project at [Reown Dashbo
 
 The hosted services run on Railway, from `.railway/railway.ts`; contracts deploy with `pnpm contracts:deploy` ([deployments](../contracts/evm/deployments/README.md#deploying)). Secrets are set on the services directly and never committed (`preserve()` in the configuration keeps the value already stored on Railway). What bringing your own agent needs before it is live for everyone:
 
-1. **Publish the packages to npm.** `pnpm release:packages` publishes `@bonded/shared`, `@bonded/solana`, `@bonded/sdk` and `@bonded/runner`, in that order (each depends only on those before it; `workspace:` ranges become versions), with public access. It refuses unless the tree is clean and on `main`, level with `origin/main`. It builds the packages fresh, runs their tests, packs them and smoke-tests the tarballs, then publishes each one whose version isn't on npm yet (pnpm asks for your one-time password). `pnpm release:packages -- --dry-run` does everything except publish, on any branch. `pnpm release:check` on its own packs the packages, installs the tarballs into an empty project as a user would, and checks `bonded-runner --version`, `bonded-mcp-config`, the SDK's entry points without any optional framework installed, and an Agent URL verify round trip; `--keep` leaves the project, `--no-build` uses the existing builds; it needs the npm registry for third-party dependencies. Bump versions in the packages' `package.json` in a reviewed PR before publishing again. Until the first publish, `npx @bonded/runner` and `npm install @bonded/sdk` don't resolve, and builders run them from the repository.
+1. **Publish the packages to npm.** `pnpm release:packages` publishes `@bondedhq/shared`, `@bondedhq/solana`, `@bondedhq/sdk` and `@bondedhq/runner`, in that order (each depends only on those before it; `workspace:` ranges become versions), with public access. It refuses unless the tree is clean and on `main`, level with `origin/main`. It builds the packages fresh, runs their tests, packs them and smoke-tests the tarballs, then publishes each one whose version isn't on npm yet (pnpm asks for your one-time password). `pnpm release:packages -- --dry-run` does everything except publish, on any branch. `pnpm release:check` on its own packs the packages, installs the tarballs into an empty project as a user would, and checks `bonded-runner --version`, `bonded-mcp-config`, the SDK's entry points without any optional framework installed, and an Agent URL verify round trip; `--keep` leaves the project, `--no-build` uses the existing builds; it needs the npm registry for third-party dependencies. Bump versions in the packages' `package.json` in a reviewed PR before publishing again. Until the first publish, `npx @bondedhq/runner` and `npm install @bondedhq/sdk` don't resolve, and builders run them from the repository.
 2. **Push the runner's image**: build `apps/runner/Dockerfile` from the repository root and push it to a public registry, so builders can put their agent `FROM` it instead of building it themselves.
 3. **Set the secret key, then apply the Railway configuration**, in this order:
    1. Set `AGENT_URL_SECRET_KEY` on the **api** service in Railway: 32 bytes, `openssl rand -hex 32`. The configuration keeps it with `preserve()` and gives the arena-worker the same value (`api.env.AGENT_URL_SECRET_KEY`). Without it Agent URL mode and webhooks are refused, with a message saying so; previews and checks through the runner still work. Changing it later makes every stored Agent URL and webhook secret unusable (owners set them again).

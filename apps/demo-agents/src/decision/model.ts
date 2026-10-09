@@ -1,4 +1,4 @@
-import { type ChatClient, llmConfigFromEnv, OpenAICompatibleClient } from "@bonded/shared";
+import { type ChatClient, llmConfigFromEnv, OpenAICompatibleClient } from "@bondedhq/shared";
 import type { ModelUsage } from "../usage.js";
 
 /**
@@ -33,7 +33,13 @@ export interface DecisionModel {
   readonly name: string;
   /** Running total of model usage, for models that call a paid endpoint. */
   readonly usage?: ModelUsage;
-  decide(question: DecisionQuestion, options?: { signal?: AbortSignal }): Promise<Decision>;
+  decide(question: DecisionQuestion, options?: DecisionOptions): Promise<Decision>;
+}
+
+/** Per-call usage is emitted before parsing, so billed malformed answers are counted too. */
+export interface DecisionOptions {
+  signal?: AbortSignal;
+  onUsage?: (usage: ModelUsage) => void;
 }
 
 /** The answers a question allows. */
@@ -74,7 +80,7 @@ export class LlmDecisionModel implements DecisionModel {
       : { inputTokens, outputTokens, costUsd };
   }
 
-  async decide(question: DecisionQuestion, options: { signal?: AbortSignal } = {}) {
+  async decide(question: DecisionQuestion, options: DecisionOptions = {}) {
     const answers = allowedAnswers(question);
     const fields = Object.entries(question.context)
       .map(([name, value]) => `<${name}>\n${value}\n</${name}>`)
@@ -84,6 +90,9 @@ export class LlmDecisionModel implements DecisionModel {
         model: this.model,
         temperature: 0,
         max_tokens: 200,
+        // Hidden reasoning counts against max_tokens; with it on, a thinking model can spend all
+        // 200 tokens before answering and return an empty reply.
+        reasoning: { enabled: false },
         messages: [
           {
             role: "system",
@@ -101,6 +110,11 @@ export class LlmDecisionModel implements DecisionModel {
     this.totals.outputTokens += response.usage?.completion_tokens ?? 0;
     if (response.usage?.cost !== undefined) this.totals.costUsd += response.usage.cost;
     else this.costMissing = true;
+    options.onUsage?.({
+      inputTokens: response.usage?.prompt_tokens ?? 0,
+      outputTokens: response.usage?.completion_tokens ?? 0,
+      ...(response.usage?.cost !== undefined ? { costUsd: response.usage.cost } : {}),
+    });
     return parseDecision(response.choices[0]?.message.content ?? "", answers);
   }
 }

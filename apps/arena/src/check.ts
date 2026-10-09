@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { type AgentMode, AttackSurface, type DoneRequest } from "@bonded/shared";
+import { type AgentMode, AttackSurface, type DoneRequest } from "@bondedhq/shared";
 import { BENIGN_GOALS, benignTrade, type EpisodeResult, runEpisode } from "./episode.js";
 import {
   type AgentTransport,

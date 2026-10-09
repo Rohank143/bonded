@@ -7,7 +7,7 @@ import {
   type Protection,
   type RemoteAgentSpec,
   type SelfServeAgentKind,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { getAbiItem, isAddress, toFunctionSelector } from "viem";
 import { parseUsd } from "./format";
 import type { Connection } from "./byoa-api";
@@ -42,7 +42,7 @@ export function buildMandate(
     tAMZN: deployment.amzn,
     tNVDA: deployment.nvda,
   };
-  // The one mandate builder, shared with @bonded/sdk.
+  // The one mandate builder, shared with @bondedhq/sdk.
   return buildEvmMandate({
     chainId: deployment.chainId,
     agentId,

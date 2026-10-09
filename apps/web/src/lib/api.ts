@@ -1,5 +1,5 @@
-import type { BindingLevel, RemoteMode, SelfServeAgentKind, SelfServeKind } from "@bonded/shared";
-import type { AttackSpec } from "@bonded/shared";
+import type { BindingLevel, RemoteMode, SelfServeAgentKind, SelfServeKind } from "@bondedhq/shared";
+import type { AttackSpec } from "@bondedhq/shared";
 import { apiUrl } from "../config";
 import type { EpisodeCard, EpisodeCounts, Outcome } from "./events";
 import type { AgentUrlInfo, CheckSummary, CodeHashInfo, Connection } from "./byoa-api";
@@ -44,6 +44,20 @@ export interface SentinelStatus {
   model?: string;
   questions?: string;
   blockThreshold?: number;
+  fallback?: { model: string; questions: string; unsureBand: [number, number] };
+  pipelineHash?: string;
+  metrics24h?: {
+    checks: number;
+    errors: number;
+    escalations: number;
+    escalationRate: number | null;
+    knownCostChecks: number;
+    llmCostUsd: number | null;
+    llmUsdPer1000: number | null;
+    latencyMs: { p50: number | null; p95: number | null };
+    primaryLatencyMs: { p50: number | null; p95: number | null };
+    fallbackLatencyMs: { p50: number | null; p95: number | null };
+  };
   last24h: { checks: number; blocked: number };
 }
 
@@ -306,6 +320,7 @@ export interface Report {
     revision?: string;
     questions: string;
     blockThreshold: number;
+    pipelineHash?: string;
     fallback?: { model: string; questions: string; unsureBand: [number, number] };
   } | null;
   classes: {

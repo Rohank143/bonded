@@ -24,7 +24,7 @@ importers:
         specifier: ^3.9.9
         version: 3.9.9
       railway:
-        specifier: 3.11.0
+        specifier: ^3.11.0
         version: 3.11.0
       turbo:
         specifier: ^2.11.4
@@ -53,7 +53,7 @@ importers:
       '@bonded/keeper':
         specifier: workspace:*
         version: link:../keeper
-      '@bonded/shared':
+      '@bondedhq/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@hono/node-server':
@@ -69,13 +69,13 @@ importers:
         specifier: ^4.6.5
         version: 4.6.5
     devDependencies:
-      '@bonded/runner':
-        specifier: workspace:*
-        version: link:../runner
       '@bonded/sandbox':
         specifier: workspace:*
         version: link:../../packages/sandbox
-      '@bonded/sdk':
+      '@bondedhq/runner':
+        specifier: workspace:*
+        version: link:../runner
+      '@bondedhq/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
       embedded-postgres:
@@ -93,10 +93,10 @@ importers:
       '@bonded/sandbox':
         specifier: workspace:*
         version: link:../../packages/sandbox
-      '@bonded/shared':
+      '@bondedhq/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@bonded/solana':
+      '@bondedhq/solana':
         specifier: workspace:*
         version: link:../../packages/solana
       '@modelcontextprotocol/sdk':
@@ -124,7 +124,7 @@ importers:
       '@bonded/example-byo-agent':
         specifier: workspace:*
         version: link:../../examples/byo-agent
-      '@bonded/runner':
+      '@bondedhq/runner':
         specifier: workspace:*
         version: link:../runner
       '@types/ws':
@@ -133,7 +133,7 @@ importers:
 
   apps/demo-agents:
     dependencies:
-      '@bonded/shared':
+      '@bondedhq/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@coinbase/agentkit':
@@ -202,10 +202,10 @@ importers:
       '@bonded/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@bonded/shared':
+      '@bondedhq/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@bonded/solana':
+      '@bondedhq/solana':
         specifier: workspace:*
         version: link:../../packages/solana
       '@solana/web3.js':
@@ -217,7 +217,7 @@ importers:
 
   apps/runner:
     dependencies:
-      '@bonded/shared':
+      '@bondedhq/shared':
         specifier: workspace:^
         version: link:../../packages/shared
       ws:
@@ -233,7 +233,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@bonded/shared':
+      '@bondedhq/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@codemirror/lang-yaml':
@@ -324,7 +324,7 @@ importers:
 
   examples/byo-agent:
     dependencies:
-      '@bonded/sdk':
+      '@bondedhq/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
       viem:
@@ -334,7 +334,7 @@ importers:
       '@bonded/sandbox':
         specifier: workspace:*
         version: link:../../packages/sandbox
-      '@bonded/shared':
+      '@bondedhq/shared':
         specifier: workspace:*
         version: link:../../packages/shared
 
@@ -384,7 +384,7 @@ importers:
 
   packages/sandbox:
     dependencies:
-      '@bonded/shared':
+      '@bondedhq/shared':
         specifier: workspace:*
         version: link:../shared
       viem:
@@ -393,7 +393,7 @@ importers:
 
   packages/sdk:
     dependencies:
-      '@bonded/shared':
+      '@bondedhq/shared':
         specifier: workspace:^
         version: link:../shared
       '@modelcontextprotocol/sdk':
@@ -409,7 +409,7 @@ importers:
       '@bonded/sandbox':
         specifier: workspace:*
         version: link:../sandbox
-      '@bonded/solana':
+      '@bondedhq/solana':
         specifier: workspace:*
         version: link:../solana
       '@coinbase/agentkit':
@@ -464,7 +464,7 @@ importers:
 
   services/tee-agent:
     dependencies:
-      '@bonded/shared':
+      '@bondedhq/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@phala/dstack-sdk':

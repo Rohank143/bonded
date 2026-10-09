@@ -4,7 +4,7 @@ import {
   type AgentUrlClient,
   type ArenaGateway,
 } from "@bonded/arena";
-import { agentUrlCodeHash, type AgentMode } from "@bonded/shared";
+import { agentUrlCodeHash, type AgentMode } from "@bondedhq/shared";
 import type { ConnectionCheckRecord, RatedCode } from "@bonded/db";
 import type { Hex } from "viem";
 
@@ -168,7 +168,7 @@ const CHECK_VALID_MS = 86_400_000;
 
 /** A code hash, where it came from, and (for an Agent URL) the version it was made from. */
 export function codeInfo(code: RatedCode | undefined, version?: string | null) {
-  // One name for an Agent URL's reported version, "url" (as @bonded/shared's CodeSource); an
+  // One name for an Agent URL's reported version, "url" (as @bondedhq/shared's CodeSource); an
   // earlier "url-version" is read as it.
   if (code?.source === "url-version") code = { ...code, source: "url" };
   return code

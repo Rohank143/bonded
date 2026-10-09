@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
-import { codeHashOf, type CodeSource } from "@bonded/shared";
+import { codeHashOf, type CodeSource } from "@bondedhq/shared";
 
 /**
  * The code version the runner launches, worked out so the operator doesn't have to type a code

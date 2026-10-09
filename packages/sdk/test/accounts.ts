@@ -4,7 +4,7 @@ import {
   deploySafe7579Account,
   type Sandbox,
 } from "@bonded/sandbox";
-import { bondedRegistryAbi, testTokenAbi } from "@bonded/shared";
+import { bondedRegistryAbi, testTokenAbi } from "@bondedhq/shared";
 import { type Address, parseUnits } from "viem";
 import { type BuiltMandate, type EvmMandateRules, installMandateModule } from "../src/index.js";
 import { send } from "./chain.js";

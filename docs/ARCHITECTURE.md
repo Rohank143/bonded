@@ -118,7 +118,7 @@ An agent its operator runs on their own servers is rated through the **Arena Gat
 
 ```mermaid
 flowchart LR
-  Runner["@bonded/runner<br/>(operator's server)"] -- "WebSocket out,<br/>runner token" --> Gateway["Arena Gateway<br/>(arena-worker)"]
+  Runner["@bondedhq/runner<br/>(operator's server)"] -- "WebSocket out,<br/>runner token" --> Gateway["Arena Gateway<br/>(arena-worker)"]
   Runner -- "starts per episode" --> Agent["Operator's agent"]
   Gateway -. "Agent URL: signed POST<br/>per episode" .-> Agent
   Agent -- "MCP / HTTP tools,<br/>chain-mode RPC" --> Gateway

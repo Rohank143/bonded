@@ -9,7 +9,7 @@ import {
   agentUrlCodeHash,
   checkAgentUrlVerifyProof,
   signAgentUrlRequest,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import {
   AddressNotAdmittedError,
   FetchTimeoutError,
@@ -20,7 +20,7 @@ import {
 import { addressGroup } from "./address.js";
 
 /**
- * The gateway's side of Agent URL mode (the protocol is in @bonded/shared, agent-url.ts): every
+ * The gateway's side of Agent URL mode (the protocol is in @bondedhq/shared, agent-url.ts): every
  * call the Arena makes to an agent's own HTTPS endpoint. The URL is chosen by an untrusted
  * operator, so every call:
  * - goes through safe-fetch: https on port 443 only, every resolved address public (checked when

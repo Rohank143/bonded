@@ -8,7 +8,7 @@ import {
   mandateVaultFactoryAbi,
   testTokenAbi,
   toEvmMandateParams,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { type Abi, parseUnits, toFunctionSelector } from "viem";
 import type { ChainHandle, Sandbox, SandboxRole } from "./sandbox.js";
 

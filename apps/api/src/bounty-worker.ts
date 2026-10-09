@@ -9,7 +9,7 @@ import {
   coveredSurface,
   type BountyVerdict,
 } from "@bonded/arena";
-import { AttackSpec, bondedRegistryAbi, bountyBoardAbi } from "@bonded/shared";
+import { AttackSpec, bondedRegistryAbi, bountyBoardAbi } from "@bondedhq/shared";
 import type { ServiceChain } from "@bonded/keeper";
 import { getAbiItem, type Hex } from "viem";
 

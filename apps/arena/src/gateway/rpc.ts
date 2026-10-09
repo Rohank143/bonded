@@ -1,4 +1,4 @@
-import { mandateVaultAbi } from "@bonded/shared";
+import { mandateVaultAbi } from "@bondedhq/shared";
 import {
   decodeFunctionData,
   isAddressEqual,

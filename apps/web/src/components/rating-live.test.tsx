@@ -221,10 +221,10 @@ describe("CopyButton", () => {
   it("says Copied, and tells when the clipboard isn't there", async () => {
     const writeText = vi.fn(async () => {});
     vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
-    render(<CopyButton text="npx @bonded/runner" />);
+    render(<CopyButton text="npx @bondedhq/runner" />);
     fireEvent.click(screen.getByRole("button", { name: "Copy" }));
     expect(await screen.findByRole("button", { name: "Copied" })).toBeTruthy();
-    expect(writeText).toHaveBeenCalledWith("npx @bonded/runner");
+    expect(writeText).toHaveBeenCalledWith("npx @bondedhq/runner");
     cleanup();
     vi.stubGlobal("navigator", { ...navigator, clipboard: undefined });
     render(<CopyButton text="x" />);

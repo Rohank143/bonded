@@ -16,6 +16,7 @@ export * from "./schemas/attack.js";
 export * from "./schemas/attestation.js";
 export * from "./quote.js";
 export * from "./sentinel.js";
+export * from "./sentinel-cascade.js";
 export * from "./tee.js";
 export * from "./leaderboard.js";
 export * from "./bounty-example.js";

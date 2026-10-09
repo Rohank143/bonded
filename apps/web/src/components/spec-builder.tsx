@@ -1,6 +1,6 @@
 import { useRef, type ReactNode } from "react";
 import { Link } from "react-router";
-import { ATTACK_CLASSES, ATTACK_PLACEHOLDERS, type AttackClassId } from "@bonded/shared";
+import { ATTACK_CLASSES, ATTACK_PLACEHOLDERS, type AttackClassId } from "@bondedhq/shared";
 import { BREACH_LABELS, SURFACE_LABELS } from "../lib/episode-text";
 import { BREACH_TYPES, SEVERITIES, TOKENS, slug, withClass, type SpecForm } from "../lib/spec-form";
 import { Select } from "./select";

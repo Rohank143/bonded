@@ -24,7 +24,7 @@ import {
   testTokenAbi,
   operatorBondAbi,
   demoRouterAbi,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import { getAbiItem, toFunctionSelector, parseEventLogs } from "viem";
 
 const CONFIG = "config/agents.46630.json";

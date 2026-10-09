@@ -30,7 +30,7 @@ import {
   selfServeMessage,
   testTokenAbi,
   toEvmMandateParams,
-} from "@bonded/shared";
+} from "@bondedhq/shared";
 import {
   encodeFunctionData,
   formatUnits,

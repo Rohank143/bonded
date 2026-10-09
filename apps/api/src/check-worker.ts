@@ -1,5 +1,5 @@
 import { PREVIEW_PREFIX, type Database, type RatedCode } from "@bonded/db";
-import type { AgentMode } from "@bonded/shared";
+import type { AgentMode } from "@bondedhq/shared";
 import {
   CHECKS_UNAVAILABLE,
   type AgentConnection,

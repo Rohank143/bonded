@@ -4,8 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
 import { Database } from "@bonded/db";
-/** Start an isolated real Postgres cluster and return its database and cleanup function. */
-export async function postgres() {
+/**
+ * Start an isolated real Postgres cluster and return its database and cleanup function. Migrated
+ * unless `migrate` is false.
+ */
+export async function postgres({ migrate = true }: { migrate?: boolean } = {}) {
   const port = await new Promise<number>((resolve, reject) => {
     const s = createServer();
     s.once("error", reject);
@@ -40,7 +43,7 @@ export async function postgres() {
     await rm(directory, { recursive: true, force: true });
   };
   try {
-    await db.migrate();
+    if (migrate) await db.migrate();
   } catch (error) {
     await cleanup();
     throw error;

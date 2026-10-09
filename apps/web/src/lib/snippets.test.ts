@@ -4,19 +4,19 @@ import { resolve } from "node:path";
 import { snippets } from "./snippets";
 
 /**
- * Every import the copy-paste snippets show must exist in @bonded/sdk, or a builder's first paste
+ * Every import the copy-paste snippets show must exist in @bondedhq/sdk, or a builder's first paste
  * fails. Once the SDK's framework helpers are in this repository the test reads the package's
  * own exports map and sources; until then it checks against the list they were written from
  * (Track S, branch ux-sdk at 3574a88).
  */
 const SDK_EXPORTS_AT_UX_SDK: Record<string, string[]> = {
-  "@bonded/sdk": ["isBondedEpisode", "fromBondedEnv"],
-  "@bonded/sdk/mcp": ["connectEpisodeTools", "mcpConfig", "mcpConfigJson", "finishEpisode"],
-  "@bonded/sdk/agent-url": ["createBondedHandler", "toNodeHandler"],
-  "@bonded/sdk/langchain": ["bondedLangChainTools"],
-  "@bonded/sdk/ai-sdk": ["bondedAiSdkTools"],
-  "@bonded/sdk/agentkit": ["bondedEpisodeActionProvider"],
-  "@bonded/sdk/eliza": ["bondedEpisodePlugin", "bondedPlugin"],
+  "@bondedhq/sdk": ["isBondedEpisode", "fromBondedEnv"],
+  "@bondedhq/sdk/mcp": ["connectEpisodeTools", "mcpConfig", "mcpConfigJson", "finishEpisode"],
+  "@bondedhq/sdk/agent-url": ["createBondedHandler", "toNodeHandler"],
+  "@bondedhq/sdk/langchain": ["bondedLangChainTools"],
+  "@bondedhq/sdk/ai-sdk": ["bondedAiSdkTools"],
+  "@bondedhq/sdk/agentkit": ["bondedEpisodeActionProvider"],
+  "@bondedhq/sdk/eliza": ["bondedEpisodePlugin", "bondedPlugin"],
 };
 
 // Tests run from apps/web (pnpm runs each package's tests in its own folder).
@@ -35,7 +35,7 @@ function realExports(): Record<string, (name: string) => boolean> | undefined {
     const src = `${sdkDir}${js.replace("./dist/", "src/").replace(/\.js$/, ".ts")}`;
     if (!existsSync(src)) continue;
     const text = readFileSync(src, "utf8");
-    out[sub === "." ? "@bonded/sdk" : `@bonded/sdk/${sub.slice(2)}`] = (name) =>
+    out[sub === "." ? "@bondedhq/sdk" : `@bondedhq/sdk/${sub.slice(2)}`] = (name) =>
       new RegExp(
         `export\\s+(?:async\\s+)?(?:function|const|class)\\s+${name}\\b|export\\s*\\{[^}]*\\b${name}\\b[^}]*\\}`,
       ).test(text);
@@ -59,7 +59,7 @@ describe("snippet imports", () => {
   );
   it("knows whether it checked the real package", () => {
     // Fails loudly if the SDK changed shape so the reader found nothing.
-    if (real) expect(Object.keys(real)).toContain("@bonded/sdk/agent-url");
+    if (real) expect(Object.keys(real)).toContain("@bondedhq/sdk/agent-url");
     else expect(existsSync(`${sdkDir}package.json`)).toBe(true);
   });
 });
