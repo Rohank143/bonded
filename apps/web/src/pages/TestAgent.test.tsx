@@ -86,6 +86,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   sessionStorage.clear();
+  localStorage.clear();
 });
 
 describe("Test your agent", () => {
@@ -95,7 +96,7 @@ describe("Test your agent", () => {
     expect(within(current()).getByRole("button", { name: "Connect wallet" })).toBeTruthy();
     expect(within(current()).getByText(/won't send anything or pay gas/)).toBeTruthy();
     for (const title of [
-      "Choose how your agent runs",
+      "Tell us about your agent",
       "Connect it",
       "Check the connection",
       "Start the preview rating",
@@ -123,7 +124,7 @@ describe("Test your agent", () => {
     expect(screen.queryByText(/minutes|min at the most/)).toBeNull();
   });
 
-  it("signs in once, then offers the two ways to connect and the two modes", async () => {
+  it("signs in once, then asks the framework and where it runs, with the mode under Advanced", async () => {
     const signIn = vi
       .spyOn(byoaApi, "signIn")
       .mockResolvedValue({ session: "sess", wallet: WALLET, expiresAt: iso(3_600_000) });
@@ -131,16 +132,28 @@ describe("Test your agent", () => {
     fireEvent.click(within(current()).getByRole("button", { name: "Sign in" }));
     await waitFor(() => expect(signIn).toHaveBeenCalledWith(expect.any(Function), WALLET));
     await waitFor(() =>
-      expect(within(current()).getByText("Choose how your agent runs")).toBeTruthy(),
+      expect(within(current()).getByText("Tell us about your agent")).toBeTruthy(),
     );
     const step = current();
-    expect(within(step).getByRole("radio", { name: /It's online \(paste its URL\)/ })).toBeTruthy();
-    expect(
-      within(step).getByRole("radio", { name: /It runs on my machine \(use the runner\)/ }),
-    ).toBeTruthy();
+    expect(within(step).getByText("Which framework is your agent built on?")).toBeTruthy();
+    for (const f of [
+      /^ElizaOS/,
+      /^Coinbase AgentKit/,
+      /^LangChain or LangGraph/,
+      /^Vercel AI SDK/,
+      /^Something else/,
+      /^Python/,
+    ])
+      expect(within(step).getByRole("radio", { name: f })).toBeTruthy();
+    expect(within(step).getByText("Where do you run it?")).toBeTruthy();
+    expect(within(step).getByRole("radio", { name: /It's online at a URL/ })).toBeTruthy();
+    expect(within(step).getByRole("radio", { name: /On my computer or server/ })).toBeTruthy();
     expect(within(step).getByText(/Nothing to install/)).toBeTruthy();
-    expect(within(step).getByRole("radio", { name: /Tools/ })).toBeTruthy();
-    expect(within(step).getByRole("radio", { name: /Chain/ })).toBeTruthy();
+    // Tools or chain is for those who need it: under Advanced, closed.
+    const advanced = within(step).getByText("Advanced (optional)").closest("details")!;
+    expect(advanced.open).toBe(false);
+    expect(within(advanced).getByRole("radio", { name: /Tools/ })).toBeTruthy();
+    expect(within(advanced).getByRole("radio", { name: /^Chain/ })).toBeTruthy();
     expect(screen.getByText(/Signed in as/)).toBeTruthy();
   });
 
@@ -153,8 +166,9 @@ describe("Test your agent", () => {
       .spyOn(byoaApi, "createRunnerToken")
       .mockResolvedValue({ token: "bonded_rt_preview", gatewayUrl: "https://gw.example" });
     show();
-    fireEvent.click(await screen.findByRole("radio", { name: /It runs on my machine/ }));
-    fireEvent.click(screen.getByRole("radio", { name: /Chain/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /^Python/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /On my computer or server/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /^Chain/ }));
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     await waitFor(() =>
       expect(create).toHaveBeenCalledWith("sess", { mode: "chain", connection: "runner" }),
@@ -174,11 +188,21 @@ describe("Test your agent", () => {
     ).toBeTruthy();
     expect(screen.getByText(/Waiting for the runner to connect/)).toBeTruthy();
     expect(screen.getByText("Runner waiting")).toBeTruthy();
-    // Framework snippets, in tabs.
+    // Python has no init: the page says so and points at the Python code.
+    expect(screen.getByText(/For a Python agent init only prints instructions/)).toBeTruthy();
+    // Framework snippets, in tabs, opened on the framework picked.
     fireEvent.click(screen.getByText("Code for your agent, by framework"));
-    expect(screen.getByRole("tab", { name: "LangChain", selected: true })).toBeTruthy();
-    fireEvent.click(screen.getByRole("tab", { name: "Python" }));
+    expect(screen.getByRole("tab", { name: "Python", selected: true })).toBeTruthy();
     expect(screen.getByText(/BONDED_TOOLS_URL/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "LangChain" }));
+    expect(screen.getByRole("tab", { name: "LangChain", selected: true })).toBeTruthy();
+    // Keeping it running, for the renewals.
+    fireEvent.click(screen.getByText("Keep it running"));
+    expect(
+      screen.getByText(
+        "npx @bondedhq/runner service --print systemd --gateway https://gw.example -- <your agent command>",
+      ),
+    ).toBeTruthy();
   });
 
   it("asks for a URL and verifies it", async () => {

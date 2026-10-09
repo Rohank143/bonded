@@ -71,6 +71,7 @@ export function ModuleCover({ agentId, module }: { agentId: bigint; module: Addr
           address && guardian?.result && address.toLowerCase() === guardian.result.toLowerCase(),
         )}
         hasActive={Boolean(active?.result)}
+        module
       />
       <p className="px-1 text-xs text-muted">{MODULE_COVER_NOTE}</p>
     </div>

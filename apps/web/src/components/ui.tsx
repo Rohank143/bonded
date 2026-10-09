@@ -5,6 +5,7 @@ import { tierForScore } from "@bondedhq/shared";
 import { addressUrl, short, txUrl } from "../lib/format";
 import { explorerUrl } from "../config";
 import { describeError } from "../lib/errors";
+import { errorCode, troubleshootingUrl } from "../lib/troubleshooting";
 import { GLOSSARY, tierMeaning, type GlossaryTerm } from "../lib/glossary";
 
 /** The class for an inline text link, so every link in the app looks the same. */
@@ -446,9 +447,18 @@ export function Callout({
 
 export function ErrorText({ error }: { error: unknown }) {
   if (!error) return null;
+  const code = errorCode(error);
   return (
     <p role="alert" className="text-sm text-breach">
       {describeError(error)}
+      {code && (
+        <>
+          {" "}
+          <a className={`${linkClass} text-xs whitespace-nowrap`} href={troubleshootingUrl(code)}>
+            How to fix this<span className="sr-only"> (troubleshooting: {code})</span>
+          </a>
+        </>
+      )}
     </p>
   );
 }

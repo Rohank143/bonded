@@ -10,6 +10,7 @@ import {
 } from "../lib/byoa";
 import { codeSourceLabel, duration } from "../lib/connect";
 import { Badge, Button, Callout, ScoreRing, TierBadge } from "./ui";
+import { BreachEvidenceList, RatingCompareView, TopFixes } from "./report-actions";
 
 /** The label every preview carries, wherever its score shows. */
 export const PREVIEW_LABEL = "Preview: not on chain, not insurable";
@@ -22,6 +23,8 @@ export interface OfficialPrefill {
   agentUrl: string | null;
   /** Onboarding fills a declared hash in; an automatic one is only shown, it is reported again. */
   codeHash: PreviewRecord["codeHash"];
+  /** Its score, for the recommended bond. */
+  score?: number | null;
 }
 
 export function prefillFrom(preview: PreviewRecord): OfficialPrefill {
@@ -31,6 +34,7 @@ export function prefillFrom(preview: PreviewRecord): OfficialPrefill {
     connection: preview.connection,
     agentUrl: preview.agentUrl?.url ?? null,
     codeHash: preview.codeHash,
+    score: preview.rating?.score ?? null,
   };
 }
 
@@ -38,7 +42,23 @@ export function prefillFrom(preview: PreviewRecord): OfficialPrefill {
  * A preview's report: the same score and report an official rating computes, never attested or
  * posted, and labelled so. "Make it official" opens onboarding with the preview's choices.
  */
-export function PreviewReport({ preview, run }: { preview: PreviewRecord; run: RunRecord }) {
+export function PreviewReport({
+  preview,
+  run,
+  previous,
+  session,
+  onRateAgain,
+  rateAgainBusy = false,
+}: {
+  preview: PreviewRecord;
+  run: RunRecord;
+  /** The wallet's preview before this one that finished with a score: the "before". */
+  previous?: PreviewRecord | undefined;
+  session?: string | undefined;
+  /** Start a new preview with the same choices, after a fix. */
+  onRateAgain?: () => void;
+  rateAgainBusy?: boolean;
+}) {
   const navigate = useNavigate();
   const report = run.report;
   const official = () => {
@@ -115,12 +135,33 @@ export function PreviewReport({ preview, run }: { preview: PreviewRecord; run: R
               </tbody>
             </table>
           </div>
+          {previous?.ratingId && (
+            <div className="rounded-2xl border border-line-strong p-4">
+              <RatingCompareView from={previous.ratingId} to={run.id} session={session} />
+            </div>
+          )}
+          <TopFixes report={report} />
+          <BreachEvidenceList report={report} />
           {untestedLine(report) && <p className="text-xs text-muted">{untestedLine(report)}</p>}
           <CoverageLine coverage={run.coverage ?? report.coverage ?? null} />
           {livenessLine(report.liveness) && (
             <p className="text-xs text-muted">{livenessLine(report.liveness)}</p>
           )}
         </>
+      )}
+      {onRateAgain && (
+        <div className="flex flex-col gap-2 border-t border-line pt-4">
+          <p className="font-semibold">Fixed something?</p>
+          <p className="text-muted">
+            Rate it again with the same choices, then see the two side by side. A new preview
+            connects and checks again first.
+          </p>
+          <div>
+            <Button kind="secondary" loading={rateAgainBusy} onClick={onRateAgain}>
+              Rate again
+            </Button>
+          </div>
+        </div>
       )}
       <div className="flex flex-col gap-2 border-t border-line pt-4">
         <p className="font-semibold">Ready for the real thing?</p>

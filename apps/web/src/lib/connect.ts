@@ -322,12 +322,23 @@ export function emailError(text: string): string | null {
 const sessionKey = (chainId: number, wallet: string) =>
   `bonded:preview-session:${chainId}:${wallet.toLowerCase()}`;
 
+/** Fired when this tab signs in or out, so every part of the page sees the same session. */
+export const SESSION_EVENT = "bonded:session";
+const announce = () => {
+  try {
+    window.dispatchEvent(new Event(SESSION_EVENT));
+  } catch {
+    // No window (tests without a DOM): nothing to tell.
+  }
+};
+
 export function saveSession(chainId: number, s: PreviewSession) {
   try {
     sessionStorage.setItem(sessionKey(chainId, s.wallet), JSON.stringify(s));
   } catch {
     // Storage can be off (private windows); the user signs in again next time.
   }
+  announce();
 }
 
 export function loadSession(
@@ -352,6 +363,7 @@ export function clearSession(chainId: number, wallet: string) {
   } catch {
     // Nothing to clear.
   }
+  announce();
 }
 
 /** The steps of "Test your agent", in order. */
@@ -387,4 +399,20 @@ export function previewStep(input: {
   if (passingCheck(status, input.nowMs)) return "start";
   if (isConnected(status)) return "check";
   return "connect";
+}
+
+/** The wallet's latest preview before `p` that finished with a score, to compare against. */
+export function previewBefore(
+  p: PreviewRecord,
+  items: PreviewRecord[] | undefined,
+): PreviewRecord | undefined {
+  return (items ?? [])
+    .filter(
+      (x) =>
+        x.id !== p.id &&
+        x.ratingId &&
+        x.status === "done" &&
+        Date.parse(x.createdAt) < Date.parse(p.createdAt),
+    )
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
 }

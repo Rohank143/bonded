@@ -13,6 +13,7 @@ import {
   isConnected,
   loadSession,
   passingCheck,
+  previewBefore,
   previewStep,
   problemAdvice,
   queueLine,
@@ -23,15 +24,19 @@ import {
   type PreviewStep,
 } from "../lib/connect";
 import { useRatingRun } from "../lib/rating-run";
+import { messageText } from "../lib/troubleshooting";
+import { ProblemText } from "../components/problem";
 import { short, when } from "../lib/format";
 import { DOCS_BYOA } from "../lib/routes";
 import { ConnectButton } from "../components/wallet";
 import {
   CONNECTION_TEXT,
   ConnectStep,
-  ConnectionChoice,
   MODE_TEXT,
+  ModeChoice,
 } from "../components/connection-setup";
+import { FrameworkQuestions, useFramework } from "../components/framework-questions";
+import { FRAMEWORK_TEXT, connectionFor, hostingFor } from "../lib/frameworks";
 import { ConnectionCheck } from "../components/connection-check";
 import { Estimate, NotificationSettingsForm, RatingLive } from "../components/rating-live";
 import { PREVIEW_LABEL, PreviewReport } from "../components/preview-report";
@@ -64,7 +69,7 @@ const PREVIEW_STATUS: Record<PreviewRecord["status"], string> = {
 
 const STEP_TITLES: Record<PreviewStep, string> = {
   "sign-in": "Connect your wallet and sign in",
-  choose: "Choose how your agent runs",
+  choose: "Tell us about your agent",
   connect: "Connect it",
   check: "Check the connection",
   start: "Start the preview rating",
@@ -92,6 +97,7 @@ export function TestAgent() {
   const [expired, setExpired] = useState(false);
   const [connection, setConnection] = useState<Connection>("url");
   const [mode, setMode] = useState<RemoteMode>("tools");
+  const [framework, setFramework] = useFramework();
   const [changing, setChanging] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<unknown>(null);
@@ -214,6 +220,27 @@ export function TestAgent() {
       setCreating(false);
     }
   };
+  // "Rate again": a new preview with the same choices; its report compares with this one.
+  const rateAgain = async (from: PreviewRecord) => {
+    setMode(from.mode);
+    setConnection(from.connection);
+    if (!session) return;
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const next = await byoaApi.createPreview(session.session, {
+        mode: from.mode,
+        connection: from.connection,
+      });
+      queryClient.setQueryData(["preview", next.id, session.session], next);
+      setParams({ preview: next.id });
+      await previews.refetch();
+    } catch (e) {
+      setCreateError(e);
+    } finally {
+      setCreating(false);
+    }
+  };
   const startRating = async () => {
     if (!session || !preview.data) return;
     setStarting(true);
@@ -324,8 +351,9 @@ export function TestAgent() {
               summary={
                 p && (
                   <span className="flex flex-wrap items-center gap-2">
-                    {CONNECTION_TEXT[p.connection].title}, {MODE_TEXT[p.mode].title.toLowerCase()}{" "}
-                    mode
+                    {framework ? `${FRAMEWORK_TEXT[framework].title}, ` : ""}
+                    {CONNECTION_TEXT[p.connection].title.toLowerCase()},{" "}
+                    {MODE_TEXT[p.mode].title.toLowerCase()} mode
                     {!p.ratingId && (
                       <button
                         type="button"
@@ -344,11 +372,13 @@ export function TestAgent() {
               }
             >
               <div className="flex flex-col gap-4">
-                <ConnectionChoice
-                  connection={connection}
-                  mode={mode}
-                  onConnection={setConnection}
-                  onMode={setMode}
+                <FrameworkQuestions
+                  name="preview"
+                  framework={framework}
+                  hosting={hostingFor(connection)}
+                  onFramework={setFramework}
+                  onHosting={(h) => setConnection(connectionFor(h))}
+                  advanced={<ModeChoice mode={mode} onMode={setMode} />}
                 />
                 <div className="flex flex-wrap items-center gap-2">
                   <Button loading={creating} onClick={() => void create()}>
@@ -391,6 +421,7 @@ export function TestAgent() {
               {p && status && subject && auth && (
                 <ConnectStep
                   key={p.id}
+                  framework={framework}
                   subject={subject}
                   auth={auth}
                   status={status}
@@ -413,9 +444,12 @@ export function TestAgent() {
                       Passed {when(Math.floor(Date.parse(status.lastCheck!.createdAt) / 1000))}
                     </span>
                     {status.lastCheck!.warnings?.map((problem) => (
-                      <span key={problem}>
-                        Worth fixing before you start: {problem}.{" "}
-                        {problemAdvice(problem, status.connection)}
+                      <span key={messageText(problem)}>
+                        <ProblemText
+                          prefix="Worth fixing before you start:"
+                          message={problem}
+                          advice={problemAdvice(messageText(problem), status.connection)}
+                        />
                       </span>
                     ))}
                   </span>
@@ -515,7 +549,14 @@ export function TestAgent() {
 
             <FlowStep n={7} title={STEP_TITLES.report} state={stateOf("report")}>
               {p && run.data && runFinished ? (
-                <PreviewReport preview={p} run={run.data} />
+                <PreviewReport
+                  preview={p}
+                  run={run.data}
+                  previous={previewBefore(p, previews.data?.items)}
+                  session={session?.session}
+                  onRateAgain={() => void rateAgain(p)}
+                  rateAgainBusy={creating}
+                />
               ) : p && FINISHED.includes(p.status) && p.ratingId ? (
                 <Loading what="the report" height="md" />
               ) : null}
