@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { beforeEach, expect, it, vi } from "vitest";
 import { bondedRegistryAbi, attestationMessage, type Attestation } from "@bondedhq/shared";
 
@@ -100,7 +101,10 @@ it("returns the transaction when the intended score is confirmed", async () => {
 
 it("reports a confirmed registration before a subsequent score post fails", async () => {
   const registered = vi.fn();
-  const registry = "0x35F6d30BE731a639235CCAd7abEdda4d4BE8D4F9";
+  // The live registry the chain's deployment file names: crosspostEvm checks the log against it.
+  const { registry } = JSON.parse(
+    readFileSync(new URL("../../../contracts/evm/deployments/46630.json", import.meta.url), "utf8"),
+  ) as { registry: string };
   rpc.writeContract
     .mockResolvedValueOnce(hash)
     .mockRejectedValueOnce(new Error("post unavailable"));

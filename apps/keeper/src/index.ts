@@ -78,7 +78,10 @@ export class Keeper {
     const { read, deployment: d } = this.chain;
     if ((await read.getChainId()) !== d.chainId) throw new Error("RPC chain mismatch");
     const cursor = (
-      await this.db.pool.query("SELECT * FROM keeper_cursors WHERE chain_id=$1", [d.chainId])
+      await this.db.pool.query("SELECT * FROM keeper_cursors WHERE chain_id=$1 AND registry=$2", [
+        d.chainId,
+        d.registry.toLowerCase(),
+      ])
     ).rows[0];
     if (cursor) {
       const previous = await read.getBlock({ blockNumber: BigInt(cursor.block_number) });
@@ -250,8 +253,9 @@ export class Keeper {
           ],
         );
       await c.query(
-        "INSERT INTO keeper_cursors VALUES($1,$2,$3) ON CONFLICT(chain_id) DO UPDATE SET block_number=$2,block_hash=$3",
-        [d.chainId, to.toString(), block.hash],
+        `INSERT INTO keeper_cursors(chain_id,block_number,block_hash,registry) VALUES($1,$2,$3,$4)
+         ON CONFLICT(chain_id,registry) DO UPDATE SET block_number=$2,block_hash=$3`,
+        [d.chainId, to.toString(), block.hash, d.registry.toLowerCase()],
       );
     });
   }
@@ -357,9 +361,10 @@ export class Keeper {
           // the SAME timestamp (coverageWindow is inclusive). Wait until the scanner has
           // reached a strictly later timestamp before making this classification terminal.
           const cursor = (
-            await this.db.pool.query("SELECT block_number FROM keeper_cursors WHERE chain_id=$1", [
-              d.chainId,
-            ])
+            await this.db.pool.query(
+              "SELECT block_number FROM keeper_cursors WHERE chain_id=$1 AND registry=$2",
+              [d.chainId, d.registry.toLowerCase()],
+            )
           ).rows[0];
           const scanned = cursor
             ? await read.getBlock({ blockNumber: BigInt(cursor.block_number) })

@@ -196,11 +196,12 @@ export class Watchdog {
   }
 
   private async checkLag() {
-    const chainId = this.chain.deployment.chainId;
+    const { chainId, registry } = this.chain.deployment;
     const cursor = (
-      await this.db.pool.query("SELECT block_number FROM keeper_cursors WHERE chain_id=$1", [
-        chainId,
-      ])
+      await this.db.pool.query(
+        "SELECT block_number FROM keeper_cursors WHERE chain_id=$1 AND registry=$2",
+        [chainId, registry.toLowerCase()],
+      )
     ).rows[0];
     if (!cursor) return; // not started yet
     const [scanned, head] = await Promise.all([

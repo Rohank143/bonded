@@ -106,7 +106,7 @@ it("watches keeper lag, stuck claims and failure events", async () => {
   const blocks = { head: 1000n, headTime: 10_000n, scannedTime: 10_000n };
   let gas = 10n ** 18n;
   const chain = {
-    deployment: { chainId: 46630 },
+    deployment: { chainId: 46630, registry: "0x00000000000000000000000000000000000000Aa" },
     wallet: { account: { address: "0x35AC3B9747B665cdE03b2600c0db55ffD9864681" } },
     read: {
       getBalance: async () => gas,
@@ -126,7 +126,13 @@ it("watches keeper lag, stuck claims and failure events", async () => {
   expect(sent).toHaveLength(0);
 
   // An idle chain: the head is far ahead in time but only a few blocks ahead. No alert.
-  await db.pool.query("INSERT INTO keeper_cursors VALUES(46630,995,'0x')");
+  // A cursor from another deployment of the chain doesn't count.
+  await db.pool.query("INSERT INTO keeper_cursors VALUES(46630,1,'0x','0xold')");
+  await watchdog.check();
+  expect(sent).toHaveLength(0);
+  await db.pool.query(
+    "INSERT INTO keeper_cursors VALUES(46630,995,'0x','0x00000000000000000000000000000000000000aa')",
+  );
   blocks.headTime = 20_000n;
   await watchdog.check();
   expect(sent).toHaveLength(0);
@@ -180,7 +186,7 @@ it("watches keeper lag, stuck claims and failure events", async () => {
 it("starts from the newest event, so a restart doesn't replay old failures", async () => {
   await pg.db.publish("rating.failed", { runId: "old" });
   const chain = {
-    deployment: { chainId: 1 },
+    deployment: { chainId: 1, registry: "0x0000000000000000000000000000000000000002" },
     wallet: { account: { address: "0x0000000000000000000000000000000000000001" } },
     read: { getBalance: async () => 10n ** 18n },
   } as unknown as ServiceChain;

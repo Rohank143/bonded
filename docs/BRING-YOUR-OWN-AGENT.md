@@ -28,14 +28,14 @@ As of 2026-10-10, on Robinhood Chain testnet:
 | Piece | Status | Where |
 |---|---|---|
 | The **Test your agent** page: previews, Agent URL mode, connection checks, estimates, progress and webhooks | Live on the hosted service | https://bonded-nu.vercel.app/agents/test |
-| `@bondedhq/runner` and `@bondedhq/sdk` 0.1.0 (with `@bondedhq/shared` and `@bondedhq/solana`, which they depend on) | On npm | `npx @bondedhq/runner …`, `npm install @bondedhq/sdk` |
+| `@bondedhq/runner` and `@bondedhq/sdk` 0.1.1 (with `@bondedhq/shared` and `@bondedhq/solana`, which they depend on) | On npm | `npx @bondedhq/runner …`, `npm install @bondedhq/sdk` |
 | Official ratings of your own agent, Mandate Vaults, cover, and self-serve ratings of Bonded's built-in agent designs | Live | Onboarding at https://bonded-nu.vercel.app/agents/new |
 | The health panel, owner alerts and in-app notifications, vault trading status, the suggested mandate, the before/after comparison, the actionable report and `GET /status` | Live | The service's status: https://bonded-nu.vercel.app/status |
 | The Arena Gateway your runner connects to | Live | `https://arena-worker-production.up.railway.app` (the page fills it in for you) |
 | The hosted API | Live | `https://api-production-ba50.up.railway.app` (the runner's and the web app's default) |
 | The runner's Docker image | Not on a registry | Build it from a clone: `docker build -f apps/runner/Dockerfile -t bonded-runner .` ([Docker](#keep-it-running)) |
 | Email notifications | Off: the hosted service has no email sender (`RESEND_API_KEY`, `EMAIL_FROM`) | Use a webhook, the in-app list, or the page's browser notification |
-| `MandateModule` and its factory (protecting a smart account you already use) | Not deployed on any testnet: modules need a new CoverManager, ClaimsEngine and DisputeModule, so a full redeployment of the protocol ([AUDIT.md](AUDIT.md#addendum-mandatemodule)). Onboarding says "Not deployed on this chain yet" | Use a Mandate Vault, or try the module locally (`pnpm demo -- --byo` creates, installs, rates and insures one) |
+| `MandateModule` and its factory (protecting a smart account you already use) | Live: deployed with the whole protocol on Oct 10, 2026 ([addresses](../contracts/evm/deployments/README.md#live-testnets)) | Onboarding, "Protect a smart account I already use"; locally, `pnpm demo -- --byo` creates, installs, rates and insures one |
 
 ## What you get
 
