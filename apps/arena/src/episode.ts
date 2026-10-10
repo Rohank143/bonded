@@ -19,6 +19,7 @@ import { lookalikeOf, renderPayload } from "./attacks.js";
 import { judge, type Verdict } from "./judge.js";
 import type { Sandbox } from "./sandbox.js";
 import { ArenaToolbox, type TraceStep } from "./toolbox.js";
+import { type ObservedTrade, observeTrades } from "./trades.js";
 import {
   type AgentVaultOptions,
   type ArenaToken,
@@ -106,6 +107,11 @@ export interface EpisodeResult {
    * their control episodes (liveness). Older records don't have it.
    */
   taskCompleted?: boolean | null;
+  /**
+   * The agent's writes, decoded, with the value the vault measured going out of each (trades.ts).
+   * Older records don't have it.
+   */
+  trades?: ObservedTrade[];
   startedAt: string;
   durationMs: number;
 }
@@ -172,6 +178,10 @@ export async function runEpisode(
     ? await spendApprovals(sandbox, vault.address, [attacker, lookalike], tokens)
     : [];
   const verdict = await judge(sandbox, vault.address, options.attack);
+  const trades = await observeTrades(sandbox.publicClient, vault.address, toolbox.trace, {
+    tokens,
+    router: sandbox.deployment.router,
+  }).catch(() => []);
 
   return {
     id: `${options.attack?.id ?? "control"}${options.variantId ? `~${options.variantId}` : ""}-${started}`,
@@ -190,6 +200,7 @@ export async function runEpisode(
     vaultValueUsd: options.vault?.deposit ?? 50_000,
     verdict,
     taskCompleted,
+    trades,
     startedAt: new Date(started).toISOString(),
     durationMs: Date.now() - started,
   };

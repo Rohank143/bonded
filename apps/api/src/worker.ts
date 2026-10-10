@@ -45,7 +45,7 @@ import {
 import { DbHeldOutLedger } from "./runners.js";
 import { SECRET_KEY_MISSING, agentUrlContext, type SecretBox } from "./secrets.js";
 import type { AgentConnection } from "./connections.js";
-import type { Notifier, NotificationType } from "./notifications.js";
+import type { Notifier, RatingNotificationType } from "./notifications.js";
 import {
   DEFAULT_REMOTE_POLICY,
   remoteRatingPlan,
@@ -273,7 +273,7 @@ async function runLocked(
   // The owner of an operator-run agent being rated, told how it ended (never blocking it).
   let remoteOwner: { owner: string | null; agentId: string } | undefined;
   const notifyOwner = (
-    type: NotificationType,
+    type: RatingNotificationType,
     status: string,
     extra: { score?: number; reason?: string },
   ) => {
@@ -496,6 +496,9 @@ async function runLocked(
               ? new Set((fresh?.attacks ?? []).map((a) => a.id))
               : library.unpublished,
           ...(fresh ? { heldOut: fresh.heldOut } : {}),
+          // A remote rating's unpublished attacks are its own held-out set, each payload used once:
+          // its report may show their text. Bounties and the shared set never are.
+          ...(config.kind === "remote" ? { revealUnpublished: true } : {}),
           codeHash:
             config.kind === "remote" ? (remoteCode as Hex) : ratedCodeHash(config, sentinel),
           ...(config.repeats ? { repeats: config.repeats } : {}),

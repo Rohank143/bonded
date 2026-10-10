@@ -51,6 +51,8 @@
     "test": "vitest run",
     "abis": "node scripts/gen-abis.mjs",
     "abis:check": "node scripts/gen-abis.mjs --check",
+    "docs:troubleshooting": "tsc -p tsconfig.build.json && node scripts/gen-troubleshooting.mjs",
+    "docs:troubleshooting:check": "tsc -p tsconfig.build.json && node scripts/gen-troubleshooting.mjs --check",
     "prepack": "tsc -p tsconfig.build.json"
   },
   "dependencies": {

@@ -32,6 +32,12 @@ export const PAGES = [
     slug: "guides/bring-your-own-agent",
     label: "Bring your own agent",
   },
+  {
+    src: "docs/TROUBLESHOOTING.md",
+    slug: "guides/troubleshooting",
+    label: "Troubleshooting",
+    title: "Troubleshooting",
+  },
   { src: "docs/DEVELOPING.md", slug: "guides/developing", label: "Developing Bonded" },
   { src: "docs/BOUNTIES.md", slug: "guides/bounties", label: "Submit a bounty attack" },
   {

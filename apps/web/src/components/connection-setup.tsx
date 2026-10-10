@@ -10,6 +10,10 @@ import {
   type ConnectionStatus,
 } from "../lib/connect";
 import { snippets } from "../lib/snippets";
+import { HOSTING_TEXT, snippetIdFor, type Framework } from "../lib/frameworks";
+import { errorCode, messageCode } from "../lib/troubleshooting";
+import { InitCommand, KeepRunning } from "./framework-questions";
+import { FixLink } from "./problem";
 import { when } from "../lib/format";
 import { DOCS_BYOA } from "../lib/routes";
 import { ApiError } from "../lib/api";
@@ -18,14 +22,8 @@ import { CopyBlock, SecretOnce, Tabs } from "./copy";
 
 /** The one-line explanations of each choice, shared by every place that offers them. */
 export const CONNECTION_TEXT: Record<Connection, { title: string; line: string }> = {
-  url: {
-    title: "It's online (paste its URL)",
-    line: "Bonded sends each episode to your agent's HTTPS address. Nothing to install.",
-  },
-  runner: {
-    title: "It runs on my machine (use the runner)",
-    line: "A small runner next to your agent connects out to Bonded and starts your agent for each episode. No open ports.",
-  },
+  url: HOSTING_TEXT.online,
+  runner: HOSTING_TEXT.machine,
 };
 export const MODE_TEXT: Record<RemoteMode, { title: string; line: string }> = {
   tools: {
@@ -56,7 +54,7 @@ export function ConnectionChoice({
   return (
     <div className="flex flex-col gap-5 text-sm">
       <fieldset className="flex flex-col gap-2">
-        <legend className="mb-2 font-medium">How your agent runs</legend>
+        <legend className="mb-2 font-medium">Where do you run it?</legend>
         <div className="grid gap-2 sm:grid-cols-2">
           {(["url", "runner"] as const).map((c) => (
             <Choice
@@ -93,6 +91,36 @@ export function ConnectionChoice({
   );
 }
 
+/** Tools or chain mode: most agents use tools, so it waits under Advanced. */
+export function ModeChoice({
+  mode,
+  onMode,
+  name = "mode",
+}: {
+  mode: RemoteMode;
+  onMode: (m: RemoteMode) => void;
+  name?: string;
+}) {
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="mb-2 font-medium">How it acts</legend>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {(["tools", "chain"] as const).map((m) => (
+          <Choice
+            key={m}
+            name={name}
+            checked={mode === m}
+            onChange={() => onMode(m)}
+            title={MODE_TEXT[m].title}
+          >
+            {MODE_TEXT[m].line}
+          </Choice>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 /** Whether a write signs in the wallet (an agent on chain) or uses the preview's session. */
 const signs = (auth: Auth) => "sign" in auth;
 
@@ -108,12 +136,14 @@ export function ConnectRunner({
   teeUrl,
   autoCreate = false,
   showBadge = true,
+  framework,
 }: {
   subject: Subject;
   auth: Auth;
   status: ConnectionStatus;
   onChanged: () => unknown;
   teeUrl?: string | null;
+  framework?: Framework | undefined;
   /** Make the token as soon as this shows (previews: it costs no signature). */
   autoCreate?: boolean;
   /** Off where the runner's state already shows nearby. */
@@ -172,8 +202,16 @@ export function ConnectRunner({
       </div>
       {input ? (
         <>
+          <InitCommand
+            framework={framework}
+            connection="runner"
+            mode={input.mode}
+            teeUrl={input.teeUrl}
+            token={input.token}
+            gatewayUrl={input.gatewayUrl}
+          />
           <CopyBlock
-            label="With Node (npx)"
+            label="Or start the runner yourself (Node)"
             text={runnerCommand(input)}
             note={
               <>
@@ -227,7 +265,9 @@ export function ConnectRunner({
         connection="runner"
         mode={status.mode}
         gatewayUrl={token?.gatewayUrl ?? status.gatewayUrl}
+        framework={framework}
       />
+      <KeepRunning gatewayUrl={token?.gatewayUrl ?? status.gatewayUrl} />
     </div>
   );
 }
@@ -243,12 +283,14 @@ export function ConnectUrl({
   status,
   onChanged,
   initialUrl,
+  framework,
 }: {
   subject: Subject;
   auth: Auth;
   status: ConnectionStatus;
   onChanged: () => unknown;
   initialUrl?: string;
+  framework?: Framework | undefined;
 }) {
   const [url, setUrl] = useState(status.agentUrl?.url ?? initialUrl ?? "");
   const [touched, setTouched] = useState(false);
@@ -439,7 +481,8 @@ export function ConnectUrl({
         <div role="alert" className="rounded-2xl border border-breach/35 bg-breach-soft p-4">
           <p className="font-semibold">{failure}</p>
           {advice && <p className="mt-1 text-soft">{advice}</p>}
-          <p className="mt-1 text-xs">
+          <p className="mt-1 flex flex-wrap gap-x-3 text-xs">
+            <FixLink code={errorCode(error) ?? messageCode(failure)} />
             <a className={linkClass} href={DOCS_BYOA}>
               The guide: Agent URL mode
             </a>
@@ -448,7 +491,8 @@ export function ConnectUrl({
       ) : (
         <ErrorText error={error} />
       )}
-      <Snippets connection="url" mode={status.mode} />
+      {!isVerified && <InitCommand framework={framework} connection="url" mode={status.mode} />}
+      <Snippets connection="url" mode={status.mode} framework={framework} />
     </div>
   );
 }
@@ -498,13 +542,18 @@ export function Snippets({
   connection,
   mode,
   gatewayUrl,
+  framework,
 }: {
   connection: Connection;
   mode: RemoteMode;
   gatewayUrl?: string | null;
+  /** The owner's framework: its tab is the one shown first. */
+  framework?: Framework | undefined;
 }) {
   const list = snippets(connection, mode, gatewayUrl);
-  const [selected, setSelected] = useState(list[0]!.id);
+  const preferred = framework ? snippetIdFor(framework, connection) : undefined;
+  const [picked, setSelected] = useState<string>();
+  const selected = picked ?? (list.some((s) => s.id === preferred) ? preferred! : list[0]!.id);
   const current = list.find((s) => s.id === selected) ?? list[0]!;
   return (
     <details className="group rounded-2xl border border-line-strong p-4">
@@ -549,6 +598,7 @@ export function ConnectStep(props: {
   showBadge?: boolean;
   /** A URL to start the form with (e.g. carried over from a preview). */
   initialUrl?: string;
+  framework?: Framework | undefined;
 }) {
   // Keyed by what it connects, so a token or secret made for one agent never shows on another.
   const k =
@@ -562,6 +612,7 @@ export function ConnectStep(props: {
       auth={props.auth}
       status={props.status}
       onChanged={props.onChanged}
+      framework={props.framework}
       {...(props.initialUrl ? { initialUrl: props.initialUrl } : {})}
     />
   ) : (
@@ -571,6 +622,7 @@ export function ConnectStep(props: {
       auth={props.auth}
       status={props.status}
       onChanged={props.onChanged}
+      framework={props.framework}
       {...(props.teeUrl !== undefined ? { teeUrl: props.teeUrl } : {})}
       {...(props.autoCreate !== undefined ? { autoCreate: props.autoCreate } : {})}
       {...(props.showBadge !== undefined ? { showBadge: props.showBadge } : {})}

@@ -3,6 +3,8 @@ import { Link, Outlet, useLocation, useNavigate } from "react-router";
 import { useAccount } from "wagmi";
 import { isAddress } from "viem";
 import { ConnectButton } from "./components/wallet";
+import { InboxBell } from "./components/inbox-bell";
+import { StatusIndicator } from "./components/status-indicator";
 import { Logo, buttonClass } from "./components/ui";
 import { explorerUrl, networkName } from "./config";
 import { useAgents, useClaims } from "./lib/chain";
@@ -261,7 +263,8 @@ export function AppLayout() {
               <Icon d="M3 6h18M3 12h18M3 18h18" className="size-5" />
             </button>
             <Search />
-            <div className="ml-auto shrink-0">
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              <InboxBell />
               <ConnectButton />
             </div>
           </div>
@@ -270,8 +273,9 @@ export function AppLayout() {
           <Outlet />
         </main>
         <footer className="border-t border-line px-4 py-5 text-xs text-muted sm:px-8">
-          <div className="mx-auto max-w-[1180px]">
-            {networkName} · test tokens only, nothing here has real value.
+          <div className="mx-auto flex max-w-[1180px] flex-wrap items-center justify-between gap-3">
+            <span>{networkName} · test tokens only, nothing here has real value.</span>
+            <StatusIndicator />
           </div>
         </footer>
       </div>

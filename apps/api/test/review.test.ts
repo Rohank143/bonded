@@ -210,6 +210,8 @@ it("still claims when a policy's accrual read fails", async () => {
     expect.anything(),
     "fileClaim",
     [1n, [0n]],
+    // The send lifecycle: claim_filed_at is recorded only once the claim is broadcast.
+    expect.objectContaining({ onBroadcast: expect.any(Function) }),
   );
   expect(
     (await pg.db.pool.query("SELECT status FROM handled_events WHERE id='breach'")).rows[0].status,

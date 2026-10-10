@@ -3,8 +3,16 @@ import { Token, TokenLogo } from "../components/token";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount, useSignMessage, useWriteContract } from "wagmi";
-import { getPublicClient, readContract, waitForTransactionReceipt } from "wagmi/actions";
-import { isAddress, parseEventLogs, type Abi, type Address, type Hex } from "viem";
+import {
+  getCapabilities,
+  getGasPrice,
+  getPublicClient,
+  readContract,
+  sendCalls,
+  waitForCallsStatus,
+  waitForTransactionReceipt,
+} from "wagmi/actions";
+import { isAddress, parseEventLogs, type Address, type Hex, type Log } from "viem";
 import {
   REMOTE_KIND,
   SELF_SERVE_KINDS,
@@ -13,10 +21,7 @@ import {
   mandateCommitment,
   mandateModuleAbi,
   mandateModuleFactoryAbi,
-  mandateVaultAbi,
   mandateVaultFactoryAbi,
-  operatorBondAbi,
-  testTokenAbi,
   prepareModuleInstall,
   toEvmMandateParams,
   type ModuleAccountType,
@@ -31,6 +36,7 @@ import {
   MANDATE_TOKENS,
   ONBOARDING_STEPS,
   buildMandate,
+  batchOnChain,
   loadProgress,
   nextStep,
   parseAmount,
@@ -45,6 +51,7 @@ import {
 import {
   addressError,
   amountOrZeroError,
+  percentError,
   dailyLimitError,
   descriptionError,
   limitError,
@@ -61,7 +68,37 @@ import { DOCS_BYOA, TEST_AGENT } from "../lib/routes";
 import { codeHashError, composeHashError, normaliseCodeHash, teeUrlError } from "../lib/byoa";
 import { byoaApi, type Connection } from "../lib/byoa-api";
 import { agentUrlError, codeSourceLabel, loadSession } from "../lib/connect";
-import { ConnectionChoice } from "../components/connection-setup";
+import { ModeChoice } from "../components/connection-setup";
+import { FrameworkQuestions, useFramework } from "../components/framework-questions";
+import { WalletHelp } from "../components/wallet-help";
+import { connectionFor, hostingFor } from "../lib/frameworks";
+import {
+  CALL_STEP,
+  confirmationCount,
+  confirmationsText,
+  gasNeeded,
+  onboardingPlan,
+  supportsAtomicBatch,
+  type OnboardingCall,
+} from "../lib/wallet-help";
+import {
+  encoded,
+  onboardingCall,
+  simulateOnboardingGas,
+  type CallContext,
+  type ContractCall,
+  type SimClient,
+} from "../lib/onboarding-gas";
+import {
+  BOND_EXPLAINED,
+  PRESET_LABELS,
+  applyPreset,
+  basisLine,
+  type PresetFields,
+  bondTable,
+  recommendedBond,
+  type PresetChoice,
+} from "../lib/bond-cover";
 import { NewAgentConnection } from "../components/connect-agent";
 import { prefillFrom, type OfficialPrefill } from "../components/preview-report";
 import {
@@ -78,6 +115,19 @@ import {
 } from "../components/ui";
 
 type Step = { label: string; state: "waiting" | "active" | "done"; hash?: Hex };
+/** The mandate's fields an owner can edit after choosing a preset, and their names. */
+type MandateField = "mode" | "tokens" | "maxTx" | "maxDaily" | "drawdown" | "slippage" | "refund";
+const MANDATE_FIELD_LABELS: Record<MandateField, string> = {
+  mode: "mode",
+  tokens: "tokens",
+  maxTx: "per-trade limit",
+  maxDaily: "daily limit",
+  drawdown: "maximum drawdown",
+  slippage: "maximum slippage",
+  refund: "refund address",
+};
+/** An onboarding call that is a transaction (finding a module is a read). */
+type TxCall = Exclude<OnboardingCall, "findModule">;
 
 const STEPS = [
   "Register the agent",
@@ -116,6 +166,7 @@ export function NewAgent() {
   const [connection, setConnection] = useState<Connection>("url");
   const [agentUrl, setAgentUrl] = useState("");
   const [advanced, setAdvanced] = useState(false);
+  const [framework, setFramework] = useFramework();
   // "Make it official" from a preview: its choices fill the form in, once.
   const location = useLocation();
   const [params] = useSearchParams();
@@ -136,6 +187,7 @@ export function NewAgent() {
     setKind(REMOTE_KIND);
     setRemoteMode(prefill.mode);
     setConnection(prefill.connection);
+    if (prefill.mode === "chain") setAdvanced(true);
     if (prefill.agentUrl) setAgentUrl(prefill.agentUrl);
     if (prefill.codeHash?.source === "declared") {
       setCodeHash(prefill.codeHash.value);
@@ -154,9 +206,71 @@ export function NewAgent() {
   const [agentKey, setAgentKey] = useState("");
   const [maxTx, setMaxTx] = useState("5000");
   const [maxDaily, setMaxDaily] = useState("25000");
+  const [drawdown, setDrawdown] = useState("15");
+  const [slippage, setSlippage] = useState("3");
   const [bond, setBond] = useState("4000");
   const [deposit, setDeposit] = useState("50000");
   const [description, setDescription] = useState("An agent onboarded from the Bonded web app.");
+  // The mandate the agent's own preview suggests: what it actually traded, with headroom.
+  const suggested = useQuery({
+    queryKey: ["suggested-mandate", previewId, session?.session],
+    queryFn: () => byoaApi.suggestedMandate({ kind: "preview", id: previewId! }, session!.session),
+    enabled: Boolean(previewId && session),
+    retry: false,
+  });
+  const [preset, setPreset] = useState<PresetChoice>("custom");
+  // The preset the form started from, and what has been edited by hand since.
+  const [base, setBase] = useState<Exclude<PresetChoice, "custom">>();
+  const [edited, setEdited] = useState<MandateField[]>([]);
+  // A preset's own rules with no field of their own here (or set exactly as it says them).
+  const [presetRules, setPresetRules] = useState<
+    Pick<PresetFields, "assets" | "targets" | "destinations">
+  >({});
+  const choosePreset = (id: PresetChoice) => {
+    setPreset(id);
+    const p = suggested.data?.presets.find((x) => x.id === id);
+    if (!p) return;
+    const f = applyPreset(p);
+    setBase(p.id);
+    setEdited([]);
+    setMode(f.mode);
+    setTokens(f.tokens);
+    setMaxTx(f.maxTx);
+    setMaxDaily(f.maxDaily);
+    if (f.drawdown !== undefined) setDrawdown(f.drawdown);
+    if (f.slippage !== undefined) setSlippage(f.slippage);
+    setPresetRules({
+      ...(f.assets ? { assets: f.assets } : {}),
+      ...(f.targets ? { targets: f.targets } : {}),
+      ...(f.destinations ? { destinations: f.destinations } : {}),
+    });
+    if (f.destinations) setRefund(f.destinations[0] ?? "");
+  };
+  const presetApplied = useRef(false);
+  useEffect(() => {
+    if (presetApplied.current || !suggested.data?.presets.length) return;
+    presetApplied.current = true;
+    const recommended = suggested.data.recommended ?? "conservative";
+    choosePreset(
+      suggested.data.presets.some((p) => p.id === recommended)
+        ? recommended
+        : suggested.data.presets[0]!.id,
+    );
+    // Once, when the suggestion arrives.
+  }, [suggested.data]);
+  // Editing a field by hand makes the mandate custom, and marks the field edited.
+  const custom =
+    <T,>(field: MandateField, set: (v: T) => void) =>
+    (v: T) => {
+      setPreset("custom");
+      setEdited((e) => (e.includes(field) ? e : [...e, field]));
+      set(v);
+    };
+  const isEdited = (field: MandateField) =>
+    preset === "custom" && base !== undefined && edited.includes(field);
+  const editedMark = (field: MandateField) =>
+    isEdited(field) ? <span className="ml-1.5 text-xs font-normal text-warn">(edited)</span> : null;
+  const [wantedCover, setWantedCover] = useState("");
   const [steps, setSteps] = useState<Step[]>([]);
   const [error, setError] = useState<unknown>(null);
   const [created, setCreated] = useState<{
@@ -166,18 +280,23 @@ export function NewAgent() {
     mode?: RemoteMode;
   }>();
   const [busy, setBusy] = useState(false);
+  // A saved batch the wallet doesn't know and the chain shows nothing from: only the owner
+  // decides to send it again.
+  const [lostBatch, setLostBatch] = useState<string>();
 
   const refundAddress = refund.trim() || user || "";
   const key = (selfAgent ? user : agentKey.trim()) ?? "";
   const form: MandateForm = {
     mode,
     tokens,
-    destinations: refundAddress ? [refundAddress] : [],
+    destinations: presetRules.destinations ?? (refundAddress ? [refundAddress] : []),
     maxTxUsd: Number(maxTx),
     maxDailyUsd: Number(maxDaily),
-    maxDrawdownPct: 15,
-    maxSlippagePct: 3,
+    maxDrawdownPct: Number(drawdown),
+    maxSlippagePct: Number(slippage),
     description: description.trim(),
+    ...(presetRules.assets ? { assets: presetRules.assets } : {}),
+    ...(presetRules.targets ? { targets: presetRules.targets } : {}),
   };
   // Everything is checked before the first transaction, so a bad field can't leave a half-made
   // agent behind or silently skip a funding step.
@@ -240,15 +359,53 @@ export function NewAgent() {
   // What the owner will be asked to approve, counted from the steps that will run.
   const bondUnits = parseAmount(bond) ?? 0n;
   const depositUnits = onModule ? 0n : (parseAmount(deposit) ?? 0n);
-  const confirmations =
-    1 + // register
-    (onModule ? 0 : 1) + // create the vault
-    (bondUnits + depositUnits > 0n ? 1 : 0) + // faucet
-    (bondUnits > 0n ? 2 : 0) + // approve and stake the bond
-    (depositUnits > 0n ? 2 : 0); // approve and deposit
-  const confirmationsLine = `${confirmations} wallet confirmation${confirmations === 1 ? "" : "s"}${
-    onModule ? ", the module's install sent from your smart account," : ","
-  } then one signature${kind === REMOTE_KIND ? ". Then you connect it and check the connection, here" : ""}.`;
+  // Wallets that can batch atomically (EIP-5792) confirm each group of transactions once.
+  const capabilities = useQuery({
+    queryKey: ["wallet-capabilities", user],
+    queryFn: () => getCapabilities(wagmiConfig, { account: user! }),
+    enabled: Boolean(user),
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
+  const batched = supportsAtomicBatch(capabilities.data, robinhoodTestnet.id);
+  const plan = onboardingPlan({
+    done: [],
+    bond: bondUnits,
+    deposit: depositUnits,
+    module: onModule,
+  });
+  const confirmations = confirmationCount(plan, batched);
+  const unbatched = confirmationCount(plan, false);
+  const confirmationsLine = `${confirmationsText(confirmations)}${
+    batched && unbatched > confirmations
+      ? ` (your wallet sends them in batches, instead of ${unbatched})`
+      : ""
+  }${onModule ? ", the module's install sent from your smart account," : ","} then one signature${kind === REMOTE_KIND ? ". Then you connect it and check the connection, here" : ""}.`;
+  // How much gas that is: the onboarding's own transactions, simulated on the chain as it is.
+  const simForm = JSON.stringify({ form, bond, deposit, key, onModule });
+  const gas = useQuery({
+    queryKey: ["onboarding-gas", user, simForm],
+    enabled: Boolean(user && isAddress(key)),
+    retry: false,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const client = getPublicClient(wagmiConfig, { chainId: robinhoodTestnet.id });
+      if (!client || !user) return null;
+      const [used, price] = await Promise.all([
+        simulateOnboardingGas(client as unknown as SimClient, {
+          deployment,
+          user,
+          agentKey: key as Address,
+          bond: bondUnits,
+          deposit: depositUnits,
+          module: onModule,
+          mandateFor: (id) => buildMandate(deployment, id, form),
+        }),
+        getGasPrice(wagmiConfig, { chainId: robinhoodTestnet.id }).catch(() => undefined),
+      ]);
+      return gasNeeded({ gasUsed: used, gasPrice: price }) ?? null;
+    },
+  });
   const stepLabels = onModule ? MODULE_STEPS : STEPS;
   // The owner's own agent, registered: connect it and check it here, before its first rating.
   const connectNow = Boolean(
@@ -272,19 +429,140 @@ export function NewAgent() {
         ONBOARDING_STEPS[i] === step ? { ...row, state, ...(hash ? { hash } : {}) } : row,
       ),
     );
-  async function send(step: OnboardingStep, call: Parameters<typeof writeContractAsync>[0]) {
+  async function send(step: OnboardingStep, call: ContractCall): Promise<Log[]> {
     mark(step, "active");
     const hash = await writeContractAsync({ ...call, chainId: robinhoodTestnet.id } as never);
     const receipt = await waitForTransactionReceipt(wagmiConfig, { hash });
     if (receipt.status !== "success")
       throw new Error(`${stepLabels[ONBOARDING_STEPS.indexOf(step)]} failed`);
     mark(step, "active", hash);
-    return receipt;
+    return receipt.logs;
   }
 
   /**
-   * Runs every step not yet done for `progress`, saving it after each one, so a rejected prompt
-   * or a reload resumes here instead of registering another agent.
+   * Sends a group of transactions: as one atomic batch when the wallet can (EIP-5792), else one
+   * by one. A wallet that turns the batch down for any reason but the user's own "no" gets the
+   * same transactions one by one. `settle` records what each confirmed transaction made (the
+   * agent id, the vault) before the next one is asked for: one by one, a later prompt the user
+   * turns down must not lose what an earlier one made. Only an atomic batch settles as a group.
+   */
+  async function sendGroup(
+    kinds: TxCall[],
+    ctx: () => CallContext,
+    settle: (kinds: TxCall[], logs: Log[]) => void,
+    track: (batch: OnboardingProgress["batch"]) => void,
+  ) {
+    if (batched && kinds.length > 1) {
+      for (const k of kinds) mark(CALL_STEP[k], "active");
+      let id: string | undefined;
+      // Where to look for the batch's effects, should the wallet forget it.
+      const fromBlock = await getPublicClient(wagmiConfig, { chainId: robinhoodTestnet.id })
+        ?.getBlockNumber()
+        .catch(() => undefined);
+      try {
+        ({ id } = await sendCalls(wagmiConfig, {
+          calls: kinds.map((k) => encoded(onboardingCall(k, ctx()))),
+          chainId: robinhoodTestnet.id,
+          forceAtomic: true,
+        }));
+      } catch (e) {
+        const rejected =
+          (e as { code?: number })?.code === 4001 ||
+          /reject|denied|cancel/i.test(String((e as Error)?.message));
+        if (rejected) throw e;
+        // The wallet can't batch after all: the same transactions, one by one, below.
+      }
+      if (id) {
+        // Saved before waiting: a timeout or a reload follows this batch, it isn't sent again.
+        const batch = {
+          id,
+          calls: kinds,
+          ...(fromBlock !== undefined ? { fromBlock: fromBlock.toString() } : {}),
+        };
+        track(batch);
+        await followBatch(batch, ctx, settle, track);
+        return;
+      }
+    }
+    for (const k of kinds) settle([k], await send(CALL_STEP[k], onboardingCall(k, ctx())));
+  }
+
+  /** Waits for a batch the wallet was sent (`wallet_getCallsStatus`), then settles it. */
+  async function followBatch(
+    batch: NonNullable<OnboardingProgress["batch"]>,
+    ctx: () => CallContext,
+    settle: (kinds: TxCall[], logs: Log[]) => void,
+    track: (batch: OnboardingProgress["batch"]) => void,
+  ) {
+    const { id, calls: kinds } = batch;
+    let result: Awaited<ReturnType<typeof waitForCallsStatus>>;
+    try {
+      result = await waitForCallsStatus(wagmiConfig, { id });
+    } catch (e) {
+      const code =
+        (e as { code?: number })?.code ?? (e as { cause?: { code?: number } })?.cause?.code;
+      // EIP-5792's "unknown bundle id": the wallet can't say what became of it, so the chain is
+      // asked. The batch stays saved until its effects are found, or the owner sends it again.
+      if (code === 5730) {
+        const client = getPublicClient(wagmiConfig, { chainId: robinhoodTestnet.id });
+        if (!client || batch.fromBlock === undefined)
+          throw new Error(
+            "Your wallet doesn't know this batch, and the chain couldn't be checked for it. Check your wallet's activity before going on.",
+            { cause: e },
+          );
+        const c = ctx();
+        const logs = (await client.getLogs({
+          address: [
+            deployment.registry,
+            deployment.factory,
+            deployment.bond,
+            ...(c.vault ? [c.vault] : []),
+          ],
+          fromBlock: BigInt(batch.fromBlock),
+        })) as Log[];
+        const landed = batchOnChain(logs, {
+          calls: kinds,
+          user: c.user,
+          agentId: c.agentId,
+          vault: c.vault,
+        });
+        if (!landed) {
+          setLostBatch(id);
+          throw new Error(
+            "Your wallet doesn't know this batch and nothing from it reached the chain.",
+            { cause: e },
+          );
+        }
+        // It went through: settle it as if the wallet had confirmed it.
+        for (const k of kinds)
+          mark(CALL_STEP[k], "active", landed[0]?.transactionHash ?? undefined);
+        settle(kinds, landed);
+        track(undefined);
+        return;
+      }
+      throw new Error(
+        "Your wallet's batch hasn't confirmed yet. Resume to keep following the same batch: it won't be sent again.",
+        { cause: e },
+      );
+    }
+    if (result.status !== "success") {
+      track(undefined);
+      throw new Error("The batch of transactions failed, so none of them went through.");
+    }
+    const receipts = result.receipts ?? [];
+    const hash = receipts.at(-1)?.transactionHash;
+    for (const k of kinds) mark(CALL_STEP[k], "active", hash);
+    settle(
+      kinds,
+      receipts.flatMap((r) => r.logs as Log[]),
+    );
+    track(undefined);
+  }
+
+  /**
+   * Runs every step not yet done for `progress`, saving it after each confirmed transaction (or
+   * atomic batch), so a rejected prompt or a reload resumes here instead of registering another
+   * agent.
    */
   async function run(progress: OnboardingProgress) {
     if (!user) return;
@@ -294,190 +572,107 @@ export function NewAgent() {
     setInstall(undefined);
     const save = (p: OnboardingProgress) => saveProgress(deployment.chainId, user, p);
     const finish = (step: OnboardingStep) => {
+      if (progress.done.includes(step)) return;
       progress = { ...progress, done: [...progress.done, step] };
       save(progress);
       mark(step, "done");
     };
     const bondValue = parseAmount(progress.bond)!;
     // A module guards funds already in the smart account: nothing to deposit.
-    const depositValue = progress.protection === "module" ? 0n : parseAmount(progress.deposit)!;
-    try {
-      if (!progress.done.includes("register")) {
-        const registered = await send("register", {
-          address: deployment.registry,
-          abi: bondedRegistryAbi as Abi,
-          functionName: "register",
-          args: ["ipfs://bonded/self-serve"],
-        });
+    const onModulePath = progress.protection === "module";
+    const depositValue = onModulePath ? 0n : parseAmount(progress.deposit)!;
+    const ctx = (): CallContext => ({
+      deployment,
+      user,
+      agentKey: progress.agentKey as Address,
+      bond: bondValue,
+      deposit: depositValue,
+      faucet: (progress.done.includes("bond") ? 0n : bondValue) + depositValue,
+      ...(progress.agentId ? { agentId: BigInt(progress.agentId) } : {}),
+      ...(progress.mandate ? { mandate: progress.mandate } : {}),
+      ...(progress.vault ? { vault: progress.vault as Address } : {}),
+    });
+    const remember = (vault: Address) => {
+      rememberAgent(deployment.chainId, progress.agentId!, {
+        vault,
+        kind: progress.kind,
+        mandate: progress.mandate!,
+        ...(onModulePath ? { protection: "module" as const } : {}),
+        ...(progress.sentinel ? { sentinel: true } : {}),
+        ...(progress.remote ? { remote: progress.remote } : {}),
+      });
+      setCreated({
+        agentId: BigInt(progress.agentId!),
+        vault,
+        ...(progress.connect ? { connect: progress.connect } : {}),
+        ...(progress.remote ? { mode: progress.remote.mode } : {}),
+      });
+    };
+    if (progress.vault) remember(progress.vault as Address);
+    /** What confirmed transactions made, saved at once (by `finish`). */
+    const settle = (kinds: TxCall[], logs: Log[]) => {
+      if (kinds.includes("register")) {
         const agentId = (
-          parseEventLogs({
-            abi: bondedRegistryAbi,
-            logs: registered.logs,
-            eventName: "Registered",
-          })[0]?.args as { agentId: bigint }
+          parseEventLogs({ abi: bondedRegistryAbi, logs, eventName: "Registered" })[0]?.args as {
+            agentId: bigint;
+          }
         ).agentId;
         // The mandate is frozen here, with the agent id, and reused by every later step.
         const mandate = buildMandate(deployment, agentId, progress.form);
         progress = { ...progress, agentId: agentId.toString(), mandate };
         finish("register");
       }
-      const agentId = BigInt(progress.agentId!);
-      const mandate = progress.mandate!;
-      if (!progress.done.includes("vault") && progress.protection === "module") {
-        // The smart account creates and installs its module itself; this step finds it, and
-        // checks it is this agent's and enforces this mandate (its commitment).
-        mark("vault", "active");
-        const factory = deployment.moduleFactory!;
-        const owner = progress.account as Address;
-        const found = await readContract(wagmiConfig, {
-          address: factory,
-          abi: mandateModuleFactoryAbi,
-          functionName: "moduleOf",
-          args: [owner],
-          chainId: robinhoodTestnet.id,
-        });
-        const commitment = mandateCommitment(toEvmMandateParams(mandate));
-        const fits =
-          found !== "0x0000000000000000000000000000000000000000" &&
-          (
-            await Promise.all([
-              readContract(wagmiConfig, {
-                address: found,
-                abi: mandateModuleAbi,
-                functionName: "mandateHash",
-                chainId: robinhoodTestnet.id,
-              }),
-              readContract(wagmiConfig, {
-                address: found,
-                abi: mandateModuleAbi,
-                functionName: "agentId",
-                chainId: robinhoodTestnet.id,
-              }),
-            ])
-          ).every((v, i) =>
-            i === 0 ? String(v).toLowerCase() === commitment.toLowerCase() : v === agentId,
-          );
-        if (!fits) {
-          const client = getPublicClient(wagmiConfig, { chainId: robinhoodTestnet.id });
-          if (!client) throw new Error("can't reach the chain to plan the module's install");
-          const type = progress.accountType ?? "safe7579";
-          const plan = await prepareModuleInstall(client, {
-            moduleFactory: factory,
-            account: owner,
-            params: toEvmMandateParams(mandate),
-            agent: progress.agentKey as Address,
-            guardian: user,
-            agentId,
-            accountType: type,
-          });
-          setInstall({ module: plan.module, calls: installSteps(plan, type) });
-          throw new Error(
-            "Your smart account has no module for this agent yet. Send the calls below from it, then resume onboarding.",
-          );
-        }
-        progress = { ...progress, vault: found };
-        rememberAgent(deployment.chainId, agentId.toString(), {
-          vault: found,
-          kind: progress.kind,
-          mandate,
-          protection: "module",
-          ...(progress.sentinel ? { sentinel: true } : {}),
-          ...(progress.remote ? { remote: progress.remote } : {}),
-        });
-        finish("vault");
-      }
-      if (!progress.done.includes("vault")) {
-        const made = await send("vault", {
-          address: deployment.factory,
-          abi: mandateVaultFactoryAbi as Abi,
-          functionName: "createVault",
-          args: [
-            toEvmMandateParams(mandate),
-            progress.agentKey,
-            user,
-            agentId,
-            `Agent ${agentId} vault`,
-            "BVLT",
-          ],
-        });
+      if (kinds.includes("createVault")) {
         const vault = (
-          parseEventLogs({
-            abi: mandateVaultFactoryAbi,
-            logs: made.logs,
-            eventName: "VaultCreated",
-          })[0]?.args as { vault: Address }
+          parseEventLogs({ abi: mandateVaultFactoryAbi, logs, eventName: "VaultCreated" })[0]
+            ?.args as { vault: Address }
         ).vault;
         progress = { ...progress, vault };
-        rememberAgent(deployment.chainId, agentId.toString(), {
-          vault,
-          kind: progress.kind,
-          mandate,
-          ...(progress.sentinel ? { sentinel: true } : {}),
-          ...(progress.remote ? { remote: progress.remote } : {}),
-        });
+        remember(vault);
         finish("vault");
       }
-      const vault = progress.vault as Address;
-      setCreated({
-        agentId,
-        vault,
-        ...(progress.connect ? { connect: progress.connect } : {}),
-        ...(progress.remote ? { mode: progress.remote.mode } : {}),
+      if (kinds.includes("faucet")) finish("faucet");
+      if (kinds.includes("stake")) finish("bond");
+      if (kinds.includes("deposit")) finish("deposit");
+    };
+    /** The pending batch, saved with the progress (or cleared once it has settled). */
+    const track = (batch: OnboardingProgress["batch"]) => {
+      progress = { ...progress, batch };
+      if (!batch) delete progress.batch;
+      save(progress);
+    };
+    try {
+      // A batch sent before a timeout or a reload: follow it, don't send it again.
+      if (progress.batch) {
+        const pending = progress.batch;
+        for (const k of pending.calls) mark(CALL_STEP[k], "active");
+        await followBatch(pending, ctx, settle, track);
+      }
+      const groups = onboardingPlan({
+        done: progress.done,
+        bond: bondValue,
+        deposit: depositValue,
+        module: onModulePath,
       });
-      if (!progress.done.includes("faucet")) {
-        const needed = (progress.done.includes("bond") ? 0n : bondValue) + depositValue;
-        if (needed > 0n)
-          await send("faucet", {
-            address: deployment.usdg,
-            abi: testTokenAbi as Abi,
-            functionName: "faucet",
-            args: [needed],
-          });
-        finish("faucet");
-      }
-      if (!progress.done.includes("bond")) {
-        if (bondValue > 0n) {
-          await send("bond", {
-            address: deployment.usdg,
-            abi: testTokenAbi as Abi,
-            functionName: "approve",
-            args: [deployment.bond, bondValue],
-          });
-          await send("bond", {
-            address: deployment.bond,
-            abi: operatorBondAbi as Abi,
-            functionName: "stake",
-            args: [agentId, bondValue],
-          });
-        }
-        finish("bond");
-      }
-      if (!progress.done.includes("deposit")) {
-        if (depositValue > 0n) {
-          await send("deposit", {
-            address: deployment.usdg,
-            abi: testTokenAbi as Abi,
-            functionName: "approve",
-            args: [vault, depositValue],
-          });
-          await send("deposit", {
-            address: vault,
-            abi: mandateVaultAbi as Abi,
-            functionName: "deposit",
-            args: [depositValue, user],
-          });
-        }
-        finish("deposit");
+      // Steps with nothing to send (no bond, no deposit) are done straight away.
+      const planned = new Set(groups.flat().map((c) => CALL_STEP[c]));
+      for (const step of ["faucet", "bond", "deposit"] as const)
+        if (!planned.has(step)) finish(step);
+      for (const group of groups) {
+        if (group.includes("findModule")) await findModule();
+        const kinds = group.filter((c): c is TxCall => c !== "findModule");
+        if (!kinds.length) continue;
+        await sendGroup(kinds, ctx, settle, track);
       }
       if (!progress.done.includes("ratings")) {
         mark("ratings", "active");
-        await registerForRatings(signMessageAsync, agentId.toString(), {
-          vault,
+        await registerForRatings(signMessageAsync, progress.agentId!, {
+          vault: progress.vault!,
           kind: progress.kind,
-          mandate,
+          mandate: progress.mandate!,
           ...(progress.sentinel ? { sentinel: true } : {}),
           ...(progress.remote ? { remote: progress.remote } : {}),
-          ...(progress.protection === "module" ? { protection: "module" as const } : {}),
+          ...(onModulePath ? { protection: "module" as const } : {}),
           ...(progress.connect?.previewId ? { previewId: progress.connect.previewId } : {}),
         });
         finish("ratings");
@@ -487,6 +682,67 @@ export function NewAgent() {
       setError(e);
     } finally {
       setBusy(false);
+    }
+
+    /**
+     * The smart account creates and installs its module itself; this step finds it, and checks
+     * it is this agent's and enforces this mandate (its commitment).
+     */
+    async function findModule() {
+      mark("vault", "active");
+      const agentId = BigInt(progress.agentId!);
+      const mandate = progress.mandate!;
+      const factory = deployment.moduleFactory!;
+      const owner = progress.account as Address;
+      const found = await readContract(wagmiConfig, {
+        address: factory,
+        abi: mandateModuleFactoryAbi,
+        functionName: "moduleOf",
+        args: [owner],
+        chainId: robinhoodTestnet.id,
+      });
+      const commitment = mandateCommitment(toEvmMandateParams(mandate));
+      const fits =
+        found !== "0x0000000000000000000000000000000000000000" &&
+        (
+          await Promise.all([
+            readContract(wagmiConfig, {
+              address: found,
+              abi: mandateModuleAbi,
+              functionName: "mandateHash",
+              chainId: robinhoodTestnet.id,
+            }),
+            readContract(wagmiConfig, {
+              address: found,
+              abi: mandateModuleAbi,
+              functionName: "agentId",
+              chainId: robinhoodTestnet.id,
+            }),
+          ])
+        ).every((v, i) =>
+          i === 0 ? String(v).toLowerCase() === commitment.toLowerCase() : v === agentId,
+        );
+      if (!fits) {
+        const client = getPublicClient(wagmiConfig, { chainId: robinhoodTestnet.id });
+        if (!client) throw new Error("can't reach the chain to plan the module's install");
+        const type = progress.accountType ?? "safe7579";
+        const plan = await prepareModuleInstall(client, {
+          moduleFactory: factory,
+          account: owner,
+          params: toEvmMandateParams(mandate),
+          agent: progress.agentKey as Address,
+          guardian: user!,
+          agentId,
+          accountType: type,
+        });
+        setInstall({ module: plan.module, calls: installSteps(plan, type) });
+        throw new Error(
+          "Your smart account has no module for this agent yet. Send the calls below from it, then resume onboarding.",
+        );
+      }
+      progress = { ...progress, vault: found };
+      remember(found);
+      finish("vault");
     }
   }
 
@@ -575,12 +831,12 @@ export function NewAgent() {
                     : a free preview rating, no tokens needed.
                   </p>
                 )}
-                <ConnectionChoice
-                  connection={connection}
-                  mode={remoteMode}
-                  onConnection={setConnection}
-                  onMode={setRemoteMode}
+                <FrameworkQuestions
                   name="onboard"
+                  framework={framework}
+                  hosting={hostingFor(connection)}
+                  onFramework={setFramework}
+                  onHosting={(h) => setConnection(connectionFor(h))}
                 />
                 {connection === "url" ? (
                   <Input
@@ -603,6 +859,7 @@ export function NewAgent() {
                 >
                   <summary className="cursor-pointer font-medium">Advanced (optional)</summary>
                   <div className="mt-4 flex flex-col gap-4">
+                    <ModeChoice mode={remoteMode} onMode={setRemoteMode} name="onboard-mode" />
                     <Input
                       label="Code hash"
                       hint={
@@ -680,15 +937,67 @@ export function NewAgent() {
 
           <StepCard n={2} title={<Term term="mandate">Mandate</Term>}>
             <div className="flex flex-col gap-5 text-sm">
+              {suggested.data && suggested.data.presets.length > 0 && (
+                <fieldset className="flex flex-col gap-2">
+                  <legend className="mb-1 font-medium">Start from what your agent did</legend>
+                  <p className="mb-1 text-xs text-muted">
+                    {basisLine(suggested.data.basis)
+                      ? `From ${basisLine(suggested.data.basis)}: `
+                      : "From your preview: "}
+                    it traded{" "}
+                    {suggested.data.tokens.length ? suggested.data.tokens.join(", ") : "no tokens"}
+                    {suggested.data.largestTradeUsd != null
+                      ? `, and its largest trade was ${suggested.data.largestTradeUsd.toLocaleString("en-US")} USD`
+                      : ""}
+                    {suggested.data.contracts.length
+                      ? `, through ${suggested.data.contracts.map((c) => c.label ?? c.address).join(", ")}`
+                      : ""}
+                    .
+                  </p>
+                  {suggested.data.notes?.length ? (
+                    <ul className="mb-1 list-disc pl-5 text-xs text-soft">
+                      {suggested.data.notes.map((n) => (
+                        <li key={n}>{n}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {(["conservative", "active", "custom"] as const)
+                      .filter(
+                        (id) => id === "custom" || suggested.data!.presets.some((p) => p.id === id),
+                      )
+                      .map((id) => {
+                        const p = suggested.data!.presets.find((x) => x.id === id);
+                        return (
+                          <Choice
+                            key={id}
+                            name="preset"
+                            checked={preset === id}
+                            onChange={() => choosePreset(id)}
+                            title={p?.label ?? PRESET_LABELS[id]}
+                          >
+                            {id === "custom" && base && edited.length
+                              ? `${PRESET_LABELS[base]}, edited: ${edited.map((f) => MANDATE_FIELD_LABELS[f]).join(", ")}.`
+                              : p
+                                ? (p.line ??
+                                  `${p.mode === "enforce" ? "Enforce" : "Monitor"}, up to ${p.maxTxUsd.toLocaleString("en-US")} USD a trade and ${p.maxDailyUsd.toLocaleString("en-US")} a day`)
+                                : "Set every field yourself."}
+                          </Choice>
+                        );
+                      })}
+                  </div>
+                </fieldset>
+              )}
               <fieldset className="flex flex-col gap-2">
                 <legend className="mb-2 font-medium">
                   {onModule ? "Module mode" : "Vault mode"}
+                  {editedMark("mode")}
                 </legend>
                 <div className="grid gap-2 sm:grid-cols-2">
                   <Choice
                     name="mode"
                     checked={mode === "monitor"}
-                    onChange={() => setMode("monitor")}
+                    onChange={() => custom("mode", setMode)("monitor")}
                     title="Monitor"
                     disabled={onModule}
                   >
@@ -699,7 +1008,7 @@ export function NewAgent() {
                   <Choice
                     name="mode"
                     checked={mode === "enforce"}
-                    onChange={() => setMode("enforce")}
+                    onChange={() => custom("mode", setMode)("enforce")}
                     title="Enforce"
                   >
                     {onModule
@@ -711,6 +1020,7 @@ export function NewAgent() {
               <fieldset>
                 <legend className="mb-2 font-medium">
                   Tokens it may hold (<Token symbol="tUSDG" /> always)
+                  {editedMark("tokens")}
                 </legend>
                 <div className="flex flex-wrap gap-2">
                   {MANDATE_TOKENS.map((t) => (
@@ -722,7 +1032,11 @@ export function NewAgent() {
                         type="checkbox"
                         className="sr-only"
                         checked={tokens.includes(t)}
-                        onChange={() => toggle(t)}
+                        onChange={() => {
+                          // The token list is the owner's now, not the preset's addresses.
+                          setPresetRules((r) => ({ ...r, assets: undefined }));
+                          custom("tokens", toggle)(t);
+                        }}
                       />
                       <TokenLogo symbol={t} size={22} />
                       {t}
@@ -733,28 +1047,60 @@ export function NewAgent() {
               </fieldset>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Input
-                  label="Per-trade limit"
+                  label={<>Per-trade limit{editedMark("maxTx")}</>}
                   value={maxTx}
-                  onChange={setMaxTx}
+                  onChange={custom("maxTx", setMaxTx)}
                   inputMode="decimal"
                   suffix="USD"
                   error={limitError(maxTx)}
                 />
                 <Input
-                  label="Daily limit"
+                  label={<>Daily limit{editedMark("maxDaily")}</>}
                   value={maxDaily}
-                  onChange={setMaxDaily}
+                  onChange={custom("maxDaily", setMaxDaily)}
                   inputMode="decimal"
                   suffix="USD"
                   error={dailyLimitError(maxDaily, maxTx)}
                 />
               </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Input
+                  label={<>Maximum drawdown{editedMark("drawdown")}</>}
+                  hint="The largest fall in the vault's value over 24 hours. Used for disputes."
+                  value={drawdown}
+                  onChange={custom("drawdown", setDrawdown)}
+                  inputMode="decimal"
+                  suffix="%"
+                  error={percentError(drawdown, { min: 0.01 })}
+                />
+                <Input
+                  label={<>Maximum slippage{editedMark("slippage")}</>}
+                  hint="The largest loss one trade may cause, as a share of what it sends out."
+                  value={slippage}
+                  onChange={custom("slippage", setSlippage)}
+                  inputMode="decimal"
+                  suffix="%"
+                  error={percentError(slippage, { min: 0 })}
+                />
+              </div>
               <Input
-                label="Refund address"
-                hint="The one address the agent may send funds to. Defaults to your wallet."
+                label={<>Refund address{editedMark("refund")}</>}
+                hint={
+                  presetRules.destinations && presetRules.destinations.length === 0
+                    ? "This preset allows no refund address: the agent may not send funds anywhere. Type one to allow it."
+                    : "The one address the agent may send funds to. Defaults to your wallet."
+                }
                 value={refund}
-                onChange={setRefund}
-                placeholder={user ?? "0x…"}
+                onChange={(v) => {
+                  // A typed address is the owner's, not the preset's.
+                  setPresetRules((r) => ({ ...r, destinations: undefined }));
+                  custom("refund", setRefund)(v);
+                }}
+                placeholder={
+                  presetRules.destinations && presetRules.destinations.length === 0
+                    ? "None"
+                    : (user ?? "0x…")
+                }
                 error={addressError(refund, true)}
               />
               <Input
@@ -898,11 +1244,13 @@ export function NewAgent() {
                   />
                 )}
               </div>
-              <p className="text-xs text-muted">
-                Cover needs a bond of 10% to 30% of the cover, depending on the score's tier: 4,000
-                covers 20,000 for tier BB. Test <Token symbol="tUSDG" /> is minted from the faucet
-                as part of these steps; you need a little test ETH for gas.
-              </p>
+              <BondAdvice
+                wantedCover={wantedCover}
+                onWantedCover={setWantedCover}
+                deposit={onModule ? "" : deposit}
+                score={fetched.data?.rating?.score ?? prefill?.score ?? null}
+                onUse={(b) => setBond(String(b))}
+              />
             </div>
           </StepCard>
           {connectNow && (
@@ -910,6 +1258,7 @@ export function NewAgent() {
               <NewAgentConnection
                 agentId={created!.agentId.toString()}
                 mode={created!.mode!}
+                framework={framework}
                 {...(created!.connect?.connection
                   ? { initialConnection: created!.connect.connection }
                   : {})}
@@ -926,22 +1275,39 @@ export function NewAgent() {
           )}
         </div>
 
-        <div className="min-w-0 lg:sticky lg:top-24">
+        <div className="flex min-w-0 flex-col gap-6 lg:sticky lg:top-24">
+          <WalletHelp gasNeeded={gas.data ?? undefined} />
           <StepCard n={4} title="Create">
             {unfinished && !busy && (
               <div className="mb-4 flex flex-col gap-3 rounded-lg border border-warn/30 bg-warn-soft p-4 text-sm">
                 <p>
                   You have an unfinished onboarding
-                  {unfinished.agentId ? ` of agent ${unfinished.agentId}` : ""}: next step,{" "}
+                  {unfinished.agentId ? ` of agent ${unfinished.agentId}` : ""}
+                  {unfinished.batch ? ", with a batch your wallet was sent still to confirm" : ""}:
+                  next step,{" "}
                   {labelsFor(unfinished)[
                     ONBOARDING_STEPS.indexOf(nextStep(unfinished)!)
                   ]?.toLowerCase()}
                   .
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <Button size="sm" onClick={() => run(unfinished)}>
-                    Resume onboarding
-                  </Button>
+                  {unfinished.batch && unfinished.batch.id === lostBatch ? (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        const { batch: _lost, ...rest } = unfinished;
+                        void _lost;
+                        setLostBatch(undefined);
+                        void run(rest);
+                      }}
+                    >
+                      Send it again
+                    </Button>
+                  ) : (
+                    <Button size="sm" onClick={() => run(unfinished)}>
+                      Resume onboarding
+                    </Button>
+                  )}
                   <Button size="sm" kind="secondary" onClick={startOver}>
                     Start a new agent instead
                   </Button>
@@ -1042,6 +1408,88 @@ export function NewAgent() {
         </div>
       </div>
     </Page>
+  );
+}
+
+/**
+ * The bond in plain words: what it is, when it's lost, and the bond the cover you want needs, by
+ * tier (the same minimum-bond rule a quote enforces).
+ */
+function BondAdvice({
+  wantedCover,
+  onWantedCover,
+  deposit,
+  score,
+  onUse,
+}: {
+  wantedCover: string;
+  onWantedCover: (v: string) => void;
+  deposit: string;
+  score: number | null;
+  onUse: (bond: number) => void;
+}) {
+  const typed = Number(wantedCover.replace(/,/g, ""));
+  const fallback = Number(deposit.replace(/,/g, ""));
+  const cover = wantedCover.trim() ? typed : fallback;
+  const valid = Number.isFinite(cover) && cover > 0;
+  const rec = valid ? recommendedBond(cover, score) : undefined;
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl border border-line-strong p-4 text-sm">
+      <p className="font-medium">What the bond is for</p>
+      <p className="text-muted">{BOND_EXPLAINED}</p>
+      <Input
+        label="Cover you want"
+        hint={
+          wantedCover.trim()
+            ? undefined
+            : "Starts at your deposit: cover pays for what the vault holds."
+        }
+        value={wantedCover}
+        onChange={onWantedCover}
+        placeholder={deposit || "20000"}
+        inputMode="decimal"
+        suffix={<Token symbol="tUSDG" />}
+      />
+      {valid && (
+        <>
+          <table className="w-full text-xs">
+            <caption className="sr-only">Smallest bond for this cover, by tier</caption>
+            <thead className="text-left text-muted">
+              <tr>
+                <th className="pb-1 font-medium">Score's tier</th>
+                <th className="pb-1 text-right font-medium">Smallest bond</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bondTable(cover).map((r) => (
+                <tr key={r.tiers} className="border-t border-white/[0.06]">
+                  <td className="py-1.5">
+                    {r.tiers} ({r.minBondPct}% of the cover)
+                  </td>
+                  <td className="py-1.5 text-right font-mono">{r.bond.toLocaleString("en-US")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {rec && (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-muted">
+                Recommended:{" "}
+                <span className="font-mono text-ink">{rec.bond.toLocaleString("en-US")}</span>,
+                because {rec.why}.
+              </p>
+              <Button size="sm" kind="secondary" onClick={() => onUse(rec.bond)}>
+                Use this bond
+              </Button>
+            </div>
+          )}
+        </>
+      )}
+      <p className="text-xs text-muted">
+        Test <Token symbol="tUSDG" /> for the bond and the deposit is minted from the faucet as part
+        of these steps.
+      </p>
+    </div>
   );
 }
 

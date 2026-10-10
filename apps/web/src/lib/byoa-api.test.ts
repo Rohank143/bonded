@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { selfServeMessage } from "@bondedhq/shared";
 import { apiUrl, deployment } from "../config";
 import { ApiError } from "./api";
-import { byoaApi, streamEvents, subjectPath } from "./byoa-api";
+import { byoaApi, streamEvents, subjectPath, type CheckResult } from "./byoa-api";
 import { byoaMessage } from "./byoa-messages";
 import { snippets } from "./snippets";
 
@@ -322,5 +322,85 @@ describe("snippets", () => {
           for (const name of m[1]!.split(",").map((n) => n.trim()))
             expect(declared?.names, `${s.label}: ${name} from ${m[2]}`).toContain(name);
         }
+  });
+});
+
+describe("byoaApi, launch endpoints", () => {
+  it("calls one path per endpoint, with the session where the data is the owner's", async () => {
+    const fetch = mockFetch(200, {});
+    await byoaApi.compareRatings("run a", "run-b", "sess");
+    await byoaApi.suggestedMandate({ kind: "preview", id: "p1" }, "sess");
+    await byoaApi.suggestedMandate({ kind: "agent", agentId: "12" }, "sess");
+    await byoaApi.vaultActivity("12");
+    await byoaApi.agentHealth("12", "sess");
+    await byoaApi.inbox("sess");
+    await byoaApi.status();
+    const calls = fetch.mock.calls.map((_, i) => sent(fetch, i));
+    expect(calls.map((c) => c.url.slice(apiUrl.length))).toEqual([
+      "/ratings/compare?from=run%20a&to=run-b",
+      "/previews/p1/suggested-mandate",
+      "/self/agents/12/suggested-mandate",
+      "/self/agents/12/vault-activity",
+      "/self/agents/12/health",
+      "/self/notifications/inbox",
+      "/status",
+    ]);
+    const authed = calls.map((c) => c.headers.Authorization);
+    expect(authed).toEqual([
+      "Bearer sess",
+      "Bearer sess",
+      "Bearer sess",
+      undefined,
+      "Bearer sess",
+      "Bearer sess",
+      undefined,
+    ]);
+  });
+});
+
+describe("byoaApi, the API's real shapes", () => {
+  it("pages the inbox and marks it read", async () => {
+    const fetch = mockFetch(200, { items: [], unread: 0, next: null });
+    await byoaApi.inbox("sess", { limit: 10, before: "41", unread: true });
+    await byoaApi.markInboxRead("sess", { through: "40" });
+    expect(sent(fetch, 0).url.slice(apiUrl.length)).toBe(
+      "/self/notifications/inbox?limit=10&before=41&unread=1",
+    );
+    expect(sent(fetch, 1)).toMatchObject({
+      url: `${apiUrl}/self/notifications/inbox/read`,
+      method: "POST",
+      body: { through: "40" },
+    });
+  });
+
+  it("gives each check sentence the code the API lists in issues", async () => {
+    mockFetch(200, {
+      id: "chk",
+      status: "failed",
+      events: [
+        {
+          type: "result",
+          passed: false,
+          problems: ["Your agent never called a tool"],
+          warnings: [],
+          issues: [
+            {
+              code: "never-called-a-tool",
+              severity: "problem",
+              message: "Your agent never called a tool",
+            },
+          ],
+          taskCompleted: false,
+          toolsCalled: 0,
+          surfacesRead: [],
+        },
+      ],
+      result: null,
+    });
+    const record = await byoaApi.check("chk", "sess");
+    const result = record.events[0] as CheckResult;
+    expect(result.problems).toEqual([
+      { code: "never-called-a-tool", message: "Your agent never called a tool" },
+    ]);
   });
 });

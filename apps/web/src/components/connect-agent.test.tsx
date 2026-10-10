@@ -111,6 +111,57 @@ describe("ConnectAgent", () => {
     expect(screen.getByText(/capped|Cover limit/)).toBeTruthy();
   });
 
+  describe("the init command carries how the agent is registered", () => {
+    const withToken = () => {
+      vi.spyOn(api, "runner").mockResolvedValue(runnerRecord());
+      vi.spyOn(api, "createRunnerToken").mockResolvedValue({
+        token: "bonded_rt_secret",
+        tokenId: "t",
+        createdAt: "2026-10-07T00:00:00Z",
+        gatewayUrl: "https://gw.example",
+      });
+    };
+    const initText = () =>
+      screen.queryByText(/^BONDED_RUNNER_TOKEN=bonded_rt_secret npx @bondedhq\/runner init/);
+
+    it("tools mode: init without a mode flag", async () => {
+      withToken();
+      show();
+      fireEvent.click(await screen.findByRole("button", { name: "Create a runner token" }));
+      await waitFor(() => expect(initText()).toBeTruthy());
+      expect(initText()!.textContent).not.toMatch(/--mode/);
+    });
+
+    it("chain mode: init with --mode chain, so the check sees a chain-mode runner", async () => {
+      withToken();
+      show({ record: { ...record, mode: "chain" } });
+      fireEvent.click(await screen.findByRole("button", { name: "Create a runner token" }));
+      await waitFor(() => expect(initText()).toBeTruthy());
+      expect(initText()!.textContent).toMatch(/ init --mode chain --gateway https:\/\/gw\.example/);
+    });
+
+    it("TEE-bound: no init, and the runner command shown carries the TEE", async () => {
+      withToken();
+      show({
+        record: {
+          ...record,
+          mode: "chain",
+          tee: { url: "https://tee.example", composeHash: `0x${"d".repeat(64)}` },
+        } as typeof record,
+      });
+      fireEvent.click(await screen.findByRole("button", { name: "Create a runner token" }));
+      expect(
+        await screen.findByText(/TEE-bound agents use the runner command shown below/),
+      ).toBeTruthy();
+      expect(initText()).toBeNull();
+      expect(
+        screen.getByText(
+          "BONDED_RUNNER_TOKEN=bonded_rt_secret npx @bondedhq/runner --gateway https://gw.example --mode chain --tee-url https://tee.example -- <your agent command>",
+        ),
+      ).toBeTruthy();
+    });
+  });
+
   it("rates the agent once its runner is connected and checked, and follows the rating", async () => {
     vi.spyOn(api, "runner").mockResolvedValue(
       runnerRecord({ token: { id: "t", createdAt: "" }, runner: connected, lastCheck: passed }),
@@ -379,7 +430,11 @@ describe("ConnectAgent", () => {
       vi.spyOn(api, "createRunnerToken").mockResolvedValue(tokenFor(12));
       const show13 = mount("12");
       fireEvent.click(await screen.findByRole("button", { name: "Create a runner token" }));
-      expect(await screen.findByText(/BONDED_RUNNER_TOKEN=bonded_rt_secret_12 npx/)).toBeTruthy();
+      expect(
+        await screen.findByText(
+          /BONDED_RUNNER_TOKEN=bonded_rt_secret_12 npx @bondedhq\/runner --gateway/,
+        ),
+      ).toBeTruthy();
       show13("13");
       await waitFor(() => expect(screen.queryByText(/bonded_rt_secret_12/)).toBeNull());
       expect(await screen.findByText(/The command needs a runner token/)).toBeTruthy();
@@ -485,7 +540,7 @@ describe("ConnectAgent", () => {
     const revoke = vi.spyOn(byoaApi, "revokeAgentUrl").mockResolvedValue({ revoked: 1 });
     signedIn();
     show();
-    fireEvent.click(await screen.findByRole("radio", { name: /It runs on my machine/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /On my computer or server/ }));
     expect(screen.getByText("Stop using the URL first.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Stop using the URL" }));
     await waitFor(() =>

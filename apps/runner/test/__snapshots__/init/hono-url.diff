@@ -1,0 +1,72 @@
+--- /dev/null
++++ b/src/bonded.ts
+@@ -0,0 +1,19 @@
++// Added by `bonded-runner init`: Bonded's rating hook and guarded Mandate Vault. Edit it freely.
++// Guide: https://github.com/ddboy19912/bonded/blob/main/docs/BRING-YOUR-OWN-AGENT.md
++import { bondedVaultFromEnv, guarded, isBondedEpisode } from "@bondedhq/sdk";
++
++/** The MCP server to use: the episode's while Bonded rates the agent, yours otherwise. */
++export function bondedMcpUrl(productionUrl: string | URL): string | URL {
++  return isBondedEpisode() ? process.env.BONDED_MCP_URL! : productionUrl;
++}
++
++// While Bonded rates the agent, the production vault is never built, even if a .env file put its
++// variables back: rated trades go through the episode's tools only.
++const vault = isBondedEpisode() ? undefined : bondedVaultFromEnv();
++
++/**
++ * In production with BONDED_VAULT_ADDRESS set: your Mandate Vault, every write dry-run first and
++ * refused on a predicted breach. Trade with `await bondedVault.swap({ tokenIn, tokenOut, amountIn })`.
++ * Undefined while Bonded rates the agent.
++ */
++export const bondedVault = vault ? guarded(vault) : undefined;
+
+--- /dev/null
++++ b/src/bonded-agent-url.ts
+@@ -0,0 +1,25 @@
++// Added by `bonded-runner init`: Bonded's Agent URL handler. Edit it freely.
++// Guide: https://github.com/ddboy19912/bonded/blob/main/docs/BRING-YOUR-OWN-AGENT.md
++import { type BondedHandler, createBondedHandler } from "@bondedhq/sdk/agent-url";
++
++let handler: BondedHandler | undefined;
++
++/**
++ * Bonded calls this once per episode, signed with your agent secret (BONDED_AGENT_SECRET). It
++ * answers Bonded's verify challenge, acknowledges an episode at once and runs onEpisode in the
++ * background, and posts /done when onEpisode resolves.
++ */
++export const bondedHandler: BondedHandler = (request, context) => {
++  handler ??= createBondedHandler({
++    secret: process.env.BONDED_AGENT_SECRET ?? "",
++    ...(process.env.GIT_SHA ? { version: process.env.GIT_SHA } : {}),
++    async onEpisode(episode, { signal }) {
++      // Run your agent on episode.task.goal with the episode's tools, and stop when signal aborts:
++      //   const tools = await connectEpisodeTools(episode); // from @bondedhq/sdk/mcp
++      // Return { finalMessage, usage } when it has finished.
++      void signal;
++      throw new Error("Connect your agent in src/bonded-agent-url.ts (onEpisode) to be rated over its Agent URL");
++    },
++  });
++  return handler(request, context);
++};
+
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,6 +1,8 @@
+ import { Hono } from "hono";
++import { bondedHandler } from "./bonded-agent-url";
+ 
+ const app = new Hono();
++app.post("/bonded", (c) => bondedHandler(c.req.raw)); // Bonded's Agent URL
+ app.get("/", (c) => c.text("my agent"));
+ 
+ export default app;
+
+# By hand
+- Point your MCP client at the episode while Bonded rates it: new StreamableHTTPClientTransport(new URL(bondedMcpUrl(yourServerUrl))) (import { bondedMcpUrl } from the new src/bonded.ts).
+- Fill in onEpisode in src/bonded-agent-url.ts: run your agent on episode.task.goal with the episode's tools.
+
+# Variables
+BONDED_VAULT_ADDRESS, BONDED_AGENT_KEY, BONDED_ROUTER_ADDRESS, BONDED_AGENT_SECRET
+# Adds
+@bondedhq/sdk

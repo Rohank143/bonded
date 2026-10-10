@@ -16,6 +16,7 @@ import {
   bondedRegistryAbi,
   byoaMessage,
   newAgentSecret,
+  problemCode,
   type AgentMode,
   type ByoaAction,
 } from "@bondedhq/shared";
@@ -24,7 +25,7 @@ import { recoverMessageAddress, type Hex } from "viem";
 import { Refused, handle } from "./refused.js";
 import { RateLimiter, clientAddress } from "./rate-limit.js";
 import { signedRequestKey, type SessionWallet } from "./sessions.js";
-import { helloProblem, newRunnerToken, runnerTokenHash } from "./runners.js";
+import { RUNNER_TOKEN_PREFIX, helloProblem, newRunnerToken, runnerTokenHash } from "./runners.js";
 import { SECRET_KEY_MISSING, agentUrlContext, type SecretBox } from "./secrets.js";
 import {
   NEEDS_CHECK,
@@ -389,6 +390,7 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
           ? { position: await db.remoteQueue(chainId, p.ratingId) }
           : null,
       reason: p.error,
+      reasonCode: p.error ? problemCode(p.error) : null,
       rating,
       upgradedTo: p.upgradedTo,
       expectedRating: previewPlan(),
@@ -428,6 +430,7 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
       runId: r.id,
       status: r.status,
       error: r.error,
+      errorCode: r.error ? problemCode(r.error) : null,
       agentCaused: r.agent_caused,
       agentReport: r.agent_report,
       codeHash: r.code_hash,
@@ -573,6 +576,61 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
       return c.json({ revoked: done.revoked });
     }),
   );
+
+  /** Checks from one client address per hour: refused past the cap. */
+  const clientCheckAllowed = (c: Context) => {
+    if (!checkClients.allow(clientAddress(c.req.raw.headers)))
+      throw new Refused(429, "Too many checks from here this hour. Try again later.", {
+        retryAt: new Date(now() + 3_600_000).toISOString(),
+      });
+  };
+  /**
+   * Queue a connection check of `subject` for `wallet` (its owner), under the per-wallet and
+   * global caps. When the agent can't be reached at all, the check fails at once saying why.
+   */
+  async function startCheck(subject: Subject, wallet: string): Promise<ConnectionCheckRecord> {
+    if (subject.preview?.status === "stopped") throw new Refused(409, "This preview was stopped.");
+    const { current, code } = await connectionNow(subject);
+    const problem = await connectionProblem(subject);
+    const made = await db.createCheck(
+      {
+        subject: subject.key,
+        chainId,
+        owner: wallet,
+        mode: subject.mode,
+        connection: subject.connection,
+        credentialId: current.credentialId,
+        code,
+      },
+      { perWalletHourly: policy.checksPerWalletHourly, hourly: policy.checksHourly },
+      problem
+        ? ({
+            passed: false,
+            problems: [problem],
+            taskCompleted: false,
+            toolsCalled: 0,
+            surfacesRead: [],
+          } satisfies ConnectionCheckResult)
+        : undefined,
+    );
+    if ("refused" in made)
+      throw made.refused === "busy"
+        ? new Refused(409, "A check is already running for this agent. Wait for its result.")
+        : new Refused(
+            429,
+            made.refused === "wallet-hourly"
+              ? `You can run at most ${policy.checksPerWalletHourly} checks an hour. Try again after ${made.nextAt.toISOString()}.`
+              : `Connection checks are busy right now. Try again after ${made.nextAt.toISOString()}.`,
+            { retryAt: made.nextAt.toISOString() },
+          );
+    if (
+      subject.preview &&
+      !problem &&
+      ["created", "ready", "failed"].includes(subject.preview.status)
+    )
+      await db.setPreviewStatus(subject.id, "checking");
+    return made;
+  }
 
   // Agent URLs, checks, estimates and notification settings: for a preview or a registered agent.
 
@@ -786,53 +844,9 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
       handle(async (c) => {
         const { wallet, body } = await writer(c, kind, "check");
         empty.parse(body);
-        if (!checkClients.allow(clientAddress(c.req.raw.headers)))
-          throw new Refused(429, "Too many checks from here this hour. Try again later.", {
-            retryAt: new Date(now() + 3_600_000).toISOString(),
-          });
+        clientCheckAllowed(c);
         const subject = await subjectOf(kind, c.req.param("id"), wallet);
-        if (subject.preview?.status === "stopped")
-          throw new Refused(409, "This preview was stopped.");
-        const { current, code } = await connectionNow(subject);
-        const problem = await connectionProblem(subject);
-        const made = await db.createCheck(
-          {
-            subject: subject.key,
-            chainId,
-            owner: wallet,
-            mode: subject.mode,
-            connection: subject.connection,
-            credentialId: current.credentialId,
-            code,
-          },
-          { perWalletHourly: policy.checksPerWalletHourly, hourly: policy.checksHourly },
-          problem
-            ? ({
-                passed: false,
-                problems: [problem],
-                taskCompleted: false,
-                toolsCalled: 0,
-                surfacesRead: [],
-              } satisfies ConnectionCheckResult)
-            : undefined,
-        );
-        if ("refused" in made)
-          throw made.refused === "busy"
-            ? new Refused(409, "A check is already running for this agent. Wait for its result.")
-            : new Refused(
-                429,
-                made.refused === "wallet-hourly"
-                  ? `You can run at most ${policy.checksPerWalletHourly} checks an hour. Try again after ${made.nextAt.toISOString()}.`
-                  : `Connection checks are busy right now. Try again after ${made.nextAt.toISOString()}.`,
-                { retryAt: made.nextAt.toISOString() },
-              );
-        if (
-          subject.preview &&
-          !problem &&
-          ["created", "ready", "failed"].includes(subject.preview.status)
-        )
-          await db.setPreviewStatus(subject.id, "checking");
-        return c.json(await checkView(made), 201);
+        return c.json(await checkView(await startCheck(subject, wallet)), 201);
       }),
     );
     app.get(
@@ -998,6 +1012,66 @@ export function ownerRoutes(app: Hono, options: OwnerRouteOptions) {
             : { wallet, kind: "preview", id: input.previewId, expires },
       );
       return c.json({ token, expiresAt: new Date(expires).toISOString() }, 201);
+    }),
+  );
+
+  /**
+   * Start a connection check from the terminal with the runner token alone
+   * (`Authorization: Bearer bonded_rt_…`; `npx @bondedhq/runner init`). It checks exactly the
+   * registration the token belongs to, a preview or an agent, for its owner, under the same caps
+   * as the page (per address, per owner wallet, in all). A revoked token, a stopped or expired
+   * preview's, or an agent's that changed hands since the token was made is refused. Answers the
+   * check with a stream token for `GET /checks/:id/events?token=`.
+   */
+  app.post(
+    "/runner/check",
+    handle(async (c) => {
+      limited(c, options.writes);
+      const header = c.req.header("Authorization") ?? "";
+      const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+      if (!token.startsWith(RUNNER_TOKEN_PREFIX) || token.length > 128)
+        throw new Refused(401, "Send your runner token as Authorization: Bearer bonded_rt_….");
+      empty.parse(await bodyOf(c));
+      const record = await db.runnerToken(runnerTokenHash(token));
+      if (!record || record.chainId !== chainId)
+        throw new Refused(
+          401,
+          "That runner token isn't valid: it was revoked, replaced or its preview ended. Create a new one.",
+        );
+      clientCheckAllowed(c);
+      let subject: Subject;
+      let wallet: string;
+      if (record.preview) {
+        wallet = record.preview.owner;
+        subject = await previewSubject(record.preview.id, wallet);
+      } else {
+        wallet = record.createdBy.toLowerCase();
+        // The token stops working when the agent changes hands (as at the gateway).
+        subject = await agentSubject(record.agentId, wallet).catch((e) => {
+          if (e instanceof Refused)
+            throw new Refused(
+              401,
+              "That runner token isn't valid: it was revoked, replaced or its preview ended. Create a new one.",
+            );
+          throw e;
+        });
+      }
+      if (subject.connection !== "runner")
+        throw new Refused(409, "This agent is reached by its Agent URL, so it has no runner.");
+      const made = await startCheck(subject, wallet);
+      const expires = Date.now() + STREAM_TOKEN_MS;
+      const streamToken = randomBytes(24).toString("base64url");
+      streamTokens.set(streamToken, { wallet, kind: "check", id: made.id, expires });
+      c.header("Cache-Control", "no-store");
+      return c.json(
+        {
+          ...(await checkView(made)),
+          subject: subject.kind === "preview" ? { previewId: subject.id } : { agentId: subject.id },
+          streamToken,
+          streamExpiresAt: new Date(expires).toISOString(),
+        },
+        201,
+      );
     }),
   );
 

@@ -1,5 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { type AgentMode, AttackSurface, type DoneRequest } from "@bondedhq/shared";
+import {
+  type AgentMode,
+  AttackSurface,
+  type DoneRequest,
+  problemCode,
+  type TradingSummary,
+} from "@bondedhq/shared";
 import { BENIGN_GOALS, benignTrade, type EpisodeResult, runEpisode } from "./episode.js";
 import {
   type AgentTransport,
@@ -8,6 +14,7 @@ import {
 } from "./gateway/remote-agent.js";
 import type { ArenaGateway } from "./gateway/server.js";
 import { Sandbox } from "./sandbox.js";
+import { tradingSummary } from "./trades.js";
 import type { AgentVaultOptions } from "./vault.js";
 
 /**
@@ -52,6 +59,13 @@ export interface CheckResult {
   problems: string[];
   /** What works, but will cost the agent score or make estimates rougher. */
   warnings: string[];
+  /**
+   * The problems and warnings again, each with its stable code for the troubleshooting page
+   * (`PROBLEMS` in @bondedhq/shared).
+   */
+  issues?: { code: string; severity: "problem" | "warning"; message: string }[];
+  /** What the agent traded without breaking a rule: what a suggested mandate is built from. */
+  trading?: TradingSummary;
   /** Whether it did the trade its task names (null when the episode never ran). */
   taskCompleted: boolean | null;
   /** Tool calls the gateway saw. */
@@ -105,7 +119,8 @@ export async function runConnectionCheck(options: ConnectionCheckOptions): Promi
       // The listener's problem (a closed stream), not the check's.
     }
   };
-  const finish = async (result: CheckResult): Promise<CheckResult> => {
+  const finish = async (plain: CheckResult): Promise<CheckResult> => {
+    const result: CheckResult = { ...plain, issues: checkIssues(plain) };
     await emit({ type: "result", ...result });
     return result;
   };
@@ -308,5 +323,24 @@ export async function runConnectionCheck(options: ConnectionCheckOptions): Promi
     ...(record?.reportedUsage ? { usage: record.reportedUsage } : {}),
     ...(done ? { durationMs: done.durationMs } : {}),
     ...(code ? { code } : {}),
+    trading: tradingSummary(result.trades ?? []),
   });
+}
+
+/** A check's problems and warnings with their codes. */
+export function checkIssues(
+  result: Pick<CheckResult, "problems" | "warnings">,
+): NonNullable<CheckResult["issues"]> {
+  return [
+    ...result.problems.map((text) => ({
+      code: problemCode(text),
+      severity: "problem" as const,
+      message: text,
+    })),
+    ...result.warnings.map((text) => ({
+      code: problemCode(text),
+      severity: "warning" as const,
+      message: text,
+    })),
+  ];
 }

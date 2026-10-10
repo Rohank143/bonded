@@ -42,3 +42,6 @@ output/
 
 # Internal documents, kept out of the public repository
 docs/private/
+
+# bonded-runner init typecheck runs (examples/frameworks/test/init.test.ts)
+examples/frameworks/.init-typecheck/

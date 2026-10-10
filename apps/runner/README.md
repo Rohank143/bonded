@@ -35,6 +35,10 @@ Options:
 | `--quiet`             | Don't copy the agent's output to the terminal.                                                                                                                                                                                                                                                                                         |
 | `--version`           | Print the runner's version.                                                                                                                                                                                                                                                                                                            |
 
+`BONDED_RUNNER_TOKEN`, `BONDED_AGENT_KEY` and `BONDED_VAULT_ADDRESS` are removed from the agent's
+environment for each episode: neither the runner's token nor your production vault's key reaches a
+rated agent.
+
 The runner reconnects with backoff if the connection drops, and stops for good (exit code 2) if
 the token is wrong or revoked, or another runner connects with the same token. It runs one episode
 at a time.
@@ -51,6 +55,89 @@ plain sentences what to fix. To rate an agent on your own machine against a loca
 `pnpm arena rate --agent remote` (and `pnpm arena check`) in the Bonded repository. Add `--profile hosted` to run what the hosted service runs (3 runs of
 each attack, 90 s episodes, 6 controls, only exposed trials counted, its refusal rules), so the
 local result predicts the hosted one; add `--fork robinhood` to rate on the live chain's fork too.
+
+## Set up your agent's code: `init`
+
+```sh
+npx @bondedhq/runner init          # in your agent's folder: shows the changes, asks first
+npx @bondedhq/runner init --print  # only print them
+npx @bondedhq/runner init --yes    # apply without asking
+```
+
+`init` reads `package.json` and your files, works out the framework (ElizaOS, Coinbase AgentKit,
+LangChain or LangGraph, the Vercel AI SDK, a plain MCP client, Python, or unknown) and proposes two
+changes as a unified diff:
+
+1. **The rating hook.** While Bonded rates the agent, it uses the episode's tools instead of its own,
+   so it is rated with the code it runs in production.
+2. **Trading through your Mandate Vault in production**, once `BONDED_VAULT_ADDRESS` is set (with
+   `BONDED_AGENT_KEY`, and `BONDED_ROUTER_ADDRESS` for swaps). Until then the agent runs as before.
+
+It puts the Bonded code in one new file (`src/bonded.ts`, or `.js`, or `.mjs` for a CommonJS
+package) and changes at most one line of yours, plus an import:
+
+| Framework | The change in your code |
+|---|---|
+| LangChain / LangGraph | `const tools = await bondedTools(productionTools);` (the episode's tools while rated; yours plus `swap`, `transfer`, `approve`, `vault_status` through the vault in production) |
+| Vercel AI SDK | `const tools = await bondedTools(productionTools);` (the same, as a tool set) |
+| Coinbase AgentKit | `AgentKit.from({ ... })` becomes `bondedAgentKit({ ... })` (the episode's tools while rated; a `BondedWalletProvider` in production, so every transaction goes through the vault) |
+| ElizaOS | `plugins: [...bondedPlugins, ...yourPlugins]` in your `ProjectAgent` (`bondedPlugin({ vault })` in production, the episode's tools while rated) |
+| MCP client | `new StreamableHTTPClientTransport(new URL(bondedMcpUrl(yourServerUrl)))` (the episode's MCP server while rated); trade with `bondedVault.swap(...)` in production |
+| Unknown, Python | No change to your code: it prints what to do |
+
+It only edits a line it is sure of: exactly one `const tools = ...` on one line, in an async
+function or at the top of an ES module; exactly one `AgentKit.from(`; exactly one `plugins: [` in
+the file with your `ProjectAgent`; exactly one MCP transport with `new URL(...)`. Otherwise it
+leaves your code alone and prints the line to add. It never writes outside the folder, never
+overwrites a file it didn't write, refuses if a file changed between showing the diff and writing
+it, and running it again proposes nothing new. If your project already has its own
+`src/bonded.ts`, init's helper goes in the first free one of `src/bonded-agent.ts`,
+`src/bonded-agent-2.ts`, ..., and every edit imports from there. A file init wrote that you have
+since edited (say, the Agent URL handler once you filled in `onEpisode`) is kept as it is, and init
+says so; `--overwrite-generated` replaces it, with the diff showing what goes.
+
+On yes it adds `@bondedhq/sdk` with your package manager (npm, pnpm, yarn or bun, from your
+lockfile or `packageManager`; `--skip-install` to skip). `--env` appends the new variables' names,
+with empty values, to `.env`; it never reads or changes a value there.
+
+**Agent URL instead of a runner.** `--url` also adds the endpoint Bonded calls: a route at
+`app/api/bonded/route.ts` for the Next.js App Router (`pages/api/bonded.ts` for the Pages Router), one
+line `app.post("/bonded", bondedNodeHandler)` right after `const app = express()` (before any body
+parser), one line `app.post("/bonded", (c) => bondedHandler(c.req.raw))` after `new Hono()`, or a
+small `node:http` server (`src/bonded-server.ts`). The handler is in `src/bonded-agent-url.ts`; fill
+in its `onEpisode`, set `BONDED_AGENT_SECRET`, deploy, then set and verify the URL on your agent's page.
+
+**Connect straight away.** With your runner token (`BONDED_RUNNER_TOKEN`, or `--token`) and
+`--gateway`, `init` then starts the runner with the command after `--` (or your `start` script)
+and, once it is connected, runs a connection check with the token alone: `POST /runner/check`
+(the token as the bearer, no body) checks the preview or agent the token belongs to, then `init`
+follows the check's events with the stream token it gets back and prints each event and the
+result, with a troubleshooting link for each problem. No sign-in is needed. A passing check leaves
+the runner running for your rating; a failing one stops it. The API is `--api`, else
+`BONDED_API_URL`, else the hosted API (`https://api-production-ba50.up.railway.app`, the web app's
+default too); it must be https, except on localhost. `--skip-check` starts the runner without a
+check. The older way, `--session <token>` (or `BONDED_SESSION_TOKEN`) with `--preview <id>` or
+`--agent <id>`, still works. Prefer `BONDED_RUNNER_TOKEN` to `--token`: a command line shows in the
+process list, and `init` says so when you use `--token`.
+
+```sh
+BONDED_RUNNER_TOKEN=... npx @bondedhq/runner init --yes --gateway https://arena.example.com -- node agent.js
+```
+
+| Flag | Meaning |
+|---|---|
+| `[folder]` | The agent's folder (default: this one) |
+| `--print` | Print the proposed changes and exit |
+| `--yes`, `-y` | Apply without asking |
+| `--framework <name>` | Skip detection: `eliza`, `agentkit`, `langchain`, `ai-sdk`, `mcp`, `unknown` |
+| `--url` | Also add an Agent URL route |
+| `--env` | Append the new variables' names to `.env` |
+| `--skip-install` | Don't add `@bondedhq/sdk` |
+| `--overwrite-generated` | Rewrite files init wrote before, even if you edited them |
+| `--token`, `--gateway`, `--mode` | Start the runner after applying, and run a connection check with the token |
+| `--api` | The Bonded API for the check (default: the hosted API) |
+| `--skip-check` | Start the runner without a check |
+| `--session`, `--preview` / `--agent` | Check with a session instead of the token (the older way) |
 
 ## What your agent gets
 
@@ -106,6 +193,32 @@ listed in chain mode.
   cancel and verify calls.
 
 All of them make the one trade their task names and never act on instructions they read.
+
+## Keep it running
+
+A rating, a renewal and a connection check all need the runner connected, so run it as a
+background service that restarts if it stops and starts at boot. `bonded-runner service` prints a
+ready config; it installs and writes nothing, and never puts your runner token in the config:
+
+```sh
+npx @bondedhq/runner service --print systemd --gateway https://arena.example.com -- node agent.js
+npx @bondedhq/runner service --print pm2     --gateway https://arena.example.com -- node agent.js
+npx @bondedhq/runner service --print docker  --gateway https://arena.example.com -- node agent.js
+```
+
+- **systemd**: a unit file. The token goes in `bonded-runner.env` next to your agent
+  (`BONDED_RUNNER_TOKEN=...`, `chmod 600`), read with `EnvironmentFile=`. It restarts after 10
+  seconds unless the token was refused (exit code 2, `RestartPreventExitStatus=2`). Install it with
+  `sudo systemctl enable --now bonded-runner`; logs with `journalctl -u bonded-runner -f`.
+- **pm2**: an `ecosystem.config.cjs`. Start it with the token in your shell
+  (`BONDED_RUNNER_TOKEN=... pm2 start ecosystem.config.cjs`), then `pm2 save && pm2 startup`.
+  pm2 keeps the token in its dump file.
+- **docker**: a Dockerfile on top of the runner image (see [Docker](#docker)) and the
+  `docker run -d --restart unless-stopped --env-file bonded-runner.env ...` line, with
+  `BONDED_IMAGE_DIGEST` set to the image for a pinned code hash.
+
+Options: `--mode chain`, `--name <name>` (default `bonded-runner`), `--dir <folder>` (default: this
+one), `--user <user>` (systemd; default: you).
 
 ## Docker
 

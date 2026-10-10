@@ -13,7 +13,12 @@ import {
 } from "./secrets.js";
 import { outboundUrlProblem } from "./outbound.js";
 import { safeRequest } from "@bonded/arena";
-import { signAgentUrlRequest } from "@bondedhq/shared";
+import {
+  NOTIFICATION_TYPE_LIST,
+  codedProblem,
+  signAgentUrlRequest,
+  type NotificationType,
+} from "@bondedhq/shared";
 
 /**
  * Notifications (bring your own agent, round 2): when a preview or a rating of an owner's agent
@@ -23,11 +28,13 @@ import { signAgentUrlRequest } from "@bondedhq/shared";
  * the URL, address or secret.
  */
 
-/** What a notification is about. */
-export type NotificationType = "rating_finished" | "rating_failed" | "rating_refused";
+export type { NotificationType } from "@bondedhq/shared";
+
+/** The notifications a rating's end sends. */
+export type RatingNotificationType = "rating_finished" | "rating_failed" | "rating_refused";
 
 export interface RatingNotification {
-  type: NotificationType;
+  type: RatingNotificationType;
   ratingId: string;
   /** Previews have a preview id; registered agents an agent id. */
   previewId?: string;
@@ -40,6 +47,40 @@ export interface RatingNotification {
   /** For previews: "Preview: not on chain, not insurable". */
   label?: string;
   at: string;
+}
+
+/**
+ * Anything else about an owner's agent (owner-alerts.ts): a score expiring, the runner offline,
+ * a breach, a claim, cover lapsing, low gas. `message` is a sentence and `code` its entry in the
+ * troubleshooting list; `dedupeKey` names the event, so it is sent once.
+ */
+export interface AgentNotification {
+  type: Exclude<NotificationType, RatingNotificationType>;
+  dedupeKey: string;
+  agentId: string;
+  chainId: number;
+  message: string;
+  code: string;
+  fix?: string;
+  /** Plain values only: ids, times, amounts, a transaction hash. */
+  details?: Record<string, string | number | boolean | null>;
+  at: string;
+}
+
+export type OwnerNotification = RatingNotification | AgentNotification;
+
+const isRating = (n: OwnerNotification): n is RatingNotification => "ratingId" in n;
+
+/** The key that makes a notification send once. */
+export const dedupeKeyOf = (n: OwnerNotification) =>
+  isRating(n) ? `rating:${n.ratingId}:${n.type}` : n.dedupeKey;
+
+/** An agent notification with its code and fix filled in from its sentence. */
+export function agentNotification(
+  n: Omit<AgentNotification, "code" | "fix"> & { code?: string },
+): AgentNotification {
+  const coded = codedProblem(n.message, n.code);
+  return { ...n, code: coded.code, ...(coded.fix ? { fix: coded.fix } : {}) };
 }
 
 /** A provider-agnostic email sender. */
@@ -88,6 +129,11 @@ export const notificationInput = z.strictObject({
   /** Set (a new URL gets a new secret, shown once) or remove (null) the webhook. */
   webhookUrl: z.string().min(1).max(2048).nullable().optional(),
   email: email.nullable().optional(),
+  /** Notification types to turn off (the full list replaces the saved one). */
+  muted: z
+    .array(z.enum(NOTIFICATION_TYPE_LIST as [NotificationType, ...NotificationType[]]))
+    .max(20)
+    .optional(),
 });
 export type NotificationInput = z.infer<typeof notificationInput>;
 
@@ -119,6 +165,8 @@ export async function notificationView(db: Database, owner: string, options: Not
   return {
     webhook: s?.webhookUrl ? { url: maskUrl(s.webhookUrl) } : null,
     email: s?.email ? maskEmail(s.email) : null,
+    muted: s?.muted ?? [],
+    types: NOTIFICATION_TYPE_LIST,
     emailAvailable: Boolean(options.email),
     webhookAvailable: Boolean(options.secrets),
   };
@@ -161,6 +209,7 @@ export async function saveNotifications(
       throw new Refused(409, "Email notifications aren't set up on this service.");
     patch.email = input.email;
   }
+  if (input.muted !== undefined) patch.muted = [...new Set(input.muted)];
   await db.saveNotificationSettings(owner, patch);
   return {
     ...(await notificationView(db, owner, options)),
@@ -200,6 +249,75 @@ export function notificationRoutes(
   app.post("/self/notifications", save);
   app.put("/self/notifications", save);
 
+  /**
+   * The owner's notifications, newest first (the in-app list): `?limit=` (1-100), `?before=<id>`
+   * for the next page, `?unread=1` for unread ones only.
+   */
+  app.get(
+    "/self/notifications/inbox",
+    handle(async (c) => {
+      limited(c, options.reads);
+      const owner = await options.wallet(c);
+      const q = z
+        .strictObject({
+          limit: z.coerce.number().int().min(1).max(100).optional(),
+          before: z
+            .string()
+            .regex(/^\d{1,18}$/)
+            .optional(),
+          unread: z.enum(["0", "1"]).optional(),
+        })
+        .parse(c.req.query());
+      const page = await db.inbox(owner, {
+        ...(q.limit ? { limit: q.limit } : {}),
+        ...(q.before ? { before: q.before } : {}),
+        unread: q.unread === "1",
+      });
+      const items = page.items.map((i) => {
+        const n = i.payload as unknown as OwnerNotification;
+        const text = inboxText(n);
+        return {
+          id: i.id,
+          // The type, kebab-case: also the troubleshooting anchor for alerts.
+          kind: i.type.replaceAll("_", "-"),
+          type: i.type,
+          ...(text.code ? { code: text.code } : {}),
+          message: text.title,
+          action: text.text,
+          createdAt: i.createdAt.toISOString(),
+          ...(n.agentId ? { agentId: n.agentId } : {}),
+          ...("previewId" in n && n.previewId ? { previewId: n.previewId } : {}),
+          subject: i.subject,
+          read: i.readAt !== null,
+          notification: i.payload,
+        };
+      });
+      c.header("Cache-Control", "no-store");
+      return c.json({
+        items,
+        unread: page.unread,
+        next: items.length === (q.limit ?? 25) ? (items.at(-1)?.id ?? null) : null,
+      });
+    }),
+  );
+  /** Mark notifications read: `{ ids: [...] }` or `{ through: "<id>" }` (everything up to it). */
+  app.post(
+    "/self/notifications/inbox/read",
+    handle(async (c) => {
+      limited(c, options.writes);
+      const owner = await options.wallet(c);
+      const id = z.string().regex(/^\d{1,18}$/);
+      const input = z
+        .union([
+          z.strictObject({ ids: z.array(id).min(1).max(100) }),
+          z.strictObject({ through: id }),
+        ])
+        .parse(await c.req.json());
+      const marked = await db.markInboxRead(owner, "ids" in input ? input.ids : input);
+      return c.json({ marked });
+    }),
+  );
+
   /** A new webhook signing secret, returned once; the old one stops working. */
   app.post(
     "/self/notifications/webhook-secret",
@@ -220,9 +338,11 @@ export function notificationRoutes(
 }
 
 /**
- * Sends notifications for the rating worker. `notify` never throws and never waits on the
- * network for the caller: it returns at once, and `idle()` resolves when sending is over (tests).
- * Each rating's outcome is sent once (`claimNotification`), even if its finish is retried.
+ * Sends owners their notifications: rating outcomes (the rating workers) and everything about
+ * their agents (owner-alerts.ts). Each is recorded in the owner's in-app list once (its dedupe
+ * key), unless the owner turned its type off, then sent by webhook and email if the owner set them
+ * up. `notify` never throws and never waits on the network for the caller: it returns at once, and
+ * `idle()` resolves when sending is over (tests).
  */
 export class Notifier {
   private readonly pending = new Set<Promise<void>>();
@@ -239,13 +359,21 @@ export class Notifier {
     } = {},
   ) {}
 
-  notify(owner: string | null | undefined, n: RatingNotification): void {
+  notify(owner: string | null | undefined, n: OwnerNotification): void {
     if (!owner) return;
-    const work = this.send(owner.toLowerCase(), n).catch(() =>
-      this.log(`notification for rating ${n.ratingId} could not be sent`),
-    );
+    const work = this.send(owner.toLowerCase(), n)
+      .then(() => undefined)
+      .catch(() => this.log(`notification ${n.type} could not be sent`));
     this.pending.add(work);
     void work.finally(() => this.pending.delete(work));
+  }
+
+  /** Send now and say whether it was new (owner-alerts.ts waits on it). Never throws. */
+  async deliver(owner: string, n: OwnerNotification): Promise<boolean> {
+    return this.send(owner.toLowerCase(), n).catch(() => {
+      this.log(`notification ${n.type} could not be sent`);
+      return false;
+    });
   }
 
   async idle(): Promise<void> {
@@ -256,10 +384,28 @@ export class Notifier {
     (this.options.log ?? ((l: string) => console.error(l)))(line);
   }
 
-  private async send(owner: string, n: RatingNotification) {
+  private async send(owner: string, n: OwnerNotification): Promise<boolean> {
     const settings = await this.db.notificationSettings(owner);
-    if (!settings || (!settings.webhookUrl && !settings.email)) return;
-    if (!(await this.db.claimNotification(n.ratingId, n.type))) return;
+    if (settings?.muted.includes(n.type)) return false;
+    const subject = isRating(n)
+      ? n.previewId
+        ? `preview:${n.previewId}`
+        : n.agentId
+          ? `${n.chainId}:${n.agentId}`
+          : null
+      : `${n.chainId}:${n.agentId}`;
+    const added = await this.db.addNotification({
+      owner,
+      type: n.type,
+      dedupeKey: dedupeKeyOf(n),
+      subject,
+      payload: n,
+    });
+    if (!added) return false;
+    // The old per-rating record, kept for ratings so earlier sends still count.
+    if (isRating(n)) await this.db.claimNotification(n.ratingId, n.type).catch(() => false);
+    if (!settings || (!settings.webhookUrl && !settings.email)) return true;
+    const label = isRating(n) ? `rating ${n.ratingId}` : `${n.type} for agent ${n.agentId}`;
     const jobs: Promise<void>[] = [];
     if (settings.webhookUrl && settings.webhookSecretCiphertext && this.options.secrets) {
       const secret = this.options.secrets.decrypt(
@@ -280,8 +426,7 @@ export class Notifier {
           maxBytes: 64 * 1024,
           ...(this.options.allowLoopback ? { allowLoopback: true } : {}),
         }).then(({ status }) => {
-          if (status < 200 || status >= 300)
-            this.log(`webhook for rating ${n.ratingId} answered ${status}`);
+          if (status < 200 || status >= 300) this.log(`webhook for ${label} answered ${status}`);
         }),
       );
     }
@@ -289,13 +434,29 @@ export class Notifier {
       jobs.push(this.options.email.send({ to: settings.email, ...emailText(n) }));
     const results = await Promise.allSettled(jobs);
     for (const r of results)
-      if (r.status === "rejected")
-        this.log(`a notification for rating ${n.ratingId} failed to send`);
+      if (r.status === "rejected") this.log(`a notification for ${label} failed to send`);
+    return true;
   }
 }
 
+/** A notification's title and sentence for the in-app list. */
+export function inboxText(n: OwnerNotification): { title: string; text: string; code?: string } {
+  if (!isRating(n)) return { title: n.message, text: n.fix ?? n.message, code: n.code };
+  const email = emailText(n);
+  return {
+    title: email.subject.replace(/^Bonded: /, ""),
+    text: email.text.split("\n")[0]!,
+    ...(n.reason ? { code: codedProblem(n.reason).code } : {}),
+  };
+}
+
 /** The email for a notification, in plain words. */
-export function emailText(n: RatingNotification): { subject: string; text: string } {
+export function emailText(n: OwnerNotification): { subject: string; text: string } {
+  if (!isRating(n))
+    return {
+      subject: `Bonded: ${n.message.replace(/\.$/, "")}`,
+      text: `${n.message}${n.fix ? `\n\n${n.fix}` : ""}\n\nAgent ${n.agentId}.`,
+    };
   const what = n.previewId ? "Your preview rating" : `The rating of agent ${n.agentId}`;
   const outcome =
     n.type === "rating_finished"

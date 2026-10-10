@@ -1,0 +1,27 @@
+# /etc/systemd/system/bonded-runner.service
+# 1. Put your runner token in /srv/my-agent/bonded-runner.env (one line: BONDED_RUNNER_TOKEN=...), then
+#    chmod 600 /srv/my-agent/bonded-runner.env
+# 2. sudo cp bonded-runner.service /etc/systemd/system/ && sudo systemctl daemon-reload
+# 3. sudo systemctl enable --now bonded-runner   (logs: journalctl -u bonded-runner -f)
+[Unit]
+Description=Bonded runner (my-agent)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=agent
+WorkingDirectory=/srv/my-agent
+EnvironmentFile=/srv/my-agent/bonded-runner.env
+Environment=PATH=/usr/local/node/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/env npx --yes @bondedhq/runner --gateway https://arena.example.com -- node dist/agent.js --say "it's"
+Restart=always
+RestartSec=10
+# Exit code 2: the token was refused or another runner took over. Restarting won't help.
+RestartPreventExitStatus=2
+KillMode=mixed
+TimeoutStopSec=15
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

@@ -19,6 +19,7 @@ import {
   bondedRegistryAbi,
   bountyBoardAbi,
   leaderboardHeadline,
+  problemCode,
   type BindingLevel,
 } from "@bondedhq/shared";
 import {
@@ -53,6 +54,9 @@ import { PollStreams } from "./poll-stream.js";
 import { DEFAULT_REMOTE_POLICY } from "./remote-policy.js";
 import type { SecretBox } from "./secrets.js";
 import { gatewayUrlVerifier, type AgentUrlVerifier } from "./connections.js";
+import { AgentStatusReader } from "./agent-status.js";
+import { launchRoutes } from "./launch.js";
+import { statusRoutes } from "./service-status.js";
 export { issueQuote } from "./quotes.js";
 /** A decimal id, in canonical form: "01" and "1" are the same agent, so they must be the same key. */
 const uint = z
@@ -150,12 +154,41 @@ export function createApi(options: {
     /** Connection checks per client address per hour (default 30). */
     checksPerClientHourly?: number;
   };
+  /** The deployed version, shown by GET /status (BONDED_VERSION or the deploy's commit). */
+  version?: string | null;
+  /** How the status page asks the gateway whether it is up (tests). */
+  statusFetch?: typeof fetch;
+  /** How long GET /status is reused (default 30 s). */
+  statusCacheMs?: number;
+  /** How long a vault's chain status is reused (default 30 s). */
+  vaultStatusCacheMs?: number;
 }) {
   const { db, chain } = options;
   if (options.apiToken.length < 24)
     throw new Error("API_TOKEN must contain at least 24 characters");
   const app = new Hono();
   const events = new EventStreams(db);
+  // First, so it sees every answer. Every refusal carries a stable code next to its sentence, for the troubleshooting page
+  // (`PROBLEMS` in @bondedhq/shared): `{ error, code }`.
+  app.use("*", async (c, next) => {
+    await next();
+    if (c.res.status < 400 || !c.res.headers.get("content-type")?.includes("application/json"))
+      return;
+    const body = (await c.res
+      .clone()
+      .json()
+      .catch(() => undefined)) as Record<string, unknown> | undefined;
+    if (!body || typeof body.error !== "string" || body.code !== undefined) return;
+    const headers = new Headers(c.res.headers);
+    headers.delete("content-length");
+    const code = problemCode(body.error);
+    const details =
+      body.details && typeof body.details === "object" ? (body.details as object) : {};
+    c.res = new Response(JSON.stringify({ ...body, code, details: { ...details, code } }), {
+      status: c.res.status,
+      headers,
+    });
+  });
   // Before the token check, so a browser can read a 401 and preflight requests succeed.
   const origins = options.webOrigins ?? [];
   app.use(
@@ -188,7 +221,7 @@ export function createApi(options: {
   // Previews, Agent URLs, checks and notification settings are made with an owner session
   // (sessions.ts), opened by a wallet signature.
   const PUBLIC_POST =
-    /^\/(bounties\/\d{1,78}\/reveal|self\/agents(\/\d{1,78}\/(rate|runner-token|agent-url|agent-url\/verify|agent-url\/secret|checks))?|quotes|sentinel\/check|self\/session|self\/notifications(\/webhook-secret)?|previews(\/session|\/[0-9a-f-]{36}\/(stop|runner-token|agent-url|agent-url\/verify|agent-url\/secret|checks|rate|notifications))?|self\/agents\/\d{1,78}\/notifications|streams\/token)$/;
+    /^\/(bounties\/\d{1,78}\/reveal|self\/agents(\/\d{1,78}\/(rate|runner-token|agent-url|agent-url\/verify|agent-url\/secret|checks))?|quotes|sentinel\/check|self\/session|self\/notifications(\/webhook-secret|\/inbox\/read)?|previews(\/session|\/[0-9a-f-]{36}\/(stop|runner-token|agent-url|agent-url\/verify|agent-url\/secret|checks|rate|notifications))?|self\/agents\/\d{1,78}\/notifications|streams\/token|runner\/check)$/;
   const PUBLIC_PUT =
     /^\/(self\/notifications|previews\/[0-9a-f-]{36}\/notifications|self\/agents\/\d{1,78}\/notifications)$/;
   const PUBLIC_DELETE =
@@ -241,6 +274,20 @@ export function createApi(options: {
     chainId: chain.deployment.chainId,
     now: ownerNow,
     writes,
+  });
+  const vaultStatus = new AgentStatusReader(db, chain, {
+    ...(options.vaultStatusCacheMs !== undefined ? { ttlMs: options.vaultStatusCacheMs } : {}),
+    now: ownerNow,
+  });
+  // Before /arena/runs/:id, so "compare" isn't read as a run id.
+  launchRoutes(app, { db, chain, wallet, reads, status: vaultStatus, now: ownerNow });
+  statusRoutes(app, {
+    db,
+    ...(options.gatewayUrl ? { gatewayUrl: options.gatewayUrl } : {}),
+    version: options.version ?? null,
+    ...(options.statusFetch ? { fetch: options.statusFetch } : {}),
+    ...(options.statusCacheMs !== undefined ? { cacheMs: options.statusCacheMs } : {}),
+    hasToken: (c) => hasToken(c.req.header("Authorization")),
   });
   app.get("/health", async (c) => {
     await db.pool.query("SELECT 1");
@@ -350,7 +397,10 @@ export function createApi(options: {
       db.agentStanding(agentKey),
     ]);
     return {
-      attempts: page.items,
+      attempts: page.items.map((a) => ({
+        ...a,
+        errorCode: a.error ? problemCode(a.error) : null,
+      })),
       attemptsTotal: page.total,
       superseded: standing.superseded,
       cooldownUntil: standing.cooldownUntil,
@@ -399,6 +449,7 @@ export function createApi(options: {
           : null;
       return c.json({
         ...row,
+        errorCode: row.error ? problemCode(row.error) : null,
         ...(row.report ? ratingFacts(undefined, row.report) : {}),
         // Counts and an ETA only: no verdicts while a remote rating runs.
         progress: {
@@ -575,6 +626,7 @@ export function createApi(options: {
     ...(options.coverCaps ? { coverCaps: options.coverCaps } : {}),
     agentUrls: Boolean(options.secrets),
     wallet,
+    status: vaultStatus,
   });
   const ownDomains = [
     ...ownDomainsFrom([...(options.webOrigins ?? []), options.gatewayUrl]),

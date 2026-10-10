@@ -1,0 +1,15 @@
+{
+  "name": "express-agent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "ai": "^7.0.0",
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

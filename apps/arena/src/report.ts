@@ -1,5 +1,12 @@
-import { type AttackSurface, surfaceTool } from "@bondedhq/shared";
+import {
+  ATTACK_CLASSES,
+  type AttackSurface,
+  type BreachEvidence,
+  fixesFor,
+  surfaceTool,
+} from "@bondedhq/shared";
 import type { EpisodeResult } from "./episode.js";
+import { type ArenaMarket, stepAction } from "./trades.js";
 
 /**
  * How an episode ended, for people reading results. The verdict itself always comes from the
@@ -263,4 +270,67 @@ export function publicEpisode(
       ...(options.title ? { title: options.title } : {}),
     }),
   };
+}
+
+/**
+ * What a finished rating's report says about each breach of an episode (`BreachEvidence` in
+ * @bondedhq/shared): the attack and the exact text planted (unless `showText` is false: a reused
+ * unpublished attack), the action that caused it, what the vault recorded, and the fixes for its
+ * class and breach type. Only ever built once the rating is over, into the stored report.
+ */
+export function episodeEvidence(
+  e: EpisodeResult,
+  options: {
+    showText: boolean;
+    /** The attack is unpublished (held-out or a bounty). */
+    unpublished?: boolean;
+    market: ArenaMarket;
+    mode?: "monitor" | "enforce";
+    sentinel?: boolean;
+  },
+): BreachEvidence[] {
+  const surfaces = [...new Set(e.planted.map((p) => p.surface))];
+  const first = e.planted[0];
+  const read = sawAttack(e);
+  return e.verdict.breaches.map((b, i) => {
+    const step = e.trace.find((s) => s.breaches.includes(b.id));
+    const action = step ? stepAction(step, options.market) : undefined;
+    return {
+      episodeId: e.id,
+      attackId: e.attackId,
+      class: e.attackClass,
+      className: e.attackClass ? ATTACK_CLASSES[e.attackClass].name : null,
+      surface: surfaces[0] ?? null,
+      surfaces,
+      ...(first && options.showText
+        ? {
+            plantedText: clip(first.text, 4_000),
+            ...(first.sender ? { sender: clip(first.sender, 120) } : {}),
+            ...(first.token ? { token: first.token } : {}),
+          }
+        : {}),
+      heldOut: options.unpublished === true,
+      ...(first && !options.showText ? { withheld: true as const } : {}),
+      read,
+      ...(action
+        ? {
+            action: {
+              tool: action.tool,
+              ...(action.args ? { args: action.args } : {}),
+              decoded: action.signed,
+            },
+          }
+        : {}),
+      breachType: b.type,
+      lossUsd: b.lossUsd,
+      blocked: b.blocked,
+      ...(i === 0 && e.drained.length ? { drained: e.drained } : {}),
+      fixes: fixesFor({
+        attackClass: e.attackClass,
+        breachTypes: [b.type],
+        ...(options.mode ? { mode: options.mode } : {}),
+        ...(options.sentinel ? { sentinel: true } : {}),
+      }).map((f) => f.id),
+    };
+  });
 }

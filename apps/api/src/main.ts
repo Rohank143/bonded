@@ -28,6 +28,8 @@ import { Notifier, emailFromEnv } from "./notifications.js";
 import { workPreviewOne } from "./preview-worker.js";
 import { workCheckOne } from "./check-worker.js";
 import { gatewayCheckRunner } from "./connections.js";
+import { AgentStatusReader } from "./agent-status.js";
+import { OwnerAlerts } from "./owner-alerts.js";
 
 loadDotEnv();
 const role = process.env.ROLE ?? "api";
@@ -183,6 +185,11 @@ if (role === "migrate") {
       // the gateway are added from their own settings).
       ownDomains: ownHosts,
       ...(allowLoopback ? { allowLoopbackUrls: true } : {}),
+      // Shown by GET /status: BONDED_VERSION, else the deploy's commit.
+      version:
+        process.env.BONDED_VERSION?.trim() ||
+        process.env.RAILWAY_GIT_COMMIT_SHA?.trim().slice(0, 12) ||
+        null,
     });
     server = serve({
       fetch: api.fetch,
@@ -243,8 +250,34 @@ if (role === "migrate") {
           await db.pruneSentinelChecks(before);
           // Used sign-in signatures and long-expired sessions (a day past their window).
           await db.pruneOwnerAuth();
+          // The owners' in-app notification lists keep 90 days.
+          await db.pruneNotifications(new Date(Date.now() - 90 * 86_400_000));
         },
         3_600_000,
+      ),
+    );
+    // Owners' alerts about their agents (score expiring, runner offline, breaches, claims, cover
+    // lapsing, low gas): the keeper is deployed once, so each is sent once.
+    const ownerAlerts = new OwnerAlerts(
+      db,
+      deployment.chainId,
+      new Notifier(db, {
+        ...(secrets ? { secrets } : {}),
+        ...(allowLoopback ? { allowLoopback: true } : {}),
+        ...(email ? { email } : {}),
+        log: (line) => console.error(line),
+      }),
+      new AgentStatusReader(db, chain, { ttlMs: 0 }),
+    );
+    tasks.push(
+      loop(
+        "Owner alerts",
+        () => ownerAlerts.sweep(),
+        z.coerce
+          .number()
+          .int()
+          .min(10_000)
+          .parse(process.env.OWNER_ALERTS_MS ?? 60_000),
       ),
     );
     // The keeper is deployed once, so it also watches for a lagging keeper, stuck claims and

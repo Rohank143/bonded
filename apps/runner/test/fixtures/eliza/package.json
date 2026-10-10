@@ -1,0 +1,15 @@
+{
+  "name": "eliza-agent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "elizaos start"
+  },
+  "dependencies": {
+    "@elizaos/core": "^1.7.2",
+    "@elizaos/plugin-sql": "^1.7.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

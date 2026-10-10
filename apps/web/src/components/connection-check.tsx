@@ -16,7 +16,9 @@ import {
   type ConnectionStatus,
 } from "../lib/connect";
 import { when } from "../lib/format";
+import { messageText, type ApiMessage } from "../lib/troubleshooting";
 import { Button, ErrorText, Spinner } from "./ui";
+import { ProblemText } from "./problem";
 
 /** All nine attack surfaces: the check says how many of them the agent read. */
 const SURFACES = Object.keys(SURFACE_LABELS).length;
@@ -123,7 +125,7 @@ export function ConnectionCheck({
               ? `The last check passed ${when(Math.floor(Date.parse(last.createdAt) / 1000))}. It's good for 24 hours.`
               : "The last check passed over 24 hours ago: run it again before rating."
             : last.status === "failed"
-              ? `The last check failed ${when(Math.floor(Date.parse(last.createdAt) / 1000))}${last.problems?.length ? `: ${last.problems.join(" ")}` : "."}`
+              ? `The last check failed ${when(Math.floor(Date.parse(last.createdAt) / 1000))}${last.problems?.length ? `: ${last.problems.map(messageText).join(" ")}` : "."}`
               : "A check is running."}
         </p>
       )}
@@ -254,11 +256,8 @@ export function CheckVerdict({
       </p>
       <ul className="mt-2 flex flex-col gap-2.5">
         {result.problems.map((p) => (
-          <li key={p}>
-            <span className="font-medium">{p}</span>
-            {problemAdvice(p, connection) && (
-              <span className="mt-0.5 block text-soft">{problemAdvice(p, connection)}</span>
-            )}
+          <li key={messageText(p)}>
+            <ProblemText message={p} advice={problemAdvice(messageText(p), connection)} />
           </li>
         ))}
       </ul>
@@ -269,13 +268,17 @@ export function CheckVerdict({
 }
 
 /** Advice that doesn't fail the check, e.g. sources it never read. */
-function Warnings({ warnings, connection }: { warnings?: string[]; connection: Connection }) {
+function Warnings({ warnings, connection }: { warnings?: ApiMessage[]; connection: Connection }) {
   if (!warnings?.length) return null;
   return (
     <ul className="mt-2 flex flex-col gap-1 text-soft">
       {warnings.map((w) => (
-        <li key={w}>
-          Worth fixing: {w} {problemAdvice(w, connection)}
+        <li key={messageText(w)}>
+          <ProblemText
+            prefix="Worth fixing:"
+            message={w}
+            advice={problemAdvice(messageText(w), connection)}
+          />
         </li>
       ))}
     </ul>

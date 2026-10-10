@@ -1,0 +1,11 @@
+{
+  "name": "mcp-agent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node agent.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.1"
+  }
+}

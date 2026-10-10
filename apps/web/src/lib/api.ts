@@ -3,6 +3,7 @@ import type { AttackSpec } from "@bondedhq/shared";
 import { apiUrl } from "../config";
 import type { EpisodeCard, EpisodeCounts, Outcome } from "./events";
 import type { AgentUrlInfo, CheckSummary, CodeHashInfo, Connection } from "./byoa-api";
+import type { AgentGas, VaultActivity } from "./health";
 
 /**
  * Error from the Bonded API, carrying its HTTP status, the API's error message and the rest of
@@ -402,6 +403,12 @@ export type SelfAgentRecord =
       expectedRating?: { maxEpisodes: number; budgetSeconds: number };
       /** After a stop the agent caused: the superseded score and the cooldown. */
       standing?: Standing;
+      /** Its trades through the vault from the agent key, from the chain. */
+      vaultActivity?: VaultActivity | null;
+      /** Active cover, but no trade through the vault in the last 7 days (or ever). */
+      coverWithoutVaultTrades?: boolean;
+      /** The agent key's gas for its `execute` calls. */
+      agentGas?: AgentGas | null;
     };
 
 /** GET /self/agents/:id/runner: the runner token (never the token itself) and the runner. */

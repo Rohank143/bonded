@@ -26,6 +26,20 @@ export function dailyLimitError(daily: string, perTrade: string): string | null 
   return null;
 }
 
+/**
+ * A mandate percentage (drawdown, slippage): at most two decimals, since it goes on chain in
+ * basis points, from `min` to 100.
+ */
+export function percentError(text: string, { min }: { min: number }): string | null {
+  const t = text.trim();
+  if (!t) return "Enter a percentage.";
+  if (!/^\d+(\.\d{1,2})?$/.test(t)) return "A percentage with at most 2 decimals, e.g. 3 or 0.5.";
+  const n = Number(t);
+  if (n < min) return min > 0 ? "Must be more than 0." : "Can't be negative.";
+  if (n > 100) return "At most 100%.";
+  return null;
+}
+
 /** An address; an empty optional field is fine (it has a default). */
 export function addressError(text: string, optional = false): string | null {
   const t = text.trim();

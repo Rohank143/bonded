@@ -16,9 +16,11 @@ import {
 import { when } from "../lib/format";
 import { DOCS_BYOA } from "../lib/routes";
 import { deployment } from "../config";
+import { rememberedFramework, type Framework } from "../lib/frameworks";
 import { CONNECTION_TEXT, ConnectStep, ConnectionChoice } from "./connection-setup";
 import { ConnectionCheck } from "./connection-check";
 import { Estimate, NotificationSettingsForm, RatingLive } from "./rating-live";
+import { RatingCompareView } from "./report-actions";
 import { Badge, Button, Card, ErrorText, Loading, Unavailable, linkClass } from "./ui";
 
 type Registered = Extract<SelfAgentRecord, { registered: true }>;
@@ -52,7 +54,10 @@ export function ConnectAndCheck({
   headingLevel = "h3",
   showBadge = true,
   session,
+  framework = rememberedFramework(),
 }: {
+  /** The owner's framework, for the code and the init command. */
+  framework?: Framework | undefined;
   /** The owner's session: checks and the Agent URL then need no signature each time. */
   session?: string;
   agentId: string;
@@ -148,6 +153,7 @@ export function ConnectAndCheck({
           connection={connection}
           onChanged={refresh}
           showBadge={showBadge}
+          framework={framework}
           {...(teeUrl !== undefined ? { teeUrl } : {})}
           {...(initialUrl ? { initialUrl } : {})}
         />
@@ -220,11 +226,13 @@ export function NewAgentConnection({
   mode,
   initialConnection,
   initialUrl,
+  framework,
 }: {
   agentId: string;
   mode: RemoteMode;
   initialConnection?: Connection;
   initialUrl?: string;
+  framework?: Framework | undefined;
 }) {
   const owner = useOwnerSession();
   const runner = useQuery({
@@ -248,6 +256,7 @@ export function NewAgentConnection({
         agentId={agentId}
         status={withOwnUrl(statusFromRunner(runner.data, mode), ownUrl.data?.agentUrl?.url)}
         refresh={() => runner.refetch()}
+        framework={framework}
         {...(owner.session ? { session: owner.session.session } : {})}
         {...(initialConnection ? { initialConnection } : {})}
         {...(initialUrl ? { initialUrl } : {})}
@@ -557,6 +566,21 @@ export function ConnectAgent({
                   auth={{ session: owner.session.session, sign: signMessageAsync }}
                 />
               )}
+              {(() => {
+                // Before and after: its two latest ratings that finished with a score.
+                const [latest, before] = (runner.data?.attempts ?? []).filter(
+                  (a) => a.status === "done" && a.score !== null,
+                );
+                return latest && before ? (
+                  <div className="rounded-2xl border border-line-strong p-4">
+                    <RatingCompareView
+                      from={before.runId}
+                      to={latest.runId}
+                      session={owner.session?.session}
+                    />
+                  </div>
+                ) : null;
+              })()}
               {runner.data?.attempts && runner.data.attempts.length > 0 && (
                 <Attempts key={identity} agentId={agentId} attempts={runner.data.attempts} />
               )}

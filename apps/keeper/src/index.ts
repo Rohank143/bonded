@@ -135,6 +135,18 @@ export class Keeper {
         ),
       )
     ).flat();
+    // The agent's trades through each vault or module (only its key can call execute): what the
+    // agent page's trading status and the gas estimate are read from.
+    const executed = vaults.length
+      ? await read.getLogs({
+          address: vaults,
+          event: getAbiItem({ abi: mandateVaultAbi, name: "Executed" }),
+          fromBlock: from,
+          toBlock: to,
+          strict: true,
+        })
+      : [];
+    const gasOf = new Map<string, Promise<bigint | null>>();
     const block = await read.getBlock({ blockNumber: to });
     // What each breach was and when, for observed breach rates (GET /stats/observed-rates). Read
     // before the transaction; breaches are rare, so a few reads per batch at most.
@@ -163,18 +175,65 @@ export class Keeper {
         };
       }),
     );
+    const trades = await Promise.all(
+      executed.map(async (log) => {
+        if (!timeOf.has(log.blockNumber))
+          timeOf.set(
+            log.blockNumber,
+            read.getBlock({ blockNumber: log.blockNumber }).then((x) => x.timestamp),
+          );
+        if (!gasOf.has(log.transactionHash))
+          gasOf.set(
+            log.transactionHash,
+            read
+              .getTransactionReceipt({ hash: log.transactionHash })
+              .then((r) => r.gasUsed)
+              .catch(() => null),
+          );
+        return {
+          at: new Date(Number(await timeOf.get(log.blockNumber)!) * 1000),
+          gas: await gasOf.get(log.transactionHash)!,
+        };
+      }),
+    );
     await this.db.transaction(async (c) => {
       for (const address of vaults)
         await c.query("INSERT INTO keeper_vaults VALUES($1,$2) ON CONFLICT DO NOTHING", [
           d.chainId,
           address,
         ]);
-      for (const p of bound)
-        await c.query("INSERT INTO keeper_policies VALUES($1,$2,$3) ON CONFLICT DO NOTHING", [
-          d.chainId,
-          p.args.policyId.toString(),
-          p.args.vault.toLowerCase(),
-        ]);
+      for (const p of bound) {
+        const added = await c.query(
+          "INSERT INTO keeper_policies VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
+          [d.chainId, p.args.policyId.toString(), p.args.vault.toLowerCase()],
+        );
+        if (added.rowCount) await this.db.countFunnel("cover_bought", c);
+      }
+      for (const [i, log] of executed.entries()) {
+        const vault = log.address.toLowerCase();
+        const before = await c.query(
+          "SELECT 1 FROM vault_trades WHERE chain_id=$1 AND vault=$2 LIMIT 1",
+          [d.chainId, vault],
+        );
+        const added = await c.query(
+          `INSERT INTO vault_trades(id,chain_id,vault,target,selector,outflow_usd6,tx_hash,block_number,occurred_at,gas_used)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT DO NOTHING`,
+          [
+            `${d.chainId}:${log.transactionHash}:${log.logIndex}`,
+            d.chainId,
+            vault,
+            log.args.target.toLowerCase(),
+            log.args.selector.toLowerCase(),
+            log.args.outflowUsd6.toString(),
+            log.transactionHash,
+            log.blockNumber.toString(),
+            trades[i]!.at,
+            trades[i]!.gas?.toString() ?? null,
+          ],
+        );
+        if (added.rowCount && !before.rowCount)
+          await this.db.countFunnel("first_vault_trade", c, trades[i]!.at);
+      }
       for (const [i, b] of breaches.entries())
         await c.query(
           `INSERT INTO handled_events(id,chain_id,vault,breach_id,agent_id,breach_type,blocked,occurred_at)
@@ -257,14 +316,30 @@ export class Keeper {
           });
           const now = (await read.getBlock()).timestamp;
           if (breach.timestamp < start || breach.timestamp > end || now > end + window) continue;
-          // Simulation repeats the checks after accrual, including lapse, deductible and liquidity.
-          const hash = await this.chain.send(d.claimsEngine, claimsEngineAbi, "fileClaim", [
-            policyId,
-            [BigInt(e.breach_id)],
-          ]);
+          // Simulation repeats the checks after accrual, including lapse, deductible and liquidity,
+          // and a rejected simulation (say, PoolShortfall) broadcasts nothing. So the claim counts
+          // as filed only once its transaction is broadcast: the owner hears "claim filed" once,
+          // from that first broadcast (owner-alerts.ts). A failed attempt only sets the error.
+          const filed = async () => {
+            await this.db.pool.query(
+              "UPDATE handled_events SET claim_filed_at=coalesce(claim_filed_at,now()) WHERE id=$1",
+              [e.id],
+            );
+          };
+          const hash = await this.chain.send(
+            d.claimsEngine,
+            claimsEngineAbi,
+            "fileClaim",
+            [policyId, [BigInt(e.breach_id)]],
+            {
+              beforeBroadcast: async () => {},
+              onBroadcast: filed,
+              onReverted: async () => {},
+            },
+          );
           await this.db.transaction(async (c) => {
             await c.query(
-              "UPDATE handled_events SET status='claimed',tx_hash=$2,error=NULL WHERE id=$1",
+              "UPDATE handled_events SET status='claimed',tx_hash=$2,error=NULL,claim_filed_at=coalesce(claim_filed_at,now()) WHERE id=$1",
               [e.id, hash],
             );
             await this.db.publish(
