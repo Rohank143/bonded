@@ -30,6 +30,7 @@ import { workCheckOne } from "./check-worker.js";
 import { gatewayCheckRunner } from "./connections.js";
 import { AgentStatusReader } from "./agent-status.js";
 import { OwnerAlerts } from "./owner-alerts.js";
+import { adoptDeployment } from "./deployment-guard.js";
 
 loadDotEnv();
 const role = process.env.ROLE ?? "api";
@@ -121,6 +122,7 @@ if (role === "migrate") {
   const keeperKey = role === "keeper" || role === "all" ? key("KEEPER_KEY") : key("ATTESTER_KEY");
   const chain = connectChain(deployment, rpc, keeperKey);
   if ((await chain.read.getChainId()) !== deployment.chainId) throw new Error("RPC chain mismatch");
+  await adoptDeployment(db, deployment, role, process.env.ADOPT_DEPLOYMENT);
   if (process.env.AGENTS_FILE) {
     const configs = z
       .array(agentConfig)

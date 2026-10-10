@@ -86,10 +86,20 @@ export const jobs = pgTable("jobs", {
   leaseUntil: timestamp("lease_until", { withTimezone: true }),
   availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
 });
-export const keeperCursors = pgTable("keeper_cursors", {
+export const keeperCursors = pgTable(
+  "keeper_cursors",
+  {
+    chainId: integer("chain_id").notNull(),
+    blockNumber: numeric("block_number", { precision: 78, scale: 0 }).notNull(),
+    blockHash: text("block_hash").notNull(),
+    registry: text("registry").notNull().default(""),
+  },
+  (t) => [primaryKey({ columns: [t.chainId, t.registry] })],
+);
+export const deployments = pgTable("deployments", {
   chainId: integer("chain_id").primaryKey(),
-  blockNumber: numeric("block_number", { precision: 78, scale: 0 }).notNull(),
-  blockHash: text("block_hash").notNull(),
+  registry: text("registry").notNull(),
+  adoptedAt: timestamp("adopted_at", { withTimezone: true }).notNull().defaultNow(),
 });
 export const keeperVaults = pgTable(
   "keeper_vaults",

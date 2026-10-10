@@ -190,7 +190,9 @@ function claimChain(timestamp = 20n) {
   return { ...chain, read, send: vi.fn().mockResolvedValue(`0x${"ab".repeat(32)}`) };
 }
 async function seedBreach(policy = true) {
-  await pg.db.pool.query("INSERT INTO keeper_cursors VALUES(46630,10,'cursor-hash')");
+  await pg.db.pool.query("INSERT INTO keeper_cursors VALUES(46630,10,'cursor-hash',$1)", [
+    chain.deployment.registry.toLowerCase(),
+  ]);
   await pg.db.pool.query(
     "INSERT INTO handled_events(id,chain_id,vault,breach_id) VALUES('breach',46630,$1,0)",
     [chain.deployment.factory.toLowerCase()],

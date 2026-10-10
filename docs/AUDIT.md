@@ -179,7 +179,7 @@ The code is under the MIT licence (`LICENSE`); `SECURITY.md` says how to report 
 
 - **Date:** 2026-10-07, updated 2026-10-08 after an independent adversarial review of the branch
 - **Code reviewed:** branch `mandate-module`: the mandate checks moved into `MandateBase` (shared by `MandateVault` and the new `MandateModule`), `MandateModuleFactory`, and the CoverManager, ClaimsEngine and DisputeModule changes that let a module-protected smart account hold cover
-- **Deployed contracts:** not changed. The module needs a new CoverManager, ClaimsEngine and DisputeModule, so it ships with the mainnet deployment (#67)
+- **Deployed contracts:** not changed. The module needs a new CoverManager, ClaimsEngine and DisputeModule, so it was to ship with the mainnet deployment (#67). Update, 2026-10-10: the testnets were redeployed in full, so the module is live there; the open contract fixes from the first review (F-01's contract check, F-03, F-06, F-07) are still for mainnet
 
 | Severity | Found | Fixed | Accepted, documented |
 |---|---|---|---|

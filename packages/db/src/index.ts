@@ -593,6 +593,7 @@ export class Database {
       "0020_previews_and_checks.sql",
       "0021_notifications.sql",
       "0022_launch_round.sql",
+      "0023_deployments.sql",
     ];
     await this.transaction(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(7001)");
@@ -608,6 +609,54 @@ export class Database {
           await c.query("INSERT INTO schema_migrations VALUES ($1)", [version]);
         }
       }
+    });
+  }
+  /**
+   * Which deployment (registry) this database holds a chain's on-chain state for. A database
+   * with no record for the chain records `registry` and goes on. Returns the recorded registry
+   * when it differs: the chain was redeployed, agents, policies, claims and bounties are numbered
+   * from 1 again, and the services must not run on the old state (see adoptDeployment).
+   */
+  async checkDeployment(chainId: number, registry: string): Promise<string | undefined> {
+    const current = registry.toLowerCase();
+    return this.transaction(async (c) => {
+      await c.query("SELECT pg_advisory_xact_lock(7001)");
+      const recorded = (
+        await c.query("SELECT registry FROM deployments WHERE chain_id=$1", [chainId])
+      ).rows[0]?.registry as string | undefined;
+      if (recorded === undefined)
+        await c.query("INSERT INTO deployments(chain_id,registry) VALUES($1,$2)", [
+          chainId,
+          current,
+        ]);
+      return recorded === undefined || recorded === current ? undefined : recorded;
+    });
+  }
+  /**
+   * Move a redeployed chain onto `registry`: clear the chain's on-chain state from the old
+   * deployment and record the new one, in one transaction under the migration lock. Only run on
+   * the operator's explicit confirmation (ADOPT_DEPLOYMENT). Previews and their ratings, sign-ins,
+   * notification settings, held-out attacks and funnel counts don't belong to a deployment and
+   * stay. Returns the rows cleared per table, or undefined if `registry` was already recorded.
+   */
+  async adoptDeployment(
+    chainId: number,
+    registry: string,
+  ): Promise<Record<string, number> | undefined> {
+    const current = registry.toLowerCase();
+    return this.transaction(async (c) => {
+      await c.query("SELECT pg_advisory_xact_lock(7001)");
+      const recorded = (
+        await c.query("SELECT registry FROM deployments WHERE chain_id=$1", [chainId])
+      ).rows[0]?.registry as string | undefined;
+      if (recorded === current) return undefined;
+      const cleared = await clearChainState(c, chainId);
+      await c.query(
+        `INSERT INTO deployments(chain_id,registry) VALUES($1,$2)
+         ON CONFLICT(chain_id) DO UPDATE SET registry=$2, adopted_at=now()`,
+        [chainId, current],
+      );
+      return cleared;
     });
   }
   /** Persist before notifying; event IDs are serialized through commit for safe SSE replay. */
@@ -3050,4 +3099,52 @@ export class Database {
   async close() {
     await this.pool.end();
   }
+}
+
+/**
+ * The chain's on-chain state from its old deployment (see Database.adoptDeployment). Agent-keyed
+ * rows use "<chainId>:<agentId>"; preview-keyed ones ("preview:<uuid>") are kept. Children
+ * before parents, so foreign keys hold at every step.
+ */
+async function clearChainState(c: Connection, chainId: number): Promise<Record<string, number>> {
+  const agent = `${chainId}:%`;
+  const ratings = "SELECT id FROM ratings WHERE agent_id LIKE $1";
+  const byAgent: [string, string][] = [
+    ["notifications_sent", `rating_id IN (${ratings})`],
+    ["jobs", `id IN (${ratings})`],
+    ["attestations", "agent_id LIKE $1"],
+    ["ratings", "agent_id LIKE $1"],
+    ["rating_skips", "agent_id LIKE $1"],
+    ["agent_standing", "agent_id LIKE $1"],
+    ["runner_presence", "agent_id LIKE $1"],
+    ["runner_tokens", "agent_id LIKE $1"],
+    ["agent_urls", "owner_key LIKE $1"],
+    [
+      "connection_check_events",
+      "check_id IN (SELECT id FROM connection_checks WHERE subject LIKE $1)",
+    ],
+    ["connection_checks", "subject LIKE $1"],
+    ["tee_checks", "agent_id LIKE $1"],
+    ["owner_notifications", "subject LIKE $1"],
+  ];
+  const byChain = [
+    "quotes",
+    "sentinel_checks",
+    "bounties",
+    "keeper_cursors",
+    "keeper_vaults",
+    "keeper_policies",
+    "handled_events",
+    "vault_trades",
+    "agents",
+  ];
+  const cleared: Record<string, number> = {};
+  // A preview made official points at the old agent: it goes back to a plain preview.
+  await c.query("UPDATE previews SET upgraded_to=NULL WHERE upgraded_to LIKE $1", [agent]);
+  for (const [table, where] of byAgent)
+    cleared[table] = (await c.query(`DELETE FROM ${table} WHERE ${where}`, [agent])).rowCount ?? 0;
+  for (const table of byChain)
+    cleared[table] =
+      (await c.query(`DELETE FROM ${table} WHERE chain_id=$1`, [chainId])).rowCount ?? 0;
+  return cleared;
 }

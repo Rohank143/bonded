@@ -80,11 +80,7 @@
       }
     ],
     "reportHash": "0xf4eb6bc18f679c7939efd58332540656ea98d065b556392d620fa516a2a6c143",
-    "onchain": {
-      "chain": "robinhoodTestnet",
-      "agentId": "5",
-      "tx": "0x3c67a7169b05ce9c13bf4126eb9384e5486e48bc1f37303ddd9f20003fc3ca1d"
-    },
+    "onchain": null,
     "disclosure": {
       "status": "published",
       "note": "docs/disclosures/agentkit-langchain-chatbot.md"
@@ -170,11 +166,7 @@
       }
     ],
     "reportHash": "0xdb4f1b373a318e960fe94bcf3b930426fc6dfb1207b875286d447857f29d80fc",
-    "onchain": {
-      "chain": "robinhoodTestnet",
-      "agentId": "6",
-      "tx": "0x762b190e6a4081fa4ba5c0f02f23d0ffa0bc6d87d46495671a3573e2d4653fa6"
-    },
+    "onchain": null,
     "disclosure": {
       "status": "not-needed"
     }
@@ -260,11 +252,7 @@
       }
     ],
     "reportHash": "0xe249ca1dae9ea32897691719084b1961ff32f235d26bda177f75b8661fd61f16",
-    "onchain": {
-      "chain": "robinhoodTestnet",
-      "agentId": "7",
-      "tx": "0xe8af5514597c630efe0abe707800467743bd93537b43c7d3233a63c2e7385092"
-    },
+    "onchain": null,
     "disclosure": {
       "status": "published",
       "note": "docs/disclosures/solana-agent-kit-langgraph.md"
@@ -351,11 +339,7 @@
       }
     ],
     "reportHash": "0x515f38f6f1ac3d9fb689047e4f95380e59a0cd0f83008d5a75feab99b7bed4bf",
-    "onchain": {
-      "chain": "robinhoodTestnet",
-      "agentId": "8",
-      "tx": "0x353dd586a401fd2f3b93beaff8b9b5d4ce8468fd4f91533fe8eafb1765deca66"
-    },
+    "onchain": null,
     "disclosure": {
       "status": "published",
       "note": "docs/disclosures/solana-agent-kit-langgraph.md"
@@ -442,11 +426,7 @@
       }
     ],
     "reportHash": "0x7e969ba8b1dbc25b008389b82df1a02401646238bb1ce213c5bff2b70b224639",
-    "onchain": {
-      "chain": "robinhoodTestnet",
-      "agentId": "4",
-      "tx": "0xe81a339b847c6d46b4201226ada78c6779ae8aef9a2b224cf6d906e9fc693d59"
-    },
+    "onchain": null,
     "disclosure": {
       "status": "pending",
       "note": "docs/disclosures/agentkit-langchain-chatbot.md"
@@ -532,11 +512,7 @@
       }
     ],
     "reportHash": "0x5a1cc223f062d5ec9143c936d5791fd8ab3863a19a132c15e589e0cfe1fd2674",
-    "onchain": {
-      "chain": "robinhoodTestnet",
-      "agentId": "9",
-      "tx": "0x99e51d573745cc0a758ab1613ea8333d7f5184025659d94b7975088fe9a1ef61"
-    },
+    "onchain": null,
     "disclosure": {
       "status": "not-needed"
     }
