@@ -1,0 +1,12 @@
+{
+  "name": "langgraph-agent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/agent.ts"
+  },
+  "dependencies": {
+    "@langchain/langgraph": "^0.4.0",
+    "@langchain/openai": "^0.6.0"
+  }
+}

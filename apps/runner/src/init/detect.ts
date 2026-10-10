@@ -35,7 +35,7 @@ export interface Project {
   /** Why it decided on the framework, in words. */
   evidence: string;
   packageManager: PackageManager;
-  /** TypeScript (a tsconfig.json or a typescript dependency). */
+  /** TypeScript: a tsconfig.json, a typescript dependency, or .ts/.tsx/.mts source files. */
   typescript: boolean;
   /** package.json `"type": "module"`: plain .js files are ES modules. */
   esm: boolean;
@@ -84,10 +84,13 @@ export function detectProject(root: string, override?: Framework): Project {
   const dependencies = { ...pkg?.devDependencies, ...pkg?.dependencies };
   const has = (name: string) => name in dependencies;
   const tsconfig = readTsconfig(root);
-  const typescript = tsconfig !== undefined || has("typescript");
   const sourceDir =
     existsSync(join(root, "src")) && statSync(join(root, "src")).isDirectory() ? "src" : "";
   const sources = listSources(root);
+  // Written in TypeScript even without a tsconfig.json here (run with tsx, or a tsconfig in a
+  // parent folder): then init's helper is a .ts file too, which a strict project accepts.
+  const tsSources = sources.some((f) => /\.(ts|tsx|mts)$/.test(f));
+  const typescript = tsconfig !== undefined || has("typescript") || tsSources;
 
   const found = override
     ? { framework: override, evidence: "chosen with --framework" }
@@ -107,7 +110,13 @@ export function detectProject(root: string, override?: Framework): Project {
     typescript,
     esm: pkg?.type === "module",
     importExtension:
-      resolution.startsWith("node16") || resolution.startsWith("nodenext") ? ".js" : "",
+      resolution.startsWith("node16") ||
+      resolution.startsWith("nodenext") ||
+      // No tsconfig.json to read in an ES module package: `./bonded.js` names bonded.ts for tsc
+      // (NodeNext) and tsx alike.
+      (tsconfig === undefined && pkg?.type === "module" && typescript)
+        ? ".js"
+        : "",
     sourceDir,
     sources,
     dependencies,
