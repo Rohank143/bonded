@@ -9,8 +9,9 @@ The vault holds the agent's funds. The agent's key can only act through `Mandate
 npm install @bondedhq/sdk viem
 ```
 
-ESM only, Node 22 or later. Not yet published to npm (the founder publishes with
-`pnpm release:packages`); inside this repository use `"@bondedhq/sdk": "workspace:*"`.
+ESM only, Node 22 or later. Inside the Bonded repository, depend on it with
+`"@bondedhq/sdk": "workspace:*"`. To get your own agent rated, start at
+[Test your agent](https://bonded-nu.vercel.app/agents/test).
 
 | Entry point | What it is | Peer dependency |
 |---|---|---|

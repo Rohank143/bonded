@@ -4,7 +4,9 @@
  * to npm, in that order, with public access.
  *
  * 1. Refuses unless the tree is clean and on main, level with origin/main (what was reviewed).
- * 2. Builds the packages fresh and runs their tests.
+ * 2. Installs the dependencies exactly as locked (so a checkout with stale node_modules, say from
+ *    before a rename, can't build against the wrong packages), builds the packages fresh and runs
+ *    their tests fresh, never from turbo's cache.
  * 3. Packs them and smoke-tests the tarballs in an empty project (pnpm release:check).
  * 4. Publishes each one whose version isn't on npm yet (pnpm asks for your one-time password).
  *
@@ -32,8 +34,9 @@ if (problems.length && !dryRun) {
 }
 if (problems.length) console.warn(`Dry run despite: ${problems.join("; ")}.`);
 
+run("pnpm", ["install", "--frozen-lockfile"]);
 buildPackages();
-run("pnpm", ["turbo", "run", "test", ...PACKAGES.map((p) => `--filter=${p.name}`)]);
+run("pnpm", ["turbo", "run", "test", "--force", ...PACKAGES.map((p) => `--filter=${p.name}`)]);
 run("node", ["scripts/release/check.mjs", "--no-build"]);
 
 for (const pkg of PACKAGES) {

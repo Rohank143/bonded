@@ -102,6 +102,11 @@ describe("framework-first answers", () => {
       "npx @bondedhq/runner service --print docker --gateway https://gw.example -- <your agent command>",
     ]);
     expect(SERVICE_KINDS.find((k) => k.id === "docker")!.note).toMatch(/unless-stopped/);
+    // What each note says matches what `bonded-runner service --print` prints: the token lives
+    // in bonded-runner.env (systemd, Docker) or the shell (pm2), never in the config itself.
+    expect(SERVICE_KINDS.find((k) => k.id === "systemd")!.note).toMatch(/bonded-runner\.env/);
+    expect(SERVICE_KINDS.find((k) => k.id === "pm2")!.note).toMatch(/pm2 startup/);
+    expect(SERVICE_KINDS.find((k) => k.id === "docker")!.note).toMatch(/Dockerfile/);
   });
 
   it("remembers the framework in this browser, and ignores anything else stored", () => {
