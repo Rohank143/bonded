@@ -40,7 +40,8 @@ export interface PlanOptions {
  * rewritten only while it still holds exactly what init would write (or with --overwrite-generated).
  */
 export const MARKER = "// Added by `bonded-runner init`";
-const GUIDE = "https://github.com/ddboy19912/bonded/blob/main/docs/BRING-YOUR-OWN-AGENT.md";
+/** The guide on the docs site (generated from docs/BRING-YOUR-OWN-AGENT.md). */
+const GUIDE = "https://bonded-nu.vercel.app/docs/guides/bring-your-own-agent/";
 
 /** The production vault's variables (`bondedVaultFromEnv` in @bondedhq/sdk). */
 export const VAULT_ENV = ["BONDED_VAULT_ADDRESS", "BONDED_AGENT_KEY", "BONDED_ROUTER_ADDRESS"];

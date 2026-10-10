@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import {
   cpSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -45,6 +46,8 @@ function copy(name: string): string {
 describe("detectProject", () => {
   it.each([
     ["langchain", "langchain", "npm", true],
+    ["langgraph-no-tsconfig", "langchain", "npm", true],
+    ["langchain-js", "langchain", "npm", false],
     ["ai-sdk", "ai-sdk", "pnpm", true],
     ["agentkit", "agentkit", "yarn", true],
     ["eliza", "eliza", "bun", true],
@@ -61,6 +64,8 @@ describe("detectProject", () => {
   it("reads how the project writes relative imports, and its web framework", () => {
     expect(detectProject(fixture("langchain")).importExtension).toBe(".js");
     expect(detectProject(fixture("ai-sdk")).importExtension).toBe("");
+    // TypeScript with no tsconfig.json to read, in an ES module package: `./bonded.js`.
+    expect(detectProject(fixture("langgraph-no-tsconfig")).importExtension).toBe(".js");
     expect(detectProject(fixture("next-app"))).toMatchObject({
       web: "next-app",
       nextAppDir: "app",
@@ -75,6 +80,8 @@ describe("detectProject", () => {
 describe("planInit: the proposed diff, per framework", () => {
   it.each([
     ["langchain", {}],
+    ["langgraph-no-tsconfig", {}],
+    ["langchain-js", {}],
     ["ai-sdk", {}],
     ["agentkit", {}],
     ["eliza", {}],
@@ -85,6 +92,8 @@ describe("planInit: the proposed diff, per framework", () => {
     ["express-ai-sdk", { url: true }],
     ["hono", { url: true }],
     ["langchain", { url: true }],
+    ["langgraph-no-tsconfig", { url: true }],
+    ["langchain-js", { url: true }],
   ] as [string, { url?: boolean }][])("%s %o", async (name, options) => {
     const plan = planInit(detectProject(fixture(name)), options);
     await expect(render(plan)).toMatchFileSnapshot(
@@ -93,7 +102,15 @@ describe("planInit: the proposed diff, per framework", () => {
   });
 
   it("is idempotent: run again on its own result, it proposes nothing more", () => {
-    for (const name of ["langchain", "ai-sdk", "agentkit", "eliza", "mcp-js"]) {
+    for (const name of [
+      "langchain",
+      "langgraph-no-tsconfig",
+      "langchain-js",
+      "ai-sdk",
+      "agentkit",
+      "eliza",
+      "mcp-js",
+    ]) {
       const dir = copy(name);
       applyPlan(dir, planInit(detectProject(dir)));
       const again = planInit(detectProject(dir));
@@ -188,6 +205,86 @@ describe("planInit: the proposed diff, per framework", () => {
     expect(tsc.stdout + tsc.stderr).toBe("");
     expect(tsc.status).toBe(0);
   });
+});
+
+describe("TypeScript projects get TypeScript files", () => {
+  it.each([
+    ["langchain", "src/bonded.ts"],
+    ["langgraph-no-tsconfig", "src/bonded.ts"],
+    ["ai-sdk", "src/bonded.ts"],
+    ["agentkit", "src/bonded.ts"],
+    ["eliza", "src/bonded.ts"],
+    ["hono", "src/bonded.ts"],
+    ["next-app", "src/bonded.ts"],
+    ["express-ai-sdk", "src/bonded.ts"],
+    ["langchain-js", "src/bonded.js"],
+    ["mcp-js", "bonded.js"],
+  ])("%s: the helper is %s, and so is every other new file", (name, helper) => {
+    const plan = planInit(detectProject(fixture(name)), { url: true });
+    const created = plan.changes.filter((c) => c.before === undefined).map((c) => c.path);
+    expect(created).toContain(helper);
+    const ext = helper.endsWith(".ts") ? /\.tsx?$/ : /\.m?js$/;
+    for (const path of created) expect(path, path).toMatch(ext);
+  });
+
+  it("imports the .ts helper as ./bonded.js when there is no tsconfig.json to read", () => {
+    const plan = planInit(detectProject(fixture("langgraph-no-tsconfig")));
+    const agent = plan.changes.find((c) => c.path === "src/agent.ts")!;
+    expect(agent.after).toContain('import { bondedTools } from "./bonded.js";');
+    expect(agent.after).toContain("const tools = await bondedTools([]);");
+  });
+
+  // The files init writes, typechecked under strict mode against the SDK's own types. The
+  // packages the project would install are linked from this repository.
+  const SDK = join(REPO, "packages/sdk");
+  it.each([
+    ["langchain", {}, ["@langchain/core"]],
+    ["langgraph-no-tsconfig", {}, ["@langchain/core"]],
+    ["ai-sdk", { url: true }, ["ai"]],
+    ["agentkit", { url: true }, ["@coinbase/agentkit", "viem"]],
+    ["eliza", { url: true }, ["@elizaos/core"]],
+    ["hono", { url: true }, ["@modelcontextprotocol/sdk"]],
+  ] as [string, { url?: boolean }, string[]][])(
+    "%s %o: the new files typecheck under strict",
+    (name, options, packages) => {
+      const dir = copy(name);
+      const plan = planInit(detectProject(dir), options);
+      applyPlan(dir, plan);
+      const created = plan.changes.filter((c) => c.before === undefined).map((c) => c.path);
+      expect(created.length).toBeGreaterThan(0);
+      const link = (pkg: string, target: string) => {
+        mkdirSync(dirname(join(dir, "node_modules", pkg)), { recursive: true });
+        symlinkSync(target, join(dir, "node_modules", pkg), "dir");
+      };
+      link("@bondedhq/sdk", SDK);
+      link("@types/node", realpathSync(join(REPO, "node_modules/@types/node")));
+      for (const pkg of packages) link(pkg, realpathSync(join(SDK, "node_modules", pkg)));
+      // The project's own compiler options when it has a tsconfig.json; NodeNext otherwise
+      // (what `./bonded.js` is written for).
+      const own = existsSync(join(dir, "tsconfig.json"));
+      writeFileSync(
+        join(dir, "tsconfig.bonded-check.json"),
+        JSON.stringify({
+          ...(own ? { extends: "./tsconfig.json" } : {}),
+          compilerOptions: {
+            ...(own ? {} : { target: "ES2023", module: "NodeNext", moduleResolution: "NodeNext" }),
+            strict: true,
+            noEmit: true,
+            skipLibCheck: true,
+            types: ["node"],
+          },
+          include: created,
+        }),
+      );
+      const tsc = spawnSync(
+        process.execPath,
+        [requireHere.resolve("typescript/bin/tsc"), "-p", join(dir, "tsconfig.bonded-check.json")],
+        { encoding: "utf8" },
+      );
+      expect(tsc.stdout + tsc.stderr).toBe("");
+      expect(tsc.status).toBe(0);
+    },
+  );
 });
 
 describe("addImport", () => {

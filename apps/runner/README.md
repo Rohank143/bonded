@@ -75,8 +75,9 @@ changes as a unified diff:
 2. **Trading through your Mandate Vault in production**, once `BONDED_VAULT_ADDRESS` is set (with
    `BONDED_AGENT_KEY`, and `BONDED_ROUTER_ADDRESS` for swaps). Until then the agent runs as before.
 
-It puts the Bonded code in one new file (`src/bonded.ts`, or `.js`, or `.mjs` for a CommonJS
-package) and changes at most one line of yours, plus an import:
+It puts the Bonded code in one new file (`src/bonded.ts` in a TypeScript project, meaning one with
+a tsconfig.json, a typescript dependency or `.ts` source files; else `.js`, or `.mjs` for a
+CommonJS package) and changes at most one line of yours, plus an import:
 
 | Framework | The change in your code |
 |---|---|

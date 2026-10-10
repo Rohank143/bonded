@@ -1,0 +1,12 @@
+{
+  "name": "langchain-js-agent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/agent.js"
+  },
+  "dependencies": {
+    "@langchain/core": "^1.2.12",
+    "@langchain/langgraph": "^1.4.17"
+  }
+}

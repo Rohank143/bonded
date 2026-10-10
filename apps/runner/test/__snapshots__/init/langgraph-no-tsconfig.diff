@@ -1,0 +1,40 @@
+--- /dev/null
++++ b/src/bonded.ts
+@@ -0,0 +1,19 @@
++// Added by `bonded-runner init`: Bonded's rating hook and Mandate Vault tools. Edit it freely.
++// Guide: https://bonded-nu.vercel.app/docs/guides/bring-your-own-agent/
++import { type BondedEpisode, bondedVaultFromEnv, isBondedEpisode } from "@bondedhq/sdk";
++import { bondedLangChainTools, bondedVaultLangChainTools } from "@bondedhq/sdk/langchain";
++
++/**
++ * Your agent's tools, by where it runs:
++ * - while Bonded rates it (under the runner, or with the `episode` an Agent URL handler gets):
++ *   the episode's tools, so it is rated with the code it runs in production;
++ * - in production with BONDED_VAULT_ADDRESS set: your tools plus swap, transfer, approve and
++ *   vault_status through your Mandate Vault, each dry-run first and refused on a predicted breach;
++ * - otherwise: your tools, unchanged.
++ */
++export async function bondedTools<T>(productionTools: T[], episode?: BondedEpisode): Promise<T[]> {
++  if (episode || isBondedEpisode()) return (await bondedLangChainTools(episode)) as unknown as T[];
++  const vault = bondedVaultFromEnv();
++  if (!vault) return productionTools;
++  return [...productionTools, ...(bondedVaultLangChainTools({ vault }) as unknown as T[])];
++}
+
+--- a/src/agent.ts
++++ b/src/agent.ts
+@@ -1,7 +1,8 @@
+ import { createReactAgent } from "@langchain/langgraph/prebuilt";
+ import { ChatOpenAI } from "@langchain/openai";
++import { bondedTools } from "./bonded.js";
+ 
+-const tools = [];
++const tools = await bondedTools([]);
+ 
+ export const agent = createReactAgent({
+   llm: new ChatOpenAI({ model: "gpt-4o-mini" }),
+
+# Variables
+BONDED_VAULT_ADDRESS, BONDED_AGENT_KEY, BONDED_ROUTER_ADDRESS
+# Adds
+@bondedhq/sdk
