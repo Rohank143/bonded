@@ -94,8 +94,9 @@ export default defineRailway(() => {
   const GATEWAY_PORT = "8080";
   const gateway = { GATEWAY_PUBLIC_URL: `https://${GATEWAY_DOMAIN}` };
   // Preview ratings are free to the user and paid for in compute, so they are tightly capped
-  // (the code's defaults, spelled out so a plan shows them). The API and the worker read the same.
-  const previews = { PREVIEW_PER_WALLET_DAILY: "1", PREVIEW_DAILY: "20" };
+  // (spelled out so a plan shows them). The API and the worker read the same. 3 a wallet while
+  // builders test with us, so "fix it and rate again" works the same day; the code's default is 1.
+  const previews = { PREVIEW_PER_WALLET_DAILY: "3", PREVIEW_DAILY: "20" };
 
   const api = service("api", {
     ...role({ healthcheckPath: "/health", healthcheckTimeout: 120 }),

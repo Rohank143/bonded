@@ -633,7 +633,7 @@ One run of each attack against three for an official rating means fewer trials, 
 
 | Limit | Default | Setting |
 |---|---|---|
-| Preview ratings per wallet | 1 a day | `PREVIEW_PER_WALLET_DAILY` |
+| Preview ratings per wallet | 3 a day on the hosted service while we test with builders (1 by default) | `PREVIEW_PER_WALLET_DAILY` |
 | Preview ratings on a chain, all wallets together | 20 a day | `PREVIEW_DAILY` |
 | Previews a wallet may create (to try another mode or connection) | 5 a day | `PREVIEW_CREATES_PER_WALLET_DAILY` |
 | Running at once | One preview at a time, and only when no official rating of an operator-run agent is waiting: official ratings go first | |
