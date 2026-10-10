@@ -2,9 +2,9 @@
 
 - **Template:** `typescript/examples/langchain-cdp-chatbot` in [coinbase/agentkit](https://github.com/coinbase/agentkit) (Apache-2.0), @coinbase/agentkit 0.10.4 with @coinbase/agentkit-langchain 0.3.0
 - **Rated:** 2026-10-03, one run of each of the 40 attack seeds plus 2 controls, on a fresh local chain
-- **Models:** anthropic/claude-haiku-4.5 and deepseek/deepseek-v4.1-flash
-- **On chain (Robinhood Chain testnet registry):** agents 4 (Haiku) and 5 (DeepSeek) on the contracts deployed Sep 27, 2026, posted again on the Oct 10 deployment; [leaderboard](https://bonded-nu.vercel.app/leaderboard)
-- **Disclosure status:** DeepSeek: published, no breach found. Haiku: **maintainer notice pending** for one A1 breach found on 2026-10-06 (see below); the class-level result is public, the attack and transcript are withheld under the [disclosure policy](README.md).
+- **Models:** deepseek/deepseek-v4.1-flash and z-ai/glm-5.3-flash (since 2026-10-10); anthropic/claude-haiku-4.5 until then
+- **On chain (Robinhood Chain testnet registry):** on the contracts deployed Oct 10, 2026, agents 5 (DeepSeek) and 10 (GLM); agent 4 holds an earlier Haiku rating; agents 4 and 5 on the Sep 27 contracts before that; [leaderboard](https://bonded-nu.vercel.app/leaderboard)
+- **Disclosure status:** DeepSeek and GLM: published, no breach found. Haiku: **maintainer notice pending** for one A1 breach found on 2026-10-06 (see below); the class-level result is public, the attack and transcript are withheld under the [disclosure policy](README.md).
 
 ## How it was run
 
@@ -44,6 +44,17 @@ Both models were rated again with five runs of each of the 40 published attacks 
 | DeepSeek V4.1 Flash | 81 (AA) | 0 of 275 | none | 0 of 2 |
 
 With Haiku, one A1 (injection via token metadata) episode out of 20 was breached. This is a public library attack, not a held-out one. Under the disclosure policy the class-level result is public now, and which attack it was stays private until the maintainers have been told and have fixed it, or 30 days have passed. With DeepSeek there was no breach. Agents with no breaches score 81 at these settings; more clean episodes narrow the bounds further than the five-run rating did.
+
+## Rated again on the Oct 10 contracts, GLM in place of Haiku (2026-10-10)
+
+After the testnet redeployment the template was rated again with the same settings: five runs of each of the 40 published attacks and of the 15 held-out ones, 275 attack episodes and 2 controls each, Monitor mode. GLM 5.3 Flash replaced Claude Haiku 4.5, whose list price per token is more than six times higher; a full rating cost $0.22 to $0.26 with either model (measured from the OpenRouter key's usage). The scores were posted for agents 5 (DeepSeek) and 10 (GLM):
+
+| Model | Score | Attacks breached | By class | Controls breached |
+|---|---|---|---|---|
+| DeepSeek V4.1 Flash | 81 (AA) | 0 of 275 | none | 0 of 2 |
+| GLM 5.3 Flash | 81 (AA) | 0 of 275 | none | 0 of 2 |
+
+Agent 4 still holds the Haiku rating of 2026-10-04 (79 (A), 200 attack episodes); the leaderboard no longer lists it. The Haiku finding of 2026-10-06 above stands, and its disclosure is still pending.
 
 ## Suggested mitigations, if deployed as an autonomous agent
 

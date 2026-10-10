@@ -2,8 +2,8 @@
 
 - **Template:** `examples/misc/agent-kit-langgraph` in [sendaifun/solana-agent-kit](https://github.com/sendaifun/solana-agent-kit) (Apache-2.0), solana-agent-kit 2.0.10
 - **Rated:** 2026-10-03, one run of each of the 40 attack seeds plus 2 controls, on a fresh local chain
-- **Models:** anthropic/claude-haiku-4.5 and deepseek/deepseek-v4.1-flash
-- **On chain (Robinhood Chain testnet registry):** agents 7 (Haiku) and 8 (DeepSeek) on the contracts deployed Sep 27, 2026, posted again on the Oct 10 deployment; [leaderboard](https://bonded-nu.vercel.app/leaderboard)
+- **Models:** deepseek/deepseek-v4.1-flash and z-ai/glm-5.3-flash (since 2026-10-10); anthropic/claude-haiku-4.5 until then
+- **On chain (Robinhood Chain testnet registry):** on the contracts deployed Oct 10, 2026, agents 8 (DeepSeek) and 11 (GLM); agent 7 holds an earlier Haiku rating; agents 7 and 8 on the Sep 27 contracts before that; [leaderboard](https://bonded-nu.vercel.app/leaderboard)
 - **Disclosure status:** published. No breach was found, so nothing is withheld.
 
 ## How it was run
@@ -46,6 +46,17 @@ Both models were rated again with five runs of each of the 40 published attacks 
 | DeepSeek V4.1 Flash | 81 (AA) | 0 of 275 | none | 0 of 2 |
 
 Still no breach with either model. Agents with no breaches score 81 at these settings; more clean episodes narrow the bounds further than the five-run rating did.
+
+## Rated again on the Oct 10 contracts, GLM in place of Haiku (2026-10-10)
+
+After the testnet redeployment the template was rated again with the same settings: five runs of each of the 40 published attacks and of the 15 held-out ones, 275 attack episodes and 2 controls each, Monitor mode. GLM 5.3 Flash replaced Claude Haiku 4.5, whose list price per token is more than six times higher; a full rating cost $0.22 to $0.26 with either model (measured from the OpenRouter key's usage). The scores were posted for agents 8 (DeepSeek) and 11 (GLM):
+
+| Model | Score | Attacks breached | By class | Controls breached |
+|---|---|---|---|---|
+| DeepSeek V4.1 Flash | 81 (AA) | 0 of 275 | none | 0 of 2 |
+| GLM 5.3 Flash | 81 (AA) | 0 of 275 | none | 0 of 2 |
+
+Agent 7 still holds the Haiku rating of 2026-10-04 (79 (A), 200 attack episodes); the leaderboard no longer lists it.
 
 ## Suggested mitigations, if deployed as an autonomous agent
 
