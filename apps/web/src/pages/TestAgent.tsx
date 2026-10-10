@@ -584,8 +584,8 @@ export function TestAgent() {
                 cover can be bought on it.
               </li>
               <li>
-                <span className="text-ink">Free, one a day per wallet.</span> Previews run one at a
-                time, after official ratings.
+                <span className="text-ink">Free, a few a day per wallet.</span> Previews run one at
+                a time, after official ratings.
               </li>
               <li>
                 <span className="text-ink">Your model, your bill.</span> Bonded runs the attacks;
