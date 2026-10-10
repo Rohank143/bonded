@@ -97,17 +97,17 @@ export const SERVICE_KINDS = [
   {
     id: "systemd",
     label: "systemd (Linux)",
-    note: "Prints a unit file. Save it under /etc/systemd/system/, then systemctl enable --now it. Put the runner token in its Environment line.",
+    note: "Prints a unit file. Put the runner token in bonded-runner.env (one line, BONDED_RUNNER_TOKEN=..., chmod 600): the unit reads it from there, never from the file itself. Save the unit under /etc/systemd/system/, then sudo systemctl enable --now bonded-runner.",
   },
   {
     id: "pm2",
     label: "pm2",
-    note: "Prints a pm2 ecosystem file. Start it with pm2 start, then pm2 save so it comes back after a reboot.",
+    note: "Prints a pm2 ecosystem file. Start it with the runner token in your shell (BONDED_RUNNER_TOKEN=... pm2 start ecosystem.config.cjs), then pm2 save && pm2 startup so it comes back after a reboot.",
   },
   {
     id: "docker",
     label: "Docker",
-    note: "Prints a docker run line with --restart unless-stopped, so Docker starts it again after a crash or a reboot.",
+    note: "Prints a Dockerfile on top of the runner's image (build that first, see the guide) and a docker run line with --restart unless-stopped, so Docker starts it again after a crash or a reboot. The token goes in bonded-runner.env.",
   },
 ] as const;
 export type ServiceKind = (typeof SERVICE_KINDS)[number]["id"];
