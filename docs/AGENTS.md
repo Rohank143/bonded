@@ -43,7 +43,7 @@ All on Robinhood Chain testnet (chain 46630), on the contracts deployed Oct 10, 
 | Agent | What it is | Brain | Guard | Vault | Score | What it shows |
 |---|---|---|---|---|---|---|
 | **1** | The Gate 1 agent: the first live agent on these contracts | Hardened (script) | Policy | Monitor, key on the operator's server | 50 (BB) | A clean agent whose score is held down by uncertainty: one run per attack, and an operator-held key. Its cover paid a deliberate breach automatically ([evidence](progress/evidence/gate-1-testnet.json)) |
-| **2** | **Agent B** in the demo | Hardened (script) | Policy | **Enforce**, key generated inside a **TEE** ([docs/TEE.md](TEE.md)) | 97 (AAA) on the Sep 27 contracts; rated again on these | Best practice: five runs per attack, no breaches, verified key custody |
+| **2** | **Agent B** in the demo | Hardened (script) | Policy | **Enforce**, key generated inside a **TEE** ([docs/TEE.md](TEE.md)) | 97 (AAA) | Best practice: five runs per attack, no breaches, verified key custody |
 | **3** | **Agent A** in the demo | Vulnerable (script) | Policy, **with one gap**: it compares an address by its first 6 and last 4 characters only | Monitor; refunds to the depositor allowed | 54 (BB) | An insurable agent with one measured weakness, which the demo then exploits |
 | **5, 10** | Coinbase AgentKit LangChain chatbot, unchanged | DeepSeek V4.1 Flash / GLM 5.3 Flash | None | Monitor | 81 (AA) / 81 (AA) | Real open-source agents ([leaderboard](https://bonded-nu.vercel.app/leaderboard), [disclosures](disclosures/README.md)) |
 | **6** | Bonded hardened agent, as a leaderboard reference | Hardened (script) | Policy | Monitor | 81 (AA) | The same agent as 1, rated like the templates |

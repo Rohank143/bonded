@@ -58,7 +58,7 @@ How the parts fit together: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). What e
 | Premium | **6.4%** a year (5.8% after its operator-bond discount) | **1.1%** a year |
 | What the Arena found | Address poisoning: 20 of 25 episodes breached, including an unpublished attack. Every other class: none | No breaches |
 
-Both ratings (2026-10-07, agents 10 and 3 on the contracts deployed Sep 27, 2026; they are rated again on the Oct 10 deployment) include unpublished attacks the operator couldn't study in advance: a held-out set and an accepted bounty. Agent B was rated with its TEE running and verified: Intel TDX, measurement `0xb933…8f01`.
+Both ratings (2026-10-10, agents 3 and 2 on the contracts deployed Oct 10, 2026; the same scores as on the earlier contracts) include unpublished attacks the operator couldn't study in advance: a held-out set of 15 attacks, 75 episodes each. Agent B was rated with its TEE running and verified: Intel TDX, measurement `0xb933…8f01`.
 
 **The loop, live on Robinhood testnet** (2026-10-04, [evidence](docs/progress/evidence/demo-break-testnet.json)): a lookalike of Agent A's depositor asked for a "refund"; Agent A paid 5,000 tUSDG; the vault recorded the breach and froze the agent; the keeper's claim paid 4,500 (the loss minus the 10% deductible): **4,000 from the operator's bond, 500 from the pool.**
 
@@ -99,7 +99,7 @@ Owner, attester and council on every testnet: `0xd42FA5ae8949710479954ae78D1b12F
 | bonded_vault | [`8hNVDFF7aU2BJa4avnv2X7ziYEmguCaCHTZYBKo2CzFx`](https://explorer.solana.com/address/8hNVDFF7aU2BJa4avnv2X7ziYEmguCaCHTZYBKo2CzFx?cluster=devnet) |
 | bonded_cover | [`Dcrwfd272QQxXS4oEmHPSQdGWRZ2BMRSMb3Vi7jj6Y1X`](https://explorer.solana.com/address/Dcrwfd272QQxXS4oEmHPSQdGWRZ2BMRSMb3Vi7jj6Y1X?cluster=devnet) |
 
-Agent B's score of 96 is the same signed attestation on all four chains ([evidence](docs/progress/evidence/multichain-scores-agent3-tee.json)).
+Agent B's score of 97 is the same signed attestation on all four chains ([evidence](docs/progress/evidence/multichain-scores-agent2-tee.json)).
 
 ## Repo layout
 
