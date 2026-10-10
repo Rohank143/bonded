@@ -161,7 +161,7 @@ export function problemAdvice(problem: string, connection: Connection): string |
   if (p.includes("public internet"))
     return "Bonded can only call a public address. For an agent on your machine, use the runner instead.";
   if (p.includes("answered 401") || p.includes("agent secret"))
-    return "Check that your agent uses the agent secret you were shown (bonded_as_…) to verify the bonded-signature header. Lost it? Get a new secret on this page.";
+    return "Check that your agent uses the agent secret you were shown (bonded_as_…) to verify the bonded-signature header. Lost it? Use “Lost the secret? Get a new one” on this page.";
   if (p.includes("didn't answer within") || p.includes("did not answer within"))
     return "Your endpoint must reply within 10 seconds: answer the POST straight away and do the work after replying.";
   if (p.includes("answered 4") || p.includes("answered 5"))
