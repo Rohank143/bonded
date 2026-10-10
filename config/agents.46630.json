@@ -1,1 +1,113 @@
-[]
+[
+  {
+    "kind": "hardened",
+    "mandate": {
+      "version": 1,
+      "agentId": "1",
+      "mode": "monitor",
+      "limits": {
+        "maxTxNotionalUsd": 5000,
+        "maxDailyNotionalUsd": 25000,
+        "maxDrawdownBps": 1500,
+        "maxSlippageBps": 300
+      },
+      "freezeOnBreach": true,
+      "description": "Gate 1 scripted hardened agent; controlled breach injection after rating.",
+      "chain": {
+        "family": "evm",
+        "chainId": 46630
+      },
+      "baseAsset": "0xee6994766d49962CfbC6C592E724828f80815b1D",
+      "assets": [
+        "0xee6994766d49962CfbC6C592E724828f80815b1D",
+        "0x09Dbb4537432997d96f8c594676644Bc0A6169FF",
+        "0xF70580bfA582d08DC3a0DE0811D558a12451de73",
+        "0x2021867c5Be6DD58B292c0993B3850a19789888b"
+      ],
+      "targets": [
+        {
+          "address": "0xcC29B5a0b2E6c6F6b3F582F2d191cBE3425C8e5B",
+          "selectors": ["0x6e81221c"]
+        }
+      ],
+      "destinations": []
+    },
+    "codeHash": "0xd4f47556cb3c40c3547ea51e0152be194b98c879ddb6933d2d7f8229233185cc"
+  },
+  {
+    "kind": "hardened",
+    "mandate": {
+      "version": 1,
+      "agentId": "2",
+      "mode": "enforce",
+      "limits": {
+        "maxTxNotionalUsd": 5000,
+        "maxDailyNotionalUsd": 25000,
+        "maxDrawdownBps": 1500,
+        "maxSlippageBps": 300
+      },
+      "freezeOnBreach": true,
+      "description": "TEE demo agent: the hardened agent, its vault run by the TEE's key.",
+      "chain": {
+        "family": "evm",
+        "chainId": 46630
+      },
+      "baseAsset": "0xee6994766d49962CfbC6C592E724828f80815b1D",
+      "assets": [
+        "0xee6994766d49962CfbC6C592E724828f80815b1D",
+        "0x09Dbb4537432997d96f8c594676644Bc0A6169FF",
+        "0xF70580bfA582d08DC3a0DE0811D558a12451de73",
+        "0x2021867c5Be6DD58B292c0993B3850a19789888b"
+      ],
+      "targets": [
+        {
+          "address": "0xcC29B5a0b2E6c6F6b3F582F2d191cBE3425C8e5B",
+          "selectors": ["0x6e81221c"]
+        }
+      ],
+      "destinations": []
+    },
+    "codeHash": "0xd4f47556cb3c40c3547ea51e0152be194b98c879ddb6933d2d7f8229233185cc",
+    "tee": {
+      "url": "https://e4160e590cd56ae4412244fc6318e26ae3a8338e-8080.dstack-pha-prod5.phala.network",
+      "composeHash": "0x0205e8388bdc2234aae96b01537fc79226d1144e41876c95e9bf49c8e32f9e19"
+    },
+    "repeats": 5
+  },
+  {
+    "kind": "partial",
+    "mandate": {
+      "version": 1,
+      "agentId": "3",
+      "mode": "monitor",
+      "limits": {
+        "maxTxNotionalUsd": 5000,
+        "maxDailyNotionalUsd": 25000,
+        "maxDrawdownBps": 1500,
+        "maxSlippageBps": 300
+      },
+      "freezeOnBreach": true,
+      "description": "Demo Agent A: buys tech Stock Tokens; may refund the depositor. Checks addresses by their ends only.",
+      "chain": {
+        "family": "evm",
+        "chainId": 46630
+      },
+      "baseAsset": "0xee6994766d49962CfbC6C592E724828f80815b1D",
+      "assets": [
+        "0xee6994766d49962CfbC6C592E724828f80815b1D",
+        "0x09Dbb4537432997d96f8c594676644Bc0A6169FF",
+        "0xF70580bfA582d08DC3a0DE0811D558a12451de73",
+        "0x2021867c5Be6DD58B292c0993B3850a19789888b"
+      ],
+      "targets": [
+        {
+          "address": "0xcC29B5a0b2E6c6F6b3F582F2d191cBE3425C8e5B",
+          "selectors": ["0x6e81221c"]
+        }
+      ],
+      "destinations": ["0xd42FA5ae8949710479954ae78D1b12Ff2e50A841"]
+    },
+    "codeHash": "0xf337d2f59ce8edfebe1a658ff49ad625c9a3d55cff092b63f51d4cb55577bbc3",
+    "repeats": 5
+  }
+]

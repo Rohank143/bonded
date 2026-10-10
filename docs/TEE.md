@@ -112,7 +112,7 @@ Your own agent, running in your own TEE, can be rated with its TEE proven at eve
 - **At every episode.** The rating worker challenges the URL before the rating starts, for the production key and for the rating's Arena key. Then each episode carries a fresh nonce: your runner (`--tee-url`) fetches the evidence and forwards it unchanged, and the worker verifies it. Every episode must show the same measurement and Arena key, or the rating fails.
 - **Afterwards.** The live checks below apply as they do to Bonded's agent, against the production key. When the measurement changes, new quotes stop, and a re-rating is queued if your runner is connected.
 
-For cover, the vault's (or module's) agent key must be the TEE's attested production key, as for Agent 3. A TEE-bound score lifts the cover cap for an agent its operator runs from 5,000 to 20,000 tUSDG (underwriting policy).
+For cover, the vault's (or module's) agent key must be the TEE's attested production key, as for Agent B (agent 2). A TEE-bound score lifts the cover cap for an agent its operator runs from 5,000 to 20,000 tUSDG (underwriting policy).
 
 ## What the TEE does to the price
 
