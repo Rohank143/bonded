@@ -62,10 +62,6 @@ function Hero() {
           We send a red team after every agent before it holds your money. If one is ever tricked
           into breaking its rules, the contracts pay you back. No forms. No AI deciding.
         </p>
-        <p className="mx-auto mt-4 max-w-[580px] text-base leading-relaxed text-soft">
-          Every agent gets the same 0–100 Bonded Score, readable on four chains. We're setting the
-          bar for agent safety: the number platforms can require and builders aim for.
-        </p>
         <div className="mt-9 flex flex-wrap justify-center gap-3">
           <a href="#how" className={buttonClass("primary", "lg")}>
             See how it works <span aria-hidden>↓</span>
