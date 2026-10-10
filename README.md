@@ -15,7 +15,8 @@ Runs on **Robinhood Chain**, with scores readable on **Arbitrum, Ethereum and So
 | **Web app** (Robinhood Chain testnet) | https://bonded-nu.vercel.app |
 | **Test your agent**: a free preview rating of your own agent, any framework | https://bonded-nu.vercel.app/agents/test |
 | **Agent Safety Leaderboard**: open-source agent templates, rated | https://bonded-nu.vercel.app/leaderboard |
-| **Agent A** (insured, with one weakness the Arena found) and **Agent B** (hardened, key in a TEE) | https://bonded-nu.vercel.app/agents: being set up again on the contracts deployed Oct 10, 2026 |
+| **Agent A**: insured, with one weakness the Arena found | https://bonded-nu.vercel.app/agents/3 |
+| **Agent B**: hardened, key in a TEE | https://bonded-nu.vercel.app/agents/2 |
 | **Claims**: every automatic payout and where the money came from | https://bonded-nu.vercel.app/claims |
 
 **Or run the whole thing yourself in one command**, with no keys or accounts (needs Node 22, pnpm and Foundry; details in [docs/DEVELOPING.md](docs/DEVELOPING.md)):

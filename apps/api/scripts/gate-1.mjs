@@ -236,14 +236,14 @@ try {
       args: ["0x0000000000000000000000000000000000000bad", usd(1000)],
     }),
   ]);
-  const balance = () =>
+  const balance = (blockNumber) =>
     base.read.readContract({
       address: d.usdg,
       abi: testTokenAbi,
       functionName: "balanceOf",
       args: [vault],
+      blockNumber,
     });
-  const before = await balance();
   const keeper = new Keeper(
     db,
     connectChain({ ...d, deployedAtBlock: Number(start) }, rpc, key),
@@ -257,13 +257,29 @@ try {
   }
   const claims = await db.pool.query("SELECT * FROM handled_events WHERE status='claimed'");
   if (!claims.rowCount) throw new Error("keeper did not claim within deadline");
-  if (claims.rowCount !== 1 || !claims.rows[0].tx_hash)
-    throw new Error("expected one keeper claim transaction");
-  const claimHash = claims.rows[0].tx_hash;
-  evidence.transactions.push({ step: "fileClaim (keeper)", hash: claimHash });
+  if (claims.rowCount !== 1) throw new Error("expected one keeper claim transaction");
+  // On testnet the hosted keeper watches the same vaults and may file the claim first: this
+  // keeper then finds it paid and records no transaction of its own. Take the chain's ClaimPaid.
+  let claimHash = claims.rows[0].tx_hash;
+  let filedBy = "keeper";
+  if (!claimHash) {
+    const [filed] = await base.read.getLogs({
+      address: d.claimsEngine,
+      event: getAbiItem({ abi: claimsEngineAbi, name: "ClaimPaid" }),
+      args: { vault },
+      fromBlock: start,
+      toBlock: "latest",
+      strict: true,
+    });
+    if (!filed) throw new Error("the claim is marked paid but no ClaimPaid was found on chain");
+    claimHash = filed.transactionHash;
+    filedBy = "hosted keeper";
+  }
+  evidence.transactions.push({ step: `fileClaim (${filedBy})`, hash: claimHash });
+  const claimReceipt = await base.read.getTransactionReceipt({ hash: claimHash });
   const [paid] = parseEventLogs({
     abi: claimsEngineAbi,
-    logs: (await base.read.getTransactionReceipt({ hash: claimHash })).logs,
+    logs: claimReceipt.logs,
     eventName: "ClaimPaid",
   });
   if (!paid) throw new Error("keeper claim emitted no ClaimPaid");
@@ -277,7 +293,9 @@ try {
     fromPool: paid.args.fromPool.toString(),
     breachIds: paid.args.breachIds.map(String),
   };
-  const after = await balance();
+  // Around the claim's own block, whichever keeper filed it and whenever.
+  const before = await balance(claimReceipt.blockNumber - 1n);
+  const after = await balance(claimReceipt.blockNumber);
   if (after <= before) throw new Error("payout did not increase vault balance");
   evidence.vaultBefore = before.toString();
   evidence.vaultAfter = after.toString();
@@ -288,7 +306,10 @@ try {
     connectChain({ ...d, deployedAtBlock: Number(start) }, rpc, key),
     local ? 0n : 5n,
   ).tick();
-  if ((await db.pool.query("SELECT * FROM events WHERE topic='claim.paid'")).rowCount !== 1)
+  // One claim.paid event when this keeper filed the claim; none or one when the hosted one did.
+  const paidEvents = (await db.pool.query("SELECT * FROM events WHERE topic='claim.paid'"))
+    .rowCount;
+  if (filedBy === "keeper" ? paidEvents !== 1 : paidEvents > 1)
     throw new Error("duplicate claim event after restart");
   // The database check alone cannot see a second on-chain claim; count ClaimPaid logs too.
   const onChainClaims = await base.read.getLogs({
