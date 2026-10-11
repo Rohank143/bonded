@@ -4,6 +4,7 @@ import type { Connection } from "../lib/byoa-api";
 import {
   FRAMEWORKS,
   FRAMEWORK_TEXT,
+  HOSTING_HINT,
   HOSTING_TEXT,
   INIT_NOTE,
   INIT_URL_NOTE,
@@ -68,7 +69,8 @@ export function FrameworkQuestions({
         </div>
       </fieldset>
       <fieldset className="flex flex-col gap-2">
-        <legend className="mb-2 font-medium">Where do you run it?</legend>
+        <legend className="font-medium">Where do you run it?</legend>
+        <p className="mb-2 text-xs text-muted">{HOSTING_HINT}</p>
         <div className="grid gap-2 sm:grid-cols-2">
           {(["machine", "online"] as const).map((h) => (
             <Choice

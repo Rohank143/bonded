@@ -24,7 +24,7 @@ import {
   type PreviewStep,
 } from "../lib/connect";
 import { useRatingRun } from "../lib/rating-run";
-import { messageText } from "../lib/troubleshooting";
+import { messageText, warningPrefix } from "../lib/troubleshooting";
 import { ProblemText } from "../components/problem";
 import { short, when } from "../lib/format";
 import { DOCS_BYOA } from "../lib/routes";
@@ -446,7 +446,7 @@ export function TestAgent() {
                     {status.lastCheck!.warnings?.map((problem) => (
                       <span key={messageText(problem)}>
                         <ProblemText
-                          prefix="Worth fixing before you start:"
+                          prefix={warningPrefix(problem, "Worth fixing before you start:")}
                           message={problem}
                           advice={problemAdvice(messageText(problem), status.connection)}
                         />
