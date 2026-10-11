@@ -41,7 +41,7 @@ As of 2026-10-10, on Robinhood Chain testnet:
 | Piece | Status | Where |
 |---|---|---|
 | The **Test your agent** page: previews, Agent URL mode, connection checks, estimates, progress and webhooks | Live on the hosted service | https://bonded-nu.vercel.app/agents/test |
-| `@bondedhq/runner` and `@bondedhq/sdk` 0.1.1 (with `@bondedhq/shared` and `@bondedhq/solana`, which they depend on) | On npm | `npx @bondedhq/runner …`, `npm install @bondedhq/sdk` |
+| `@bondedhq/runner` and `@bondedhq/sdk` 0.1.2 (with `@bondedhq/shared` and `@bondedhq/solana`, which they depend on) | On npm | `npx @bondedhq/runner …`, `npm install @bondedhq/sdk` |
 | Official ratings of your own agent, Mandate Vaults, cover, and self-serve ratings of Bonded's built-in agent designs | Live | Onboarding at https://bonded-nu.vercel.app/agents/new |
 | The health panel, owner alerts and in-app notifications, vault trading status, the suggested mandate, the before/after comparison, the actionable report and `GET /status` | Live | The service's status: https://bonded-nu.vercel.app/status |
 | The Arena Gateway your runner connects to | Live | `https://arena-worker-production.up.railway.app` (the page fills it in for you) |
