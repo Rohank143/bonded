@@ -16,7 +16,7 @@ import {
   type ConnectionStatus,
 } from "../lib/connect";
 import { when } from "../lib/format";
-import { messageText, type ApiMessage } from "../lib/troubleshooting";
+import { messageText, warningPrefix, type ApiMessage } from "../lib/troubleshooting";
 import { Button, ErrorText, Spinner } from "./ui";
 import { ProblemText } from "./problem";
 
@@ -267,7 +267,7 @@ export function CheckVerdict({
   );
 }
 
-/** Advice that doesn't fail the check, e.g. sources it never read. */
+/** Advice that doesn't fail the check, e.g. sources it never read, and notes. */
 function Warnings({ warnings, connection }: { warnings?: ApiMessage[]; connection: Connection }) {
   if (!warnings?.length) return null;
   return (
@@ -275,7 +275,7 @@ function Warnings({ warnings, connection }: { warnings?: ApiMessage[]; connectio
       {warnings.map((w) => (
         <li key={messageText(w)}>
           <ProblemText
-            prefix="Worth fixing:"
+            prefix={warningPrefix(w, "Worth fixing:")}
             message={w}
             advice={problemAdvice(messageText(w), connection)}
           />

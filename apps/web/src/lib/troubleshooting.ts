@@ -1,4 +1,4 @@
-import { UNKNOWN_PROBLEM, problemCode } from "@bondedhq/shared";
+import { UNKNOWN_PROBLEM, isNote, problemCode } from "@bondedhq/shared";
 import { ApiError } from "./api";
 
 /**
@@ -66,4 +66,12 @@ export function withCodes(
     const issue = issues?.find((i) => i.message === m && i.severity === severity);
     return issue ? { code: issue.code, message: m } : m;
   });
+}
+
+/**
+ * The words before a check warning: "Note:" for one that is only a note (NOTE_CODES in
+ * @bondedhq/shared, e.g. model usage an agent with no model can't report), else the page's own.
+ */
+export function warningPrefix(m: ApiMessage, prefix: string): string {
+  return isNote(messageCode(m)) ? "Note:" : prefix;
 }

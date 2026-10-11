@@ -149,6 +149,12 @@ describe("Test your agent", () => {
     expect(within(step).getByRole("radio", { name: /It's online at a URL/ })).toBeTruthy();
     expect(within(step).getByRole("radio", { name: /On my computer or server/ })).toBeTruthy();
     expect(within(step).getByText(/Nothing to install/)).toBeTruthy();
+    // A hint for those who aren't sure which to pick.
+    expect(
+      within(step).getByText(
+        "Not sure? Choose On my computer or server: it works for any agent you can start from a terminal.",
+      ),
+    ).toBeTruthy();
     // Tools or chain is for those who need it: under Advanced, closed.
     const advanced = within(step).getByText("Advanced (optional)").closest("details")!;
     expect(advanced.open).toBe(false);
@@ -188,8 +194,10 @@ describe("Test your agent", () => {
     ).toBeTruthy();
     expect(screen.getByText(/Waiting for the runner to connect/)).toBeTruthy();
     expect(screen.getByText("Runner waiting")).toBeTruthy();
-    // Python has no init: the page says so and points at the Python code.
-    expect(screen.getByText(/For a Python agent init only prints instructions/)).toBeTruthy();
+    // Python has no package.json for init to read: the page leads with the runner command.
+    expect(screen.getByText("Start the runner with your agent's command")).toBeTruthy();
+    expect(screen.queryByText(/npx @bondedhq\/runner init/)).toBeNull();
+    expect(screen.getByRole("link", { name: "Try the example agent" })).toBeTruthy();
     // Framework snippets, in tabs, opened on the framework picked.
     fireEvent.click(screen.getByText("Code for your agent, by framework"));
     expect(screen.getByRole("tab", { name: "Python", selected: true })).toBeTruthy();
@@ -203,6 +211,37 @@ describe("Test your agent", () => {
         "npx @bondedhq/runner service --print systemd --gateway https://gw.example -- <your agent command>",
       ),
     ).toBeTruthy();
+  });
+
+  it.each([
+    [/^Something else/, false],
+    [/^LangChain or LangGraph/, true],
+  ])("leads the runner step with init only for a Node framework (%s)", async (framework, init) => {
+    signedIn();
+    const created = preview({ id: "p8", connection: "runner", mode: "tools" });
+    vi.spyOn(byoaApi, "createPreview").mockResolvedValue(created);
+    vi.spyOn(byoaApi, "preview").mockResolvedValue(created);
+    vi.spyOn(byoaApi, "createRunnerToken").mockResolvedValue({
+      token: "bonded_rt_preview",
+      gatewayUrl: "https://gw.example",
+    });
+    show();
+    fireEvent.click(await screen.findByRole("radio", { name: framework }));
+    fireEvent.click(screen.getByRole("radio", { name: /On my computer or server/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    const command =
+      "BONDED_RUNNER_TOKEN=bonded_rt_preview npx @bondedhq/runner --gateway https://gw.example --mode tools -- <your agent command>";
+    expect(await screen.findByText(command)).toBeTruthy();
+    const initLine = screen.queryByText(
+      "BONDED_RUNNER_TOKEN=bonded_rt_preview npx @bondedhq/runner init --gateway https://gw.example",
+    );
+    if (init) {
+      expect(initLine).toBeTruthy();
+      expect(screen.getByText("Or start the runner yourself (Node)")).toBeTruthy();
+    } else {
+      expect(initLine).toBeNull();
+      expect(screen.getByText("Start the runner with your agent's command")).toBeTruthy();
+    }
   });
 
   it("asks for a URL and verifies it", async () => {
