@@ -3,6 +3,7 @@ import type { RemoteMode } from "@bondedhq/shared";
 import type { Connection } from "../lib/byoa-api";
 import {
   FRAMEWORKS,
+  FRAMEWORK_LOGO,
   FRAMEWORK_TEXT,
   HOSTING_HINT,
   HOSTING_TEXT,
@@ -22,11 +23,63 @@ import {
 import { DOCS_BYOA } from "../lib/routes";
 import { apiUrl, robinhoodTestnet, rpcUrl } from "../config";
 import { Card, Choice, linkClass } from "./ui";
+import { InlineCode } from "./code-block";
+import { Collapsible } from "./collapsible";
 import { CopyBlock, Tabs } from "./copy";
 
 /**
+ * A framework's logo, drawn in the surrounding text colour: the file's shape is used as a mask, so
+ * every logo sits quietly in the page's palette instead of bringing its own colours.
+ */
+export function FrameworkLogo({
+  framework,
+  size = "size-4",
+}: {
+  framework: Framework;
+  size?: string;
+}) {
+  const url = `url(${FRAMEWORK_LOGO[framework]})`;
+  return (
+    <span
+      aria-hidden
+      className={`inline-block ${size} shrink-0 bg-current`}
+      style={{
+        mask: `${url} center / contain no-repeat`,
+        WebkitMask: `${url} center / contain no-repeat`,
+      }}
+    />
+  );
+}
+
+/** What differs between the two layouts: classes, and how one framework option is drawn. */
+const LAYOUT = {
+  /** Chips for the framework and a plain list for where it runs, with no box per option. */
+  flat: {
+    root: "gap-7",
+    fieldset: "",
+    frameworkLegend: "mb-3",
+    frameworks: "flex flex-wrap gap-2",
+    hostingHint: "mt-1 text-muted",
+    hostings: "mt-1 divide-y divide-line",
+    advanced: "border-t border-line pt-4",
+  },
+  /** A bordered card for each option. */
+  boxed: {
+    root: "gap-5",
+    fieldset: "flex flex-col gap-2",
+    frameworkLegend: "mb-2",
+    frameworks: "grid gap-2 sm:grid-cols-2",
+    hostingHint: "mb-2 text-xs text-muted",
+    hostings: "grid gap-2 sm:grid-cols-2",
+    advanced: "rounded-2xl border border-line-strong p-4",
+  },
+} as const;
+
+/**
  * The two questions every connect flow starts with: the framework, and where the agent runs.
- * Anything else (mode, code hash, TEE) is under "Advanced", passed in as `advanced`.
+ * Anything else (mode, code hash, TEE) is under "Advanced", passed in as `advanced`. One flow, in
+ * two layouts (`flat`, or boxed): the questions, their copy, the remembered framework, the hosting
+ * hint and the Advanced disclosure are the same in both.
  */
 export function FrameworkQuestions({
   framework,
@@ -37,6 +90,7 @@ export function FrameworkQuestions({
   advanced,
   advancedOpen,
   onAdvancedToggle,
+  flat = false,
 }: {
   framework: Framework | undefined;
   hosting: Hosting;
@@ -46,35 +100,65 @@ export function FrameworkQuestions({
   advanced?: ReactNode;
   advancedOpen?: boolean;
   onAdvancedToggle?: (open: boolean) => void;
+  flat?: boolean;
 }) {
+  const L = flat ? LAYOUT.flat : LAYOUT.boxed;
+  const pick = (f: Framework) => {
+    rememberFramework(f);
+    onFramework(f);
+  };
+  const frameworkTitle = (f: Framework) => (
+    <span className={flat ? "flex items-center gap-2.5" : "inline-flex items-center gap-2.5"}>
+      <FrameworkLogo framework={f} />
+      {FRAMEWORK_TEXT[f].title}
+    </span>
+  );
   return (
-    <div className="flex flex-col gap-5 text-sm">
-      <fieldset className="flex flex-col gap-2">
-        <legend className="mb-2 font-medium">Which framework is your agent built on?</legend>
-        <div className="grid gap-2 sm:grid-cols-2">
-          {FRAMEWORKS.map((f) => (
-            <Choice
-              key={f}
-              name={`${name}-framework`}
-              checked={framework === f}
-              onChange={() => {
-                rememberFramework(f);
-                onFramework(f);
-              }}
-              title={FRAMEWORK_TEXT[f].title}
-            >
-              {FRAMEWORK_TEXT[f].line}
-            </Choice>
-          ))}
+    <div className={`flex flex-col text-sm ${L.root}`}>
+      <fieldset className={L.fieldset}>
+        <legend className={`${L.frameworkLegend} font-medium`}>
+          Which framework is your agent built on?
+        </legend>
+        <div className={L.frameworks}>
+          {FRAMEWORKS.map((f) =>
+            flat ? (
+              <label
+                key={f}
+                className={`flex cursor-pointer items-center rounded-full border px-4 py-2 text-sm transition has-focus-visible:ring-2 has-focus-visible:ring-accent ${framework === f ? "border-accent/60 bg-accent-soft text-ink" : "border-line-strong text-muted hover:text-ink"}`}
+              >
+                <input
+                  type="radio"
+                  name={`${name}-framework`}
+                  className="sr-only"
+                  checked={framework === f}
+                  onChange={() => pick(f)}
+                />
+                {frameworkTitle(f)}
+              </label>
+            ) : (
+              <Choice
+                key={f}
+                name={`${name}-framework`}
+                checked={framework === f}
+                onChange={() => pick(f)}
+                title={frameworkTitle(f)}
+              >
+                {FRAMEWORK_TEXT[f].line}
+              </Choice>
+            ),
+          )}
         </div>
+        {/* The chips carry no description of their own; the picked one's line sits under them. */}
+        {flat && framework && <p className="mt-3 text-muted">{FRAMEWORK_TEXT[framework].line}</p>}
       </fieldset>
-      <fieldset className="flex flex-col gap-2">
+      <fieldset className={L.fieldset}>
         <legend className="font-medium">Where do you run it?</legend>
-        <p className="mb-2 text-xs text-muted">{HOSTING_HINT}</p>
-        <div className="grid gap-2 sm:grid-cols-2">
+        <p className={L.hostingHint}>{HOSTING_HINT}</p>
+        <div className={L.hostings}>
           {(["machine", "online"] as const).map((h) => (
             <Choice
               key={h}
+              flat={flat}
               name={`${name}-hosting`}
               checked={hosting === h}
               onChange={() => onHosting(h)}
@@ -86,14 +170,16 @@ export function FrameworkQuestions({
         </div>
       </fieldset>
       {advanced && (
-        <details
+        <Collapsible
           {...(advancedOpen !== undefined ? { open: advancedOpen } : {})}
-          onToggle={(e) => onAdvancedToggle?.((e.currentTarget as HTMLDetailsElement).open)}
-          className="rounded-2xl border border-line-strong p-4"
+          {...(onAdvancedToggle ? { onOpenChange: onAdvancedToggle } : {})}
+          className={L.advanced}
+          triggerClassName="text-sm font-medium"
+          contentClassName="pt-4"
+          summary="Advanced (optional)"
         >
-          <summary className="cursor-pointer font-medium">Advanced (optional)</summary>
-          <div className="mt-4 flex flex-col gap-4">{advanced}</div>
-        </details>
+          <div className="flex flex-col gap-4">{advanced}</div>
+        </Collapsible>
       )}
     </div>
   );
@@ -130,11 +216,11 @@ export function InitCommand({
       <p className="text-xs text-muted">
         Your agent is bound to a TEE ({teeUrl}). init can't pass the TEE's URL to the runner, so
         TEE-bound agents use the runner command shown below: it carries{" "}
-        <code className="font-mono">--tee-url</code>
+        <InlineCode>--tee-url</InlineCode>
         {mode === "chain" ? (
           <>
             {" "}
-            and <code className="font-mono">--mode chain</code>
+            and <InlineCode>--mode chain</InlineCode>
           </>
         ) : null}
         .
@@ -177,11 +263,12 @@ export function KeepRunning({ gatewayUrl }: { gatewayUrl?: string | null }) {
   const [selected, setSelected] = useState<string>(SERVICE_KINDS[0].id);
   const current = SERVICE_KINDS.find((k) => k.id === selected) ?? SERVICE_KINDS[0];
   return (
-    <details className="rounded-2xl border border-line-strong p-4">
-      <summary className="cursor-pointer text-sm font-semibold marker:text-muted">
-        Keep it running
-      </summary>
-      <div className="mt-3 flex flex-col gap-3 text-sm">
+    <Collapsible
+      className="border-t border-line pt-4"
+      contentClassName="pt-3"
+      summary="Keep it running"
+    >
+      <div className="flex flex-col gap-3 text-sm">
         <p className="text-muted">
           Your score is renewed only while the runner is connected, and Bonded tells you when it has
           been offline. Run it as a background service so it comes back after a crash or a reboot.
@@ -199,7 +286,7 @@ export function KeepRunning({ gatewayUrl }: { gatewayUrl?: string | null }) {
           />
         </Tabs>
       </div>
-    </details>
+    </Collapsible>
   );
 }
 
@@ -234,7 +321,10 @@ export function UseYourVault({ vault }: { vault?: string | null }) {
                     setFramework(f);
                   }}
                 />
-                {FRAMEWORK_TEXT[f].title}
+                <span className="flex items-center gap-2">
+                  <FrameworkLogo framework={f} />
+                  {FRAMEWORK_TEXT[f].title}
+                </span>
               </label>
             ))}
           </div>
@@ -245,13 +335,14 @@ export function UseYourVault({ vault }: { vault?: string | null }) {
               <CopyBlock
                 label="Easiest: let init make the change"
                 text={initCommand({ connection: "runner" })}
-                note="In your agent's folder. It writes src/bonded.ts (the rating hook and the vault in one file), adds the import and changes the one line below, showing the diff and asking before writing."
+                note="In your agent's folder. It writes `src/bonded.ts` (the rating hook and the vault in one file), adds the import and changes the one line below, showing the diff and asking before writing."
               />
             ) : null}
             <CopyBlock
               label={change.importLine ? "The change init makes" : "By hand"}
               text={change.importLine ? `${change.importLine}\n\n${change.code}` : change.code}
               note={change.note}
+              language={change.framework === "python" ? "python" : "ts"}
             />
             <CopyBlock
               label="Then set these where your agent runs"

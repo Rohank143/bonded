@@ -6,6 +6,8 @@ import { ratingFailure } from "../lib/byoa";
 import { useRatingRun } from "../lib/rating-run";
 import { ApiError } from "../lib/api";
 import { Badge, Button, ErrorText, Input, Skeleton } from "./ui";
+import { InlineCode } from "./code-block";
+import { Collapsible } from "./collapsible";
 import { SecretOnce } from "./copy";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -35,8 +37,7 @@ export function Estimate({
   });
   if (!enabled) return null;
   return (
-    <div className="flex min-h-[4.5rem] flex-col gap-1.5 rounded-2xl border border-line-strong p-4 text-sm">
-      <p className="eyebrow">Estimate</p>
+    <div className="flex min-h-[4.5rem] flex-col gap-1.5 text-sm">
       {estimate.isPending ? (
         <>
           <Skeleton className="h-4 w-3/4" />
@@ -173,8 +174,8 @@ export function RatingLive({
             />
           </div>
           <p className="text-xs text-muted">
-            Results appear when it finishes, not before: if they showed while it ran, a live agent
-            could learn which episodes are attacks. You can close this page; it keeps going.
+            Results appear when it finishes, so a live agent can't tell which episodes are attacks.
+            You can close this page; it keeps going.
           </p>
           {permission === "default" && (
             <div>
@@ -239,11 +240,12 @@ export function NotificationSettingsForm({ subject, auth }: { subject: Subject; 
   const emailOn = current.data?.emailAvailable === true;
   const hookOn = current.data?.webhookAvailable !== false;
   return (
-    <details className="rounded-2xl border border-line-strong p-4 text-sm">
-      <summary className="cursor-pointer font-semibold">
-        Get told when it finishes, by webhook{emailOn ? " or email" : ""}
-      </summary>
-      <div className="mt-4 flex flex-col gap-4">
+    <Collapsible
+      className="border-t border-line pt-4 text-sm"
+      contentClassName="pt-4"
+      summary={`Get told when it finishes, by webhook${emailOn ? " or email" : ""}`}
+    >
+      <div className="flex flex-col gap-4">
         {current.data && (current.data.webhook || current.data.email) ? (
           <p className="text-muted">
             Now:{" "}
@@ -310,11 +312,11 @@ export function NotificationSettingsForm({ subject, auth }: { subject: Subject; 
         )}
         {saved?.secret && (
           <SecretOnce label="Your webhook secret" value={saved.secret}>
-            Check the bonded-signature header of each webhook call with it.
+            Check the <InlineCode>bonded-signature</InlineCode> header of each webhook call with it.
           </SecretOnce>
         )}
         <ErrorText error={error} />
       </div>
-    </details>
+    </Collapsible>
   );
 }

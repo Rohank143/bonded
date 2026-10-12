@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { findCodeBlock, getCodeBlock, queryCodeBlock } from "../test/code";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
@@ -104,12 +105,8 @@ describe("Test your agent", () => {
     ])
       expect(screen.getByRole("heading", { name: new RegExp(title) })).toBeTruthy();
     expect(screen.getAllByText(/Preview: not on chain, not insurable/).length).toBeGreaterThan(0);
-    // What a preview runs and how long it may take come from the API's plan, not a guess.
-    expect(
-      screen.getByText(
-        /Each published attack runs once \(an official rating runs each three times\)/,
-      ),
-    ).toBeTruthy();
+    // The page says this is a preview: nothing else on it does.
+    expect(screen.getByRole("heading", { name: "This is a preview rating" })).toBeTruthy();
   });
 
   it("says how big a preview is from the API's plan, and nothing when it has none", async () => {
@@ -156,10 +153,10 @@ describe("Test your agent", () => {
       ),
     ).toBeTruthy();
     // Tools or chain is for those who need it: under Advanced, closed.
-    const advanced = within(step).getByText("Advanced (optional)").closest("details")!;
-    expect(advanced.open).toBe(false);
-    expect(within(advanced).getByRole("radio", { name: /Tools/ })).toBeTruthy();
-    expect(within(advanced).getByRole("radio", { name: /^Chain/ })).toBeTruthy();
+    const advanced = within(step).getByRole("button", { name: "Advanced (optional)" });
+    expect(advanced.getAttribute("aria-expanded")).toBe("false");
+    expect(within(step).getByRole("radio", { name: /Tools/ })).toBeTruthy();
+    expect(within(step).getByRole("radio", { name: /^Chain/ })).toBeTruthy();
     expect(screen.getByText(/Signed in as/)).toBeTruthy();
   });
 
@@ -185,13 +182,11 @@ describe("Test your agent", () => {
       expect(token).toHaveBeenCalledWith({ kind: "preview", id: "p7" }, { session: "sess" }),
     );
     expect(
-      await screen.findByText(
+      await findCodeBlock(
         "BONDED_RUNNER_TOKEN=bonded_rt_preview npx @bondedhq/runner --gateway https://gw.example --mode chain -- <your agent command>",
       ),
     ).toBeTruthy();
-    expect(
-      screen.getByText(/docker run --rm -e BONDED_RUNNER_TOKEN=bonded_rt_preview/),
-    ).toBeTruthy();
+    expect(getCodeBlock(/docker run --rm -e BONDED_RUNNER_TOKEN=bonded_rt_preview/)).toBeTruthy();
     expect(screen.getByText(/Waiting for the runner to connect/)).toBeTruthy();
     expect(screen.getByText("Runner waiting")).toBeTruthy();
     // Python has no package.json for init to read: the page leads with the runner command.
@@ -207,7 +202,7 @@ describe("Test your agent", () => {
     // Keeping it running, for the renewals.
     fireEvent.click(screen.getByText("Keep it running"));
     expect(
-      screen.getByText(
+      getCodeBlock(
         "npx @bondedhq/runner service --print systemd --gateway https://gw.example -- <your agent command>",
       ),
     ).toBeTruthy();
@@ -231,8 +226,8 @@ describe("Test your agent", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     const command =
       "BONDED_RUNNER_TOKEN=bonded_rt_preview npx @bondedhq/runner --gateway https://gw.example --mode tools -- <your agent command>";
-    expect(await screen.findByText(command)).toBeTruthy();
-    const initLine = screen.queryByText(
+    expect(await findCodeBlock(command)).toBeTruthy();
+    const initLine = queryCodeBlock(
       "BONDED_RUNNER_TOKEN=bonded_rt_preview npx @bondedhq/runner init --gateway https://gw.example",
     );
     if (init) {
@@ -275,9 +270,11 @@ describe("Test your agent", () => {
       expect(within(current()).getByText("Start the preview rating")).toBeTruthy(),
     );
     expect(await screen.findByText(/About 19 min for 56 episodes/)).toBeTruthy();
-    expect(screen.getByText(/up to 56 episodes, at most 37 min/)).toBeTruthy();
-    // The check's advice stays in view after it passed.
-    expect(screen.getByText(/Worth fixing before you start: It read 2 of 9 surfaces/)).toBeTruthy();
+    // How big a preview is comes from the API's plan, beside the steps.
+    expect(screen.getByText(/up to 56 episodes, stopped at 37 min at the most/)).toBeTruthy();
+    // The check's advice stays reachable after it passed, folded away until asked for.
+    fireEvent.click(screen.getByText("1 thing worth fixing before you start"));
+    expect(screen.getByText(/It read 2 of 9 surfaces/)).toBeTruthy();
     vi.spyOn(byoaApi, "startPreviewRating").mockRejectedValue(
       new ApiError(429, "one preview per wallet per day", { retryAt: iso(9 * 3_600_000) }),
     );

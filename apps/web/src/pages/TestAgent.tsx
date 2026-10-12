@@ -24,7 +24,12 @@ import {
   type PreviewStep,
 } from "../lib/connect";
 import { useRatingRun } from "../lib/rating-run";
-import { messageText, warningPrefix } from "../lib/troubleshooting";
+import {
+  messageText,
+  warningPrefix,
+  warningsSummary,
+  type ApiMessage,
+} from "../lib/troubleshooting";
 import { ProblemText } from "../components/problem";
 import { short, when } from "../lib/format";
 import { DOCS_BYOA } from "../lib/routes";
@@ -37,17 +42,18 @@ import {
 } from "../components/connection-setup";
 import { FrameworkQuestions, useFramework } from "../components/framework-questions";
 import { FRAMEWORK_TEXT, connectionFor, hostingFor } from "../lib/frameworks";
+import { Collapsible } from "../components/collapsible";
 import { ConnectionCheck } from "../components/connection-check";
 import { Estimate, NotificationSettingsForm, RatingLive } from "../components/rating-live";
 import { PREVIEW_LABEL, PreviewReport } from "../components/preview-report";
 import {
   Badge,
   Button,
-  Callout,
   Card,
   EmptyState,
   ErrorText,
   Loading,
+  Note,
   Page,
   Unavailable,
   linkClass,
@@ -282,15 +288,14 @@ export function TestAgent() {
   return (
     <Page
       title="Test your agent"
-      eyebrow="Preview rating"
       back={{ to: "/agents", label: "All agents" }}
-      intro={`See how your agent scores against Bonded's red team${plan ? `: up to ${plan.episodes} episodes, stopped at ${duration(plan.budgetSeconds)} at the most` : ""}. Free, with nothing to commit: no vault, no bond, no tokens. Just a wallet to sign in.`}
+      intro="See how your agent scores against Bonded's red team. It's free, with no vault, no bond and no tokens: just a wallet to sign in."
     >
       {blockedLine && !p?.ratingId && (
-        <Callout tone="warn" title={blockedLine}>
+        <Note tone="warn" title={blockedLine}>
           You can still connect your agent and run connection checks now, so it's ready to start
           then.
-        </Callout>
+        </Note>
       )}
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         {previewId && session && preview.isPending ? (
@@ -305,7 +310,7 @@ export function TestAgent() {
               state={stateOf("sign-in")}
               summary={
                 session && (
-                  <span className="flex flex-wrap items-center gap-2">
+                  <span className="flex flex-wrap items-center gap-x-3">
                     Signed in as <span className="font-mono">{short(session.wallet)}</span>
                     <button type="button" className={linkClass} onClick={signOut}>
                       Sign out
@@ -315,30 +320,26 @@ export function TestAgent() {
               }
             >
               {!walletConnected ? (
-                <div className="flex flex-col gap-3 text-sm">
+                <div className="flex flex-col items-start gap-4 text-sm">
                   <p className="text-muted">
                     Your wallet is how Bonded knows the preview is yours. You won't send anything or
                     pay gas.
                   </p>
-                  <div>
-                    <ConnectButton />
-                  </div>
+                  <ConnectButton />
                 </div>
               ) : (
-                <div className="flex flex-col gap-3 text-sm">
+                <div className="flex flex-col items-start gap-4 text-sm">
                   {expired && (
                     <p className="text-warn" role="status">
                       Your sign-in expired. Sign in again to carry on where you were.
                     </p>
                   )}
                   <p className="text-muted">
-                    One signature, no gas: it proves the wallet is yours. Nothing goes on chain.
+                    One signature, no gas. It proves the wallet is yours; nothing goes on chain.
                   </p>
-                  <div>
-                    <Button loading={signingIn} onClick={() => void signIn()}>
-                      {signingIn ? "Sign in your wallet…" : "Sign in"}
-                    </Button>
-                  </div>
+                  <Button loading={signingIn} onClick={() => void signIn()}>
+                    {signingIn ? "Sign in your wallet…" : "Sign in"}
+                  </Button>
                   <ErrorText error={signInError} />
                 </div>
               )}
@@ -350,10 +351,12 @@ export function TestAgent() {
               state={stateOf("choose")}
               summary={
                 p && (
-                  <span className="flex flex-wrap items-center gap-2">
-                    {framework ? `${FRAMEWORK_TEXT[framework].title}, ` : ""}
-                    {CONNECTION_TEXT[p.connection].title.toLowerCase()},{" "}
-                    {MODE_TEXT[p.mode].title.toLowerCase()} mode
+                  <span className="flex flex-wrap items-center gap-x-3">
+                    <span>
+                      {framework ? `${FRAMEWORK_TEXT[framework].title}, ` : ""}
+                      {CONNECTION_TEXT[p.connection].title.toLowerCase()},{" "}
+                      {MODE_TEXT[p.mode].title.toLowerCase()} mode
+                    </span>
                     {!p.ratingId && (
                       <button
                         type="button"
@@ -371,8 +374,9 @@ export function TestAgent() {
                 )
               }
             >
-              <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-6">
                 <FrameworkQuestions
+                  flat
                   name="preview"
                   framework={framework}
                   hosting={hostingFor(connection)}
@@ -439,19 +443,16 @@ export function TestAgent() {
               summary={
                 status &&
                 passingCheck(status) && (
-                  <span className="flex flex-col gap-1">
+                  <span className="flex flex-col gap-1.5">
                     <span className="text-safe">
                       Passed {when(Math.floor(Date.parse(status.lastCheck!.createdAt) / 1000))}
                     </span>
-                    {status.lastCheck!.warnings?.map((problem) => (
-                      <span key={messageText(problem)}>
-                        <ProblemText
-                          prefix={warningPrefix(problem, "Worth fixing before you start:")}
-                          message={problem}
-                          advice={problemAdvice(messageText(problem), status.connection)}
-                        />
-                      </span>
-                    ))}
+                    {!!status.lastCheck!.warnings?.length && (
+                      <CheckWarnings
+                        warnings={status.lastCheck!.warnings}
+                        connection={status.connection}
+                      />
+                    )}
                   </span>
                 )
               }
@@ -481,14 +482,11 @@ export function TestAgent() {
               summary={p?.ratingId ? "Started" : undefined}
             >
               {p && subject && (
-                <div className="flex flex-col gap-4 text-sm">
+                <div className="flex flex-col gap-5 text-sm">
                   <p className="text-muted">
-                    It runs every published attack once, a set made for this preview alone (one per
-                    attack class) and 6 episodes with no attack, shuffled
-                    {plan
-                      ? `: up to ${plan.episodes} episodes, at most ${duration(plan.budgetSeconds)}`
-                      : ""}
-                    . Each episode gives your agent 90 seconds.
+                    Every published attack runs once, plus a set made for this preview alone (one
+                    per attack class) and 6 episodes with no attack, shuffled. Each episode gives
+                    your agent 90 seconds.
                   </p>
                   <Estimate
                     subject={subject}
@@ -496,7 +494,7 @@ export function TestAgent() {
                     {...(session ? { session: session.session } : {})}
                   />
                   {p.reason && FINISHED.includes(p.status) && !p.ratingId && (
-                    <Callout tone="warn">{p.reason}</Callout>
+                    <Note tone="warn">{p.reason}</Note>
                   )}
                   {blockedLine && <p className="text-warn">{blockedLine}</p>}
                   {!blocked && (allowance.data?.queued ?? 0) > 0 && (
@@ -523,7 +521,7 @@ export function TestAgent() {
                     </Button>
                   </div>
                   {refusal(startError) ? (
-                    <Callout tone="warn">{refusal(startError)}</Callout>
+                    <Note tone="warn">{refusal(startError)}</Note>
                   ) : (
                     <ErrorText error={startError} />
                   )}
@@ -531,9 +529,15 @@ export function TestAgent() {
               )}
             </FlowStep>
 
-            <FlowStep n={6} title={STEP_TITLES.rating} state={stateOf("rating")} open={false}>
+            <FlowStep
+              n={6}
+              title={STEP_TITLES.rating}
+              state={stateOf("rating")}
+              summary="Finished"
+              open={false}
+            >
               {p?.ratingId && subject && auth && (
-                <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-6">
                   <RatingLive
                     session={session?.session}
                     statusHint={p.status}
@@ -571,27 +575,34 @@ export function TestAgent() {
             preview={preview}
             onReset={() => setParams({})}
           />
-          <Card title="What a preview is">
-            <ul className="flex flex-col gap-2 text-sm text-muted">
-              <li>
-                <span className="text-ink">A shorter rating, scored the same way.</span> Each
-                published attack runs once (an official rating runs each three times), plus a set
-                made for this preview alone (one per attack class) and 6 episodes with no attack.
-                The same judge and scoring as an official rating.
-              </li>
-              <li>
-                <span className="text-ink">{PREVIEW_LABEL}.</span> It isn't signed or posted, and no
-                cover can be bought on it.
-              </li>
-              <li>
-                <span className="text-ink">Free, a few a day per wallet.</span> Previews run one at
-                a time, after official ratings.
-              </li>
-              <li>
-                <span className="text-ink">Your model, your bill.</span> Bonded runs the attacks;
-                your agent's own model calls are yours.
-              </li>
-            </ul>
+          <Card title="This is a preview rating">
+            <p className="text-sm text-muted">
+              A shorter version of an official rating, scored the same way by the same judge
+              {plan
+                ? `: up to ${plan.episodes} episodes, stopped at ${duration(plan.budgetSeconds)} at the most`
+                : ""}
+              .
+            </p>
+            <dl className="mt-4 flex flex-col gap-3 text-sm">
+              <div>
+                <dt className="font-medium">{PREVIEW_LABEL}</dt>
+                <dd className="mt-0.5 text-muted">
+                  It isn't signed or posted, and no cover can be bought on it.
+                </dd>
+              </div>
+              <div>
+                <dt className="font-medium">Free, a few a day per wallet</dt>
+                <dd className="mt-0.5 text-muted">
+                  Previews run one at a time, after official ratings.
+                </dd>
+              </div>
+              <div>
+                <dt className="font-medium">Your model, your bill</dt>
+                <dd className="mt-0.5 text-muted">
+                  Bonded runs the attacks; your agent's own model calls are yours.
+                </dd>
+              </div>
+            </dl>
             <p className="mt-4 text-sm">
               <a className={linkClass} href={DOCS_BYOA}>
                 The guide
@@ -604,9 +615,12 @@ export function TestAgent() {
           </Card>
           {session && (previews.data?.items.length ?? 0) > 0 && (
             <Card title="Your previews">
-              <ul className="flex flex-col gap-2 text-sm">
+              <ul className="divide-y divide-line text-sm">
                 {previews.data!.items.map((x) => (
-                  <li key={x.id} className="flex flex-wrap items-center justify-between gap-2">
+                  <li
+                    key={x.id}
+                    className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2.5 first:pt-0 last:pb-0"
+                  >
                     <span className="flex flex-wrap items-center gap-2">
                       <span className="text-muted">
                         {when(Math.floor(Date.parse(x.createdAt) / 1000))}
@@ -648,12 +662,43 @@ export function TestAgent() {
   );
 }
 
+/** A passed check's warnings, folded behind one line, with "Note:" on the ones that are only notes. */
+function CheckWarnings({
+  warnings,
+  connection,
+}: {
+  warnings: readonly ApiMessage[];
+  connection: Connection;
+}) {
+  const { text, notesOnly } = warningsSummary(warnings);
+  return (
+    <Collapsible
+      triggerClassName={`text-sm font-normal ${notesOnly ? "text-muted" : "text-warn"}`}
+      contentClassName="pt-3"
+      summary={text}
+    >
+      <ul className="flex flex-col gap-3">
+        {warnings.map((problem) => (
+          <li key={messageText(problem)}>
+            <ProblemText
+              prefix={warningPrefix(problem, "")}
+              message={problem}
+              advice={problemAdvice(messageText(problem), connection)}
+            />
+          </li>
+        ))}
+      </ul>
+    </Collapsible>
+  );
+}
+
 type StepState = "done" | "current" | "later";
 
 /**
- * One step of the flow. The current one is open; done ones show a line of what was done (and
- * can be reopened when that helps, e.g. to copy the runner command again); later ones show only
- * their title, so the whole path is visible from the start.
+ * One step of the flow, a card each. The current one is open; done ones show a line of what was
+ * done (and can be reopened when that helps, e.g. to copy the runner command again); later ones
+ * show only their title, so the whole path is visible from the start. Inside a card there are no
+ * further boxes: the content sits flat, under the title.
  */
 function FlowStep({
   n,
@@ -717,7 +762,7 @@ function FlowStep({
         <div className="mt-2 pl-10 text-sm text-muted">{summary}</div>
       )}
       {(state === "current" || (state === "done" && open && show)) && (
-        <div className="mt-4 sm:pl-10">{children}</div>
+        <div className="mt-5">{children}</div>
       )}
     </li>
   );

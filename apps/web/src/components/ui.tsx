@@ -1,3 +1,4 @@
+import { Rich } from "./code-block";
 import { useId, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router";
@@ -77,7 +78,11 @@ export function Stat({
       >
         {value}
       </div>
-      {hint && <div className="mt-1 text-xs text-muted">{hint}</div>}
+      {hint && (
+        <div className="mt-1 text-xs text-muted">
+          {typeof hint === "string" ? <Rich>{hint}</Rich> : hint}
+        </div>
+      )}
     </div>
   );
 }
@@ -324,7 +329,7 @@ export function Input(props: {
       </div>
       {(props.error || props.hint) && (
         <span id={`${id}-note`} className={`text-xs ${props.error ? "text-breach" : "text-muted"}`}>
-          {props.error || props.hint}
+          {props.error || (typeof props.hint === "string" ? <Rich>{props.hint}</Rich> : props.hint)}
         </span>
       )}
     </div>
@@ -340,6 +345,7 @@ export function Choice({
   name,
   type = "radio",
   disabled = false,
+  flat = false,
 }: {
   checked: boolean;
   onChange: () => void;
@@ -349,10 +355,12 @@ export function Choice({
   type?: "radio" | "checkbox";
   /** Not available here; `children` should say why. */
   disabled?: boolean;
+  /** A row in a plain list, for places where a box per option is too much. */
+  flat?: boolean;
 }) {
   return (
     <label
-      className={`flex items-start gap-3 rounded-2xl border p-4 text-sm transition ${disabled ? "cursor-not-allowed border-line-strong opacity-60" : checked ? "cursor-pointer border-accent/60 bg-accent-soft" : "cursor-pointer border-line-strong hover:bg-white/[0.03]"}`}
+      className={`flex items-start gap-3 text-sm transition ${flat ? `py-3 ${disabled ? "cursor-not-allowed opacity-60" : checked ? "cursor-pointer" : "cursor-pointer text-muted hover:text-ink"}` : `rounded-2xl border p-4 ${disabled ? "cursor-not-allowed border-line-strong opacity-60" : checked ? "cursor-pointer border-accent/60 bg-accent-soft" : "cursor-pointer border-line-strong hover:bg-white/[0.03]"}`}`}
     >
       <input
         type={type}
@@ -360,12 +368,50 @@ export function Choice({
         checked={checked}
         onChange={onChange}
         disabled={disabled}
-        className="mt-0.5"
+        className={`mt-0.5 ${flat ? "accent-brand-bright" : ""}`}
       />
       <span>
-        <span className="font-semibold">{title}</span>
+        <span className={`font-semibold ${flat && checked ? "text-ink" : ""}`}>{title}</span>
         {children && <span className="mt-0.5 block text-muted">{children}</span>}
       </span>
+    </label>
+  );
+}
+
+/** An on/off setting: its name (and what it does) on the left, the switch on the right. */
+export function Switch({
+  checked,
+  onChange,
+  label,
+  description,
+  disabled = false,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  label: ReactNode;
+  description?: ReactNode;
+  disabled?: boolean;
+}) {
+  return (
+    <label
+      className={`flex items-center justify-between gap-6 py-3.5 ${disabled ? "cursor-wait" : "cursor-pointer"}`}
+    >
+      <span className="min-w-0">
+        <span className={`block text-sm font-medium ${checked ? "" : "text-muted"}`}>{label}</span>
+        {description && <span className="mt-0.5 block text-sm text-muted">{description}</span>}
+      </span>
+      <input
+        type="checkbox"
+        role="switch"
+        className="peer sr-only"
+        checked={checked}
+        disabled={disabled}
+        onChange={onChange}
+      />
+      <span
+        aria-hidden
+        className="relative h-6 w-10 shrink-0 rounded-full bg-white/[0.14] transition peer-checked:bg-brand-bright peer-focus-visible:ring-2 peer-focus-visible:ring-accent peer-disabled:opacity-60 after:absolute after:top-0.5 after:left-0.5 after:size-5 after:rounded-full after:bg-white after:transition peer-checked:after:translate-x-4"
+      />
     </label>
   );
 }
@@ -441,6 +487,33 @@ export function Callout({
     <div className={`rounded-2xl border p-4 text-sm ${CALLOUT[tone]}`}>
       {title && <p className="mb-1 font-semibold">{title}</p>}
       <div className="text-soft">{children}</div>
+    </div>
+  );
+}
+
+const NOTE_BAR: Record<Exclude<Tone, "neutral">, string> = {
+  brand: "border-accent/60",
+  warn: "border-warn/60",
+  breach: "border-breach/70",
+  safe: "border-safe/60",
+};
+
+/** A status or warning in the page's own flow: a coloured bar at its left, no box around it. */
+export function Note({
+  tone = "brand",
+  title,
+  role,
+  children,
+}: {
+  tone?: Exclude<Tone, "neutral">;
+  title?: ReactNode;
+  role?: "alert" | "status";
+  children?: ReactNode;
+}) {
+  return (
+    <div role={role} className={`border-l-2 pl-4 text-sm ${NOTE_BAR[tone]}`}>
+      {title && <p className="font-semibold">{title}</p>}
+      {children && <div className={`text-soft ${title ? "mt-1" : ""}`}>{children}</div>}
     </div>
   );
 }

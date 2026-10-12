@@ -75,3 +75,22 @@ export function withCodes(
 export function warningPrefix(m: ApiMessage, prefix: string): string {
   return isNote(messageCode(m)) ? "Note:" : prefix;
 }
+
+/**
+ * One line for a check's warnings, which fold away behind it: how many are worth fixing and how
+ * many are only notes. `notesOnly` is for toning the line down when nothing needs doing.
+ */
+export function warningsSummary(warnings: readonly ApiMessage[]): {
+  text: string;
+  notesOnly: boolean;
+} {
+  const notes = warnings.filter((w) => isNote(messageCode(w))).length;
+  const fixes = warnings.length - notes;
+  const parts = [
+    ...(fixes
+      ? [`${fixes} ${fixes === 1 ? "thing" : "things"} worth fixing before you start`]
+      : []),
+    ...(notes ? [`${notes} ${notes === 1 ? "note" : "notes"}`] : []),
+  ];
+  return { text: parts.join(", "), notesOnly: fixes === 0 };
+}

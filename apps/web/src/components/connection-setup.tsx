@@ -24,6 +24,8 @@ import { when } from "../lib/format";
 import { DOCS_BYOA } from "../lib/routes";
 import { ApiError } from "../lib/api";
 import { Badge, Button, Choice, ErrorText, Input, linkClass } from "./ui";
+import { InlineCode } from "./code-block";
+import { Collapsible } from "./collapsible";
 import { CopyBlock, SecretOnce, Tabs } from "./copy";
 
 /** The one-line explanations of each choice, shared by every place that offers them. */
@@ -132,9 +134,8 @@ export function ModeChoice({
 function CommandNote({ example = false }: { example?: boolean }) {
   return (
     <>
-      Replace <code className="font-mono">&lt;your agent command&gt;</code> with how you start your
-      agent, e.g. <code className="font-mono">node agent.js</code> or{" "}
-      <code className="font-mono">python agent.py</code>.
+      Replace <InlineCode>&lt;your agent command&gt;</InlineCode> with how you start your agent,
+      e.g. <InlineCode>node agent.js</InlineCode> or <InlineCode>python agent.py</InlineCode>.
       {example && (
         <>
           {" "}
@@ -215,6 +216,7 @@ export function ConnectRunner({
     teeUrl: teeUrl ?? null,
   };
   const connected = isConnected(status, "runner");
+  const initIsPrimary = initLeads(framework) && !input?.teeUrl;
   return (
     <div className="flex flex-col gap-4 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -230,40 +232,56 @@ export function ConnectRunner({
       </div>
       {input ? (
         <>
-          {initLeads(framework) ? (
-            <>
-              <InitCommand
-                framework={framework}
-                connection="runner"
-                mode={input.mode}
-                teeUrl={input.teeUrl}
-                token={input.token}
-                gatewayUrl={input.gatewayUrl}
-              />
-              <CopyBlock
-                label="Or start the runner yourself (Node)"
-                text={runnerCommand(input)}
-                note={<CommandNote />}
-              />
-            </>
-          ) : (
-            <CopyBlock
-              label="Start the runner with your agent's command"
-              text={runnerCommand(input)}
-              note={<CommandNote example />}
+          {initLeads(framework) && (
+            <InitCommand
+              framework={framework}
+              connection="runner"
+              mode={input.mode}
+              teeUrl={input.teeUrl}
+              token={input.token}
+              gatewayUrl={input.gatewayUrl}
             />
           )}
-          <CopyBlock
-            label="With Docker"
-            text={runnerDockerCommand(input)}
-            note="Build your agent into an image FROM the runner's image first (see the guide)."
-          />
+          {/* Init leads unless the agent is bound to a TEE (init can't pass the TEE's URL on). Then,
+              and for a framework init can't read, the runner command is the one to use, so it is
+              shown, not folded away. */}
+          {!initIsPrimary && (
+            <CopyBlock
+              label={
+                input.teeUrl
+                  ? "Start the runner, with your agent's TEE"
+                  : "Start the runner with your agent's command"
+              }
+              text={runnerCommand(input)}
+              note={<CommandNote example={!initLeads(framework)} />}
+            />
+          )}
+          <Collapsible
+            className="border-t border-line pt-4"
+            contentClassName="pt-4"
+            summary="Other ways to start the runner"
+          >
+            <div className="flex flex-col gap-4">
+              {initIsPrimary && (
+                <CopyBlock
+                  label="Or start the runner yourself (Node)"
+                  text={runnerCommand(input)}
+                  note={<CommandNote />}
+                />
+              )}
+              <CopyBlock
+                label="With Docker"
+                text={runnerDockerCommand(input)}
+                note="Build your agent into an image FROM the runner's image first (see the guide)."
+              />
+            </div>
+          </Collapsible>
           <p className="text-xs text-warn">
             The token is in these commands and won't be shown again. Copy them now.
           </p>
         </>
       ) : (
-        <div className="flex min-h-24 flex-col gap-3 rounded-2xl border border-dashed border-line-strong p-4">
+        <div className="flex flex-col gap-3">
           <p className="text-muted">
             {status.hasToken
               ? "A runner token exists, but it's only shown once. If you didn't keep the command, make a new token: the old one stops working."
@@ -434,7 +452,7 @@ export function ConnectUrl({
           </p>
         </form>
       ) : isVerified ? (
-        <div className="flex flex-col gap-2 rounded-2xl border border-safe/30 bg-safe-soft p-4">
+        <div className="flex flex-col gap-3 border-l-2 border-safe/60 pl-4">
           <p className="flex flex-wrap items-center gap-2">
             <Badge tone="safe" dot>
               Verified
@@ -465,7 +483,7 @@ export function ConnectUrl({
           <NewSecret busy={busy === "secret"} signing={signing} onConfirm={() => void renew()} />
         </div>
       ) : (
-        <div className="flex flex-col gap-3 rounded-2xl border border-warn/30 bg-warn-soft p-4">
+        <div className="flex flex-col gap-3 border-l-2 border-warn/60 pl-4">
           <p className="flex flex-wrap items-center gap-2">
             <Badge tone="warn" dot>
               Saved, not verified yet
@@ -476,9 +494,9 @@ export function ConnectUrl({
             <>
               <p className="font-semibold">1. Add this secret to your agent</p>
               <SecretOnce label="Your agent secret" value={secret}>
-                Set it as <code className="font-mono">BONDED_AGENT_SECRET</code> where your agent
-                runs (the handler below reads it from there), then restart or redeploy it. It checks
-                that each call really comes from Bonded.
+                Set it as <InlineCode>BONDED_AGENT_SECRET</InlineCode> where your agent runs (the
+                handler below reads it from there), then restart or redeploy it. It checks that each
+                call really comes from Bonded.
               </SecretOnce>
               <p className="font-semibold">2. Verify</p>
             </>
@@ -489,12 +507,11 @@ export function ConnectUrl({
             </p>
           )}
           <p className="text-xs text-soft">
-            Bonded sends{" "}
-            <code className="font-mono">{'{ "type": "verify", "challenge": "…" }'}</code>, signed
+            Bonded sends <InlineCode>{'{ "type": "verify", "challenge": "…" }'}</InlineCode>, signed
             with the secret; within 10 seconds your agent answers 200 with the challenge and its{" "}
-            <code className="font-mono">proof</code> (HMAC-SHA256 of{" "}
-            <code className="font-mono">"verify." + challenge</code>, keyed with the secret). The
-            handler below does both.
+            <InlineCode>proof</InlineCode> (HMAC-SHA256 of{" "}
+            <InlineCode>"verify." + challenge</InlineCode>, keyed with the secret). The handler
+            below does both.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" loading={busy === "verify"} onClick={() => void verify()}>
@@ -510,7 +527,7 @@ export function ConnectUrl({
         </div>
       )}
       {failure ? (
-        <div role="alert" className="rounded-2xl border border-breach/35 bg-breach-soft p-4">
+        <div role="alert" className="border-l-2 border-breach/70 pl-4">
           <p className="font-semibold">{failure}</p>
           {advice && <p className="mt-1 text-soft">{advice}</p>}
           <p className="mt-1 flex flex-wrap gap-x-3 text-xs">
@@ -549,10 +566,7 @@ function NewSecret({
       </div>
     );
   return (
-    <div
-      role="alert"
-      className="flex flex-col gap-2 rounded-xl border border-breach/35 bg-breach-soft p-3 text-xs"
-    >
+    <div role="alert" className="flex flex-col gap-2 border-l-2 border-breach/70 pl-4 text-xs">
       <p>
         The current secret stops working at once: until your agent has the new one, it can't answer
         Bonded. Then verify the URL and run a connection check again.
@@ -588,13 +602,16 @@ export function Snippets({
   const selected = picked ?? (list.some((s) => s.id === preferred) ? preferred! : list[0]!.id);
   const current = list.find((s) => s.id === selected) ?? list[0]!;
   return (
-    <details className="group rounded-2xl border border-line-strong p-4">
-      <summary className="cursor-pointer text-sm font-semibold marker:text-muted">
-        {connection === "url"
+    <Collapsible
+      className="border-t border-line pt-4"
+      contentClassName="pt-4"
+      summary={
+        connection === "url"
           ? "Code for your agent: the handler and frameworks"
-          : "Code for your agent, by framework"}
-      </summary>
-      <div className="mt-4">
+          : "Code for your agent, by framework"
+      }
+    >
+      <div>
         <Tabs
           label="Framework"
           tabs={list.map((s) => ({ id: s.id, label: s.label }))}
@@ -603,7 +620,12 @@ export function Snippets({
         >
           <div className="flex flex-col gap-3">
             {current.install && <CopyBlock label="Install" text={current.install} />}
-            <CopyBlock label={current.label} text={current.code} note={current.note} />
+            <CopyBlock
+              label={current.label}
+              text={current.code}
+              note={current.note}
+              language={current.language}
+            />
           </div>
         </Tabs>
         <p className="mt-3 text-xs text-muted">
@@ -614,7 +636,7 @@ export function Snippets({
           .
         </p>
       </div>
-    </details>
+    </Collapsible>
   );
 }
 
