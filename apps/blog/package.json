@@ -1,0 +1,19 @@
+{
+  "name": "@bonded/blog",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "test": "node --test scripts/"
+  },
+  "dependencies": {
+    "@astrojs/rss": "4.0.19",
+    "@fontsource-variable/geist": "5.3.0",
+    "@fontsource-variable/jetbrains-mono": "5.3.0",
+    "@fontsource/instrument-serif": "5.3.0",
+    "astro": "7.3.6"
+  }
+}
