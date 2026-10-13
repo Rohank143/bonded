@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { parse } from "yaml";
 
 const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../src/content/posts");
 const posts = fs
@@ -12,16 +13,10 @@ const posts = fs
   .filter((f) => f.endsWith(".md"))
   .map((f) => {
     const text = fs.readFileSync(path.join(dir, f), "utf8");
-    const m = text.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+    const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
     assert.ok(m, `${f}: missing front matter`);
-    const fields = Object.fromEntries(
-      m[1]
-        .split("\n")
-        .map((l) => l.match(/^(\w+):\s*(.*)$/))
-        .filter(Boolean)
-        .map(([, k, v]) => [k, v.replace(/^"|"$/g, "")]),
-    );
-    return { file: f, fields, body: m[2] };
+    // The editor (Sveltia CMS) may quote or fold values, so read it as real YAML.
+    return { file: f, fields: parse(m[1]) ?? {}, body: m[2] };
   });
 
 test("there is at least one post", () => {
@@ -36,7 +31,11 @@ for (const p of posts) {
       p.fields.description.length <= 200,
       "description over 200 characters gets cut in previews",
     );
-    assert.match(p.fields.date ?? "", /^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD");
+    const date =
+      p.fields.date instanceof Date
+        ? p.fields.date.toISOString().slice(0, 10)
+        : String(p.fields.date ?? "");
+    assert.match(date, /^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD");
     assert.match(
       p.file,
       /^[a-z0-9-]+\.md$/,
