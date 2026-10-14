@@ -35,7 +35,6 @@ export interface Post {
   slug: string;
   description: string;
   publishedAt: string;
-  author: string;
   tags: string[];
   featured: boolean;
   cover: SanityImage;
@@ -50,7 +49,6 @@ const POSTS_QUERY = /* groq */ `*[_type == "post"] | order(publishedAt desc, _cr
   "slug": slug.current,
   description,
   publishedAt,
-  "author": coalesce(author, "Fortune Ogunsusi"),
   "tags": coalesce(tags, []),
   "featured": coalesce(featured, false),
   cover { asset, alt, hotspot, crop },
