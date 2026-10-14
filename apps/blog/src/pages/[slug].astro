@@ -31,7 +31,7 @@ const more = (await publishedPosts()).filter((p) => p.slug !== post.slug).slice(
       <h1>{post.title}</h1>
       <p class="lede">{post.description}</p>
       <p class="byline">
-        {post.author} · {formatDate(post.publishedAt)} · {readingTime(post)} min read
+        {formatDate(post.publishedAt)} · {readingTime(post)} min read
       </p>
     </header>
 
