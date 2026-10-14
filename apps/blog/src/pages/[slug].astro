@@ -1,0 +1,67 @@
+---
+import Body from "../components/Body.astro";
+import Cover from "../components/Cover.astro";
+import PostCard from "../components/PostCard.astro";
+import Base from "../layouts/Base.astro";
+import { formatDate, ogImageUrl, publishedPosts, readingTime, type Post } from "../lib/sanity";
+
+export async function getStaticPaths() {
+  const posts = await publishedPosts();
+  return posts.map((post) => ({ params: { slug: post.slug }, props: { post } }));
+}
+
+const { post } = Astro.props as { post: Post };
+const base = import.meta.env.BASE_URL;
+const ogImage = ogImageUrl(post.cover);
+const more = (await publishedPosts()).filter((p) => p.slug !== post.slug).slice(0, 2);
+---
+
+<Base
+  title={`${post.title} | Bonded`}
+  description={post.description}
+  type="article"
+  published={new Date(`${post.publishedAt}T00:00:00Z`)}
+  ogImage={ogImage}
+  ogImageAlt={post.cover.alt}
+>
+  <article class="post">
+    <header class="post-header">
+      <a class="back" href={base}><span aria-hidden="true">←</span> All posts</a>
+      <div class="tags">{post.tags.map((t) => <span class="tag">{t}</span>)}</div>
+      <h1>{post.title}</h1>
+      <p class="lede">{post.description}</p>
+      <p class="byline">
+        {post.author} · {formatDate(post.publishedAt)} · {readingTime(post)} min read
+      </p>
+    </header>
+
+    <figure class="cover">
+      <Cover image={post.cover} widths={[800, 1200, 1600]} sizes="(max-width: 1000px) 100vw, 960px" eager />
+    </figure>
+
+    <div class="prose">
+      <Body value={post.body} />
+    </div>
+
+    <aside class="cta">
+      <div>
+        <h2>Is your agent ready?</h2>
+        <p>Test it free against the red team. Any framework, with only a wallet sign-in.</p>
+      </div>
+      <a class="btn btn-brand" href="/agents/test">Test your agent <span aria-hidden="true">→</span></a>
+    </aside>
+  </article>
+
+  {
+    more.length > 0 && (
+      <section class="more">
+        <h2>More from the blog</h2>
+        <div class="grid">
+          {more.map((p) => (
+            <PostCard post={p} />
+          ))}
+        </div>
+      </section>
+    )
+  }
+</Base>
