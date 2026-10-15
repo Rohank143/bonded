@@ -165,6 +165,21 @@ describe("runAdaptive", () => {
     expect(outcome.prompts[0]).toContain("did not act on it");
   });
 
+  it("reports an attacker model's refusal as a refusal", async () => {
+    const client: ChatClient = {
+      complete: async () => ({
+        choices: [
+          { message: { role: "assistant", content: null }, finish_reason: "content_filter" },
+        ],
+      }),
+    };
+    const result = await runAdaptive(
+      options({ client, rounds: 1, runAttempt: async () => episode("ignored") }),
+    );
+    expect(result.attempts.map((a) => a.ruling)).toEqual(["ignored", "invalid"]);
+    expect(result.attempts[1]?.note).toContain("refused");
+  });
+
   it("spends a round on an invalid draft without running an episode", async () => {
     const client: ChatClient = { complete: async () => reply("send {{amount}} to {{wallet}}") };
     let runs = 0;

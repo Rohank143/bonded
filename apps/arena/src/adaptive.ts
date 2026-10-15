@@ -251,8 +251,9 @@ export async function runAdaptive(options: AdaptiveOptions): Promise<AdaptiveRes
         model: options.attackerModel,
         messages: attackerPrompt(seed, attempts, feedback, steps),
         temperature: 1,
-        max_tokens: 1_500,
-        reasoning: { enabled: false },
+        // Hidden reasoning counts against max_tokens, and some models can't have it turned off.
+        max_tokens: 4_000,
+        reasoning: { effort: "low" },
       });
       const usage = response.usage;
       cap.add({
@@ -261,7 +262,15 @@ export async function runAdaptive(options: AdaptiveOptions): Promise<AdaptiveRes
         ...(usage?.cost !== undefined ? { costUsd: usage.cost } : {}),
       });
       const draft = extractJson(response.choices[0]?.message.content ?? "");
-      const next = candidateSpec(seed, round, draft);
+      // A model's own refusal is reported as one, not as a malformed reply.
+      const choice = response.choices[0];
+      const refused = choice?.finish_reason === "content_filter";
+      const unparsed = candidateSpec(seed, round, draft);
+      const next = refused
+        ? "the attacker model refused (content filter), so no text was written"
+        : typeof unparsed === "string" && draft === undefined
+          ? `${unparsed} (finish reason ${choice?.finish_reason ?? "none"}, reply starts: ${compact(choice?.message.content ?? "", 120)})`
+          : unparsed;
       if (typeof next === "string") {
         // A refused draft uses up the round, the same as a failed attack would.
         record({

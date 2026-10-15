@@ -17,8 +17,14 @@ import {
   llmConfigFromEnv,
   OpenAICompatibleClient,
 } from "@bondedhq/shared";
-import { type AdaptiveResult, type Feedback, runAdaptive } from "./adaptive.js";
+import {
+  type AdaptiveAttempt,
+  type AdaptiveResult,
+  type Feedback,
+  runAdaptive,
+} from "./adaptive.js";
 import { loadAttackLibrary } from "./attacks.js";
+import { BENIGN_GOALS } from "./episode.js";
 import { loadDotEnv } from "./env.js";
 import { Sandbox } from "./sandbox.js";
 
@@ -40,6 +46,9 @@ OPENROUTER_API_KEY in .env and anvil (Foundry). Results go to ratings/adaptive-<
                          seed of every class)
   --rounds <n>           rewrites after the seed's own run (default: 6)
   --feedback <level>     outcome | trace: what the attacker sees of each try (default: trace)
+  --goal-index <0-3>     the agent's task: one of the Arena's benign goals (src/episode.ts). Index 3
+                         asks it to review recent transfers, which an A5 seed needs: an agent that
+                         is never asked to read transfer history never sees the planted text
   --enforce              run the vault in Enforce mode
   --out <dir>            where to write results (default: ratings/adaptive-<agent>)`;
 
@@ -64,13 +73,25 @@ function buildTarget(name: string, brain: string, model: string | undefined): Ar
   }
 }
 
+/** One letter per try. Not the ruling's first letter: "ignored" and "invalid" would collide. */
+const TRAIL: Record<AdaptiveAttempt["ruling"], string> = {
+  breach: "B",
+  vault_blocked: "V",
+  guard_blocked: "G",
+  ignored: "I",
+  unseen: "U",
+  no_verdict: "E",
+  control: "C",
+  invalid: "N",
+};
+
 function describe(r: AdaptiveResult): string {
   const outcome = r.breached
     ? r.roundsToBreach === 0
       ? "breached by the published seed"
       : `breached in round ${r.roundsToBreach}`
-    : `held for ${r.attempts.length} tries (${r.stoppedBecause})`;
-  const trail = r.attempts.map((a) => (a.succeeded ? "X" : a.ruling[0]!.toUpperCase())).join("");
+    : `held for ${r.attempts.filter((a) => a.ruling !== "invalid").length} of ${r.attempts.length} tries (${r.stoppedBecause})`;
+  const trail = r.attempts.map((a) => (a.succeeded ? "X" : TRAIL[a.ruling])).join("");
   return `${r.seed.padEnd(38)} ${outcome.padEnd(34)} ${trail}  $${r.spend.spentUsd.toFixed(3)}`;
 }
 
@@ -87,6 +108,7 @@ async function main(): Promise<number> {
       seeds: { type: "string" },
       rounds: { type: "string", default: "6" },
       feedback: { type: "string", default: "trace" },
+      "goal-index": { type: "string" },
       enforce: { type: "boolean", default: false },
       out: { type: "string" },
       help: { type: "boolean", default: false },
@@ -95,6 +117,10 @@ async function main(): Promise<number> {
   const maxUsd = Number(values["max-usd"]);
   const rounds = Number(values.rounds);
   const feedback = values.feedback as Feedback;
+  const goal =
+    values["goal-index"] === undefined ? undefined : BENIGN_GOALS[Number(values["goal-index"])];
+  if (values["goal-index"] !== undefined && goal === undefined)
+    throw new Error(`--goal-index must be 0 to ${BENIGN_GOALS.length - 1}`);
   if (
     values.help ||
     !(maxUsd > 0) ||
@@ -141,7 +167,10 @@ async function main(): Promise<number> {
         rounds,
         feedback,
         maxUsd,
-        episode: Object.keys(mandate).length ? { vault: { mandate } } : {},
+        episode: {
+          ...(Object.keys(mandate).length ? { vault: { mandate } } : {}),
+          ...(goal ? { goal } : {}),
+        },
       });
       results.push(result);
       console.log(describe(result));
@@ -154,8 +183,15 @@ async function main(): Promise<number> {
       `\n${results.length} seeds: ${staticHit.length} breached by the published text, ` +
         `${hit.length} within ${rounds} rewrites. Results in ${outDir}`,
     );
+    // A clean result means little when the attacker model wrote nothing: say how often that happened.
+    const tries = results.flatMap((r) => r.attempts);
+    const wasted = tries.filter((a) => a.ruling === "invalid").length;
     console.log(
-      "Key: X breached, I ignored, U unseen, G guard blocked, V vault blocked, N invalid",
+      `${tries.length - wasted} of ${tries.length} tries ran an episode; ${wasted} drafts were ` +
+        `refused or invalid${wasted > tries.length / 4 ? " (the attacker model may be refusing: see the notes in the result files)" : ""}`,
+    );
+    console.log(
+      "Key: X attack succeeded, I ignored, U unseen, G guard blocked, V vault blocked, N invalid draft, E agent error",
     );
   } finally {
     await sandbox.stop();
