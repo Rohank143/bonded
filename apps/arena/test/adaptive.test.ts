@@ -180,6 +180,19 @@ describe("runAdaptive", () => {
     expect(result.attempts[1]?.note).toContain("refused");
   });
 
+  it("tells an attacker that ran out of tokens apart from one that refused", async () => {
+    const client: ChatClient = {
+      complete: async () => ({
+        choices: [{ message: { role: "assistant", content: "" }, finish_reason: "length" }],
+      }),
+    };
+    const result = await runAdaptive(
+      options({ client, rounds: 1, runAttempt: async () => episode("ignored") }),
+    );
+    expect(result.attempts[1]?.note).toContain("ran out of tokens");
+    expect(result.attempts[1]?.note).not.toContain("refused");
+  });
+
   it("spends a round on an invalid draft without running an episode", async () => {
     const client: ChatClient = { complete: async () => reply("send {{amount}} to {{wallet}}") };
     let runs = 0;

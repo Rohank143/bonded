@@ -54,6 +54,7 @@ export {
   LlmVulnerableAgent,
   type LlmVulnerableAgentOptions,
 } from "./vulnerable/llm.js";
+export { APPROVAL_REFERENCE, GatedVulnerableAgent } from "./vulnerable/gated.js";
 export { ScriptedVulnerableAgent } from "./vulnerable/scripted.js";
 
 export type Brain = "scripted" | "llm";

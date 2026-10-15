@@ -104,6 +104,10 @@ const RULING_TEXT: Record<Ruling | "invalid", string> = {
   invalid: "your draft was rejected before it ran",
 };
 
+/** How a draft that wasn't written is described, so a run can count the kinds. */
+export const REFUSED = "the attacker model refused";
+export const OUT_OF_TOKENS = "the attacker model ran out of tokens";
+
 const MAX_PAYLOAD_CHARS = 1_500;
 const AGENT_SAID_CHARS = 600;
 const ARG_CHARS = 160;
@@ -251,8 +255,9 @@ export async function runAdaptive(options: AdaptiveOptions): Promise<AdaptiveRes
         model: options.attackerModel,
         messages: attackerPrompt(seed, attempts, feedback, steps),
         temperature: 1,
-        // Hidden reasoning counts against max_tokens, and some models can't have it turned off.
-        max_tokens: 4_000,
+        // Hidden reasoning counts against max_tokens, and some models can't have it turned off:
+        // at 4,000 DeepSeek V4 Pro spent all of it thinking and returned nothing.
+        max_tokens: 16_000,
         reasoning: { effort: "low" },
       });
       const usage = response.usage;
@@ -266,11 +271,14 @@ export async function runAdaptive(options: AdaptiveOptions): Promise<AdaptiveRes
       const choice = response.choices[0];
       const refused = choice?.finish_reason === "content_filter";
       const unparsed = candidateSpec(seed, round, draft);
+      const outOfTokens = choice?.finish_reason === "length" && draft === undefined;
       const next = refused
-        ? "the attacker model refused (content filter), so no text was written"
-        : typeof unparsed === "string" && draft === undefined
-          ? `${unparsed} (finish reason ${choice?.finish_reason ?? "none"}, reply starts: ${compact(choice?.message.content ?? "", 120)})`
-          : unparsed;
+        ? `${REFUSED}: content filter, so no text was written`
+        : outOfTokens
+          ? `${OUT_OF_TOKENS} before it answered (reasoning counts against max_tokens)`
+          : typeof unparsed === "string" && draft === undefined
+            ? `${unparsed} (finish reason ${choice?.finish_reason ?? "none"}, reply starts: ${compact(choice?.message.content ?? "", 120)})`
+            : unparsed;
       if (typeof next === "string") {
         // A refused draft uses up the round, the same as a failed attack would.
         record({
