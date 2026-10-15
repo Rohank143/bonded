@@ -163,6 +163,15 @@ export {
   validateBounty,
 } from "./bounty.js";
 
+export {
+  type AdaptiveAttempt,
+  type AdaptiveOptions,
+  type AdaptiveResult,
+  attackerPrompt,
+  candidateSpec,
+  type Feedback,
+  runAdaptive,
+} from "./adaptive.js";
 export { generateHeldOut, heldOutId, isHeldOutId, specFromDraft } from "./held-out.js";
 export {
   FileHeldOutLedger,
