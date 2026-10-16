@@ -171,6 +171,7 @@ export {
   candidateSpec,
   type Feedback,
   runAdaptive,
+  scoreAttempt,
 } from "./adaptive.js";
 export { generateHeldOut, heldOutId, isHeldOutId, specFromDraft } from "./held-out.js";
 export {

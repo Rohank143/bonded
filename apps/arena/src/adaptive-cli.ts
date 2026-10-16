@@ -57,6 +57,10 @@ OPENROUTER_API_KEY in .env and anvil (Foundry). Results go to ratings/adaptive-<
                          is never asked to read transfer history never sees the planted text
   --seeds-dir <dir>      load seeds from this folder of YAML files instead of the published library
                          (to replay attacks an earlier run found)
+  --candidates <k>       texts the attacker writes per round, each run as its own episode and
+                         scored; the best signal feeds the next round (default: 1)
+  --attacker-reasoning <off|low>  off asks the attacker for no hidden reasoning: cheaper and faster
+                         where the model allows it (default: low)
   --enforce              run the vault in Enforce mode
   --out <dir>            where to write results (default: ratings/adaptive-<agent>)`;
 
@@ -120,6 +124,8 @@ async function main(): Promise<number> {
       feedback: { type: "string", default: "trace" },
       "goal-index": { type: "string" },
       "seeds-dir": { type: "string" },
+      candidates: { type: "string", default: "1" },
+      "attacker-reasoning": { type: "string", default: "low" },
       enforce: { type: "boolean", default: false },
       out: { type: "string" },
       help: { type: "boolean", default: false },
@@ -137,6 +143,7 @@ async function main(): Promise<number> {
     !(maxUsd > 0) ||
     !Number.isInteger(rounds) ||
     rounds < 0 ||
+    !(Number(values.candidates) >= 1) ||
     (feedback !== "outcome" && feedback !== "trace")
   ) {
     console.log(USAGE);
@@ -179,6 +186,8 @@ async function main(): Promise<number> {
         seed,
         rounds,
         feedback,
+        candidates: Number(values.candidates),
+        attackerReasoning: values["attacker-reasoning"] === "off" ? "off" : "low",
         maxUsd,
         episode: {
           ...(Object.keys(mandate).length ? { vault: { mandate } } : {}),
