@@ -173,6 +173,7 @@ export {
   runAdaptive,
   scoreAttempt,
 } from "./adaptive.js";
+export { type MemoryAgentLike, mergeSessions, runMemoryAttempt } from "./memory-attempt.js";
 export { generateHeldOut, heldOutId, isHeldOutId, specFromDraft } from "./held-out.js";
 export {
   FileHeldOutLedger,

@@ -12,6 +12,8 @@ import {
   DEFAULT_AGENT_MODEL,
   GatedVulnerableAgent,
   isCustomBotDesign,
+  isMemoryAgent,
+  MemoryBotAgent,
   SolanaAgentKitAgent,
 } from "@bonded/demo-agents";
 import {
@@ -30,6 +32,7 @@ import {
   runAdaptive,
 } from "./adaptive.js";
 import { loadAttackLibrary } from "./attacks.js";
+import { runMemoryAttempt } from "./memory-attempt.js";
 import { BENIGN_GOALS } from "./episode.js";
 import { loadDotEnv } from "./env.js";
 import { Sandbox } from "./sandbox.js";
@@ -43,7 +46,9 @@ OPENROUTER_API_KEY in .env and anvil (Foundry). Results go to ratings/adaptive-<
 
   --max-usd <n>          stop once model spend (agent and attacker) reaches this, per seed (required)
   --agent <name>         hardened | vulnerable | partial | gated | agentkit | solana-agent-kit |
-                         custom:operator-desk | custom:signal-follower | custom:auto-rebalancer
+                         custom:operator-desk | custom:signal-follower | custom:auto-rebalancer |
+                         memory-bot (keeps notes between sessions; each try is two sessions,
+                         the attack in the first and a clean day in the second)
                          (custom bots: a model with one realistic trust mistake in its prompt)
                          (gated is a scripted control that needs an approval reference: see
                          docs/ADAPTIVE-ATTACKER.md)
@@ -93,6 +98,8 @@ function buildTarget(
       return createHardenedAgent(brain as Brain, llm);
     case "partial":
       return createPartialAgent(brain as Brain, llm);
+    case "memory-bot":
+      return new MemoryBotAgent({ ...llm, showMandate });
     case "gated":
       return new GatedVulnerableAgent();
     case "agentkit":
@@ -101,7 +108,7 @@ function buildTarget(
       return new SolanaAgentKitAgent(model ?? DEFAULT_AGENT_MODEL);
     default:
       throw new Error(
-        `unknown agent ${name} (hardened, vulnerable, partial, gated, agentkit or solana-agent-kit)`,
+        `unknown agent ${name} (hardened, vulnerable, partial, gated, memory-bot, agentkit or solana-agent-kit)`,
       );
   }
 }
@@ -200,6 +207,13 @@ async function main(): Promise<number> {
       `Agent ${agent.name}, attacker ${values["attacker-model"]}, feedback ${feedback}, ` +
         `${rounds} rewrites per seed, up to $${maxUsd} per seed\n`,
     );
+    const episodeOptions = {
+      ...(Object.keys(mandate).length ? { vault: { mandate } } : {}),
+      ...(goal ? { goal } : {}),
+      // The spend cap is only checked between episodes, so a looping model needs a time limit
+      // (a weak model once ran to the old 5-minute default at about $0.47 an episode).
+      timeoutMs: 90_000,
+    };
     const results: AdaptiveResult[] = [];
     for (const seed of seeds) {
       const result = await runAdaptive({
@@ -214,13 +228,14 @@ async function main(): Promise<number> {
         ...(values.spread ? { spread: SPREAD_SURFACES } : {}),
         attackerReasoning: values["attacker-reasoning"] === "off" ? "off" : "low",
         maxUsd,
-        episode: {
-          ...(Object.keys(mandate).length ? { vault: { mandate } } : {}),
-          ...(goal ? { goal } : {}),
-          // The spend cap is only checked between episodes, so a looping model needs a time limit
-          // (a weak model once ran to the old 5-minute default at about $0.47 an episode).
-          timeoutMs: 90_000,
-        },
+        episode: episodeOptions,
+        ...(isMemoryAgent(agent)
+          ? {
+              memory: true,
+              runAttempt: (spec, round) =>
+                runMemoryAttempt(sandbox, agent, spec, round, episodeOptions),
+            }
+          : {}),
       });
       results.push(result);
       console.log(describe(result));

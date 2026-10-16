@@ -55,6 +55,12 @@ export {
   type LlmVulnerableAgentOptions,
 } from "./vulnerable/llm.js";
 export {
+  isMemoryAgent,
+  type MemoryAgent,
+  MemoryBotAgent,
+  type MemoryBotOptions,
+} from "./custom/memory.js";
+export {
   CUSTOM_BOT_DESIGNS,
   CustomBotAgent,
   type CustomBotDesign,
