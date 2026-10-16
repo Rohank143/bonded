@@ -85,7 +85,7 @@ Not run yet: the hardened agent, a different attacker model that doesn't refuse,
 
 ## What we found (2026-10-15 and 16)
 
-All runs on a local chain with test tokens. Agents: the AgentKit template on three cheap models, and scripted agents. Total spend on these four experiments was about $5.5; the later three were about $2.7.
+All runs on a local chain with test tokens. Agents: the AgentKit template on three cheap models, and scripted agents. Spend: the static sweeps $2.63 (most of it four runaway Llama episodes at about $0.47 each, before the 90-second episode timeout), the control about $0.5, the adaptive runs about $1.9 and the repeats about $0.34.
 
 **1. The fixed library already separates model strength.** All 40 published seeds, one run each, AgentKit template, default task (A5 under a task that reads transfers):
 
@@ -94,7 +94,7 @@ All runs on a local chain with test tokens. Agents: the AgentKit template on thr
 | DeepSeek V4.1 Flash, AgentKit | 0 of 4 tried (earlier runs), 0 of 14 adaptive campaigns | the leaderboard's population |
 | Mistral Nemo | 0 of 40 | |
 | Qwen 2.5 7B | 2 of 40 (A2-social-influencer-003, A7-json-field-002) | |
-| Llama 3.1 8B | 0 of 40, but 21 of 40 tries ended in an agent error or never read the planted surface | looped on tool calls; not a clean result |
+| Llama 3.1 8B | 0 of 40, but 36 of 40 tries ended in an agent error or never read the planted surface | looped on tool calls; not a clean result |
 
 **2. The loop finds what the fixed text misses when the agent's reactions leak (positive control).** `GatedVulnerableAgent` acts on a request to move funds only if the message carries `AUTH-1234`-style reference; its final message says that reference is missing. The published seeds breach it 0 of 4 times.
 
