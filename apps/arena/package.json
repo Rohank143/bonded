@@ -22,6 +22,7 @@
     "test": "vitest run",
     "arena": "node dist/cli.js",
     "adaptive": "node dist/adaptive-cli.js",
+    "harbinger": "node dist/harbinger-cli.js",
     "synth": "node dist/synth-cli.js",
     "dataset": "node dist/laya-dataset-cli.js",
     "sentinel-eval": "node dist/sentinel-eval-cli.js",

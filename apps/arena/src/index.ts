@@ -163,6 +163,30 @@ export {
   validateBounty,
 } from "./bounty.js";
 
+export { buildTarget } from "./targets.js";
+export {
+  clauseFor,
+  FRAMES,
+  type Frame,
+  type FrameContext,
+  HARBINGER_CLAUSE_TYPES,
+  referenceCode,
+  ROLES,
+  URGENCIES,
+} from "./harbinger/techniques.js";
+export {
+  type Genome,
+  initialPopulation,
+  nextGeneration,
+  seedClause,
+  type Variant,
+} from "./harbinger/generate.js";
+export {
+  type HarbingerAttempt,
+  type HarbingerOptions,
+  type HarbingerResult,
+  runHarbinger,
+} from "./harbinger/run.js";
 export {
   type AdaptiveAttempt,
   type AdaptiveOptions,

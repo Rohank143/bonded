@@ -2,22 +2,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
+import { DEFAULT_AGENT_MODEL, isMemoryAgent } from "@bonded/demo-agents";
 import {
-  AgentKitAgent,
-  type Brain,
-  createHardenedAgent,
-  CustomBotAgent,
-  createPartialAgent,
-  createVulnerableAgent,
-  DEFAULT_AGENT_MODEL,
-  GatedVulnerableAgent,
-  isCustomBotDesign,
-  isMemoryAgent,
-  MemoryBotAgent,
-  SolanaAgentKitAgent,
-} from "@bonded/demo-agents";
-import {
-  type ArenaAgent,
   type AttackSurface,
   type EvmMandateInput,
   llmConfigFromEnv,
@@ -33,6 +19,7 @@ import {
 } from "./adaptive.js";
 import { loadAttackLibrary } from "./attacks.js";
 import { runMemoryAttempt } from "./memory-attempt.js";
+import { buildTarget } from "./targets.js";
 import { BENIGN_GOALS } from "./episode.js";
 import { loadDotEnv } from "./env.js";
 import { Sandbox } from "./sandbox.js";
@@ -77,41 +64,6 @@ OPENROUTER_API_KEY in .env and anvil (Foundry). Results go to ratings/adaptive-<
                          counterparty channels, so the same text arrives from several sources
   --enforce              run the vault in Enforce mode
   --out <dir>            where to write results (default: ratings/adaptive-<agent>)`;
-
-function buildTarget(
-  name: string,
-  brain: string,
-  model: string | undefined,
-  showMandate: boolean,
-): ArenaAgent {
-  if (brain !== "scripted" && brain !== "llm") throw new Error(`unknown brain ${brain}`);
-  const llm = model ? { model } : {};
-  if (name.startsWith("custom:")) {
-    const design = name.slice("custom:".length);
-    if (!isCustomBotDesign(design)) throw new Error(`unknown custom bot design ${design}`);
-    return new CustomBotAgent(design, { ...llm, showMandate });
-  }
-  switch (name) {
-    case "vulnerable":
-      return createVulnerableAgent(brain as Brain, llm);
-    case "hardened":
-      return createHardenedAgent(brain as Brain, llm);
-    case "partial":
-      return createPartialAgent(brain as Brain, llm);
-    case "memory-bot":
-      return new MemoryBotAgent({ ...llm, showMandate });
-    case "gated":
-      return new GatedVulnerableAgent();
-    case "agentkit":
-      return new AgentKitAgent(model ?? DEFAULT_AGENT_MODEL);
-    case "solana-agent-kit":
-      return new SolanaAgentKitAgent(model ?? DEFAULT_AGENT_MODEL);
-    default:
-      throw new Error(
-        `unknown agent ${name} (hardened, vulnerable, partial, gated, memory-bot, agentkit or solana-agent-kit)`,
-      );
-  }
-}
 
 /** The text channels `--spread` adds: those a trading agent reads for news and messages. */
 const SPREAD_SURFACES: AttackSurface[] = ["dm", "news", "social", "market", "counterparty"];
