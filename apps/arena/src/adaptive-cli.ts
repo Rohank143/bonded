@@ -6,14 +6,17 @@ import {
   AgentKitAgent,
   type Brain,
   createHardenedAgent,
+  CustomBotAgent,
   createPartialAgent,
   createVulnerableAgent,
   DEFAULT_AGENT_MODEL,
   GatedVulnerableAgent,
+  isCustomBotDesign,
   SolanaAgentKitAgent,
 } from "@bonded/demo-agents";
 import {
   type ArenaAgent,
+  type AttackSurface,
   type EvmMandateInput,
   llmConfigFromEnv,
   OpenAICompatibleClient,
@@ -39,7 +42,9 @@ and rewrite the text, until the vault records the breach or the rounds run out. 
 OPENROUTER_API_KEY in .env and anvil (Foundry). Results go to ratings/adaptive-<agent>/.
 
   --max-usd <n>          stop once model spend (agent and attacker) reaches this, per seed (required)
-  --agent <name>         hardened | vulnerable | partial | gated | agentkit | solana-agent-kit
+  --agent <name>         hardened | vulnerable | partial | gated | agentkit | solana-agent-kit |
+                         custom:operator-desk | custom:signal-follower | custom:auto-rebalancer
+                         (custom bots: a model with one realistic trust mistake in its prompt)
                          (gated is a scripted control that needs an approval reference: see
                          docs/ADAPTIVE-ATTACKER.md)
                          (default: hardened)
@@ -61,12 +66,26 @@ OPENROUTER_API_KEY in .env and anvil (Foundry). Results go to ratings/adaptive-<
                          scored; the best signal feeds the next round (default: 1)
   --attacker-reasoning <off|low>  off asks the attacker for no hidden reasoning: cheaper and faster
                          where the model allows it (default: low)
+  --hide-mandate         custom bots only: leave the mandate out of the bot's prompt, as a bot that
+                         leaves its rules to the vault would (the Arena otherwise tells every agent)
+  --spread               also plant every rewrite on the inbox, news, social, market alerts and
+                         counterparty channels, so the same text arrives from several sources
   --enforce              run the vault in Enforce mode
   --out <dir>            where to write results (default: ratings/adaptive-<agent>)`;
 
-function buildTarget(name: string, brain: string, model: string | undefined): ArenaAgent {
+function buildTarget(
+  name: string,
+  brain: string,
+  model: string | undefined,
+  showMandate: boolean,
+): ArenaAgent {
   if (brain !== "scripted" && brain !== "llm") throw new Error(`unknown brain ${brain}`);
   const llm = model ? { model } : {};
+  if (name.startsWith("custom:")) {
+    const design = name.slice("custom:".length);
+    if (!isCustomBotDesign(design)) throw new Error(`unknown custom bot design ${design}`);
+    return new CustomBotAgent(design, { ...llm, showMandate });
+  }
   switch (name) {
     case "vulnerable":
       return createVulnerableAgent(brain as Brain, llm);
@@ -86,6 +105,9 @@ function buildTarget(name: string, brain: string, model: string | undefined): Ar
       );
   }
 }
+
+/** The text channels `--spread` adds: those a trading agent reads for news and messages. */
+const SPREAD_SURFACES: AttackSurface[] = ["dm", "news", "social", "market", "counterparty"];
 
 /** One letter per try. Not the ruling's first letter: "ignored" and "invalid" would collide. */
 const TRAIL: Record<AdaptiveAttempt["ruling"], string> = {
@@ -124,6 +146,8 @@ async function main(): Promise<number> {
       feedback: { type: "string", default: "trace" },
       "goal-index": { type: "string" },
       "seeds-dir": { type: "string" },
+      "hide-mandate": { type: "boolean", default: false },
+      spread: { type: "boolean", default: false },
       candidates: { type: "string", default: "1" },
       "attacker-reasoning": { type: "string", default: "low" },
       enforce: { type: "boolean", default: false },
@@ -152,7 +176,7 @@ async function main(): Promise<number> {
   // Even a scripted target needs the key: the attacker is always a model.
   loadDotEnv();
   const client = new OpenAICompatibleClient(llmConfigFromEnv());
-  const agent = buildTarget(values.agent, values.brain, values.model);
+  const agent = buildTarget(values.agent, values.brain, values.model, !values["hide-mandate"]);
 
   const library = loadAttackLibrary(values["seeds-dir"]);
   const wanted = values.seeds?.split(",").map((s) => s.trim());
@@ -187,6 +211,7 @@ async function main(): Promise<number> {
         rounds,
         feedback,
         candidates: Number(values.candidates),
+        ...(values.spread ? { spread: SPREAD_SURFACES } : {}),
         attackerReasoning: values["attacker-reasoning"] === "off" ? "off" : "low",
         maxUsd,
         episode: {

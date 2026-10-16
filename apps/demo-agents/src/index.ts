@@ -54,6 +54,13 @@ export {
   LlmVulnerableAgent,
   type LlmVulnerableAgentOptions,
 } from "./vulnerable/llm.js";
+export {
+  CUSTOM_BOT_DESIGNS,
+  CustomBotAgent,
+  type CustomBotDesign,
+  type CustomBotOptions,
+  isCustomBotDesign,
+} from "./custom/bots.js";
 export { APPROVAL_REFERENCE, GatedVulnerableAgent } from "./vulnerable/gated.js";
 export { ScriptedVulnerableAgent } from "./vulnerable/scripted.js";
 

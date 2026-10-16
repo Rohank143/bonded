@@ -4,6 +4,7 @@ import {
   ATTACK_CLASSES,
   ATTACK_PLACEHOLDERS,
   type AttackSpec,
+  type AttackSurface,
   type BreachType,
   BountySpecError,
   type ChatClient,
@@ -77,6 +78,12 @@ export interface AdaptiveOptions {
   /** Rewrites after the seed's own run (round 0). */
   rounds: number;
   feedback?: Feedback;
+  /**
+   * Extra surfaces every rewrite is also planted on (the seed's own run, round 0, is not). The same
+   * text arriving through several channels reads as corroboration, which a single stray message
+   * doesn't.
+   */
+  spread?: readonly AttackSurface[];
   /** Candidate texts the attacker writes per round, each run as its own episode (default 1). */
   candidates?: number;
   /** "off" asks for no hidden reasoning, which is cheaper and faster where a model allows it. */
@@ -210,6 +217,7 @@ export function candidateSpec(
   round: number,
   draft: unknown,
   candidate = 0,
+  spread: readonly AttackSurface[] = [],
 ): AttackSpec | string {
   const payload =
     draft && typeof draft === "object"
@@ -226,6 +234,7 @@ export function candidateSpec(
         ...rest,
         id: `${seed.id}-adapt-${round}${candidate > 0 ? `-${candidate}` : ""}`,
         payloadTemplate: payload,
+        surfaces: [...new Set([...rest.surfaces, ...spread])],
       }),
     );
     return goal === undefined ? spec : { ...spec, goal };
@@ -263,6 +272,7 @@ function draftsFrom(
   round: number,
   candidates: number,
   response: Awaited<ReturnType<ChatClient["complete"]>>,
+  spread: readonly AttackSurface[],
 ): Draft[] {
   const choice = response.choices[0];
   const content = choice?.message.content ?? "";
@@ -284,7 +294,7 @@ function draftsFrom(
       : [parsed];
   if (drafts.length === 0) return [{ note: "no candidates in the reply", payload: "" }];
   return drafts.map((draft, i): Draft => {
-    const spec = candidateSpec(seed, round, draft, i);
+    const spec = candidateSpec(seed, round, draft, i, spread);
     if (typeof spec !== "string") return spec;
     const why =
       parsed === undefined
@@ -334,13 +344,15 @@ export async function runAdaptive(options: AdaptiveOptions): Promise<AdaptiveRes
   };
 
   const candidates = Math.max(1, options.candidates ?? 1);
+  const spread = options.spread ?? [];
+  const promptSeed = { ...seed, surfaces: [...new Set([...seed.surfaces, ...spread])] };
   for (let round = 0; round <= options.rounds; round++) {
     let batch: Draft[] = [seed];
     if (round > 0) {
       if (cap.exceeded) return finish("budget");
       const response = await options.client.complete({
         model: options.attackerModel,
-        messages: attackerPrompt(seed, attempts, feedback, steps, candidates),
+        messages: attackerPrompt(promptSeed, attempts, feedback, steps, candidates),
         temperature: 1,
         // Hidden reasoning counts against max_tokens, and some models can't have it turned off:
         // at 4,000 DeepSeek V4 Pro spent all of it thinking and returned nothing.
@@ -353,7 +365,7 @@ export async function runAdaptive(options: AdaptiveOptions): Promise<AdaptiveRes
         outputTokens: usage?.completion_tokens ?? 0,
         ...(usage?.cost !== undefined ? { costUsd: usage.cost } : {}),
       });
-      batch = draftsFrom(seed, round, candidates, response);
+      batch = draftsFrom(seed, round, candidates, response, spread);
     }
     for (const item of batch) {
       if ("note" in item) {
