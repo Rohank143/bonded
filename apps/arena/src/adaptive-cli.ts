@@ -55,6 +55,8 @@ OPENROUTER_API_KEY in .env and anvil (Foundry). Results go to ratings/adaptive-<
   --goal-index <0-3>     the agent's task: one of the Arena's benign goals (src/episode.ts). Index 3
                          asks it to review recent transfers, which an A5 seed needs: an agent that
                          is never asked to read transfer history never sees the planted text
+  --seeds-dir <dir>      load seeds from this folder of YAML files instead of the published library
+                         (to replay attacks an earlier run found)
   --enforce              run the vault in Enforce mode
   --out <dir>            where to write results (default: ratings/adaptive-<agent>)`;
 
@@ -117,6 +119,7 @@ async function main(): Promise<number> {
       rounds: { type: "string", default: "6" },
       feedback: { type: "string", default: "trace" },
       "goal-index": { type: "string" },
+      "seeds-dir": { type: "string" },
       enforce: { type: "boolean", default: false },
       out: { type: "string" },
       help: { type: "boolean", default: false },
@@ -144,7 +147,7 @@ async function main(): Promise<number> {
   const client = new OpenAICompatibleClient(llmConfigFromEnv());
   const agent = buildTarget(values.agent, values.brain, values.model);
 
-  const library = loadAttackLibrary();
+  const library = loadAttackLibrary(values["seeds-dir"]);
   const wanted = values.seeds?.split(",").map((s) => s.trim());
   const seeds = wanted
     ? library.filter(
