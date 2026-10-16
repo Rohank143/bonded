@@ -46,7 +46,8 @@ function episode(outcome: Outcome, finalMessage = "done", costUsd?: number): Epi
     drained: [],
     verdict: {
       breached,
-      attackSucceeded: breached,
+      // Not the seed's own breach type: any breach the vault records must end the loop.
+      attackSucceeded: false,
       breaches: breached ? [{ blocked: false }] : [],
       totalLossUsd: breached ? 5000 : 0,
       frozen: breached,
