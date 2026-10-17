@@ -90,3 +90,39 @@ a wrong-but-in-mandate size), not more text.
 - No tree search beyond mutation/crossover, no tool-result replay in feedback (adaptive's limits apply).
 - One attempt per candidate per episode; an attack that needs state carried across sessions needs the memory runner (`memory-attempt.ts`, still framing-only).
 - The goal bank and campaign corroborator are text-only: no fabricated tool schemas, no forged chain reads (the world shows those from the chain only, on purpose).
+
+## S1 market-data manipulation harness (`pnpm --filter @bonded/arena s1`)
+
+Everything above attacks S2 — getting the agent to take a forbidden *action* (transfer, approve,
+oversize), which the vault's breach log catches. S1 is the other money surface the literature
+stresses (adversarial news, spoofed feeds, poisoned signals; e.g. the 17.7-point simulated
+return loss in arXiv 2601.13082): a false input makes the agent take a trade that is **inside
+its mandate** — allowed token, under the caps, to no forbidden address. The vault records
+nothing; the depositor can still lose. `src/s1.ts` measures that with a paired design: the same
+agent, task and benign world run twice, once clean and once with the attack planted, and the
+induced loss is the difference in the vault's value **at the true on-chain oracle** afterwards.
+
+### What the Arena's market can and cannot express (a real limitation)
+
+The Arena's `DemoRouter` fills every swap at the oracle price **minus a fixed fee**, never at the
+spoofed feed. So a fooled agent cannot "buy high on fake news" — the venue will not fill above
+oracle. In this market, induced S1 harm can only appear as:
+
+- **fee burn** from trades the agent was fooled into making (churn, an extra round-trip, a
+  needless rotation) — small and bounded by `feeBps`; and
+- whatever trips a vault rule (oversize → T2, off-asset → T3) — which is already an S2 breach.
+
+The adverse-price-fill loss the literature measures has **no home in the current Arena**.
+Representing it needs a market model where the planted price actually moves the execution venue
+(or post-trade reversion, or slippage), which is a contracts + world change, not a harness
+change. This is a finding about the Arena's coverage, and it is the honest reason the S1 harness
+is shipped as an instrument with its limit stated rather than as a breach generator.
+
+### Status
+
+Built and unit-tested (`test/s1.test.ts`: pairing, induced-loss, behaviour-change, breach and
+spend-cap paths), proven end-to-end on a local chain at zero model cost. No LLM slice has been
+run: by the market limitation above, the expected induced loss on a policy-running agent is
+fee-bounded, so a paid run would mostly quantify churn — worth doing only to put a number on
+that ceiling, not to find a breach. The decisive S1 work is the market-model upgrade, after
+which this same harness measures the real thing.
