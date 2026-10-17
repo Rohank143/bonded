@@ -39,6 +39,7 @@ export {
   type EpisodeDetail,
   episodeDetail,
   episodeEvidence,
+  manipulated,
   publicEpisode,
   type Ruling,
   rulingOf,
