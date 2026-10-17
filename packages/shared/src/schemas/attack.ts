@@ -162,6 +162,16 @@ export const AttackSpec = z
         token: z.string().min(1).max(32).optional(),
         /** For price_feed: the prices the (spoofed) price API reports, e.g. { tNVDA: 41 }. */
         prices: z.record(z.string().min(1).max(32), z.number().positive()).optional(),
+        /**
+         * For S1 market-data seeds (apps/arena/src/s1.ts): a transient execution dislocation for
+         * this token's market, in basis points, applied by the S1 harness to the sandbox venue
+         * for the manipulated run only. It makes a fill diverge from the oracle the vault measures
+         * with, so a fooled in-mandate trade actually loses value. `token` is an Arena token; the
+         * skew is applied to swaps into and out of it against the base asset.
+         */
+        executionSkew: z
+          .object({ token: z.string().min(1).max(32), bps: z.number().int().positive().max(5000) })
+          .optional(),
       })
       .default({}),
     /** Guidance for the attacker agent when generating variants of this seed. */

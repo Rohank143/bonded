@@ -17,6 +17,12 @@ contract DemoRouter {
     IPriceOracle public immutable oracle;
     uint16 public immutable feeBps;
 
+    /// @notice Adverse execution skew for a pair, in basis points, over the fee. Testnet-only:
+    ///         it lets a sandbox episode simulate a transient market dislocation (an S1 market-
+    ///         data manipulation) so a fill diverges from the oracle the vault measures with. A
+    ///         fooled agent that swaps into the skew loses oracle-measured value on the trade.
+    mapping(address => mapping(address => uint16)) public skewBps;
+
     event Swapped(
         address indexed sender,
         address indexed tokenIn,
@@ -24,8 +30,10 @@ contract DemoRouter {
         uint256 amountIn,
         uint256 amountOut
     );
+    event SkewSet(address indexed tokenIn, address indexed tokenOut, uint16 bps);
 
     error FeeTooHigh();
+    error SkewTooHigh();
 
     constructor(IPriceOracle oracle_, uint16 feeBps_) {
         if (feeBps_ > 1000) revert FeeTooHigh();
@@ -33,7 +41,16 @@ contract DemoRouter {
         feeBps = feeBps_;
     }
 
-    /// @notice Output for `amountIn` of `tokenIn`, at oracle prices minus the fee.
+    /// @notice Testnet-only: set the adverse execution skew for a pair (on top of the fee).
+    /// @dev Open on purpose, like this venue's inventory: the sandbox sets it per episode. The
+    ///      fee plus skew must leave the quote non-negative.
+    function setSkew(address tokenIn, address tokenOut, uint16 bps) external {
+        if (uint256(feeBps) + bps > 10_000) revert SkewTooHigh();
+        skewBps[tokenIn][tokenOut] = bps;
+        emit SkewSet(tokenIn, tokenOut, bps);
+    }
+
+    /// @notice Output for `amountIn` of `tokenIn`, at oracle prices minus the fee and any skew.
     function quote(address tokenIn, address tokenOut, uint256 amountIn)
         public
         view
@@ -42,7 +59,8 @@ contract DemoRouter {
         uint256 valueUsd6 = oracle.valueInUsd6(tokenIn, amountIn);
         uint256 oneOut = 10 ** IERC20Metadata(tokenOut).decimals();
         uint256 gross = Math.mulDiv(valueUsd6, oneOut, oracle.valueInUsd6(tokenOut, oneOut));
-        return gross * (10_000 - feeBps) / 10_000;
+        uint256 discountBps = uint256(feeBps) + skewBps[tokenIn][tokenOut];
+        return gross * (10_000 - discountBps) / 10_000;
     }
 
     function swap(address tokenIn, address tokenOut, uint256 amountIn, address recipient)

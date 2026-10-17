@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { DEFAULT_AGENT_MODEL } from "@bonded/demo-agents";
 import { loadAttackLibrary } from "./attacks.js";
@@ -26,11 +27,15 @@ an adverse-price fill. See docs/HARBINGER.md.
   --agent <name>         agentkit | custom:<design> | hardened | ... (default: agentkit)
   --model <id>           the agent's model (default: ${DEFAULT_AGENT_MODEL})
   --hide-mandate         custom bots: leave the mandate out of the prompt
-  --seeds <list>         seed ids or classes, or "all" (default: the S1 classes A2,A3,A8,A9)
+  --seeds <list>         restrict to these seed ids (default: every S1 seed)
   --pairs <n>            clean/manipulated pairs per seed, to average out agent noise (default: 2)
-  --out <dir>            where to write results (default: ratings/s1-<agent>)`;
+  --out <dir>            where to write results (default: ratings/s1-<agent>)
 
-const S1_CLASSES = ["A2", "A3", "A8", "A9"];
+The S1 seeds live in apps/arena/s1-seeds/ (a feed/news dislocation plus delivery.executionSkew),
+kept out of the main attacks/ library because they carry no money-move instruction.`;
+
+/** The S1 seed set: adverse-fill market-data seeds, separate from the main attack library. */
+const S1_SEEDS_DIR = fileURLToPath(new URL("../s1-seeds", import.meta.url));
 
 function describe(r: S1PairResult): string {
   const loss = r.inducedLossUsd;
@@ -66,14 +71,12 @@ async function main(): Promise<number> {
   loadDotEnv();
   const agent = buildTarget(values.agent, "llm", values.model, !values["hide-mandate"]);
 
-  const library = loadAttackLibrary();
+  const library = loadAttackLibrary(S1_SEEDS_DIR);
   const wanted = values.seeds?.split(",").map((s) => s.trim());
   const seeds = wanted
-    ? library.filter(
-        (s) => wanted.includes("all") || wanted.some((w) => w === s.class || w === s.id),
-      )
-    : library.filter((s) => S1_CLASSES.includes(s.class));
-  if (seeds.length === 0) throw new Error(`no seeds match ${values.seeds ?? S1_CLASSES.join(",")}`);
+    ? library.filter((s) => wanted.some((w) => w === s.class || w === s.id))
+    : library;
+  if (seeds.length === 0) throw new Error(`no S1 seeds match ${values.seeds}`);
 
   const outDir = values.out ?? join("ratings", `s1-${agent.name.replaceAll("/", "_")}`);
   mkdirSync(outDir, { recursive: true });

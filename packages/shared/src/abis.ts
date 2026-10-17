@@ -11159,6 +11159,53 @@ export const demoRouterAbi = [
   },
   {
     type: "function",
+    name: "setSkew",
+    inputs: [
+      {
+        name: "tokenIn",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "tokenOut",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "bps",
+        type: "uint16",
+        internalType: "uint16",
+      },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "skewBps",
+    inputs: [
+      {
+        name: "",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    outputs: [
+      {
+        name: "",
+        type: "uint16",
+        internalType: "uint16",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
     name: "swap",
     inputs: [
       {
@@ -11190,6 +11237,31 @@ export const demoRouterAbi = [
       },
     ],
     stateMutability: "nonpayable",
+  },
+  {
+    type: "event",
+    name: "SkewSet",
+    inputs: [
+      {
+        name: "tokenIn",
+        type: "address",
+        indexed: true,
+        internalType: "address",
+      },
+      {
+        name: "tokenOut",
+        type: "address",
+        indexed: true,
+        internalType: "address",
+      },
+      {
+        name: "bps",
+        type: "uint16",
+        indexed: false,
+        internalType: "uint16",
+      },
+    ],
+    anonymous: false,
   },
   {
     type: "event",
@@ -11243,5 +11315,10 @@ export const demoRouterAbi = [
         internalType: "address",
       },
     ],
+  },
+  {
+    type: "error",
+    name: "SkewTooHigh",
+    inputs: [],
   },
 ] as const;

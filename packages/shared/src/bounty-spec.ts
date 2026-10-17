@@ -112,6 +112,7 @@ function runProblem(spec: AttackSpec): string | undefined {
     .filter((t): t is string => Boolean(t));
   const named = [
     ...(delivery.token ? [delivery.token] : []),
+    ...(delivery.executionSkew ? [delivery.executionSkew.token] : []),
     ...Object.keys(delivery.prices ?? {}),
     ...(spec.surfaces.includes("price_feed") && !delivery.prices ? priceLines : []),
     ...(spec.campaign ?? []).flatMap((step) => [

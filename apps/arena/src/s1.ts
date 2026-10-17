@@ -1,9 +1,38 @@
-import { type AgentRunSummary, mockOracleAbi, testTokenAbi } from "@bondedhq/shared";
+import { type AgentRunSummary, demoRouterAbi, mockOracleAbi, testTokenAbi } from "@bondedhq/shared";
 import type { AttackSpec } from "@bondedhq/shared";
 import { type EpisodeOptions, type EpisodeResult, runEpisode } from "./episode.js";
 import { type Ruling, rulingOf } from "./report.js";
 import type { Sandbox } from "./sandbox.js";
 import { type ArenaToken, marketTokens } from "./vault.js";
+
+/** The base asset the Arena trades from (tUSDG); the token a skew is applied against. */
+const BASE_SYMBOL = "tUSDG";
+
+/**
+ * Set the venue's adverse skew for a token's market, both directions against the base asset, so
+ * a fooled agent that buys or sells it fills worse than the oracle. Resets with bps = 0. No-op
+ * when the token isn't listed. Testnet DemoRouter only (its setSkew is open by design).
+ */
+async function setExecutionSkew(sandbox: Sandbox, tokenSymbol: string, bps: number): Promise<void> {
+  const tokens = marketTokens(sandbox);
+  const token = tokens.find((t) => t.symbol.toLowerCase() === tokenSymbol.toLowerCase());
+  const base = tokens.find((t) => t.symbol === BASE_SYMBOL);
+  if (!token || !base) return;
+  const router = sandbox.deployment.router;
+  const wallet = sandbox.wallet("deployer");
+  for (const [inAddr, outAddr] of [
+    [base.address, token.address],
+    [token.address, base.address],
+  ] as const) {
+    const hash = await wallet.writeContract({
+      address: router,
+      abi: demoRouterAbi,
+      functionName: "setSkew",
+      args: [inAddr, outAddr, bps],
+    });
+    await sandbox.publicClient.waitForTransactionReceipt({ hash });
+  }
+}
 
 /**
  * S1 market-data manipulation (docs/HARBINGER.md, docs/ADAPTIVE-ATTACKER.md): the surface the
@@ -122,6 +151,10 @@ export async function runS1Pair(options: S1Options): Promise<S1PairResult> {
   const value = options.valueFn ?? ((vault: `0x${string}`) => portfolioValueUsd(sandbox, vault));
   const worldSeed = `s1-${seed.id}`;
 
+  const skew = seed.delivery.executionSkew;
+  // Only the real sandbox path applies the skew on-chain; an injected runner (tests) skips it.
+  const canSkew = options.runEpisodeFn === undefined && skew !== undefined;
+
   const cleanEp = await run({
     ...options.episode,
     agent,
@@ -130,14 +163,22 @@ export async function runS1Pair(options: S1Options): Promise<S1PairResult> {
     variantId: "s1-clean",
     worldSeed,
   });
-  const manipEp = await run({
-    ...options.episode,
-    agent,
-    attack: seed,
-    goal,
-    variantId: "s1-manip",
-    worldSeed,
-  });
+
+  if (canSkew) await setExecutionSkew(sandbox, skew!.token, skew!.bps);
+  let manipEp: EpisodeResult;
+  try {
+    manipEp = await run({
+      ...options.episode,
+      agent,
+      attack: seed,
+      goal,
+      variantId: "s1-manip",
+      worldSeed,
+    });
+  } finally {
+    // Reset so the dislocation never leaks to the next seed on the shared venue.
+    if (canSkew) await setExecutionSkew(sandbox, skew!.token, 0);
+  }
 
   const clean = side(cleanEp, await value(cleanEp.vault), true);
   const manipulated = side(manipEp, await value(manipEp.vault), false);
