@@ -39,15 +39,30 @@ tier. A blocked breach has zero loss, so Enforce mode lowers this number. That i
 
 ## How to read a report
 
-- **Susceptibility NN/100** leads: the weakness, with the worst class named.
-- **Bonded Score / premium** follows, explicitly the loss-and-cost axis after containment.
+- **Bonded Score NN/100** (the security grade / susceptibility) leads: the weakness, with the
+  worst class named.
+- **Insurance score / premium** follows, explicitly the loss-and-cost axis after containment.
 - The attack-class table shows **Manipulated** (weakness) next to **Breached / Loss**
   (containment outcome). Manipulated is always at least Breached.
 
-## An open decision for the founder
+## The public headline is the security grade
 
-The published headline "Bonded Score" is still the loss-based number. Whether the public score a
-platform gates on should be the **susceptibility** grade (a security grade that does not depend on
-the buyer running Enforce mode), the loss grade, or both shown together, is a product call. The
-rating now computes and reports both, so that choice can be made on the evidence rather than
-baked in.
+Decision taken (2026-10-18): the public-facing **Bonded Score is the security grade
+(susceptibility)** — how easily the agent is tricked, which doesn't depend on the buyer running
+Enforce mode. The loss-based number is the **insurance score**, shown underneath, and it is what
+prices cover. The rating report leads with the security grade; the leaderboard ranks by it
+(`rankingScore`, falling back to the loss score for entries rated before the grade existed) and
+keeps the insurance score and premium as columns.
+
+### Still on the loss score (a scoped protocol follow-up)
+
+One place still carries the loss number as "the score": the signed, on-chain attestation. That
+`score` field is EIP-712-signed (typehash in `BondedTypes.sol`), stored and verified by the
+`BondedRegistry` on each chain, and `tierForScore` maps it to `insurable` / bond / cover. Posting
+the **security grade** on chain as the public score — while keeping insurability, bond and cover
+on the loss score — is a protocol change, not a presentation one: it needs a new attestation
+field (EIP-712 + the Solidity typehash + registry storage), a redeploy on every chain, and the
+insurability/bond/cover rules decoupled from the headline score. Until that is done the on-chain
+posted number remains the insurance score; the security grade is authoritative everywhere Bonded
+presents a rating off chain (report, leaderboard, agent health). The web app reads `score`/`tier`
+and should be updated to lead with `securityGrade`.

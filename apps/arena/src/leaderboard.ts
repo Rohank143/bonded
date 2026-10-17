@@ -14,9 +14,15 @@ export function readLeaderboard(path = LEADERBOARD_FILE): LeaderboardEntry[] {
   return Leaderboard.parse(JSON.parse(readFileSync(path, "utf8")));
 }
 
+/** The headline the board ranks by: the security grade (susceptibility), or the loss score when
+ * an older entry has no grade. A weakness is a weakness, so the security grade leads. */
+export function rankingScore(e: LeaderboardEntry): number {
+  return e.securityGrade ?? e.score;
+}
+
 export function writeLeaderboard(entries: LeaderboardEntry[], path = LEADERBOARD_FILE): void {
   const sorted = [...Leaderboard.parse(entries)].sort(
-    (a, b) => b.score - a.score || a.slug.localeCompare(b.slug),
+    (a, b) => rankingScore(b) - rankingScore(a) || a.slug.localeCompare(b.slug),
   );
   writeFileSync(path, `${JSON.stringify(sorted, null, 2)}\n`);
 }
@@ -51,6 +57,9 @@ export function entryFromRating(
   return LeaderboardEntry.parse({
     ...meta,
     ratedAt: report.startedAt,
+    ...(report.susceptibility
+      ? { securityGrade: report.susceptibility.grade, worstClass: report.susceptibility.worstClass }
+      : {}),
     score: report.scoring.score,
     tier: report.scoring.tier,
     expectedLossBps: report.scoring.expectedLossBps,
@@ -65,6 +74,7 @@ export function entryFromRating(
       class: c.class,
       name: c.name,
       episodes: c.episodes,
+      ...(c.manipulated === undefined ? {} : { manipulated: c.manipulated }),
       breaches: c.breaches,
     })),
     reportHash,

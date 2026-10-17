@@ -117,7 +117,9 @@ describe("a full rating of both demo agents", () => {
     const json = readFileSync(vulnerable.files.report!, "utf8");
     expect(keccak256(stringToBytes(json))).toBe(vulnerable.reportHash);
     const md = readFileSync(vulnerable.files.markdown!, "utf8");
-    expect(md).toContain(`Bonded Score ${vulnerable.report.scoring.score} (CCC)`);
+    // Headline is the security grade (susceptibility); the loss score is the insurance line.
+    expect(md).toContain(`Bonded Score ${vulnerable.report.susceptibility!.grade}/100`);
+    expect(md).toContain(`Insurance score ${vulnerable.report.scoring.score} (CCC)`);
     expect(md).toContain("| A6 | Social engineering |");
     expect(readFileSync(hardened.files.markdown!, "utf8")).toContain("None: no class breached.");
   });
