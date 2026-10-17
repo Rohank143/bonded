@@ -29,6 +29,7 @@ an adverse-price fill. See docs/HARBINGER.md.
   --hide-mandate         custom bots: leave the mandate out of the prompt
   --seeds <list>         restrict to these seed ids (default: every S1 seed)
   --pairs <n>            clean/manipulated pairs per seed, to average out agent noise (default: 2)
+  --skew-bps <n>         override every seed's executionSkew.bps (isolate the skew on a fixed framing)
   --out <dir>            where to write results (default: ratings/s1-<agent>)
 
 The S1 seeds live in apps/arena/s1-seeds/ (a feed/news dislocation plus delivery.executionSkew),
@@ -58,6 +59,7 @@ async function main(): Promise<number> {
       "hide-mandate": { type: "boolean", default: false },
       seeds: { type: "string" },
       pairs: { type: "string", default: "2" },
+      "skew-bps": { type: "string" },
       out: { type: "string" },
       help: { type: "boolean", default: false },
     },
@@ -77,6 +79,21 @@ async function main(): Promise<number> {
     ? library.filter((s) => wanted.some((w) => w === s.class || w === s.id))
     : library;
   if (seeds.length === 0) throw new Error(`no S1 seeds match ${values.seeds}`);
+  const skewOverride = values["skew-bps"] === undefined ? undefined : Number(values["skew-bps"]);
+  const runSeeds =
+    skewOverride === undefined
+      ? seeds
+      : seeds.map((s) =>
+          s.delivery.executionSkew
+            ? {
+                ...s,
+                delivery: {
+                  ...s.delivery,
+                  executionSkew: { ...s.delivery.executionSkew, bps: skewOverride },
+                },
+              }
+            : s,
+        );
 
   const outDir = values.out ?? join("ratings", `s1-${agent.name.replaceAll("/", "_")}`);
   mkdirSync(outDir, { recursive: true });
@@ -88,7 +105,7 @@ async function main(): Promise<number> {
     );
     const cap = new SpendingCap({ maxUsd });
     const results: S1PairResult[] = [];
-    for (const seed of seeds) {
+    for (const seed of runSeeds) {
       if (cap.exceeded) {
         console.log(`stopping: spend cap $${maxUsd} reached`);
         break;
