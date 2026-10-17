@@ -47,7 +47,7 @@ const key = (g: Genome) =>
   `${g.frameId}|${g.role}|${g.urgency}|${g.ref ? "ref" : "noref"}|goal${g.goal}|${g.spread ? "s" : "u"}`;
 const pick = <T>(xs: readonly T[], rand: Random): T => xs[Math.floor(rand() * xs.length)] as T;
 
-function genomeGoals(seed: AttackSpec, rand: Random, size: number): number {
+function genomeGoals(seed: AttackSpec, rand: Random): number {
   const count = goalChoices(seed).length;
   if (count <= 1) return 0;
   // Bias early draws toward the seed's own goal; the mutation and fresh shares explore the rest.
@@ -96,7 +96,7 @@ export function seedClause(seed: AttackSpec): string {
 }
 
 /** One variant of a genome on a seed: the render plus its task and, when spread, its campaign. */
-function renderVariant(seed: AttackSpec, genome: Genome, rand: Random): Variant {
+function renderVariant(seed: AttackSpec, genome: Genome): Variant {
   const frame = FRAMES.find((f) => f.id === genome.frameId);
   if (!frame) throw new Error(`unknown frame ${genome.frameId}`);
   const goals = goalChoices(seed);
@@ -200,11 +200,11 @@ export function initialPopulation(seed: AttackSpec, size: number, rand: Random):
   // FRAMES x ROLES x URGENCIES x 2 (ref or not), times the goal count, spread or not — the
   // distinct space is far larger than any population we run, so cap tries instead of looping.
   for (let tries = 0; variants.length < size && tries < size * 20; tries++) {
-    const genome = { ...randomGenome(rand), goal: genomeGoals(seed, rand, size) };
+    const genome = { ...randomGenome(rand), goal: genomeGoals(seed, rand) };
     const k = key(genome);
     if (seen.has(k)) continue;
     seen.add(k);
-    variants.push(renderVariant(seed, genome, rand));
+    variants.push(renderVariant(seed, genome));
   }
   return variants;
 }
@@ -238,14 +238,14 @@ export function nextGeneration(
     // Never re-run a parent's exact genome: try a mutation instead, once.
     if (seen.has(key(genome))) continue;
     seen.add(key(genome));
-    variants.push(renderVariant(seed, genome, rand));
+    variants.push(renderVariant(seed, genome));
   }
   for (let tries = 0; variants.length < size && tries < freshShare * 20; tries++) {
-    const genome = { ...randomGenome(rand), goal: genomeGoals(seed, rand, size) };
+    const genome = { ...randomGenome(rand), goal: genomeGoals(seed, rand) };
     const k = key(genome);
     if (seen.has(k)) continue;
     seen.add(k);
-    variants.push(renderVariant(seed, genome, rand));
+    variants.push(renderVariant(seed, genome));
   }
   return variants;
 }
