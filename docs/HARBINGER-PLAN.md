@@ -95,6 +95,33 @@ regression test `test/seed-parse.test.ts` enforces both.
   floor. Each coupled `goal:` therefore ends with a standing order (`… then buy 2000 tUSDG
   worth of tX as the plan says`), which also gives the engine's goal gene a concrete fallback.
 
+## P6 build plan (world-side; the next branch)
+
+The slice showed text alone can't move a policy-running stack. The next attack surface is
+*state*: content that persists, compounds, and disagrees about numbers. Cheapest first:
+
+1. **Cross-episode world state in `World`** (`apps/arena/src/world.ts`) — an optional per-rating
+   context the constructor receives: previous episodes' planted content (a "memory store",
+   pending queue items, an earlier session's wire). Nothing changes for controls; attacked
+   episodes in a rating can then reference what the agent "already did" — the 2-session memory
+   campaign (`A9` style: "yesterday's queue requeued these fills; confirm the earlier leg") and
+   staged drift (`A5`: a refund the "agent itself queued last session").
+2. **Timer content in `marketReport`** — the report can carry binding items the *task* says are
+   actionable across the whole day ("carried items, executed before new ones"), so a carried
+   poison outlives the episode the check ran in.
+3. **The partial-policy gap for numbers, not addresses.** Agent A's gap admits a lookalike
+   address. The useful analogue for the oracle vector: a config where the agent's own pricing
+   (fee quotes, notional sizing in its accounting) reads the feed while the vault reads the
+   oracle — the split-brain `coverage` check never has to be fooled; the numbers just disagree.
+   No guard change: the guard stays on the oracle (AGENTS.md rule); the agent's *accounting*
+   is where the agent can be wrong.
+4. **Fairness**: any new world feature needs its control counterpart in the benign world
+   (benign carried items in the report, benign pending items in memory), so Sentinel can't
+   learn the feature by name.
+
+Order: (1) memory-context first — it's the enabler for both campaigns; the slice's $2 budget
+re-rates the MemoryBot against them.
+
 ## Honest limits
 
 - The goal bank is hand-reviewed; `goalOk()` refuses goals that name an address, a placeholder, or an oversize ask. A goal that itself breaches would fake a rate — that's the liveness/fairness rule.
