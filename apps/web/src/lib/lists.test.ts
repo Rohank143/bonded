@@ -8,7 +8,9 @@ const other = "0x00000000000000000000000000000000000000bb" as Address;
 const agent = (id: number, score?: number, vault = false, owner = other): AgentRow => ({
   agentId: BigInt(id),
   owner,
-  ...(score !== undefined ? { score: { score, expectedLossBps: 100, expiresAt: 9n } } : {}),
+  ...(score !== undefined
+    ? { score: { score, securityScore: score, expectedLossBps: 100, expiresAt: 9n } }
+    : {}),
   ...(vault ? { vault: `0x${String(id).padStart(40, "0")}` as Address } : {}),
 });
 const ids = (rows: { agentId: bigint }[]) => rows.map((a) => Number(a.agentId));

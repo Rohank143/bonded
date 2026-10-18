@@ -175,10 +175,12 @@ vi.mock("../lib/chain", async (original) => ({
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 const current = () => BigInt(nowSeconds() + 7 * 86_400);
 const lapsed = () => BigInt(nowSeconds() - 86_400);
-const agent = (id: number, score?: number, expiresAt = current()) => ({
+const agent = (id: number, score?: number, expiresAt = current(), securityScore = score) => ({
   agentId: BigInt(id),
   owner: "0x0000000000000000000000000000000000000001",
-  ...(score === undefined ? {} : { score: { score, expectedLossBps: 150, expiresAt } }),
+  ...(score === undefined
+    ? {}
+    : { score: { score, securityScore: securityScore!, expectedLossBps: 150, expiresAt } }),
 });
 const usd6 = (n: number) => BigInt(n) * 1_000_000n;
 /** `payout` is the award; `netted` of it went to unpaid premium, and the bond and pool paid the rest. */
@@ -224,7 +226,7 @@ describe("the live agents band", () => {
       "Agent 5",
       "Agent 1",
     ]);
-    expect(screen.getAllByText(/Expected loss/)).toHaveLength(4);
+    expect(screen.getAllByText(/Insurance \d+ · loss/)).toHaveLength(4);
     expect(screen.getByRole("link", { name: /Agent 2/ }).getAttribute("href")).toBe("/agents/2");
   });
 

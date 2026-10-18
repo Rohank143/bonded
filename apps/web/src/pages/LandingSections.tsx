@@ -324,7 +324,7 @@ export function LiveAgents() {
   const now = BigInt(Math.floor(Date.now() / 1000));
   const rated = (agents.data ?? [])
     .filter((a) => a.score && a.score.expiresAt > now)
-    .sort((a, b) => b.score!.score - a.score!.score)
+    .sort((a, b) => b.score!.securityScore - a.score!.securityScore)
     .slice(0, 4);
   if (agents.data && rated.length === 0) return null;
   const reached = (c: Parameters<typeof waterfall>[0]) => waterfall(c).toVault;
@@ -343,7 +343,7 @@ export function LiveAgents() {
           ? rated.map((a) => (
               <li key={String(a.agentId)}>
                 <Link to={`/agents/${a.agentId}`} className="group flex items-center gap-4">
-                  <ScoreRing score={a.score!.score} size={76} />
+                  <ScoreRing score={a.score!.securityScore} size={76} />
                   <span className="flex flex-col gap-1.5">
                     <span className="font-semibold group-hover:underline">
                       Agent {String(a.agentId)}
@@ -352,7 +352,7 @@ export function LiveAgents() {
                       <TierBadge score={a.score!.score} />
                     </span>
                     <span className="text-xs text-muted">
-                      Expected loss {bps(a.score!.expectedLossBps)}
+                      Insurance {a.score!.score} · loss {bps(a.score!.expectedLossBps)}
                     </span>
                   </span>
                 </Link>

@@ -58,7 +58,12 @@ const DISCLOSURE: Record<LeaderboardRecord["disclosure"]["status"], string> = {
 export function Leaderboard() {
   const board = useQuery({ queryKey: ["leaderboard"], queryFn: api.leaderboard });
   const h = board.data?.headline;
-  const entries = board.data ? [...board.data.entries].sort((a, b) => b.score - a.score) : [];
+  // The public headline is the security grade (susceptibility); older entries without one fall
+  // back to the loss score. The loss score still shows as the insurance tier.
+  const grade = (e: { securityGrade?: number; score: number }) => e.securityGrade ?? e.score;
+  const entries = board.data
+    ? [...board.data.entries].sort((a, b) => grade(b) - grade(a))
+    : [];
   return (
     <Page
       eyebrow="Arena results"
@@ -86,7 +91,7 @@ export function Leaderboard() {
         <section className="grid gap-4 md:grid-cols-3">
           {entries.slice(0, 3).map((e, i) => (
             <div key={e.slug} className="panel flex items-center gap-5 p-5">
-              <ScoreRing score={e.score} size={84} />
+              <ScoreRing score={grade(e)} size={84} />
               <div className="min-w-0">
                 <p className="font-mono text-[11px] text-muted">#{i + 1}</p>
                 <p className="truncate font-semibold">{e.name}</p>
@@ -175,7 +180,7 @@ export function Leaderboard() {
                         </span>
                       </span>
                       <span className="flex items-center gap-2.5">
-                        <span className="font-serif text-3xl leading-none">{e.score}</span>
+                        <span className="font-serif text-3xl leading-none">{grade(e)}</span>
                         <TierBadge score={e.score} />
                       </span>
                       <span>

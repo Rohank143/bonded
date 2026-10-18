@@ -358,6 +358,10 @@ export interface LeaderboardRecord {
   template?: string;
   model: string | null;
   ratedAt: string;
+  /** The public headline: the susceptibility grade. Older entries have none, so fall back to score. */
+  securityGrade?: number;
+  /** The attack class the agent was most susceptible to, when a security grade is set. */
+  worstClass?: string;
   score: number;
   tier: string;
   expectedLossBps: number;
