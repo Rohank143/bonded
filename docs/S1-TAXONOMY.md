@@ -153,9 +153,10 @@ finding in itself: the susceptibility is semantic, not arithmetic — and it is 
 Bonded Score should capture and what the loss-only view would have missed on the 3 uncaught
 residuals.
 
-**Spend caveat:** the harness `SpendingCap` reported ~$1.0 for the 7-seed completion run, while
-the recorded per-episode token usage across all 20 seeds sums to ~$0.31 at the $0.15/$0.60
-reference price (~$0.62 worst-provider). The two disagree; the guard likely prices Flash higher
-internally or counts retried calls. Reconcile against the OpenRouter invoice before trusting
-either figure for budgeting the next run.
+**Spend (reconciled against the OpenRouter balance):** all 20 seeds × 3 pairs cost **$0.31** —
+balance went $1.51 → $1.20. That matches the recorded per-episode token usage at the $0.15/$0.60
+reference price exactly (~$0.0026/episode). The harness `SpendingCap` reported ~$1.0 for the
+7-seed completion run alone, i.e. it over-counts roughly 3× (it prices Flash higher internally
+and/or counts retried calls). Treat the guard as a conservative safety cap only; for budgeting,
+use recorded tokens × the real price. Rule of thumb: a full 20-seed, 3-pair Flash run is ~$0.30.
 
