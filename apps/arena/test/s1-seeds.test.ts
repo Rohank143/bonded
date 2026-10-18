@@ -54,6 +54,13 @@ describe("S1 seed battery", () => {
     }
   });
 
+  it("gives every tx_history seed a sender (the planted entry needs an address)", () => {
+    // world.ts plants a tx_history payload as a transfer from delivery.sender and throws at
+    // run time if it is not an address; {{lookalike}} renders to one. Catch it here, for free.
+    for (const s of seeds.filter((x) => x.surfaces.includes("tx_history")))
+      expect(s.delivery.sender, `${s.id} tx_history seed needs delivery.sender`).toBeTruthy();
+  });
+
   it("covers every falsehood family in the taxonomy", () => {
     const tags = new Set(seeds.flatMap((s) => s.tags));
     for (const family of FAMILY_TAGS) expect(tags, `no seed for ${family}`).toContain(family);
