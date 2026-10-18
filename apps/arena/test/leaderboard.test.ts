@@ -92,6 +92,7 @@ describe("publishing a rating", () => {
     const attestation = {
       agentId: "1",
       score: 31,
+      securityScore: 31,
       expectedLossBps: 1500,
       reportHash,
       mandateHash: `0x${"11".repeat(32)}`,

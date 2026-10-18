@@ -22,6 +22,7 @@ const hash = `0x${"ab".repeat(32)}`;
 const home: Attestation = {
   agentId: "2",
   score: 50,
+  securityScore: 50,
   expectedLossBps: 485,
   reportHash: `0x${"11".repeat(32)}`,
   mandateHash: `0x${"22".repeat(32)}`,

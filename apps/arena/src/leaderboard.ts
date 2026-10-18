@@ -109,7 +109,10 @@ export function loadRating(dir: string): {
   const report = JSON.parse(bytes) as RatingReport;
   if (
     report.scoring.score !== attestation.score ||
-    report.scoring.expectedLossBps !== attestation.expectedLossBps
+    report.scoring.expectedLossBps !== attestation.expectedLossBps ||
+    // The public security grade must match what was signed, when the report carries one.
+    (report.susceptibility !== undefined &&
+      report.susceptibility.grade !== attestation.securityScore)
   )
     throw new Error(`${dir}: the report's score or expected loss differs from the attestation`);
   return { report, attestation, reportHash: hash };

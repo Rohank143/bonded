@@ -654,6 +654,7 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
     {
       agentId: profile.agentId.toString(),
       score: scoring.score,
+      securityScore: weakness.grade,
       expectedLossBps: scoring.expectedLossBps,
       reportHash,
       mandateHash: mandateHash(profile.mandate),

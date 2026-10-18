@@ -32,6 +32,7 @@ contract BondedRegistryTest is Test {
         return BondedTypes.Attestation({
             agentId: agentId,
             score: score,
+            securityScore: score,
             expectedLossBps: 30,
             reportHash: keccak256("report"),
             mandateHash: keccak256("mandate"),
@@ -112,7 +113,13 @@ contract BondedRegistryTest is Test {
 
         vm.expectEmit(true, true, true, true);
         emit BondedRegistry.ValidationResponse(
-            attester, agentId, registry.attestationDigest(a), 96, "", a.reportHash, "bonded-score"
+            attester,
+            agentId,
+            registry.attestationDigest(a),
+            96,
+            "",
+            a.reportHash,
+            "bonded-security-score"
         );
         vm.prank(makeAddr("keeper"));
         registry.postScore(a, signature);
@@ -186,6 +193,7 @@ contract BondedRegistryTest is Test {
         BondedTypes.Attestation memory a = BondedTypes.Attestation({
             agentId: 42,
             score: 96,
+            securityScore: 90,
             expectedLossBps: 30,
             reportHash: bytes32(uint256(1)),
             mandateHash: bytes32(uint256(2)),
@@ -197,7 +205,7 @@ contract BondedRegistryTest is Test {
         });
         assertEq(
             BondedTypes.hashAttestation(a),
-            0xeadd91612246d4cf99532ebfcd87b2b12c432e92bce58ea9f252e29dba4ec938
+            0x685a3dea4f32925fdd04ec3467510d9914fdd03bdd5067940ce449a98d857e5e
         );
         assertTrue(registry.attestationDigest(a) != bytes32(0));
     }

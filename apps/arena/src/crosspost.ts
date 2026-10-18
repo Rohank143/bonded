@@ -105,6 +105,7 @@ export async function readEvmScore(
   return {
     agentId: s.agentId.toString(),
     score: s.score,
+    securityScore: s.securityScore,
     expectedLossBps: s.expectedLossBps,
     reportHash: s.reportHash,
     mandateHash: s.mandateHash,

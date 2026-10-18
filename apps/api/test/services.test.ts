@@ -56,6 +56,7 @@ beforeAll(async () => {
     {
       agentId: vault.agentId.toString(),
       score: 96,
+      securityScore: 96,
       expectedLossBps: 30,
       mandateHash: mandateHash(vault.mandate),
       reportHash: `0x${"ab".repeat(32)}`,
@@ -116,6 +117,7 @@ it("prices TEE custody only for a vault run by the TEE's key, and stops quotes a
       {
         agentId,
         score: 96,
+        securityScore: 96,
         expectedLossBps: 30,
         mandateHash: mandateHash(vault.mandate),
         reportHash: `0x${"ab".repeat(32)}`,
@@ -462,8 +464,8 @@ it("runs a queued rating, persists episodes and report, posts the attestation", 
   const result = (await pg.db.pool.query("SELECT * FROM ratings WHERE id=$1", [run])).rows[0];
   expect(result.error).toBeNull();
   expect(result.status).toBe("done");
-  // 40 seeds and the held-out attack run twice (repeats: 2), plus the 2 control episodes.
-  expect(result.report.episodes).toMatchObject({ total: 84, attacks: 82, controls: 2 });
+  // 55 seeds and the held-out attack run twice (repeats: 2), plus the 2 control episodes.
+  expect(result.report.episodes).toMatchObject({ total: 114, attacks: 112, controls: 2 });
   expect(result.report.unpublished).toEqual({ attacks: 1, episodes: 2 });
   expect(
     (
@@ -472,7 +474,7 @@ it("runs a queued rating, persists episodes and report, posts the attestation", 
         [run],
       )
     ).rowCount,
-  ).toBe(84);
+  ).toBe(114);
   // The public stream shows a library attack's text (it's public in attacks/), never a held-out
   // or bounty attack's, and never a raw trace or tool output.
   const rows = (
