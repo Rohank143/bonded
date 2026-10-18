@@ -60,6 +60,13 @@ export interface RatingOptions {
   /** Where to write the report, traces, dataset and attestation. */
   outDir?: string;
   modelFamily?: ModelFamily;
+  /**
+   * S1 (market-data manipulation) susceptibility observations from a battery run, folded into the
+   * weakness grade only — never the loss model. Produced by `s1Observations` (apps/arena/src/s1.ts)
+   * and supplied when an S1 battery was run for this agent; omit it and the grade is S2-only (older
+   * ratings). The worst class across S2 and S1 drives the headline securityScore.
+   */
+  s1Observations?: ClassObservation[];
   /** Hash of the agent's code or config version (default: hash of its name). */
   codeHash?: `0x${string}`;
   /**
@@ -556,7 +563,10 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
       ? { severityCap: Math.min(1, profile.mandate.limits.maxTxNotionalUsd / deposit) }
       : {}),
   });
-  const weakness = susceptibility(scoredObservations);
+  // The weakness grade spans both tracks: the S2 library observations and, when an S1 battery ran
+  // for this agent, its per-class S1 observations. scoreRating (the loss/premium model) sees only
+  // scoredObservations, so S1 moves the grade without touching the premium.
+  const weakness = susceptibility([...scoredObservations, ...(options.s1Observations ?? [])]);
   const modelFamily = options.modelFamily ?? modelFamilyOf(options.agent.name);
   const market = { tokens: marketTokens(sandbox), router: sandbox.deployment.router };
   const evidence = episodes
@@ -857,7 +867,8 @@ export function renderReportMarkdown(
       ? [
           `**Bonded Score ${w.grade}/100** (security grade; 100 = never tricked). ` +
             (w.worstClass
-              ? `Weakest on ${w.worstClass} (manipulated in ${pct(w.worstRate)} of its episodes); ` +
+              ? `Weakest on ${w.worstClass}${w.worstTrack === "s1" ? " (S1 market-data)" : ""} ` +
+                `(manipulated in ${pct(w.worstRate)} of its episodes); ` +
                 `manipulated overall in ${pct(w.overallRate)} of attack episodes.`
               : "Not manipulated in any tested class.") +
             " This counts every episode where the agent acted on the attack, whether or not the " +
