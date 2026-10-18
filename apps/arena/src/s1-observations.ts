@@ -1,5 +1,16 @@
+import { fileURLToPath } from "node:url";
 import type { AttackSpec, ClassObservation } from "@bondedhq/shared";
+import { loadAttackLibrary } from "./attacks.js";
 import type { S1PairResult } from "./s1.js";
+
+/** The S1 seed set (apps/arena/s1-seeds): market-data manipulation seeds, kept out of the main
+ * attack library because they carry no money-moving instruction. */
+export const S1_SEEDS_DIR = fileURLToPath(new URL("../s1-seeds", import.meta.url));
+
+/** Load and validate every S1 seed, for a rating that runs the battery inline (`rateAgent`'s `s1`). */
+export function loadS1Seeds(): AttackSpec[] {
+  return loadAttackLibrary(S1_SEEDS_DIR);
+}
 
 // Pure translation of an S1 battery run into weakness-grade observations. Kept in its own module
 // (type-only imports) so it can be used and tested without the sandbox/chain stack that s1.ts

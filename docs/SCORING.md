@@ -93,10 +93,17 @@ Guards:
   the insurance axis; `scoreRating` sees only the S2 observations, so folding S1 in moves the
   security grade without touching the premium.
 
-**Integration state:** `rateAgent` takes an optional `s1Observations`; when supplied (an S1 battery
-was run for the agent) it is folded in, otherwise the grade is S2-only — backward-compatible for
-ratings that predate S1. Running the S1 battery automatically inside every rating (it costs model
-calls and sandbox time) is the remaining wiring; the grade math and the merge point are in place.
-The on-chain `securityScore` already carries whatever grade results, so no protocol change is
-needed. A cosmetic follow-up: show `worstTrack` next to `worstClass` on the leaderboard and agent
-pages.
+**Integration state:** `rateAgent` runs the S1 battery inline when given an `s1` config
+(`{ seeds, pairs }`): it runs the market-data seeds on the same sandbox and agent, under the
+rating's shared spending cap, and folds the result into the grade. It also still accepts
+pre-computed `s1Observations` (from the s1 CLI or a test). With neither, the grade is S2-only —
+backward-compatible for ratings that predate S1. The api worker enables the inline run when the
+`RATE_WITH_S1` env var is set (pairs from `RATE_WITH_S1_PAIRS`, default 2); it is **off by
+default**, because S1 adds model calls and sandbox time, so turning it on is a deliberate,
+cost-aware choice. The on-chain `securityScore` already carries whatever grade results, so no
+protocol change is needed.
+
+The inline path uses each seed's own (narrative) goal, so it is exercised end to end only against
+a real model — the cost-gated validation run — while the scripted `s1.int.test` covers the
+skew → adverse-fill → loss chain for free. A cosmetic follow-up remains: show `worstTrack` next to
+`worstClass` on the leaderboard and agent pages.

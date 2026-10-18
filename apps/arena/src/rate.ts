@@ -35,7 +35,10 @@ import { SpendingCap } from "./budget.js";
 import { datasetRows, type SentinelRow, writeDataset } from "./dataset.js";
 import { BENIGN_GOALS, type EpisodeResult, runEpisode, saveEpisode } from "./episode.js";
 import { AgentUrlUnavailableError, bondedFailure, RemoteAgent } from "./gateway/remote-agent.js";
+import { goalChoices } from "./harbinger/goals.js";
 import { episodeEvidence, episodeOutcome, manipulated, sawAttack } from "./report.js";
+import { runS1Pair, type S1PairResult } from "./s1.js";
+import { s1Observations } from "./s1-observations.js";
 import { tradingSummary } from "./trades.js";
 import type { Sandbox } from "./sandbox.js";
 import type { VerifiedTee } from "./tee.js";
@@ -61,10 +64,18 @@ export interface RatingOptions {
   outDir?: string;
   modelFamily?: ModelFamily;
   /**
-   * S1 (market-data manipulation) susceptibility observations from a battery run, folded into the
-   * weakness grade only — never the loss model. Produced by `s1Observations` (apps/arena/src/s1.ts)
-   * and supplied when an S1 battery was run for this agent; omit it and the grade is S2-only (older
-   * ratings). The worst class across S2 and S1 drives the headline securityScore.
+   * Run the S1 (market-data manipulation) battery inline as part of this rating and fold it into
+   * the weakness grade. Off by default — it adds model calls and sandbox time. `seeds` are S1
+   * specs (loadS1Seeds()); `pairs` clean/manipulated pairs per seed (default 2). The S1 episodes
+   * share this rating's spending cap, so maxUsd bounds S2 and S1 together.
+   */
+  s1?: { seeds: AttackSpec[]; pairs?: number };
+  /**
+   * Pre-computed S1 susceptibility observations, as an alternative to `s1`: supply these when the
+   * battery was already run elsewhere (e.g. the s1 CLI, or a test). Folded into the weakness grade
+   * only — never the loss model. If both `s1` and this are set, the inline run's observations are
+   * appended to these. Omit both and the grade is S2-only (older ratings). The worst class across
+   * S2 and S1 drives the headline securityScore.
    */
   s1Observations?: ClassObservation[];
   /** Hash of the agent's code or config version (default: hash of its name). */
@@ -213,6 +224,20 @@ export interface RatingReport {
    * Older reports don't have it.
    */
   susceptibility?: Susceptibility;
+  /**
+   * The inline S1 (market-data) battery that ran for this rating, one row per seed, if any. Each
+   * row is the per-pair susceptibility signal (`manipulated` = breached or changed behavior) plus
+   * the mean induced oracle-value loss. These feed the `susceptibility` grade (track "s1"); the
+   * loss is reported for context and never enters the grade. Absent when no S1 battery ran.
+   */
+  s1?: {
+    seed: string;
+    class: AttackClassId;
+    pairs: number;
+    manipulated: number;
+    breached: number;
+    avgInducedLossUsd: number;
+  }[];
   worst: { episodeId: string; attackId: string | null; lossUsd: number; breaches: string[] }[];
   blockedByAgentGuard: number;
   /**
@@ -563,10 +588,33 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
       ? { severityCap: Math.min(1, profile.mandate.limits.maxTxNotionalUsd / deposit) }
       : {}),
   });
+  // Optional inline S1 battery: run the market-data seeds on this same sandbox and agent, under
+  // the shared spending cap, and turn the pairs into per-class S1 observations. Pre-supplied
+  // observations (options.s1Observations) are kept and the inline run's are appended.
+  const s1Results: S1PairResult[] = [];
+  if (options.s1) {
+    const pairs = options.s1.pairs ?? 2;
+    for (const seed of options.s1.seeds) {
+      if (cap.exceeded) break;
+      const goal = goalChoices(seed)[0]!;
+      for (let i = 0; i < pairs && !cap.exceeded; i++) {
+        const r = await runS1Pair({
+          sandbox,
+          agent: options.agent,
+          seed,
+          goal,
+          ...(options.vault ? { episode: { vault: options.vault } } : {}),
+        });
+        for (const u of r.usages) cap.add(u);
+        s1Results.push(r);
+      }
+    }
+  }
+  const s1Obs = [...(options.s1Observations ?? []), ...s1Observations(s1Results)];
   // The weakness grade spans both tracks: the S2 library observations and, when an S1 battery ran
   // for this agent, its per-class S1 observations. scoreRating (the loss/premium model) sees only
   // scoredObservations, so S1 moves the grade without touching the premium.
-  const weakness = susceptibility([...scoredObservations, ...(options.s1Observations ?? [])]);
+  const weakness = susceptibility([...scoredObservations, ...s1Obs]);
   const modelFamily = options.modelFamily ?? modelFamilyOf(options.agent.name);
   const market = { tokens: marketTokens(sandbox), router: sandbox.deployment.router };
   const evidence = episodes
@@ -618,6 +666,7 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
     heldOut: options.heldOut ?? null,
     scoring,
     susceptibility: weakness,
+    ...(s1Results.length ? { s1: s1Summary(s1Results) } : {}),
     worst: episodes
       .filter((e) => e.verdict.breached)
       .sort((a, b) => b.verdict.totalLossUsd - a.verdict.totalLossUsd)
@@ -740,6 +789,23 @@ export function ratingCoverage(episodes: readonly EpisodeResult[]): RatingCovera
 export function exercised(e: EpisodeResult): boolean {
   if (e.verdict.breached) return true;
   return e.taskCompleted !== false && sawAttack(e) !== false;
+}
+
+/** One report row per S1 seed: the per-pair susceptibility signal and the mean induced loss. */
+function s1Summary(results: S1PairResult[]): NonNullable<RatingReport["s1"]> {
+  const bySeed = new Map<string, S1PairResult[]>();
+  for (const r of results) bySeed.set(r.seed, [...(bySeed.get(r.seed) ?? []), r]);
+  return [...bySeed.entries()]
+    .map(([seed, rs]) => ({
+      seed,
+      class: rs[0]!.attackClass,
+      pairs: rs.length,
+      manipulated: rs.filter((r) => r.breached || r.changedBehavior).length,
+      breached: rs.filter((r) => r.breached).length,
+      avgInducedLossUsd:
+        Math.round((rs.reduce((n, r) => n + r.inducedLossUsd, 0) / rs.length) * 100) / 100,
+    }))
+    .sort((a, b) => a.seed.localeCompare(b.seed));
 }
 
 /** Per-class results; agent errors are counted apart and excluded from the rates. */

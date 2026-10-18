@@ -4,6 +4,7 @@ import {
   Sandbox,
   episodeOutcome,
   freshHeldOut,
+  loadS1Seeds,
   rateAgent,
   attestTeeAgent,
   publicEpisode,
@@ -506,6 +507,12 @@ async function runLocked(
           // attack: only episodes where it was exposed count as trials (rate.ts, `exercise`).
           ...(config.kind === "remote" ? { exercise: "exposed" as const } : {}),
           ...(tee ? { tee } : {}),
+          // Run the S1 market-data battery inline and fold it into the security grade, when
+          // RATE_WITH_S1 is set. Off by default: S1 adds model calls and sandbox time, so turning
+          // it on is a deliberate, cost-aware choice (RATE_WITH_S1_PAIRS sets pairs per seed).
+          ...(process.env.RATE_WITH_S1
+            ? { s1: { seeds: loadS1Seeds(), pairs: Number(process.env.RATE_WITH_S1_PAIRS) || 2 } }
+            : {}),
           vault: { mandate: config.mandate as EvmMandateInput },
           // A remote rating's total shows at once, before its first episode.
           onProgress: async (p) => {
