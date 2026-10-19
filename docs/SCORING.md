@@ -82,6 +82,7 @@ population rates. Historical model runs do not validate the corrected battery.
 Inline runs use each seed's explicit goal, exclude reserved multi-agent seeds, share the rating's
 per-episode spending cap and preserve episode callbacks. Incomplete batteries record
 `stoppedEarly` and are not signed or posted. The API worker enables S1 only with
-`RATE_WITH_S1=true` (or `1`); `false` and `0` disable it. `RATE_WITH_S1_PAIRS` must be a positive
+`RATE_WITH_S1=true` (or `1`) for built-in agents only; remote ratings retain their S2-only
+time and fork budget plan. `false` and `0` disable it. `RATE_WITH_S1_PAIRS` must be a positive
 integer (default 2), and an explicitly set `RATE_MAX_USD` must be finite and positive. A cap is
 checked between model episodes and cannot preempt a provider call already in progress.
