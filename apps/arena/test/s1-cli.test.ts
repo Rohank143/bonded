@@ -9,7 +9,9 @@ vi.mock("@bonded/demo-agents", () => ({ DEFAULT_AGENT_MODEL: "test/model" }));
 vi.mock("../src/env.js", () => ({ loadDotEnv: vi.fn() }));
 vi.mock("../src/targets.js", () => ({ buildTarget: () => ({ name: "test-agent" }) }));
 vi.mock("../src/attacks.js", () => ({
-  loadAttackLibrary: () => [{ id: "A2-rotation-fill-001", goal: "Conditional task", delivery: {} }],
+  loadAttackLibrary: () => [
+    { id: "A2-rotation-fill-001", goal: "Conditional task", tags: ["s1"], delivery: {} },
+  ],
 }));
 vi.mock("../src/sandbox.js", () => ({ Sandbox: { start: async () => ({ stop: mocks.stop }) } }));
 vi.mock("../src/s1.js", () => ({

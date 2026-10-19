@@ -143,6 +143,8 @@ export interface S1Options {
   valueFn?: (vault: `0x${string}`) => Promise<number>;
   /** Account usage after each arm and do not start another once exhausted. */
   budget?: SpendingCap;
+  /** Runs after usage accounting for every arm, including failed episodes. */
+  onEpisode?: (result: EpisodeResult) => void | Promise<void>;
 }
 
 /** The cap can expire after the clean arm, leaving no completed pair to report. */
@@ -197,6 +199,7 @@ export async function runS1Pair(options: S1Options): Promise<S1PairResult> {
     resetAgent();
     const result = await run({ ...options.episode, agent, attack, goal, variantId, worldSeed });
     options.budget?.add(result.agentSummary.usage);
+    await options.onEpisode?.(result);
     if (result.agentSummary.stoppedBecause === "error")
       throw new S1EpisodeError(
         `${variantId}: ${result.agentSummary.finalMessage ?? "agent failed"}`,

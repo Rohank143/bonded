@@ -9,8 +9,9 @@ The tables map the authored cases and explicit gaps. There are 20 seeds: 19 runn
 one reserved multi-agent case. A seed being present does not establish that a model read it,
 was manipulated by it, or resisted it.
 
-The current Bonded security grade and this S1 experiment are separate. `changedBehavior` and
-in-mandate S1 loss do **not** currently feed the headline grade; see [Scoring](SCORING.md).
+Ratings can opt into folding eligible S1 behavior observations into the security grade, separately
+from S2 rows. The dollar loss never enters that grade or changes the insurance score. At least
+five eligible pairs per class are required; breached controls are excluded. See [Scoring](SCORING.md).
 
 ## How S1 is measured
 

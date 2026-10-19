@@ -1,9 +1,11 @@
+import { ratingLimits } from "./rating-limits.js";
 import { randomBytes } from "node:crypto";
 import { Database, json, type RatingLane } from "@bonded/db";
 import {
   Sandbox,
   episodeOutcome,
   freshHeldOut,
+  loadS1Seeds,
   rateAgent,
   attestTeeAgent,
   publicEpisode,
@@ -436,6 +438,7 @@ async function runLocked(
         config.kind === "remote"
           ? selected.filter((a) => !library.unpublished.has(a.id))
           : selected;
+      const limits = ratingLimits(process.env);
       const sandbox = await Sandbox.start({ forkUrl: rpcUrl, forkDeployment: chain.deployment });
       try {
         const agent: ArenaAgent =
@@ -506,6 +509,11 @@ async function runLocked(
           // attack: only episodes where it was exposed count as trials (rate.ts, `exercise`).
           ...(config.kind === "remote" ? { exercise: "exposed" as const } : {}),
           ...(tee ? { tee } : {}),
+          // Remote time/fork budgets currently plan only the S2 battery.
+          ...(limits.s1Pairs === undefined || config.kind === "remote"
+            ? {}
+            : { s1: { seeds: loadS1Seeds(), pairs: limits.s1Pairs } }),
+          ...(limits.maxUsd === undefined ? {} : { maxUsd: limits.maxUsd }),
           vault: { mandate: config.mandate as EvmMandateInput },
           // A remote rating's total shows at once, before its first episode.
           onProgress: async (p) => {

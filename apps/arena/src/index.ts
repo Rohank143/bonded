@@ -196,6 +196,7 @@ export {
   type S1PairResult,
   type S1Side,
 } from "./s1.js";
+export { MIN_S1_PAIRS, S1_SEEDS_DIR, loadS1Seeds, s1Observations } from "./s1-observations.js";
 export {
   type HarbingerAttempt,
   type HarbingerOptions,
