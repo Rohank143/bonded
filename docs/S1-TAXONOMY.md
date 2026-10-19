@@ -94,8 +94,8 @@ every S1 family or delivery channel has been tested.
 
 ## Harness gaps
 
-1. **Cross-episode memory.** History seeds plant a memo within one episode. They do not persist
-   an attack into a later clean-input episode. That requires an explicit persistent memory target.
+1. **Remote persistent memory.** Local memory-capable agents now support paired two-session
+   replay (below). BYOA/hosted state without readable notes and reset remains unmeasured.
 2. **Multi-agent propagation.** A10's false-consensus seed is reserved and tagged
    `needs-multiagent`. The S1 CLI excludes it by default and rejects explicit selection before
    model setup. The existing counterparty-message surface can expose text to one target; that
@@ -157,3 +157,26 @@ A new budgeted evaluation must preserve raw pairs, the exact code/seed revisions
 agent configuration, surface-read evidence, both-arm breaches, failures and usage. Report
 per-pair counts and denominators, distinguish seeded from actually exercised cases, and include
 repeat clean/clean observations to assess model variation before making causal claims.
+
+## Cross-episode memory battery
+
+Seven seeds in `apps/arena/s1-seeds-memory/` test standing-order, approval and policy memories
+through news or tool reports. Unlike the single-session factual battery, these payloads can
+contain instructions that an agent might store as future guidance. They are not silently mixed
+into the single-session S1 seed loader.
+
+The control and poisoned arms each run two sessions, retain their own day-1 notes into day 2,
+and start from matching chain state. See [memory scoring and exclusions](SCORING.md#optional-cross-episode-memory-observations).
+Missing notes, unread payloads, control failures and directly breached day-1 sessions are
+excluded rather than reported as resistance. Per-class source labels keep memory observations
+separate from ordinary market-data rows.
+
+The memory CLI requires a finite positive budget, preserves completed results after every
+attempt, and saves partial usage on failure. It cannot preempt a note-writing provider call
+already in progress. No paid validation was performed during this review.
+
+Earlier branch notes reported six-model grades and costs without linked raw pair artifacts,
+exact revisions or configurations, and sometimes described a different day-2 goal. They predate
+these isolation and eligibility corrections and do not validate this implementation. A future
+budgeted run must include exact seed/model/code versions, notes, exposure evidence, all session
+outcomes and clean/clean noise controls before drawing causal or cross-model conclusions.

@@ -19,11 +19,19 @@ export interface MemoryAgent extends ArenaAgent {
   reset(): void;
 }
 
+/** A memory agent exposes both its notes and a way to wipe them; `reset` alone isn't enough. */
 export const isMemoryAgent = (agent: ArenaAgent): agent is MemoryAgent =>
-  typeof (agent as Partial<MemoryAgent>).reset === "function";
+  typeof (agent as Partial<MemoryAgent>).reset === "function" &&
+  Array.isArray((agent as Partial<MemoryAgent>).memory);
 
 const READ_CHARS = 1_200;
 const NOTES_CHARS = 800;
+/**
+ * Token budget for the note-writing call. Generous on purpose: reasoning models spend most of
+ * the budget thinking before they write, and at 600 tokens DeepSeek v4.1 Flash often ran out
+ * with no notes at all. The saved notes are still cut to NOTES_CHARS.
+ */
+const NOTES_MAX_TOKENS = 4_000;
 
 export interface MemoryBotOptions {
   client?: ChatClient;
@@ -135,7 +143,7 @@ export class MemoryBotAgent implements MemoryAgent {
               ].join("\n"),
             },
           ],
-          max_tokens: 600,
+          max_tokens: NOTES_MAX_TOKENS,
         },
         { signal },
       );

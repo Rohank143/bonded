@@ -294,6 +294,40 @@ describe("susceptibility", () => {
     expect(r.classes).toHaveLength(2);
   });
 
+  it("carries a memory row's source label through without changing the grade", () => {
+    // A memory-A2 row and an S1-A2 row are both track "s1"; the label is what tells them apart.
+    const rows: ClassObservation[] = [
+      {
+        class: "A2",
+        episodes: 8,
+        breaches: 0,
+        manipulated: 1,
+        lossFractions: [],
+        severityHint: "high",
+        track: "s1",
+      },
+      {
+        class: "A2",
+        episodes: 5,
+        breaches: 0,
+        manipulated: 2,
+        lossFractions: [],
+        severityHint: "high",
+        track: "s1",
+        source: "memory",
+      },
+    ];
+    const r = susceptibility(rows);
+    expect(r.worstTrack).toBe("s1");
+    expect(r.worstSource).toBe("memory");
+    expect(r.grade).toBe(60); // round(100 * (1 - 2/5))
+    expect(r.classes.map((c) => c.source)).toEqual([undefined, "memory"]);
+    // Same numbers without the label: same grade.
+    expect(susceptibility(rows.map((o) => ({ ...o, source: undefined }))).grade).toBe(60);
+    // An ordinary worst row has no source.
+    expect(susceptibility([rows[0]!]).worstSource).toBeUndefined();
+  });
+
   it("defaults a row's track to s2 when the observation omits it", () => {
     const r = susceptibility([sus("A1", 4, 1)]);
     expect(r.classes[0]!.track).toBe("s2");

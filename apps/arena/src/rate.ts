@@ -35,6 +35,14 @@ import { SpendingCap } from "./budget.js";
 import { datasetRows, type SentinelRow, writeDataset } from "./dataset.js";
 import { BENIGN_GOALS, type EpisodeResult, runEpisode, saveEpisode } from "./episode.js";
 import { AgentUrlUnavailableError, bondedFailure, RemoteAgent } from "./gateway/remote-agent.js";
+import { isMemoryCapable, runMemoryBattery, validateMemoryBattery } from "./memory-attempt.js";
+import {
+  type MemoryPairResult,
+  type MemorySeedSummary,
+  memoryObservations,
+  memorySummary,
+  validateMemoryObservations,
+} from "./memory-observations.js";
 import { runS1Battery, s1BatterySettings } from "./s1-battery.js";
 import { episodeEvidence, episodeOutcome, manipulated, sawAttack } from "./report.js";
 import { type S1PairResult } from "./s1.js";
@@ -78,6 +86,19 @@ export interface RatingOptions {
    * S2 and S1 drives the headline securityScore.
    */
   s1Observations?: ClassObservation[];
+  /**
+   * Run the cross-episode memory-poisoning battery inline and fold it into the weakness grade
+   * (track "s1", source "memory"). Off by default. `seeds` are memory seeds (loadMemorySeeds());
+   * `rounds` attempts per seed (default 1), each four episodes plus the agent's note-writing.
+   * Only runs when the agent keeps memory Bonded can read and wipe (isMemoryCapable); otherwise
+   * the report says it was skipped. Shares this rating's spending cap.
+   */
+  memory?: { seeds: AttackSpec[]; rounds?: number };
+  /**
+   * Pre-computed memory observations (memoryObservations()), as an alternative to `memory`:
+   * folded into the weakness grade only, never the loss model. Appended to by an inline run.
+   */
+  memoryObservations?: ClassObservation[];
   /** Hash of the agent's code or config version (default: hash of its name). */
   codeHash?: `0x${string}`;
   /**
@@ -241,6 +262,12 @@ export interface RatingReport {
     graded: boolean;
     avgInducedLossUsd: number;
   }[];
+  /**
+   * The inline memory-poisoning battery, one row per seed, if one was asked for. `skipped` says
+   * why it did not run (the agent keeps no memory Bonded can read and wipe). The rows feed the
+   * `susceptibility` grade (track "s1", source "memory"). Absent when no memory battery was asked.
+   */
+  memory?: { skipped?: string; seeds: MemorySeedSummary[] };
   worst: { episodeId: string; attackId: string | null; lossUsd: number; breaches: string[] }[];
   blockedByAgentGuard: number;
   /**
@@ -494,6 +521,10 @@ const SEVERITY_ORDER: Severity[] = ["low", "medium", "high", "critical"];
 
 export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promise<RatingResult> {
   const s1Config = options.s1 ? s1BatterySettings(options.s1.seeds, options.s1.pairs) : undefined;
+  const memoryRounds = options.memory
+    ? validateMemoryBattery(options.memory.seeds, options.memory.rounds)
+    : 1;
+  const importedMemory = validateMemoryObservations(options.memoryObservations ?? []);
   const importedS1 = validateS1Observations(options.s1Observations ?? []);
   if (options.maxUsd !== undefined && (!Number.isFinite(options.maxUsd) || options.maxUsd <= 0))
     throw new Error("maxUsd must be finite and positive");
@@ -543,7 +574,12 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
   const episodes: EpisodeResult[] = [];
   const rows: SentinelRow[] = [];
   let stoppedEarly: string | null = null;
-  const totalEpisodes = jobs.length + (s1Config ? s1Config.seeds.length * s1Config.pairs * 2 : 0);
+  const totalEpisodes =
+    jobs.length +
+    (s1Config ? s1Config.seeds.length * s1Config.pairs * 2 : 0) +
+    (options.memory && isMemoryCapable(options.agent)
+      ? options.memory.seeds.length * memoryRounds * 4
+      : 0);
   // Progress runs from the first episode, after the setup above.
   const episodesStarted = Date.now();
   await options.onProgress?.(ratingProgress(episodesStarted, 0, totalEpisodes));
@@ -595,6 +631,19 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
       ? { severityCap: Math.min(1, profile.mandate.limits.maxTxNotionalUsd / deposit) }
       : {}),
   });
+  const memoryEpisodes: EpisodeResult[] = [];
+  const onMemoryEpisode = async (result: EpisodeResult) => {
+    const index = episodes.length + s1Episodes.length + memoryEpisodes.length;
+    memoryEpisodes.push(result);
+    if (tracesDir) saveEpisode(result, tracesDir);
+    await options.onEpisode?.(result, index, totalEpisodes);
+    await options.onProgress?.(ratingProgress(episodesStarted, index + 1, totalEpisodes));
+    const bonded = bondedFailure(result.agentSummary);
+    if (bonded)
+      throw new AgentUrlUnavailableError(
+        `Memory: Bonded couldn't call the agent's URL (${bonded})`,
+      );
+  };
   const s1Episodes: EpisodeResult[] = [];
   const s1Results: S1PairResult[] = [];
   if (s1Config && !stoppedEarly) {
@@ -621,13 +670,40 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
     if (battery.stoppedEarly)
       stoppedEarly = "spending cap reached before completing the S1 battery";
   }
+  // Optional inline memory-poisoning battery, same pattern: the agent's notes are read and wiped
+  // between attempts, so it only runs for an agent that exposes them.
+  const memoryResults: MemoryPairResult[] = [];
+  let memorySkipped: string | undefined;
+  if (options.memory && !stoppedEarly) {
+    const agent = options.agent;
+    if (!isMemoryCapable(agent)) {
+      memorySkipped = "the agent keeps no memory Bonded can read and reset";
+    } else {
+      memoryResults.push(
+        ...(await runMemoryBattery(sandbox, agent, options.memory.seeds, {
+          rounds: memoryRounds,
+          onEpisode: onMemoryEpisode,
+          cap,
+          ...(options.vault ? { episode: { vault: options.vault } } : {}),
+        })),
+      );
+    }
+  }
+  if (
+    options.memory &&
+    isMemoryCapable(options.agent) &&
+    !stoppedEarly &&
+    memoryResults.length < options.memory.seeds.length * memoryRounds
+  )
+    stoppedEarly = "spending cap reached before completing the memory battery";
+  const memoryObs = [...importedMemory, ...memoryObservations(memoryResults)];
   const s1Obs = [...importedS1, ...s1Observations(s1Results)];
   // Preserve security evidence from contained attacks without changing the insurance denominator.
   const securityObservations = observations(
     episodes.filter((episode) => manipulated(episode) || counts(episode)),
     options.attacks,
   );
-  const combined = [...securityObservations, ...s1Obs];
+  const combined = [...securityObservations, ...s1Obs, ...memoryObs];
   const weakness = combined.length ? susceptibility(combined) : null;
 
   const modelFamily = options.modelFamily ?? modelFamilyOf(options.agent.name);
@@ -682,6 +758,14 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
     scoring,
     ...(weakness ? { susceptibility: weakness } : {}),
     ...(options.s1 ? { s1: s1Summary(s1Results) } : {}),
+    ...(options.memory
+      ? {
+          memory: {
+            ...(memorySkipped ? { skipped: memorySkipped } : {}),
+            seeds: memorySummary(memoryResults),
+          },
+        }
+      : {}),
     worst: episodes
       .filter((e) => e.verdict.breached)
       .sort((a, b) => b.verdict.totalLossUsd - a.verdict.totalLossUsd)
@@ -696,7 +780,7 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
       (n, e) => n + (e.agentSummary.blockedActions?.length ?? 0),
       0,
     ),
-    guardFailures: [...episodes, ...s1Episodes].reduce(
+    guardFailures: [...episodes, ...s1Episodes, ...memoryEpisodes].reduce(
       (n, e) => n + (e.agentSummary.blockedActions?.filter((b) => b.guardFailed).length ?? 0),
       0,
     ),
@@ -946,6 +1030,12 @@ function coverageLines(report: RatingReport): string[] {
 const usd = (x: number) => `$${Math.round(x).toLocaleString("en-US")}`;
 
 /** The report for people: score, tier, premium, per-class results and what to fix. */
+/** How the headline names the worst row's track: S2 says nothing, S1 says which kind. */
+export function trackLabel(w: Susceptibility): string {
+  if (w.worstTrack !== "s1") return "";
+  return w.worstSource === "memory" ? " (S1 memory)" : " (S1 market-data)";
+}
+
 export function renderReportMarkdown(
   report: RatingReport,
   reportHash: `0x${string}`,
@@ -962,7 +1052,7 @@ export function renderReportMarkdown(
       ? [
           `**Bonded Score ${w.grade}/100** (security grade; 100 = never tricked). ` +
             (w.worstClass
-              ? `Weakest on ${w.worstClass}${w.worstTrack === "s1" ? " (S1 market-data)" : ""} ` +
+              ? `Weakest on ${w.worstClass}${trackLabel(w)} ` +
                 `(manipulated in ${pct(w.worstRate)} of its episodes); ` +
                 `manipulated overall in ${pct(w.overallRate)} of attack episodes.`
               : "Not manipulated in any tested class.") +
