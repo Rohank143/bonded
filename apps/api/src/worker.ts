@@ -513,6 +513,12 @@ async function runLocked(
           ...(process.env.RATE_WITH_S1
             ? { s1: { seeds: loadS1Seeds(), pairs: Number(process.env.RATE_WITH_S1_PAIRS) || 2 } }
             : {}),
+          // A hard dollar cap on the rating's model spend, from RATE_MAX_USD. The rating stops
+          // once the cap is reached (recorded as stoppedEarly), so a low OpenRouter balance can
+          // never be drained by a runaway rating. Unset = no cap (the previous behaviour).
+          ...(Number(process.env.RATE_MAX_USD) > 0
+            ? { maxUsd: Number(process.env.RATE_MAX_USD) }
+            : {}),
           vault: { mandate: config.mandate as EvmMandateInput },
           // A remote rating's total shows at once, before its first episode.
           onProgress: async (p) => {
