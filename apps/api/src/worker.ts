@@ -1,3 +1,4 @@
+import { ratingLimits } from "./rating-limits.js";
 import { randomBytes } from "node:crypto";
 import { Database, json, type RatingLane } from "@bonded/db";
 import {
@@ -276,7 +277,7 @@ async function runLocked(
   const notifyOwner = (
     type: RatingNotificationType,
     status: string,
-    extra: { score?: number; reason?: string },
+    extra: { score?: number; securityScore?: number; reason?: string },
   ) => {
     if (!remoteOwner || !options.notifier) return;
     options.notifier.notify(remoteOwner.owner, {
@@ -437,6 +438,7 @@ async function runLocked(
         config.kind === "remote"
           ? selected.filter((a) => !library.unpublished.has(a.id))
           : selected;
+      const limits = ratingLimits(process.env);
       const sandbox = await Sandbox.start({ forkUrl: rpcUrl, forkDeployment: chain.deployment });
       try {
         const agent: ArenaAgent =
@@ -507,18 +509,10 @@ async function runLocked(
           // attack: only episodes where it was exposed count as trials (rate.ts, `exercise`).
           ...(config.kind === "remote" ? { exercise: "exposed" as const } : {}),
           ...(tee ? { tee } : {}),
-          // Run the S1 market-data battery inline and fold it into the security grade, when
-          // RATE_WITH_S1 is set. Off by default: S1 adds model calls and sandbox time, so turning
-          // it on is a deliberate, cost-aware choice (RATE_WITH_S1_PAIRS sets pairs per seed).
-          ...(process.env.RATE_WITH_S1
-            ? { s1: { seeds: loadS1Seeds(), pairs: Number(process.env.RATE_WITH_S1_PAIRS) || 2 } }
-            : {}),
-          // A hard dollar cap on the rating's model spend, from RATE_MAX_USD. The rating stops
-          // once the cap is reached (recorded as stoppedEarly), so a low OpenRouter balance can
-          // never be drained by a runaway rating. Unset = no cap (the previous behaviour).
-          ...(Number(process.env.RATE_MAX_USD) > 0
-            ? { maxUsd: Number(process.env.RATE_MAX_USD) }
-            : {}),
+          ...(limits.s1Pairs === undefined
+            ? {}
+            : { s1: { seeds: loadS1Seeds(), pairs: limits.s1Pairs } }),
+          ...(limits.maxUsd === undefined ? {} : { maxUsd: limits.maxUsd }),
           vault: { mandate: config.mandate as EvmMandateInput },
           // A remote rating's total shows at once, before its first episode.
           onProgress: async (p) => {
@@ -615,7 +609,7 @@ async function runLocked(
         // attest a score it got by doing nothing (rate.ts, LIVENESS_MIN_RATE).
         // The report is kept, so the owner can see the controls; the reason is stored on the
         // rating and shown as is. Running it again won't change a deterministic judgement.
-        if (result.refused) {
+        if (result.refused || !result.attestation) {
           await db.withLease(job, (c) =>
             c.query("UPDATE ratings SET report=$2,report_json=$3 WHERE id=$1", [
               job.id,
@@ -626,7 +620,7 @@ async function runLocked(
           // For an operator-run agent this is the agent's doing (it didn't do its task), so it
           // counts like a crash: the old score is superseded, and the cooldown starts.
           throw new RatingRefused(
-            `not attested: ${result.refused}`,
+            `not attested: ${result.refused ?? "no measured attack trials"}`,
             true,
             config.kind === "remote" ? { caused: true } : undefined,
           );
@@ -721,7 +715,10 @@ async function runLocked(
     // A complete rating posted: any standing from earlier stops resets.
     await db.finish(job);
     await flush();
-    notifyOwner("rating_finished", "done", { score: signed.attestation.score });
+    notifyOwner("rating_finished", "done", {
+      score: signed.attestation.score,
+      securityScore: signed.attestation.securityScore,
+    });
   } catch (error) {
     onError?.(error);
     const failure = ratingFailure(error, budgetSpentIn);

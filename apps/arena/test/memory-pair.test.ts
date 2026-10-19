@@ -1,5 +1,5 @@
 import type { ArenaAgent, AttackSpec, Susceptibility } from "@bondedhq/shared";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SpendingCap } from "../src/budget.js";
 import type { EpisodeOptions, EpisodeResult } from "../src/episode.js";
 import {
@@ -46,7 +46,9 @@ function ep(opts: {
   return {
     id: "ep",
     vault: "0x0000000000000000000000000000000000000001",
-    trace: [],
+    attackId: "test-seed",
+    planted: [{ surface: "news" }],
+    trace: [{ tool: "read_news", result: { ok: true } }],
     taskCompleted: opts.taskCompleted ?? true,
     trades: (opts.tokens ?? [["tUSDG", "tTSLA"]]).map((tokens) => ({
       step: 1,
@@ -263,13 +265,15 @@ describe("runMemoryBattery", () => {
   it("stops starting attempts once the spending cap trips", async () => {
     const h = harness({});
     const cap = new SpendingCap({ maxUsd: 0.05 });
-    // Each attempt costs 4 x $0.01 = $0.04: the first leaves $0.04 spent, the second trips the cap.
+    // The first attempt costs $0.04; the next clean session reaches $0.05 and stops.
     const results = await runMemoryBattery({} as Sandbox, h.agent, [seed, seed, seed], {
       rounds: 1,
       cap,
       runEpisodeFn: h.runEpisodeFn,
     });
-    expect(results).toHaveLength(2);
+    expect(results).toHaveLength(1);
+    expect(h.calls).toHaveLength(5);
+    expect(h.agent.memory).toEqual([]);
     expect(cap.exceeded).toBe(true);
   });
 });
@@ -298,4 +302,58 @@ describe("report headline track label", () => {
     expect(trackLabel(w({}))).toBe(" (S1 market-data)");
     expect(trackLabel(w({ worstTrack: "s2" }))).toBe("");
   });
+});
+
+it("accounts failed sessions, invokes the hook and always clears notes", async () => {
+  const h = harness({});
+  const cap = new SpendingCap({ maxUsd: 1 });
+  const onEpisode = vi.fn();
+  await expect(
+    runMemoryPair({
+      sandbox: {} as Sandbox,
+      agent: h.agent,
+      seed,
+      round: 0,
+      cap,
+      onEpisode,
+      runEpisodeFn: async (options) => {
+        const result = await h.runEpisodeFn(options);
+        result.agentSummary.stoppedBecause = "error";
+        return result;
+      },
+    }),
+  ).rejects.toThrow(/memory session failed/);
+  expect(cap.summary().spentUsd).toBeCloseTo(0.01);
+  expect(onEpisode).toHaveBeenCalledTimes(1);
+  expect(h.agent.memory).toEqual([]);
+});
+
+it("clears notes when an episode callback throws", async () => {
+  const h = harness({});
+  await expect(
+    runMemoryPair({
+      sandbox: {} as Sandbox,
+      agent: h.agent,
+      seed,
+      round: 0,
+      runEpisodeFn: h.runEpisodeFn,
+      onEpisode: () => {
+        throw new Error("lease lost");
+      },
+    }),
+  ).rejects.toThrow("lease lost");
+  expect(h.agent.memory).toEqual([]);
+});
+
+it("rejects non-finite or fractional rounds before sessions start", async () => {
+  const h = harness({});
+  for (const rounds of [0, -1, 1.5, Infinity])
+    await expect(
+      runMemoryBattery({} as Sandbox, h.agent, [seed], {
+        cap: new SpendingCap({ maxUsd: 1 }),
+        rounds,
+        runEpisodeFn: h.runEpisodeFn,
+      }),
+    ).rejects.toThrow(/rounds/);
+  expect(h.calls).toEqual([]);
 });
