@@ -24,7 +24,7 @@ export interface SpendingCapOptions {
   maxUsd: number;
   /**
    * Price used when the endpoint reports tokens but no cost (default DEFAULT_FALLBACK_PRICE).
-   * A model's listed price keeps the estimate close: cache discounts only make it cheaper.
+   * Listed prices are estimates; provider routing, tiers and caching can change actual charges.
    */
   fallbackPrice?: TokenPrice;
 }
@@ -38,15 +38,19 @@ export class SpendingCap {
 
   constructor(private readonly options: SpendingCapOptions) {
     if (!(options.maxUsd >= 0)) throw new RangeError("maxUsd must be zero or more");
-    this.fallback = options.fallbackPrice ?? DEFAULT_FALLBACK_PRICE;
+    this.fallback = { ...(options.fallbackPrice ?? DEFAULT_FALLBACK_PRICE) };
+    if (!validPrice(this.fallback))
+      throw new RangeError("fallback prices must be finite and nonnegative");
   }
 
   /** Adds one run's usage. */
   add(usage: AgentRunSummary["usage"]): void {
     if (!usage) return;
+    if (![usage.inputTokens, usage.outputTokens].every(nonnegativeFinite))
+      throw new RangeError("usage token counts must be finite and nonnegative");
     this.inputTokens += usage.inputTokens;
     this.outputTokens += usage.outputTokens;
-    if (usage.costUsd !== undefined) {
+    if (usage.costUsd !== undefined && nonnegativeFinite(usage.costUsd)) {
       this.spent += usage.costUsd;
     } else if (usage.inputTokens > 0 || usage.outputTokens > 0) {
       this.estimated = true;
@@ -96,8 +100,8 @@ export async function listedModelPrice(
     const pricing = body.data?.find((m) => m.id === model)?.pricing;
     const input = perToken(pricing?.prompt);
     const output = perToken(pricing?.completion);
-    if (!(input >= 0 && output >= 0)) return undefined;
-    return { inputPerMillion: input * 1e6, outputPerMillion: output * 1e6 };
+    const price = { inputPerMillion: input * 1e6, outputPerMillion: output * 1e6 };
+    return validPrice(price) ? price : undefined;
   } catch {
     return undefined;
   }
@@ -108,4 +112,30 @@ function perToken(value: unknown): number {
   if (typeof value === "number") return value;
   if (typeof value === "string" && value.trim() !== "") return Number(value);
   return Number.NaN;
+}
+
+function nonnegativeFinite(value: number): boolean {
+  return Number.isFinite(value) && value >= 0;
+}
+function validPrice(price: TokenPrice): boolean {
+  return nonnegativeFinite(price.inputPerMillion) && nonnegativeFinite(price.outputPerMillion);
+}
+
+/** Combined token usage lacks model attribution: use the highest rate across its sources.
+ * Unknown sources retain the default estimate. This is not a provider spending guarantee.
+ */
+export async function fallbackForModels(
+  models: readonly (string | undefined)[],
+  lookup: (model: string) => Promise<TokenPrice | undefined> = listedModelPrice,
+): Promise<TokenPrice | undefined> {
+  if (!models.length) return undefined;
+  const prices = await Promise.all(
+    [...new Set(models)].map(async (model) =>
+      model ? ((await lookup(model)) ?? DEFAULT_FALLBACK_PRICE) : DEFAULT_FALLBACK_PRICE,
+    ),
+  );
+  return {
+    inputPerMillion: Math.max(...prices.map((p) => p.inputPerMillion)),
+    outputPerMillion: Math.max(...prices.map((p) => p.outputPerMillion)),
+  };
 }

@@ -31,7 +31,8 @@ import {
   parseSentinelQuestionSet,
 } from "@bondedhq/shared";
 import { loadAttackLibrary } from "./attacks.js";
-import { listedModelPrice } from "./budget.js";
+import { fallbackForModels } from "./budget.js";
+import { budgetModels } from "./budget-models.js";
 import { type CheckEvent, runConnectionCheck } from "./check.js";
 import { runControls } from "./controls.js";
 import { loadDotEnv, usesLanguageModel } from "./env.js";
@@ -220,11 +221,10 @@ async function main(): Promise<number> {
   // Build the agent first, so a missing API key fails before a sandbox is started. A remote
   // agent needs the sandbox and the gateway, so it is built once they are up.
   let agent: ArenaAgent = remote ? placeholderAgent : buildAgent(values);
-  // A spending cap prices usage the endpoint reports without a cost at the model's listed
-  // price, not the cap's default, which reads several times the real spend for cheap models.
+  // Combined agent/guard usage needs a fallback covering every configured model.
   const fallbackPrice =
     values["max-usd"] && !remote && usesLanguageModel(values)
-      ? await listedModelPrice(values.model ?? DEFAULT_AGENT_MODEL)
+      ? await fallbackForModels(budgetModels(values))
       : undefined;
   let vault: { mandate: Partial<EvmMandateInput> } | undefined = values.enforce
     ? { mandate: { mode: "enforce" } }
@@ -380,14 +380,15 @@ async function main(): Promise<number> {
       });
       const s = result.report.scoring;
       console.log(
-        `\n${agent.name}: Bonded Score ${s.score} (${s.tier}), ${settings.profile} profile`,
+        `\n${agent.name}: ${result.report.susceptibility ? `Bonded Score ${result.report.susceptibility.grade}/100` : "Security score not measured"}, ${settings.profile} profile`,
       );
+      console.log(`  insurance score ${s.score} (${s.tier})`);
       console.log(`  expected loss ${(s.expectedLoss * 100).toFixed(2)}% of cover a year`);
       console.log(
         `  premium ${(s.premiumRate * 100).toFixed(2)}% a year${s.insurable ? "" : " (not insurable)"}`,
       );
       console.log(
-        `  attestation ${result.posted.posted ? "posted to the sandbox registry" : `signed, not posted: ${result.posted.reason}`}`,
+        `  attestation ${result.posted.posted ? "posted to the sandbox registry" : `${result.attestation ? "signed, not posted" : "not signed"}: ${result.posted.reason}`}`,
       );
       const untested = s.groups.flatMap((g) => g.untestedClasses ?? []);
       if (untested.length)

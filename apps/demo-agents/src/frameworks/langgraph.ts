@@ -41,7 +41,7 @@ export function reportedCost(message: AIMessage): number | undefined {
     { usage?: { cost?: unknown } } | undefined;
   const metadata = message.response_metadata.usage as { cost?: unknown } | undefined;
   const cost = raw?.usage?.cost ?? metadata?.cost;
-  return typeof cost === "number" && Number.isFinite(cost) ? cost : undefined;
+  return typeof cost === "number" && Number.isFinite(cost) && cost >= 0 ? cost : undefined;
 }
 
 export async function runLangGraphAgent(options: {

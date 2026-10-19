@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { S1PairResult } from "../src/s1.js";
-import { MIN_S1_PAIRS, s1Observations } from "../src/s1-observations.js";
+import {
+  MIN_S1_PAIRS,
+  s1Observations,
+  validateS1Observations,
+  loadS1Seeds,
+} from "../src/s1-observations.js";
 
 // Pure (no chain, no model): s1Observations turns battery pairs into weakness-grade observations.
 
@@ -18,6 +23,7 @@ const pair = (
     inducedLossUsd: 0,
     changedBehavior: opts.changedBehavior ?? false,
     breached: opts.breached ?? false,
+    controlBreached: false,
     usages: [],
   }) as S1PairResult;
 
@@ -60,4 +66,27 @@ describe("s1Observations", () => {
     ]);
     expect(obs.map((o) => o.class)).toEqual(["A5", "A7"]);
   });
+});
+
+it("excludes confounded controls and enforces the minimum on imported rows", () => {
+  const controlBreaches = Array.from({ length: 5 }, () => ({
+    ...pair("A2", { breached: true }),
+    controlBreached: true,
+  }));
+  expect(s1Observations(controlBreaches)).toEqual([]);
+  const row = {
+    class: "A2" as const,
+    episodes: 4,
+    breaches: 0,
+    manipulated: 0,
+    lossFractions: [1],
+    severityHint: "high" as const,
+  };
+  expect(validateS1Observations([row])).toEqual([]);
+  expect(validateS1Observations([{ ...row, episodes: 5 }])[0]).toMatchObject({
+    track: "s1",
+    lossFractions: [],
+  });
+  expect(() => validateS1Observations([{ ...row, manipulated: 6 }])).toThrow();
+  expect(loadS1Seeds().some((seed) => seed.tags.includes("needs-multiagent"))).toBe(false);
 });

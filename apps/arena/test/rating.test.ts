@@ -1,3 +1,5 @@
+import { fallbackForModels } from "../src/budget.js";
+import { budgetModels } from "../src/budget-models.js";
 import { describe, expect, it } from "vitest";
 import {
   type EpisodeResult,
@@ -237,5 +239,60 @@ describe("exercised trials", () => {
     // A goal with no trade to check, or an older record: reading decides.
     expect(exercised(ep(false, null))).toBe(true);
     expect(exercised(ep(false, undefined, false))).toBe(false);
+  });
+});
+
+describe("defensive spending estimates", () => {
+  it.each([-1, Infinity, NaN])(
+    "does not let invalid reported cost %s reduce or poison spend",
+    (costUsd) => {
+      const cap = new SpendingCap({ maxUsd: 1 });
+      cap.add({ inputTokens: 1_000_000, outputTokens: 0, costUsd });
+      expect(cap.summary()).toMatchObject({ spentUsd: 1, estimated: true });
+      expect(cap.exceeded).toBe(true);
+    },
+  );
+  it("accepts reported zero cost and rejects invalid explicit fallback prices/tokens", () => {
+    const cap = new SpendingCap({ maxUsd: 1 });
+    cap.add({ inputTokens: 1_000_000, outputTokens: 0, costUsd: 0 });
+    expect(cap.summary()).toMatchObject({ spentUsd: 0, estimated: false });
+    for (const n of [-1, Infinity, NaN]) {
+      expect(
+        () =>
+          new SpendingCap({
+            maxUsd: 1,
+            fallbackPrice: { inputPerMillion: n, outputPerMillion: 0 },
+          }),
+      ).toThrow();
+      expect(() => cap.add({ inputTokens: n, outputTokens: 0 })).toThrow();
+    }
+  });
+  it.each(["Infinity", "1e999", "1e308", "-1", "NaN"])(
+    "rejects invalid/overflowing listed rate %s",
+    async (price) => {
+      const fetch = (async () =>
+        new Response(
+          JSON.stringify({ data: [{ id: "x", pricing: { prompt: price, completion: "0" } }] }),
+        )) as typeof globalThis.fetch;
+      expect(await listedModelPrice("x", { fetch })).toBeUndefined();
+    },
+  );
+  it("prices a scripted guarded agent at the guard model, and combined tokens at the maximum rates", async () => {
+    expect(
+      budgetModels({ agent: "vulnerable", brain: "scripted", "sentinel-model": "guard" }),
+    ).toEqual(["guard"]);
+    const models = budgetModels({ agent: "agentkit", model: "cheap", "sentinel-model": "guard" });
+    const lookup = async (model: string) =>
+      model === "cheap"
+        ? { inputPerMillion: 0.1, outputPerMillion: 20 }
+        : { inputPerMillion: 10, outputPerMillion: 15 };
+    expect(await fallbackForModels(models, lookup)).toEqual({
+      inputPerMillion: 10,
+      outputPerMillion: 20,
+    });
+    expect(await fallbackForModels([undefined, "cheap"], lookup)).toEqual({
+      inputPerMillion: 1,
+      outputPerMillion: 20,
+    });
   });
 });

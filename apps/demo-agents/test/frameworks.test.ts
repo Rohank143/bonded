@@ -233,3 +233,13 @@ describe("the Arena actions", () => {
     expect(calls).toHaveLength(1);
   });
 });
+
+it.each([-1, Infinity, NaN])("does not publish invalid framework cost %s", async (cost) => {
+  const { reportedCost } = await import("../src/frameworks/langgraph.js");
+  const { AIMessage } = await import("@langchain/core/messages");
+  expect(
+    reportedCost(
+      new AIMessage({ content: "ok", additional_kwargs: { __raw_response: { usage: { cost } } } }),
+    ),
+  ).toBeUndefined();
+});
