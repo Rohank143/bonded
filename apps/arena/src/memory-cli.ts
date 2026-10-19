@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { DEFAULT_AGENT_MODEL } from "@bonded/demo-agents";
-import { SpendingCap } from "./budget.js";
+import { listedModelPrice, SpendingCap } from "./budget.js";
 import { loadDotEnv } from "./env.js";
 import { isMemoryCapable, runMemoryBattery } from "./memory-attempt.js";
 import {
@@ -91,7 +91,8 @@ async function main(): Promise<number> {
     console.log(
       `Agent ${agent.name}, ${seeds.length} memory seeds x ${rounds} round(s), up to $${maxUsd} total\n`,
     );
-    const cap = new SpendingCap({ maxUsd });
+    const fallbackPrice = await listedModelPrice(values.model ?? DEFAULT_AGENT_MODEL);
+    const cap = new SpendingCap({ maxUsd, ...(fallbackPrice ? { fallbackPrice } : {}) });
     const results = await runMemoryBattery(sandbox, agent, seeds, {
       rounds,
       cap,

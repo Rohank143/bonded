@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { ArenaAgent } from "@bondedhq/shared";
-import { SpendingCap } from "./budget.js";
+import { SpendingCap, type TokenPrice } from "./budget.js";
 import { datasetRows, type SentinelRow, writeDataset } from "./dataset.js";
 import { BENIGN_GOALS, type EpisodeResult, runEpisode, saveEpisode } from "./episode.js";
 import type { Sandbox } from "./sandbox.js";
@@ -34,6 +34,8 @@ export interface ControlRunOptions {
   episodes: number;
   vault?: AgentVaultOptions;
   maxUsd?: number;
+  /** The cap's price for usage reported without a cost (see RatingOptions). */
+  fallbackPrice?: TokenPrice;
   outDir?: string;
   onEpisode?: (result: EpisodeResult, index: number, total: number) => void | Promise<void>;
 }
@@ -57,7 +59,10 @@ export async function runControls(
   sandbox: Sandbox,
   options: ControlRunOptions,
 ): Promise<ControlRunResult> {
-  const cap = new SpendingCap({ maxUsd: options.maxUsd ?? Number.POSITIVE_INFINITY });
+  const cap = new SpendingCap({
+    maxUsd: options.maxUsd ?? Number.POSITIVE_INFINITY,
+    ...(options.fallbackPrice ? { fallbackPrice: options.fallbackPrice } : {}),
+  });
   const tracesDir = options.outDir ? join(options.outDir, "traces") : undefined;
   if (options.outDir) mkdirSync(options.outDir, { recursive: true });
   const episodes: EpisodeResult[] = [];

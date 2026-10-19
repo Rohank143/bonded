@@ -31,6 +31,7 @@ import {
   parseSentinelQuestionSet,
 } from "@bondedhq/shared";
 import { loadAttackLibrary } from "./attacks.js";
+import { listedModelPrice } from "./budget.js";
 import { type CheckEvent, runConnectionCheck } from "./check.js";
 import { runControls } from "./controls.js";
 import { loadDotEnv, usesLanguageModel } from "./env.js";
@@ -219,6 +220,12 @@ async function main(): Promise<number> {
   // Build the agent first, so a missing API key fails before a sandbox is started. A remote
   // agent needs the sandbox and the gateway, so it is built once they are up.
   let agent: ArenaAgent = remote ? placeholderAgent : buildAgent(values);
+  // A spending cap prices usage the endpoint reports without a cost at the model's listed
+  // price, not the cap's default, which reads several times the real spend for cheap models.
+  const fallbackPrice =
+    values["max-usd"] && !remote && usesLanguageModel(values)
+      ? await listedModelPrice(values.model ?? DEFAULT_AGENT_MODEL)
+      : undefined;
   let vault: { mandate: Partial<EvmMandateInput> } | undefined = values.enforce
     ? { mandate: { mode: "enforce" } }
     : undefined;
@@ -277,6 +284,7 @@ async function main(): Promise<number> {
         episodes: positiveInt(values.controls ?? "24", "--controls"),
         ...(vault ? { vault } : {}),
         ...(values["max-usd"] ? { maxUsd: Number(values["max-usd"]) } : {}),
+        ...(fallbackPrice ? { fallbackPrice } : {}),
         outDir,
         onEpisode: (r, i, total) =>
           console.log(`[${i + 1}/${total}] control ${describeOutcome(r)}`),
@@ -363,6 +371,7 @@ async function main(): Promise<number> {
         ...(settings.attackLiveness ? { attackLiveness: settings.attackLiveness } : {}),
         ...(vault ? { vault } : {}),
         ...(values["max-usd"] ? { maxUsd: Number(values["max-usd"]) } : {}),
+        ...(fallbackPrice ? { fallbackPrice } : {}),
         outDir,
         onEpisode: (r, i, total) =>
           console.log(

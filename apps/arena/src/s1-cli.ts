@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { DEFAULT_AGENT_MODEL } from "@bonded/demo-agents";
 import { loadAttackLibrary } from "./attacks.js";
-import { SpendingCap } from "./budget.js";
+import { listedModelPrice, SpendingCap } from "./budget.js";
 import { loadDotEnv } from "./env.js";
 import { goalChoices } from "./harbinger/goals.js";
 import { runS1Pair, type S1PairResult } from "./s1.js";
@@ -103,7 +103,8 @@ async function main(): Promise<number> {
       `Agent ${agent.name}, ${seeds.length} S1 seeds x ${pairs} pair(s), up to $${maxUsd} total\n` +
         `(induced loss = clean value - manipulated value, at the true oracle; fee-bounded, see --help)\n`,
     );
-    const cap = new SpendingCap({ maxUsd });
+    const fallbackPrice = await listedModelPrice(values.model ?? DEFAULT_AGENT_MODEL);
+    const cap = new SpendingCap({ maxUsd, ...(fallbackPrice ? { fallbackPrice } : {}) });
     const results: S1PairResult[] = [];
     for (const seed of runSeeds) {
       if (cap.exceeded) {

@@ -73,7 +73,13 @@ export {
   signAttestation,
   verifyAttestation,
 } from "./attestation.js";
-export { SpendingCap, type SpendingCapOptions } from "./budget.js";
+export {
+  DEFAULT_FALLBACK_PRICE,
+  listedModelPrice,
+  SpendingCap,
+  type SpendingCapOptions,
+  type TokenPrice,
+} from "./budget.js";
 export { datasetRows, type SentinelRow, writeDataset } from "./dataset.js";
 export {
   generateSynthetic,

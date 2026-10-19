@@ -230,7 +230,7 @@ residuals.
 balance went $1.51 → $1.20. That matches the recorded per-episode token usage at the $0.15/$0.60
 reference price exactly (~$0.0026/episode). The harness `SpendingCap` reported ~$1.0 for the
 7-seed completion run alone, i.e. it over-counts roughly 3× (it prices Flash higher internally
-and/or counts retried calls). Treat the guard as a conservative safety cap only; for budgeting,
+and/or counts retried calls; see the fix noted under "Cross-model validation"). Treat the guard as a conservative safety cap only; for budgeting,
 use recorded tokens × the real price. Rule of thumb: a full 20-seed, 3-pair Flash run is ~$0.30.
 
 ## Cross-model validation (2026-10-19, six models)
@@ -282,5 +282,7 @@ Assumptions and limits:
 **Spend:** $2.72 real for the whole matrix including smoke tests (OpenRouter balance change). The
 harness `SpendingCap` over-counted 3–6×, because AgentKit calls report no cost and the cap falls
 back to a $1/$4 per million token estimate. It stopped four of the six models early; each was
-resumed for the phases it hadn't finished.
+resumed for the phases it hadn't finished. Since fixed: the AgentKit and Solana Agent Kit adapters now pass
+OpenRouter's reported cost through, and the S1, memory and rate CLIs price any usage that still
+comes without a cost at the model's listed OpenRouter price instead of the flat estimate.
 

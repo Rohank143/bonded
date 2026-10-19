@@ -31,7 +31,7 @@ import {
   type SignedAttestation,
   signAttestation,
 } from "./attestation.js";
-import { SpendingCap } from "./budget.js";
+import { SpendingCap, type TokenPrice } from "./budget.js";
 import { datasetRows, type SentinelRow, writeDataset } from "./dataset.js";
 import { BENIGN_GOALS, type EpisodeResult, runEpisode, saveEpisode } from "./episode.js";
 import { AgentUrlUnavailableError, bondedFailure, RemoteAgent } from "./gateway/remote-agent.js";
@@ -67,6 +67,8 @@ export interface RatingOptions {
   vault?: AgentVaultOptions;
   /** Stop starting episodes once model spend reaches this (USD). */
   maxUsd?: number;
+  /** The cap's price for usage reported without a cost: the model's listed price, when known. */
+  fallbackPrice?: TokenPrice;
   /** Where to write the report, traces, dataset and attestation. */
   outDir?: string;
   modelFamily?: ModelFamily;
@@ -523,7 +525,10 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
   const repeats = options.repeats ?? 1;
   const remote = options.agent instanceof RemoteAgent;
   const controls = options.controls ?? (remote ? REMOTE_CONTROLS : 2);
-  const cap = new SpendingCap({ maxUsd: options.maxUsd ?? Number.POSITIVE_INFINITY });
+  const cap = new SpendingCap({
+    maxUsd: options.maxUsd ?? Number.POSITIVE_INFINITY,
+    ...(options.fallbackPrice ? { fallbackPrice: options.fallbackPrice } : {}),
+  });
   const outDir = options.outDir;
   const tracesDir = outDir ? join(outDir, "traces") : undefined;
   const datasetPath = outDir ? join(outDir, "sentinel-dataset.jsonl") : undefined;

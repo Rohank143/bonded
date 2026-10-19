@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   type EpisodeResult,
   binomialLowerTail,
+  DEFAULT_FALLBACK_PRICE,
   exercised,
+  listedModelPrice,
   livenessRefusal,
   modelFamilyOf,
   ratingCoverage,
@@ -31,10 +33,70 @@ describe("SpendingCap", () => {
     expect(cap.exceeded).toBe(true);
   });
 
+  it("estimates at the default price when none is given", () => {
+    const cap = new SpendingCap({ maxUsd: 10 });
+    cap.add({ inputTokens: 1_000_000, outputTokens: 100_000 });
+    expect(DEFAULT_FALLBACK_PRICE).toEqual({ inputPerMillion: 1, outputPerMillion: 4 });
+    expect(cap.summary().spentUsd).toBeCloseTo(1.4, 9);
+  });
+
+  it("estimates near the real spend at a cheap model's listed price", () => {
+    // The 2026-10-19 validation: a cheap model's run read about 5x its spend at the default.
+    const usage = { inputTokens: 1_800_000, outputTokens: 60_000 };
+    const listed = new SpendingCap({
+      maxUsd: 2,
+      fallbackPrice: { inputPerMillion: 0.15, outputPerMillion: 0.6 },
+    });
+    const flat = new SpendingCap({ maxUsd: 2 });
+    listed.add(usage);
+    flat.add(usage);
+    expect(listed.summary().spentUsd).toBeCloseTo(0.306, 9);
+    expect(listed.exceeded).toBe(false);
+    expect(flat.summary().spentUsd).toBeCloseTo(2.04, 9);
+    expect(flat.exceeded).toBe(true);
+  });
+
   it("ignores agents with no model usage", () => {
     const cap = new SpendingCap({ maxUsd: 0 });
     cap.add(undefined);
     expect(cap.summary().spentUsd).toBe(0);
+  });
+});
+
+describe("listedModelPrice", () => {
+  const models = (data: unknown, status = 200) =>
+    (async (url: unknown) => {
+      expect(String(url)).toBe("https://llm.test/v1/models");
+      return new Response(JSON.stringify({ data }), { status });
+    }) as typeof globalThis.fetch;
+  const baseUrl = "https://llm.test/v1/";
+
+  it("reads the model's per-token price as USD per million tokens", async () => {
+    const fetch = models([
+      { id: "other/model", pricing: { prompt: "0.000003", completion: "0.000015" } },
+      {
+        id: "deepseek/deepseek-v4.1-flash",
+        pricing: { prompt: "0.00000015", completion: "0.0000006" },
+      },
+    ]);
+    const price = await listedModelPrice("deepseek/deepseek-v4.1-flash", { baseUrl, fetch });
+    expect(price?.inputPerMillion).toBeCloseTo(0.15, 9);
+    expect(price?.outputPerMillion).toBeCloseTo(0.6, 9);
+  });
+
+  it("is undefined for an unlisted model, a variable or missing price, or a failed lookup", async () => {
+    const listed = [
+      { id: "router/auto", pricing: { prompt: "-1", completion: "-1" } },
+      { id: "no/pricing" },
+      { id: "empty/pricing", pricing: { prompt: "", completion: "" } },
+    ];
+    for (const id of ["missing/model", "router/auto", "no/pricing", "empty/pricing"])
+      expect(await listedModelPrice(id, { baseUrl, fetch: models(listed) })).toBeUndefined();
+    expect(await listedModelPrice("x", { baseUrl, fetch: models([], 503) })).toBeUndefined();
+    const down = (async () => {
+      throw new TypeError("fetch failed");
+    }) as typeof globalThis.fetch;
+    expect(await listedModelPrice("x", { baseUrl, fetch: down })).toBeUndefined();
   });
 });
 
