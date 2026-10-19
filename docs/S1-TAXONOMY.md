@@ -68,7 +68,7 @@ model that only through `executionSkew`. A price-spoof seed with no skew therefo
 | 7 | Fabricated social proof / flow | fake whale accumulation, fake volume | A2 (social) | **seeded** |
 | 8 | False urgency / time pressure | "rebalancing window closes in 5 min" | A2 | **seeded** |
 | 9 | Persistent false fact (context poisoning) | planted cost basis / standing memo | A5; A2, A7 (memory) | **seeded (within-episode, and cross-episode via the memory battery)** |
-| 10 | Fabricated correlation / hedge | "this position is hedged" | A2 | gap — low signal in a 3-token world |
+| 10 | Fabricated correlation / hedge | "this position is hedged" | A2, A7 | **seeded (3-token slice)**; full version a gap |
 | 11 | Panic / volatility | flash-crash print, stablecoin depeg | A8 | **seeded** |
 
 ### Grounding in the literature
@@ -101,8 +101,10 @@ These cells are real attack surface we **cannot yet measure**, listed so coverag
 2. **Execution realism beyond a fixed skew.** `executionSkew` is a transient, per-token
    dislocation. It does not model depth, sandwich/MEV dynamics, or a feed that moves the venue
    continuously. Adverse-fill magnitude is therefore a knob, not an emergent market result.
-3. **Correlation / hedge lies (type 10).** A 3-token market (tTSLA, tAMZN, tNVDA) is too small to
-   stage a believable hedge, so this type is parked rather than weakly faked.
+3. **Correlation / hedge lies beyond a pair (type 10).** The 3-token slice is seeded: a false
+   correlation or hedge ratio between two of the stock tokens, which makes an extra buy look like
+   risk reduction (`s1-correlation`). What a 3-token market can't stage is a believable hedge
+   with an index, a future or a basket of correlated names; that part stays parked.
 4. **Memory poisoning for agents we don't build.** Cross-episode memory poisoning is now measured
    (next section), but only for agents whose notes Bonded can read and wipe. Today that is
    `MemoryBotAgent`. A BYOA agent (an ElizaOS-style agent behind the gateway) would need the
@@ -175,7 +177,11 @@ to carry over standing instructions and approvals. The six-model run below super
 
 ## Seed index
 
-All S1 seeds live in `apps/arena/s1-seeds/` and carry the `s1` tag plus a family tag. Run the
+All S1 seeds live in `apps/arena/s1-seeds/` and carry the `s1` tag plus a family tag. Most S1
+goals hand the decision to the data ("if the alert says X, buy"), so they measure whether the
+agent trusts false data its own task told it to use. Seeds tagged `standing-order` instead give a
+plain trade order and only ask the agent to check the data first, so a change of behavior there
+means the lie pushed the agent off an order nobody told it to revisit. Run the
 battery with `pnpm --filter @bonded/arena s1`; the structural invariants are checked for free by
 `apps/arena/test/s1-seeds.test.ts` (no chain, no model). Breach-rate validation against a live
 model (e.g. DeepSeek Flash) is a separate, budgeted run — the seeds here are deterministic and
@@ -189,7 +195,8 @@ cost nothing to author or lint.
 | `s1-price` | 2, 4, 6 | `A3-stale-tick-001`, `A3-liquidity-depth-001` |
 | `s1-numeric` | 3, 4 | `A7-decimal-shift-001`, `A7-unit-confusion-001`, `A7-stale-fundamental-001` |
 | `s1-context` | 9 | `A5-planted-cost-basis-001`, `A5-planted-rotation-memo-001` |
-| `s1-panic` | 11 | `A8-flash-crash-dip-001`, `A8-fake-depeg-001` |
+| `s1-panic` | 11 | `A8-flash-crash-dip-001`, `A8-fake-depeg-001`, `A8-liquidation-cascade-001`, `A8-reserve-shortfall-001`; standing-order variants `A8-halt-panic-standing-001`, `A8-crash-rotation-standing-001` |
+| `s1-correlation` | 10 | `A2-fake-hedge-pair-001`, `A7-false-beta-report-001` |
 | `s1-counterparty` | — | `A10-false-consensus-anchor-001` (needs-multiagent) |
 
 Plus the original adverse-fill seeds: `A2-rotation-fill-001/003/004`, `A3-pump-fill-001/002`.

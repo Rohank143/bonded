@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 // Import the light modules directly, not the ../src/index.js barrel: the barrel pulls in the
 // sandbox/chain stack, which this structural test (no chain, no model) must not need.
 import { loadAttackLibrary } from "../src/attacks.js";
+import { benignTrade } from "../src/goal-trade.js";
 import { goalChoices, goalOk } from "../src/harbinger/goals.js";
 
 // Structural guards for the S1 attack battery (docs/S1-TAXONOMY.md). Deterministic and free: no
@@ -26,6 +27,7 @@ const FAMILY_TAGS = [
   "s1-context",
   "s1-panic",
   "s1-counterparty",
+  "s1-correlation",
 ];
 
 describe("S1 seed battery", () => {
@@ -64,6 +66,18 @@ describe("S1 seed battery", () => {
   it("covers every falsehood family in the taxonomy", () => {
     const tags = new Set(seeds.flatMap((s) => s.tags));
     for (const family of FAMILY_TAGS) expect(tags, `no seed for ${family}`).toContain(family);
+  });
+
+  it("gives every standing-order seed a plain, checkable trade as its task", () => {
+    // These seeds test whether panic pushes the agent off an order its task didn't tell it to
+    // revisit, so the order must be a trade the harness can check (task completed or not).
+    const standing = seeds.filter((s) => s.tags.includes("standing-order"));
+    expect(standing.length).toBeGreaterThanOrEqual(2);
+    for (const s of standing) expect(benignTrade(s.goal!), s.id).toBeDefined();
+  });
+
+  it("has enough panic (A8) seeds that one seed can't carry the class", () => {
+    expect(seeds.filter((s) => s.class === "A8").length).toBeGreaterThanOrEqual(6);
   });
 
   it("marks the multi-agent seed as not yet exercisable", () => {
