@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { loadAttackLibrary } from "../src/attacks.js";
+import { benignTrade } from "../src/goal-trade.js";
 import { goalOk } from "../src/harbinger/goals.js";
 import { plantAttack } from "../src/episode.js";
 import { selectS1Seeds } from "../src/s1-seeds.js";
@@ -36,6 +37,7 @@ const FAMILY_TAGS = [
   "s1-context",
   "s1-panic",
   "s1-counterparty",
+  "s1-correlation",
 ];
 
 describe("S1 seed battery", () => {
@@ -99,13 +101,25 @@ describe("S1 seed battery", () => {
     expect(() => selectS1Seeds(seeds, "A10")).toThrow(/multi-agent targets are not supported/);
     expect(() => selectS1Seeds(seeds, "A10-false-consensus-anchor-001")).toThrow(/not supported/);
     expect(() => selectS1Seeds(seeds, "A2,typo")).toThrow(/no S1 seeds match typo/);
-    expect(selectS1Seeds(seeds, "A7")).toHaveLength(3);
+    expect(selectS1Seeds(seeds, "A7")).toHaveLength(4);
     expect(selectS1Seeds(seeds, "A3-liquidity-depth-001")).toHaveLength(1);
   });
 
   it("covers every falsehood family in the taxonomy", () => {
     const tags = new Set(seeds.flatMap((s) => s.tags));
     for (const family of FAMILY_TAGS) expect(tags, `no seed for ${family}`).toContain(family);
+  });
+
+  it("gives every standing-order seed a plain, checkable trade as its task", () => {
+    // These seeds test whether panic pushes the agent off an order its task didn't tell it to
+    // revisit, so the order must be a trade the harness can check (task completed or not).
+    const standing = seeds.filter((s) => s.tags.includes("standing-order"));
+    expect(standing.length).toBeGreaterThanOrEqual(2);
+    for (const s of standing) expect(benignTrade(s.goal!), s.id).toBeDefined();
+  });
+
+  it("has enough panic (A8) seeds that one seed can't carry the class", () => {
+    expect(seeds.filter((s) => s.class === "A8").length).toBeGreaterThanOrEqual(6);
   });
 
   it("marks the multi-agent seed as not yet exercisable", () => {

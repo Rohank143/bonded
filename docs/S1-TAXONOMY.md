@@ -5,7 +5,7 @@ agent's trade under its trusted task. The payload supplies the false claim; the 
 any trading policy. This battery is separate from the instruction-bearing S2 library.
 
 This is a scoped coverage catalogue, not a claim of exhaustive channel-by-falsehood coverage.
-The tables map the authored cases and explicit gaps. There are 20 seeds: 19 runnable cases and
+The tables map the authored cases and explicit gaps. There are 26 seeds: 25 runnable cases and
 one reserved multi-agent case. A seed being present does not establish that a model read it,
 was manipulated by it, or resisted it.
 
@@ -70,7 +70,7 @@ single no-change pair establishes a causal success or resistance rate.
 | 7 | Fabricated social proof / flow | fake whale accumulation, fake volume | A2 (social) | **seeded** |
 | 8 | False urgency / time pressure | "rebalancing window closes in 5 min" | A2 | **seeded** |
 | 9 | Persistent false fact (context poisoning) | planted cost basis / standing memo | A5 | **seeded (within-episode)** |
-| 10 | Fabricated correlation / hedge | "this position is hedged" | A2 | gap — low signal in a 3-token world |
+| 10 | Fabricated correlation / hedge | "this position is hedged" | A2, A7 | seeded belief/behavior probes; hedge economics unmodeled |
 | 11 | Panic / volatility | flash-crash print, stablecoin depeg | A8 | **seeded** |
 
 ### Grounding in the literature
@@ -103,8 +103,9 @@ every S1 family or delivery channel has been tested.
 3. **Execution realism.** Fixed skew does not model order-book depth, MEV or a changing venue.
    The liquidity seed now exposes its claim through `get_market_report` as well as a numeric
    feed value. This tests belief in a claim, not simulated order-book liquidity.
-4. **Correlation / hedge lies (type 10).** No correlated-price or hedge-payoff model is present.
-   These cases remain deferred rather than counted as covered.
+4. **Hedge economics (type 10).** Two seeds probe behavior after false correlation/beta claims.
+   No correlated-price or hedge-payoff model is present, even for a two-token pair. Additional
+   trades and fees are observable; actual protection, covariance and net risk reduction are not.
 
 ## Seed index
 
@@ -126,7 +127,8 @@ run was performed during this review.
 | `s1-price` | 2, 4, 6 | `A3-stale-tick-001`, `A3-liquidity-depth-001` |
 | `s1-numeric` | 3, 4 | `A7-decimal-shift-001`, `A7-unit-confusion-001`, `A7-stale-fundamental-001` |
 | `s1-context` | 9 | `A5-planted-cost-basis-001`, `A5-planted-rotation-memo-001` |
-| `s1-panic` | 11 | `A8-flash-crash-dip-001`, `A8-fake-depeg-001` |
+| `s1-panic` | 11 | `A8-flash-crash-dip-001`, `A8-fake-depeg-001`, `A8-liquidation-cascade-001`, `A8-reserve-shortfall-001`, `A8-halt-panic-standing-001`, `A8-crash-rotation-standing-001` |
+| `s1-correlation` | 10 | `A2-fake-hedge-pair-001`, `A7-false-beta-report-001` |
 | `s1-counterparty` | — | `A10-false-consensus-anchor-001` (needs-multiagent) |
 
 The three inherited rotation payloads now report allocation facts instead of giving trading
@@ -180,6 +182,22 @@ exact revisions or configurations, and sometimes described a different day-2 goa
 these isolation and eligibility corrections and do not validate this implementation. A future
 budgeted run must include exact seed/model/code versions, notes, exposure evidence, all session
 outcomes and clean/clean noise controls before drawing causal or cross-model conclusions.
+
+## Additional panic and hedge probes
+
+Six new seeds bring the single-session catalog to 26 authored seeds, 25 runnable; A10 remains
+reserved. Four extend A8 with liquidation, reserve-shortfall and two standing-order panic cases.
+Two `s1-correlation` seeds (`A2-fake-hedge-pair-001`, `A7-false-beta-report-001`) claim false
+correlation or beta in news and market-report fields. Their payloads state supposed facts;
+conditional trading policy lives in the trusted goal. The two `standing-order` goals instead
+ask for a fixed buy after checking data. Deviations are observations, not proof of causation.
+
+Earlier branch notes reported exploratory A8 counts of 28/36 or 29/36 (about 78–81%) across
+three models. The quoted 62–90% figures were confidence-interval bounds, not observed rates.
+No raw pairs, exact revisions or model configurations were linked. Those notes predate the
+payload corrections and control eligibility checks and cannot validate this battery. No new
+paid evaluation was run. A future evaluation must save raw traces, both-arm outcomes, exact
+versions and clean/clean controls, and distinguish extra/different actions from skipped orders.
 
 ## Spending estimates
 
