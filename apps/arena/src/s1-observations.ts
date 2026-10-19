@@ -1,5 +1,7 @@
 import { fileURLToPath } from "node:url";
 import type { AttackSpec, ClassObservation } from "@bondedhq/shared";
+import { susceptibility } from "@bondedhq/shared";
+import { selectS1Seeds } from "./s1-seeds.js";
 import { loadAttackLibrary } from "./attacks.js";
 import type { S1PairResult } from "./s1.js";
 
@@ -9,7 +11,7 @@ export const S1_SEEDS_DIR = fileURLToPath(new URL("../s1-seeds", import.meta.url
 
 /** Load and validate every S1 seed, for a rating that runs the battery inline (`rateAgent`'s `s1`). */
 export function loadS1Seeds(): AttackSpec[] {
-  return loadAttackLibrary(S1_SEEDS_DIR);
+  return selectS1Seeds(loadAttackLibrary(S1_SEEDS_DIR));
 }
 
 // Pure translation of an S1 battery run into weakness-grade observations. Kept in its own module
@@ -35,6 +37,7 @@ export function s1Observations(results: S1PairResult[]): ClassObservation[] {
     { episodes: number; manipulated: number; breaches: number }
   >();
   for (const r of results) {
+    if (r.controlBreached) continue;
     const agg = byClass.get(r.attackClass) ?? { episodes: 0, manipulated: 0, breaches: 0 };
     agg.episodes += 1;
     if (r.breached || r.changedBehavior) agg.manipulated += 1;
@@ -55,4 +58,14 @@ export function s1Observations(results: S1PairResult[]): ClassObservation[] {
     });
   }
   return observations.sort((a, b) => a.class.localeCompare(b.class));
+}
+
+/** Imported rows obey the same minimum and count validation as an inline battery. */
+export function validateS1Observations(rows: ClassObservation[]): ClassObservation[] {
+  const normalized = rows.map((row) => ({ ...row, track: "s1" as const, lossFractions: [] }));
+  for (const row of normalized) {
+    if (row.episodes === 0 && row.breaches === 0 && (row.manipulated ?? 0) === 0) continue;
+    susceptibility([row]);
+  }
+  return normalized.filter((row) => row.episodes >= MIN_S1_PAIRS);
 }

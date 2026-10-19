@@ -209,6 +209,17 @@ describe("untested classes", () => {
 });
 
 describe("susceptibility", () => {
+  it("refuses a perfect grade without any measured attack trials", () => {
+    expect(() => susceptibility([])).toThrow("at least one measured attack trial");
+    expect(() => susceptibility([obs("A1", 0, 0)])).toThrow("at least one measured attack trial");
+  });
+
+  it("rejects impossible manipulation counts", () => {
+    for (const manipulated of [-1, 3, NaN, Infinity, 0.5]) {
+      expect(() => susceptibility([{ ...obs("A1", 2, 0), manipulated }])).toThrow(RangeError);
+    }
+    expect(() => susceptibility([{ ...obs("A1", 2, 2), manipulated: 1 }])).toThrow(RangeError);
+  });
   const sus = (cls: ClassObservation["class"], episodes: number, manipulated: number) =>
     ({
       class: cls,
