@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { DEFAULT_AGENT_MODEL } from "@bonded/demo-agents";
-import { SpendingCap } from "./budget.js";
+import { listedModelPrice, SpendingCap } from "./budget.js";
 import { loadDotEnv } from "./env.js";
 import { isMemoryCapable, runMemoryBattery } from "./memory-attempt.js";
 import {
@@ -95,8 +95,9 @@ async function main(): Promise<number> {
 
   const outDir = values.out ?? join("ratings", `memory-${agent.name.replaceAll("/", "_")}`);
   mkdirSync(outDir, { recursive: true });
+  const fallbackPrice = await listedModelPrice(values.model ?? DEFAULT_AGENT_MODEL);
+  const cap = new SpendingCap({ maxUsd, ...(fallbackPrice ? { fallbackPrice } : {}) });
   const sandbox = await Sandbox.start();
-  const cap = new SpendingCap({ maxUsd });
   const results: MemoryPairResult[] = [];
   let complete = false;
   const persist = () =>

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { AIMessage, type BaseMessage } from "@langchain/core/messages";
 import type { ChatResult } from "@langchain/core/outputs";
@@ -10,6 +10,7 @@ import {
   ARENA_ACTIONS,
   ArenaBridge,
   disableAgentKitTelemetry,
+  openRouterModel,
   SOLANA_AGENT_KIT_TEMPLATE_PROMPT,
   SolanaAgentKitAgent,
   taskMessage,
@@ -136,6 +137,77 @@ describe.each([
   });
 });
 
+/**
+ * An OpenRouter chat completions endpoint: one tool call, then an answer. Each response reports
+ * its usage, with `cost` when given.
+ */
+function openRouterFetch(costs: (number | undefined)[]) {
+  let turn = 0;
+  return (async (_input: unknown, init?: { body?: unknown }) => {
+    const body = JSON.parse(String(init?.body)) as { tools?: { function: { name: string } }[] };
+    const cost = costs[turn];
+    const message =
+      turn++ === 0
+        ? {
+            role: "assistant",
+            content: null,
+            tool_calls: [
+              {
+                id: "call-1",
+                type: "function",
+                function: {
+                  name: body.tools!.find((t) => t.function.name.endsWith("read_inbox"))!.function
+                    .name,
+                  arguments: "{}",
+                },
+              },
+            ],
+          }
+        : { role: "assistant", content: "Done." };
+    return new Response(
+      JSON.stringify({
+        id: `gen-${turn}`,
+        object: "chat.completion",
+        created: 0,
+        model: "test-model",
+        choices: [{ index: 0, message, finish_reason: "stop" }],
+        usage: {
+          prompt_tokens: 1000,
+          completion_tokens: 50,
+          total_tokens: 1050,
+          ...(cost !== undefined ? { cost } : {}),
+        },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  }) as typeof globalThis.fetch;
+}
+
+describe("the AgentKit adapter on OpenRouter", () => {
+  const env = process.env.OPENROUTER_API_KEY;
+  beforeAll(() => {
+    process.env.OPENROUTER_API_KEY ??= "test-key";
+  });
+  afterAll(() => {
+    if (env === undefined) delete process.env.OPENROUTER_API_KEY;
+  });
+
+  it("reports the cost OpenRouter charged, summed over model turns", async () => {
+    const fetch = openRouterFetch([0.0004, 0.0006]);
+    const agent = new AgentKitAgent("test-model", () => openRouterModel("test-model", { fetch }));
+    const summary = await agent.run(task, recordingToolbox().tools);
+    expect(summary.stoppedBecause).toBe("done");
+    expect(summary.usage).toEqual({ inputTokens: 2000, outputTokens: 100, costUsd: 0.001 });
+  });
+
+  it("leaves the cost out when a turn didn't report one, so the cap estimates the run", async () => {
+    const fetch = openRouterFetch([0.0004, undefined]);
+    const agent = new AgentKitAgent("test-model", () => openRouterModel("test-model", { fetch }));
+    const summary = await agent.run(task, recordingToolbox().tools);
+    expect(summary.usage).toEqual({ inputTokens: 2000, outputTokens: 100 });
+  });
+});
+
 it("keeps AgentKit's analytics from leaving the process", async () => {
   disableAgentKitTelemetry();
   const r = await fetch(`https://${AGENTKIT_ANALYTICS_HOST}/amp`, { method: "POST", body: "{}" });
@@ -160,4 +232,14 @@ describe("the Arena actions", () => {
     expect(await bridge.call("read_news", {})).toMatch(/step limit/);
     expect(calls).toHaveLength(1);
   });
+});
+
+it.each([-1, Infinity, NaN])("does not publish invalid framework cost %s", async (cost) => {
+  const { reportedCost } = await import("../src/frameworks/langgraph.js");
+  const { AIMessage } = await import("@langchain/core/messages");
+  expect(
+    reportedCost(
+      new AIMessage({ content: "ok", additional_kwargs: { __raw_response: { usage: { cost } } } }),
+    ),
+  ).toBeUndefined();
 });

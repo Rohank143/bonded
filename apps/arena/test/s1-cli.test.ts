@@ -6,6 +6,10 @@ import type { SpendingCap } from "../src/budget.js";
 
 const mocks = vi.hoisted(() => ({ run: vi.fn(), stop: vi.fn(async () => {}) }));
 vi.mock("@bonded/demo-agents", () => ({ DEFAULT_AGENT_MODEL: "test/model" }));
+vi.mock("../src/budget.js", async (original) => ({
+  ...(await original<typeof import("../src/budget.js")>()),
+  listedModelPrice: async () => undefined,
+}));
 vi.mock("../src/env.js", () => ({ loadDotEnv: vi.fn() }));
 vi.mock("../src/targets.js", () => ({ buildTarget: () => ({ name: "test-agent" }) }));
 vi.mock("../src/attacks.js", () => ({
