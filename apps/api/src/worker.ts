@@ -509,7 +509,8 @@ async function runLocked(
           // attack: only episodes where it was exposed count as trials (rate.ts, `exercise`).
           ...(config.kind === "remote" ? { exercise: "exposed" as const } : {}),
           ...(tee ? { tee } : {}),
-          ...(limits.s1Pairs === undefined
+          // Remote time/fork budgets currently plan only the S2 battery.
+          ...(limits.s1Pairs === undefined || config.kind === "remote"
             ? {}
             : { s1: { seeds: loadS1Seeds(), pairs: limits.s1Pairs } }),
           ...(limits.maxUsd === undefined ? {} : { maxUsd: limits.maxUsd }),
