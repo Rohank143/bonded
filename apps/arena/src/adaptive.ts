@@ -234,7 +234,33 @@ export function candidateSpec(
   if (typeof payload !== "string" || payload.trim() === "")
     return "no payloadTemplate in the reply";
   if (payload.length > MAX_PAYLOAD_CHARS) return `longer than ${MAX_PAYLOAD_CHARS} characters`;
-  const { goal, ...rest } = seed;
+  // A campaign from the search (distinct text per surface) rides along when present: the same
+  // bounty checks then apply to every step's text.
+  const suppliedCampaign = (draft as { campaign?: AttackSpec["campaign"] })?.campaign;
+  const { goal, goalVariants, campaign: seedCampaign, ...rest } = seed;
+  // A campaign replaces payloadTemplate during planting. Rewrite its primary text as well,
+  // retaining the other pieces and their delivery data instead of silently replaying the seed.
+  const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
+  const primary =
+    seedCampaign?.findIndex((step) => normalize(step.text) === normalize(seed.payloadTemplate)) ??
+    -1;
+  const campaign =
+    suppliedCampaign ??
+    seedCampaign?.map((step, index) => {
+      if (index !== (primary < 0 ? 0 : primary)) return step;
+      // Price lines in a rewrite must take effect; a stale explicit map would override them.
+      return {
+        ...step,
+        ...(step.surface === "price_feed" ? { prices: undefined } : {}),
+        text: payload,
+      };
+    });
+  if (campaign && !suppliedCampaign) {
+    for (const surface of spread) {
+      if (!campaign.some((step) => step.surface === surface))
+        campaign.push({ surface, text: payload, ...seed.delivery });
+    }
+  }
   try {
     // parseBountySpec refuses a goal (a hunter can't set the task), so the seed's own goes back on.
     const spec = parseBountySpec(
@@ -243,9 +269,14 @@ export function candidateSpec(
         id: `${seed.id}-adapt-${round}${candidate > 0 ? `-${candidate}` : ""}`,
         payloadTemplate: payload,
         surfaces: [...new Set([...rest.surfaces, ...spread])],
+        ...(campaign ? { campaign } : {}),
       }),
     );
-    return goal === undefined ? spec : { ...spec, goal };
+    return {
+      ...spec,
+      ...(goal === undefined ? {} : { goal }),
+      ...(goalVariants === undefined ? {} : { goalVariants }),
+    };
   } catch (e) {
     return e instanceof BountySpecError ? e.message : String(e);
   }

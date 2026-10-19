@@ -1,4 +1,5 @@
 import type { ChatClient, ChatResponse } from "@bondedhq/shared";
+import { ATTACK_CLASSES } from "@bondedhq/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   freshHeldOut,
@@ -27,7 +28,12 @@ describe("single-use held-out sets in the sandbox", () => {
       sandbox,
     });
     expect(missing).toEqual([]);
-    expect(attacks).toHaveLength(library.length);
+    // Classes pick up to perClass seeds; a smaller class library caps the whole set.
+    const picked = Object.keys(ATTACK_CLASSES).reduce(
+      (total, id) => total + Math.min(4, library.filter((spec) => spec.class === id).length),
+      0,
+    );
+    expect(attacks).toHaveLength(picked);
     expect(heldOut.source).toBe("rewrite");
   });
 

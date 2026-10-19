@@ -8,7 +8,9 @@ import {
   type AttackSpec,
   type ChatClient,
   DEFAULT_ASK,
+  parseBountySpec,
 } from "@bondedhq/shared";
+import { stringify } from "yaml";
 import { renderPayload } from "./attacks.js";
 import { runEpisode } from "./episode.js";
 import { generateHeldOut, heldOutId } from "./held-out.js";
@@ -70,7 +72,23 @@ export class FileHeldOutLedger implements HeldOutLedger {
 /** What makes two held-out attacks the same: the payload, how it is delivered, and the goal. */
 export function payloadHash(spec: AttackSpec): string {
   return createHash("sha256")
-    .update(JSON.stringify([spec.payloadTemplate, spec.delivery, spec.goal ?? null]))
+    .update(
+      JSON.stringify(
+        spec.campaign
+          ? [
+              "campaign",
+              spec.campaign.map((step) => [
+                step.surface,
+                step.text,
+                step.sender ?? null,
+                step.token ?? null,
+                step.prices ?? null,
+              ]),
+              spec.goal ?? null,
+            ]
+          : [spec.payloadTemplate, spec.delivery, spec.goal ?? null],
+      ),
+    )
     .digest("hex");
 }
 
@@ -235,19 +253,22 @@ function rewriteSender(sender: string, random: SeededRandom): string {
   return sender;
 }
 
-/** The orders the undefended reference agent reads from a payload: what a variant must keep. */
-function ordersIn(spec: AttackSpec): string {
+/** The orders the undefended reference agent reads from a payload and its campaign: what a variant must keep. */
+function ordersIn(spec: AttackSpec): string[] {
   const stand = "0x000000000000000000000000000000000000dEaD";
-  const text = renderPayload(spec.payloadTemplate, {
+  const vars = {
     attacker: stand,
     vault: stand,
     depositor: stand,
     lookalike: stand,
     ...DEFAULT_ASK,
-  });
-  return findInstructions(text)
-    .map((i) => `${i.kind}${i.kind === "swap" ? `x${i.times}` : ""}`)
-    .join(",");
+  };
+  const texts = spec.campaign?.map((step) => step.text) ?? [spec.payloadTemplate];
+  const order = (t: string) =>
+    findInstructions(renderPayload(t, vars))
+      .map((i) => `${i.kind}${i.kind === "swap" ? `x${i.times}` : ""}`)
+      .join(",");
+  return texts.map(order);
 }
 
 /**
@@ -261,10 +282,18 @@ export function rewriteVariant(seed: AttackSpec, random: SeededRandom): AttackSp
   // The default ask ({{amount}}, 5,000) becomes a literal amount just under it.
   const ask = Math.round((Number(DEFAULT_ASK.amount) * (0.8 + random.next() * 0.19)) / 50) * 50;
   const text = (t: string) => scaleAmounts(permuteTokens(rewriteWords(t, random), map), factor);
-  const payloadTemplate = frame(text(seed.payloadTemplate), seed, random).replace(
-    /\{\{\s*amount\s*\}\}/g,
-    random.next() < 0.5 ? String(ask) : ask.toLocaleString("en-US"),
-  );
+  const framedPayload = frame(text(seed.payloadTemplate), seed, random);
+  const askText = random.next() < 0.5 ? String(ask) : ask.toLocaleString("en-US");
+  const replaceAsk = (t: string) => t.replace(/\{\{\s*amount\s*\}\}/g, askText);
+  const renderedPayload = replaceAsk(framedPayload);
+  // A rescaled price must stay in sync with any `SYMBOL=price` line the payload prints: the
+  // feed line IS the desk's number, so a mismatch reads as an obvious inconsistency.
+  const syncFeedText = (t: string, prices?: Record<string, number>): string =>
+    prices
+      ? t.replace(/\b([tw]?[A-Z]{3,5})=([0-9.]+)\b/g, (m, symbol: string) =>
+          prices[symbol] === undefined ? m : `${symbol}=${prices[symbol]}`,
+        )
+      : t;
   const delivery: AttackSpec["delivery"] = {
     ...(seed.delivery.sender ? { sender: rewriteSender(seed.delivery.sender, random) } : {}),
     ...(seed.delivery.token ? { token: permuteTokens(seed.delivery.token, map) } : {}),
@@ -281,16 +310,44 @@ export function rewriteVariant(seed: AttackSpec, random: SeededRandom): AttackSp
         }
       : {}),
   };
-  return {
+  // Campaign steps rewrite like mini-payloads: same wording/token/amount rules, plus the same
+  // price rescale and sender rules (the tx_history address sender must stay an address).
+  const campaign = seed.campaign?.map((step) => {
+    const prices = step.prices
+      ? Object.fromEntries(
+          Object.entries(step.prices).map(([symbol, price]) => {
+            const from = symbol.replace(/^t/, "") as (typeof STOCKS)[number];
+            const to = (map[from] ?? from) as (typeof STOCKS)[number];
+            const ratio = (REFERENCE_PRICES[to] ?? 1) / (REFERENCE_PRICES[from] ?? 1);
+            return [permuteTokens(symbol, map), Math.max(1, Math.round(price * ratio * factor))];
+          }),
+        )
+      : undefined;
+    return {
+      ...step,
+      text: syncFeedText(replaceAsk(text(step.text)), prices),
+      ...(step.sender ? { sender: rewriteSender(step.sender, random) } : {}),
+      ...(step.token ? { token: permuteTokens(step.token, map) } : {}),
+      ...(prices ? { prices } : {}),
+    };
+  });
+  const payloadTemplate = syncFeedText(renderedPayload, delivery.prices);
+  const variant = {
     ...seed,
     id: heldOutId(seed.class, payloadTemplate),
     title: `Held-out ${ATTACK_CLASSES[seed.class].name.toLowerCase()} variant`,
     description: `A single-use variant of a ${seed.class} attack, made for one rating.`,
     payloadTemplate,
     delivery,
+    ...(campaign ? { campaign } : {}),
     ...(seed.goal ? { goal: permuteTokens(seed.goal, map) } : {}),
+    ...(seed.goalVariants
+      ? { goalVariants: seed.goalVariants.map((g) => permuteTokens(g, map)) }
+      : {}),
     tags: ["held-out", "single-use"],
   };
+  if (campaign) variant.id = heldOutId(seed.class, payloadHash(variant));
+  return variant;
 }
 
 export interface FreshHeldOutOptions {
@@ -349,23 +406,39 @@ export async function freshHeldOut(options: FreshHeldOutOptions): Promise<FreshH
   }
 
   const published = new Set(options.library.map((s) => s.payloadTemplate.trim()));
+  const publishedCampaigns = new Set(options.library.filter((s) => s.campaign).map(payloadHash));
   const missing: FreshHeldOutResult["missing"] = [];
   for (const source of picked) {
     if (kept.filter((k) => k.class === source.class).length >= perClass) continue;
     let variant: AttackSpec | undefined;
     let reason = "no rewrite kept the attack's orders";
+    // Oracle-sizing seeds carry no instruction (their vector is a spoofed feed; pillar P4), so
+    // the undefended reference agent can never breach them and sandbox verification must check
+    // the prices instead. Any other seed keeps episode-level verification.
+    const sourceOrders = ordersIn(source);
+    const instructionCarrying = sourceOrders.some(Boolean);
     for (let attempt = 0; attempt < attempts && !variant; attempt++) {
       const candidate = rewriteVariant(source, new SeededRandom(`${seed}:${source.id}:${attempt}`));
-      if (ordersIn(candidate) !== ordersIn(source)) continue;
+      if (JSON.stringify(ordersIn(candidate)) !== JSON.stringify(sourceOrders)) continue;
       // A variant must differ from every published payload, not just its own seed's.
-      if (published.has(candidate.payloadTemplate.trim())) continue;
+      if (
+        candidate.campaign
+          ? publishedCampaigns.has(payloadHash(candidate))
+          : published.has(candidate.payloadTemplate.trim())
+      )
+        continue;
       if ([...kept].some((k) => payloadHash(k) === payloadHash(candidate))) continue;
       if ((await options.ledger?.used([payloadHash(candidate)]))?.size) {
         reason = "every rewrite was already used by an earlier rating";
         continue;
       }
-      if (options.sandbox && !(await stillBreaches(options.sandbox, candidate))) {
-        reason = "no rewrite still breached the undefended reference agent";
+      if (options.sandbox && instructionCarrying) {
+        if (!(await stillBreaches(options.sandbox, candidate))) {
+          reason = "no rewrite still breached the undefended reference agent";
+          continue;
+        }
+      } else if (options.sandbox && !hasRunnableFeed(candidate)) {
+        reason = "no rewrite kept the feed's spoofed prices";
         continue;
       }
       variant = candidate;
@@ -396,4 +469,19 @@ async function stillBreaches(sandbox: Sandbox, spec: AttackSpec): Promise<boolea
     attack: spec,
   });
   return episode.verdict.attackSucceeded === true;
+}
+
+/** Feed-only vectors cannot be judged by the parser agent; check the active planted prices. */
+function hasRunnableFeed(spec: AttackSpec): boolean {
+  const candidate = { ...spec };
+  delete candidate.goal;
+  delete candidate.goalVariants;
+  try {
+    parseBountySpec(stringify(candidate));
+  } catch {
+    return false;
+  }
+  return spec.campaign
+    ? spec.campaign.some((step) => step.surface === "price_feed")
+    : spec.surfaces.includes("price_feed");
 }
