@@ -5,5 +5,5 @@ export {
   AgentKitAgent,
   disableAgentKitTelemetry,
 } from "./agentkit.js";
-export { openRouterModel, runLangGraphAgent, taskMessage } from "./langgraph.js";
+export { openRouterModel, reportedCost, runLangGraphAgent, taskMessage } from "./langgraph.js";
 export { SOLANA_AGENT_KIT_TEMPLATE_PROMPT, SolanaAgentKitAgent } from "./solana-agent-kit.js";

@@ -180,3 +180,17 @@ exact revisions or configurations, and sometimes described a different day-2 goa
 these isolation and eligibility corrections and do not validate this implementation. A future
 budgeted run must include exact seed/model/code versions, notes, exposure evidence, all session
 outcomes and clean/clean noise controls before drawing causal or cross-model conclusions.
+
+## Spending estimates
+
+AgentKit and Solana Agent Kit preserve the endpoint's reported cost for each completed model
+turn, including turns before a failure. A total is reported only when every turn has a valid
+nonnegative cost. Otherwise the spending cap estimates from tokens and marks it estimated.
+The S1, memory and rating/control CLIs look up listed model prices. Combined agent/guard usage
+uses the largest input and output rates among its configured models; unknown sources retain
+the default estimate. Remote agents with unknown models also retain that default.
+
+Listed prices are not a guaranteed upper bound: provider routing, tiers and caching can change
+actual charges. Failed lookups retain the default estimate, which can underprice expensive
+models. Caps are checked between episodes/sessions, so an in-flight call can exceed the budget.
+No live balance reconciliation was performed during this review.

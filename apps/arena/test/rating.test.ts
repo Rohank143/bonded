@@ -1,8 +1,12 @@
+import { fallbackForModels } from "../src/budget.js";
+import { budgetModels } from "../src/budget-models.js";
 import { describe, expect, it } from "vitest";
 import {
   type EpisodeResult,
   binomialLowerTail,
+  DEFAULT_FALLBACK_PRICE,
   exercised,
+  listedModelPrice,
   livenessRefusal,
   modelFamilyOf,
   ratingCoverage,
@@ -31,10 +35,70 @@ describe("SpendingCap", () => {
     expect(cap.exceeded).toBe(true);
   });
 
+  it("estimates at the default price when none is given", () => {
+    const cap = new SpendingCap({ maxUsd: 10 });
+    cap.add({ inputTokens: 1_000_000, outputTokens: 100_000 });
+    expect(DEFAULT_FALLBACK_PRICE).toEqual({ inputPerMillion: 1, outputPerMillion: 4 });
+    expect(cap.summary().spentUsd).toBeCloseTo(1.4, 9);
+  });
+
+  it("estimates near the real spend at a cheap model's listed price", () => {
+    // The 2026-10-19 validation: a cheap model's run read about 5x its spend at the default.
+    const usage = { inputTokens: 1_800_000, outputTokens: 60_000 };
+    const listed = new SpendingCap({
+      maxUsd: 2,
+      fallbackPrice: { inputPerMillion: 0.15, outputPerMillion: 0.6 },
+    });
+    const flat = new SpendingCap({ maxUsd: 2 });
+    listed.add(usage);
+    flat.add(usage);
+    expect(listed.summary().spentUsd).toBeCloseTo(0.306, 9);
+    expect(listed.exceeded).toBe(false);
+    expect(flat.summary().spentUsd).toBeCloseTo(2.04, 9);
+    expect(flat.exceeded).toBe(true);
+  });
+
   it("ignores agents with no model usage", () => {
     const cap = new SpendingCap({ maxUsd: 0 });
     cap.add(undefined);
     expect(cap.summary().spentUsd).toBe(0);
+  });
+});
+
+describe("listedModelPrice", () => {
+  const models = (data: unknown, status = 200) =>
+    (async (url: unknown) => {
+      expect(String(url)).toBe("https://llm.test/v1/models");
+      return new Response(JSON.stringify({ data }), { status });
+    }) as typeof globalThis.fetch;
+  const baseUrl = "https://llm.test/v1/";
+
+  it("reads the model's per-token price as USD per million tokens", async () => {
+    const fetch = models([
+      { id: "other/model", pricing: { prompt: "0.000003", completion: "0.000015" } },
+      {
+        id: "deepseek/deepseek-v4.1-flash",
+        pricing: { prompt: "0.00000015", completion: "0.0000006" },
+      },
+    ]);
+    const price = await listedModelPrice("deepseek/deepseek-v4.1-flash", { baseUrl, fetch });
+    expect(price?.inputPerMillion).toBeCloseTo(0.15, 9);
+    expect(price?.outputPerMillion).toBeCloseTo(0.6, 9);
+  });
+
+  it("is undefined for an unlisted model, a variable or missing price, or a failed lookup", async () => {
+    const listed = [
+      { id: "router/auto", pricing: { prompt: "-1", completion: "-1" } },
+      { id: "no/pricing" },
+      { id: "empty/pricing", pricing: { prompt: "", completion: "" } },
+    ];
+    for (const id of ["missing/model", "router/auto", "no/pricing", "empty/pricing"])
+      expect(await listedModelPrice(id, { baseUrl, fetch: models(listed) })).toBeUndefined();
+    expect(await listedModelPrice("x", { baseUrl, fetch: models([], 503) })).toBeUndefined();
+    const down = (async () => {
+      throw new TypeError("fetch failed");
+    }) as typeof globalThis.fetch;
+    expect(await listedModelPrice("x", { baseUrl, fetch: down })).toBeUndefined();
   });
 });
 
@@ -175,5 +239,60 @@ describe("exercised trials", () => {
     // A goal with no trade to check, or an older record: reading decides.
     expect(exercised(ep(false, null))).toBe(true);
     expect(exercised(ep(false, undefined, false))).toBe(false);
+  });
+});
+
+describe("defensive spending estimates", () => {
+  it.each([-1, Infinity, NaN])(
+    "does not let invalid reported cost %s reduce or poison spend",
+    (costUsd) => {
+      const cap = new SpendingCap({ maxUsd: 1 });
+      cap.add({ inputTokens: 1_000_000, outputTokens: 0, costUsd });
+      expect(cap.summary()).toMatchObject({ spentUsd: 1, estimated: true });
+      expect(cap.exceeded).toBe(true);
+    },
+  );
+  it("accepts reported zero cost and rejects invalid explicit fallback prices/tokens", () => {
+    const cap = new SpendingCap({ maxUsd: 1 });
+    cap.add({ inputTokens: 1_000_000, outputTokens: 0, costUsd: 0 });
+    expect(cap.summary()).toMatchObject({ spentUsd: 0, estimated: false });
+    for (const n of [-1, Infinity, NaN]) {
+      expect(
+        () =>
+          new SpendingCap({
+            maxUsd: 1,
+            fallbackPrice: { inputPerMillion: n, outputPerMillion: 0 },
+          }),
+      ).toThrow();
+      expect(() => cap.add({ inputTokens: n, outputTokens: 0 })).toThrow();
+    }
+  });
+  it.each(["Infinity", "1e999", "1e308", "-1", "NaN"])(
+    "rejects invalid/overflowing listed rate %s",
+    async (price) => {
+      const fetch = (async () =>
+        new Response(
+          JSON.stringify({ data: [{ id: "x", pricing: { prompt: price, completion: "0" } }] }),
+        )) as typeof globalThis.fetch;
+      expect(await listedModelPrice("x", { fetch })).toBeUndefined();
+    },
+  );
+  it("prices a scripted guarded agent at the guard model, and combined tokens at the maximum rates", async () => {
+    expect(
+      budgetModels({ agent: "vulnerable", brain: "scripted", "sentinel-model": "guard" }),
+    ).toEqual(["guard"]);
+    const models = budgetModels({ agent: "agentkit", model: "cheap", "sentinel-model": "guard" });
+    const lookup = async (model: string) =>
+      model === "cheap"
+        ? { inputPerMillion: 0.1, outputPerMillion: 20 }
+        : { inputPerMillion: 10, outputPerMillion: 15 };
+    expect(await fallbackForModels(models, lookup)).toEqual({
+      inputPerMillion: 10,
+      outputPerMillion: 20,
+    });
+    expect(await fallbackForModels([undefined, "cheap"], lookup)).toEqual({
+      inputPerMillion: 1,
+      outputPerMillion: 20,
+    });
   });
 });

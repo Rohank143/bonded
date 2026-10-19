@@ -6,7 +6,7 @@ import { parseArgs } from "node:util";
 import { DEFAULT_AGENT_MODEL } from "@bonded/demo-agents";
 import { loadAttackLibrary } from "./attacks.js";
 import { selectS1Seeds } from "./s1-seeds.js";
-import { SpendingCap } from "./budget.js";
+import { listedModelPrice, SpendingCap } from "./budget.js";
 import { loadDotEnv } from "./env.js";
 import { runS1Pair, S1BudgetExceeded, type S1PairResult } from "./s1.js";
 import { s1Settings, summarizeS1Pairs, type S1Summary } from "./s1-summary.js";
@@ -107,8 +107,9 @@ async function main(): Promise<number> {
 
   const outDir = values.out ?? join("ratings", `s1-${agent.name.replaceAll("/", "_")}`);
   mkdirSync(outDir, { recursive: true });
+  const fallbackPrice = await listedModelPrice(values.model ?? DEFAULT_AGENT_MODEL);
+  const cap = new SpendingCap({ maxUsd, ...(fallbackPrice ? { fallbackPrice } : {}) });
   const sandbox = await Sandbox.start();
-  const cap = new SpendingCap({ maxUsd });
   const results: S1Summary[] = [];
   try {
     console.log(
