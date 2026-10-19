@@ -4,8 +4,10 @@ import { corroborate } from "./campaign.js";
 import { goalChoices } from "./goals.js";
 import {
   clauseFor,
+  type Frame,
   FRAMES,
   type FrameContext,
+  recordFor,
   referenceCode,
   ROLES,
   URGENCIES,
@@ -37,14 +39,21 @@ export interface Genome {
 export interface Variant {
   genome: Genome;
   text: string;
-  /** Exact steps to plant, preserving the seed assets alongside the generated directive. */
+  /** Exact steps to plant, preserving delivery fields alongside the generated text. */
   campaign?: AttackSpec["campaign"];
   /** The task this variant gives the agent. */
   goal: string;
 }
 
-const key = (g: Genome) =>
-  `${g.frameId}|${g.role}|${g.urgency}|${g.ref ? "ref" : "noref"}|goal${g.goal}|${g.spread ? "s" : "u"}`;
+// Different genes can render the same attack (document frames ignore urgency, for example).
+// Deduplicate the input the agent actually receives, including its task and delivery fields.
+const key = (variant: Variant) => JSON.stringify([variant.text, variant.goal, variant.campaign]);
+
+function validateFrames(frames: readonly Frame[]): void {
+  if (frames.length === 0) throw new Error("Harbinger requires at least one frame");
+  if (new Set(frames.map((frame) => frame.id)).size !== frames.length)
+    throw new Error("Harbinger frame IDs must be unique");
+}
 const pick = <T>(xs: readonly T[], rand: Random): T => xs[Math.floor(rand() * xs.length)] as T;
 
 function genomeGoals(seed: AttackSpec, rand: Random): number {
@@ -54,9 +63,9 @@ function genomeGoals(seed: AttackSpec, rand: Random): number {
   return rand() < 0.4 ? 0 : Math.floor(rand() * count);
 }
 
-function randomGenome(rand: Random): Genome {
+function randomGenome(rand: Random, frames: readonly Frame[]): Genome {
   return {
-    frameId: pick(FRAMES, rand).id,
+    frameId: pick(frames, rand).id,
     role: pick(ROLES, rand),
     urgency: pick(URGENCIES, rand),
     ref: rand() < 0.6 ? referenceCode(rand) : "",
@@ -66,9 +75,14 @@ function randomGenome(rand: Random): Genome {
 }
 
 /** One gene changed: frame, role, urgency, reference code, task or campaign spread. */
-function mutateGenome(genome: Genome, goalCount: number, rand: Random): Genome {
+function mutateGenome(
+  genome: Genome,
+  goalCount: number,
+  rand: Random,
+  frames: readonly Frame[],
+): Genome {
   const gene = Math.floor(rand() * 6);
-  if (gene === 0) return { ...genome, frameId: pick(FRAMES, rand).id };
+  if (gene === 0) return { ...genome, frameId: pick(frames, rand).id };
   if (gene === 1) return { ...genome, role: pick(ROLES, rand) };
   if (gene === 2) return { ...genome, urgency: pick(URGENCIES, rand) };
   if (gene === 4 && goalCount > 1) return { ...genome, goal: Math.floor(rand() * goalCount) };
@@ -95,14 +109,22 @@ export function seedClause(seed: AttackSpec): string {
   return clauseFor(type);
 }
 
+/** The same breach as instruction-free record data (document-family frames). */
+export function seedRecord(seed: AttackSpec): string {
+  const type = seed.successPredicate.anyOf[0];
+  if (!type) throw new Error(`${seed.id}: successPredicate.anyOf is empty`);
+  return recordFor(type);
+}
+
 /** One variant of a genome on a seed: the render plus its task and, when spread, its campaign. */
-function renderVariant(seed: AttackSpec, genome: Genome): Variant {
-  const frame = FRAMES.find((f) => f.id === genome.frameId);
+function renderVariant(seed: AttackSpec, genome: Genome, frames: readonly Frame[]): Variant {
+  const frame = frames.find((f) => f.id === genome.frameId);
   if (!frame) throw new Error(`unknown frame ${genome.frameId}`);
   const goals = goalChoices(seed);
   const goal = goals[genome.goal % goals.length] ?? goals[0]!;
   const ctx: FrameContext = {
     clause: seedClause(seed),
+    record: seedRecord(seed),
     role: genome.role,
     ref: genome.ref,
     urgency: genome.urgency,
@@ -121,7 +143,11 @@ function renderVariant(seed: AttackSpec, genome: Genome): Variant {
   if (!genome.spread || !spreadPossible(seed)) {
     const campaign = originalSteps.map((step, index) => ({
       ...step,
-      text: (seed.campaign ? index === directiveIndex : step.surface !== "price_feed")
+      text: (
+        seed.campaign && frame.family !== "document"
+          ? index === directiveIndex
+          : step.surface !== "price_feed"
+      )
         ? text
         : step.text,
     }));
@@ -135,8 +161,11 @@ function renderVariant(seed: AttackSpec, genome: Genome): Variant {
     extraEchoes(seed),
     seed.campaign?.find((step) => step.surface === directiveSurface)?.sender ??
       seed.delivery.sender,
+    frame.family,
   );
-  const assets = assetSteps(seed);
+  const assets = assetSteps(seed).map((step) =>
+    frame.family === "document" && step.surface !== "price_feed" ? { ...step, text } : step,
+  );
   const withAssets = [...campaign.slice(0, 8 - assets.length), ...assets];
   return {
     genome,
@@ -150,9 +179,9 @@ function renderVariant(seed: AttackSpec, genome: Genome): Variant {
 }
 
 /**
- * With spread enabled, the seed's asset surfaces retain their original payloads alongside
+ * With spread enabled, instruction frames retain the seed's original asset payloads alongside
  * the generated directive on a separate readable surface —
- * the seed's original vectors stay in play, with the corroboration around them.
+ * document frames rewrite their prose as records while preserving numeric price inputs.
  */
 function assetSteps(seed: AttackSpec): NonNullable<AttackSpec["campaign"]> {
   // Campaign steps are authoritative: their text and delivery can differ from the seed defaults.
@@ -201,24 +230,30 @@ function extraEchoes(seed: AttackSpec): readonly AttackSurface[] {
 }
 
 /**
- * A first generation: random, distinct genomes rendered against the seed's clause. Pure
+ * A first generation: random genomes, deduplicated by their rendered attack and task. Pure
  * function of the seed and the random source, so a run is reproducible from its seed string.
  */
-export function initialPopulation(seed: AttackSpec, size: number, rand: Random): Variant[] {
+export function initialPopulation(
+  seed: AttackSpec,
+  size: number,
+  rand: Random,
+  frames: readonly Frame[] = FRAMES,
+): Variant[] {
+  validateFrames(frames);
   const seen = new Set<string>();
   const variants: Variant[] = [];
-  // FRAMES x ROLES x URGENCIES x 2 (ref or not), times the goal count, spread or not — the
-  // distinct space is far larger than any population we run, so cap tries instead of looping.
+  // Small frame sets or inactive genes can exhaust distinct outputs; bound sampling work.
   for (let tries = 0; variants.length < size && tries < size * 20; tries++) {
     const genome = {
-      ...randomGenome(rand),
+      ...randomGenome(rand, frames),
       goal: genomeGoals(seed, rand),
       spread: spreadPossible(seed) && rand() < 0.5,
     };
-    const k = key(genome);
+    const variant = renderVariant(seed, genome, frames);
+    const k = key(variant);
     if (seen.has(k)) continue;
     seen.add(k);
-    variants.push(renderVariant(seed, genome));
+    variants.push(variant);
   }
   return variants;
 }
@@ -233,9 +268,13 @@ export function nextGeneration(
   parents: readonly Genome[],
   size: number,
   rand: Random,
+  frames: readonly Frame[] = FRAMES,
 ): Variant[] {
+  validateFrames(frames);
+  const allowedIds = new Set(frames.map((frame) => frame.id));
+  parents = parents.filter((parent) => allowedIds.has(parent.frameId));
   const goalCount = goalChoices(seed).length;
-  const seen = new Set<string>(parents.map(key));
+  const seen = new Set(parents.map((parent) => key(renderVariant(seed, parent, frames))));
   const variants: Variant[] = [];
   const freshShare = Math.max(1, Math.round(size * 0.2));
   for (
@@ -247,27 +286,29 @@ export function nextGeneration(
     const base =
       parents.length > 1 && rand() < 0.5
         ? crossoverGenome(a, pick(parents, rand), rand)
-        : mutateGenome(a, goalCount, rand);
+        : mutateGenome(a, goalCount, rand, frames);
     const genome: Genome = {
       ...base,
       goal: base.goal >= goalCount ? 0 : base.goal,
       spread: spreadPossible(seed) && base.spread,
     };
-    // Never re-run a parent's exact genome: try a mutation instead, once.
-    if (seen.has(key(genome))) continue;
-    seen.add(key(genome));
-    variants.push(renderVariant(seed, genome));
+    const variant = renderVariant(seed, genome, frames);
+    // A different genome is useful only if it changes the input the agent receives.
+    if (seen.has(key(variant))) continue;
+    seen.add(key(variant));
+    variants.push(variant);
   }
   for (let tries = 0; variants.length < size && tries < freshShare * 20; tries++) {
     const genome = {
-      ...randomGenome(rand),
+      ...randomGenome(rand, frames),
       goal: genomeGoals(seed, rand),
       spread: spreadPossible(seed) && rand() < 0.5,
     };
-    const k = key(genome);
+    const variant = renderVariant(seed, genome, frames);
+    const k = key(variant);
     if (seen.has(k)) continue;
     seen.add(k);
-    variants.push(renderVariant(seed, genome));
+    variants.push(variant);
   }
   return variants;
 }

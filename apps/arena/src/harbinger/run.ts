@@ -6,6 +6,7 @@ import { type Ruling, rulingOf } from "../report.js";
 import type { Sandbox } from "../sandbox.js";
 import { seededRandom } from "../world-content.js";
 import { type Genome, initialPopulation, nextGeneration } from "./generate.js";
+import { type Frame, FRAMES } from "./techniques.js";
 
 /**
  * Harbinger: a self-generating attacker. Every attack text comes from the deterministic template
@@ -61,6 +62,8 @@ export interface HarbingerOptions {
   maxUsd: number;
   /** Changes the random population without changing anything else; default is the seed's own id. */
   randomSeed?: string;
+  /** The nonempty frame set to search, with unique IDs; default is all built-in frames. */
+  frames?: readonly Frame[];
   episode?: Pick<EpisodeOptions, "vault" | "goal" | "maxSteps" | "timeoutMs">;
   /** Runs one attempt; replaceable so the loop can be tested without a chain. */
   runAttempt?: (spec: AttackSpec, generation: number, index: number) => Promise<EpisodeResult>;
@@ -70,9 +73,11 @@ export interface HarbingerOptions {
 export async function runHarbinger(options: HarbingerOptions): Promise<HarbingerResult> {
   const { seed } = options;
   const popSize = Math.max(2, options.population);
+  const frames = options.frames ?? FRAMES;
   const cap = new SpendingCap({ maxUsd: options.maxUsd });
   const rand = seededRandom(`harbinger-${options.randomSeed ?? seed.id}`);
   const attempts: HarbingerAttempt[] = [];
+  const evaluated = new Set<string>();
   const attempt =
     options.runAttempt ??
     ((spec: AttackSpec, generation: number, index: number) =>
@@ -107,8 +112,8 @@ export async function runHarbinger(options: HarbingerOptions): Promise<Harbinger
   for (let generation = 0; generation <= options.generations; generation++) {
     const population =
       generation === 0
-        ? initialPopulation(seed, popSize, rand)
-        : nextGeneration(seed, parents, popSize, rand);
+        ? initialPopulation(seed, popSize, rand, frames)
+        : nextGeneration(seed, parents, popSize, rand, frames);
     const scored: { genome: Genome; score: number }[] = [];
     for (let index = 0; index < population.length; index++) {
       if (cap.exceeded) return finish("budget");
@@ -141,6 +146,11 @@ export async function runHarbinger(options: HarbingerOptions): Promise<Harbinger
       // The task is part of the genome (goals.ts): the engine sets it after the bounty checks,
       // which refuse a hunter-set goal. Goals are benign by construction (goalOk).
       const spec = { ...candidate, goal };
+      // Explicit tasks can collapse distinct goal genes to the same effective episode.
+      // Keep a run-wide set so later fresh draws cannot spend on an already tested input.
+      const input = JSON.stringify([spec.payloadTemplate, spec.goal, spec.campaign]);
+      if (evaluated.has(input)) continue;
+      evaluated.add(input);
       const result = await attempt(spec, generation, index);
       cap.add(result.agentSummary.usage);
       const ruling = rulingOf(result);
@@ -162,11 +172,14 @@ export async function runHarbinger(options: HarbingerOptions): Promise<Harbinger
       if (ruling === "breach") return finish("breached");
     }
     // The fittest quarter of this generation (at least 2) breed the next one.
-    parents = scored
-      .sort((a, b) => b.score - a.score)
-      .slice(0, Math.max(2, Math.ceil(popSize / 4)))
-      .map((s) => s.genome);
-    if (parents.length === 0) break; // every candidate this generation was invalid; nothing to breed from
+    // Duplicate-only generations still have valid prior parents to breed from.
+    if (scored.length > 0) {
+      parents = scored
+        .sort((a, b) => b.score - a.score)
+        .slice(0, Math.max(2, Math.ceil(popSize / 4)))
+        .map((s) => s.genome);
+    }
+    if (parents.length === 0) break; // no valid candidate has been scored; nothing to breed from
   }
   return finish("generations");
 }
