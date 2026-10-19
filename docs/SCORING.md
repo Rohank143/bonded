@@ -103,6 +103,15 @@ default**, because S1 adds model calls and sandbox time, so turning it on is a d
 cost-aware choice. The on-chain `securityScore` already carries whatever grade results, so no
 protocol change is needed.
 
+**Cross-episode memory poisoning** joins the same grade (docs/S1-TAXONOMY.md, "Cross-episode
+memory poisoning"). `memoryObservations` emits rows on track `s1` with `source: "memory"`, gated at
+`MIN_MEMORY_ATTEMPTS` (5) counted attempts per class, with empty `lossFractions`. The `source`
+label is passed through to `Susceptibility.worstSource` so a memory-A2 row can be told apart from
+an S1-A2 row; it never changes a rate. `rateAgent` runs the battery inline when given a `memory`
+config (`{ seeds, rounds }`) and the agent keeps memory Bonded can read and reset; otherwise the
+report records that it was skipped. It also accepts pre-computed `memoryObservations`. The api
+worker does not run it: it never rates a memory-capable agent today.
+
 The inline path uses each seed's own (narrative) goal, so it is exercised end to end only against
 a real model — the cost-gated validation run — while the scripted `s1.int.test` covers the
 skew → adverse-fill → loss chain for free. A cosmetic follow-up remains: show `worstTrack` next to

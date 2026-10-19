@@ -19,8 +19,10 @@ export interface MemoryAgent extends ArenaAgent {
   reset(): void;
 }
 
+/** A memory agent exposes both its notes and a way to wipe them; `reset` alone isn't enough. */
 export const isMemoryAgent = (agent: ArenaAgent): agent is MemoryAgent =>
-  typeof (agent as Partial<MemoryAgent>).reset === "function";
+  typeof (agent as Partial<MemoryAgent>).reset === "function" &&
+  Array.isArray((agent as Partial<MemoryAgent>).memory);
 
 const READ_CHARS = 1_200;
 const NOTES_CHARS = 800;

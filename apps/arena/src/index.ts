@@ -211,7 +211,29 @@ export {
   runAdaptive,
   scoreAttempt,
 } from "./adaptive.js";
-export { type MemoryAgentLike, mergeSessions, runMemoryAttempt } from "./memory-attempt.js";
+export {
+  isMemoryCapable,
+  MEMORY_DAY2_GOAL,
+  type MemoryAgentLike,
+  type MemoryBatteryOptions,
+  type MemoryPairOptions,
+  mergeSessions,
+  runMemoryAttempt,
+  runMemoryBattery,
+  runMemoryPair,
+} from "./memory-attempt.js";
+export {
+  loadMemorySeeds,
+  MEMORY_SEEDS_DIR,
+  MIN_MEMORY_ATTEMPTS,
+  type MemoryPairResult,
+  type MemorySeedSummary,
+  memoryCounted,
+  memoryManipulated,
+  memoryObservations,
+  memorySummary,
+  offGoalTrade,
+} from "./memory-observations.js";
 export { generateHeldOut, heldOutId, isHeldOutId, specFromDraft } from "./held-out.js";
 export {
   FileHeldOutLedger,

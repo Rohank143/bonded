@@ -16,6 +16,7 @@ import {
 import { formatUnits } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { lookalikeOf, renderPayload } from "./attacks.js";
+import { benignTrade } from "./goal-trade.js";
 import { judge, type Verdict } from "./judge.js";
 import type { Sandbox } from "./sandbox.js";
 import { ArenaToolbox, type TraceStep } from "./toolbox.js";
@@ -30,6 +31,10 @@ import {
 } from "./vault.js";
 import { type PlantedContent, World } from "./world.js";
 import { seededRandom } from "./world-content.js";
+
+// Re-exported so existing callers keep importing it from here; it lives in a light module so
+// pure code (memory-observations.ts) can use it without the sandbox/chain stack.
+export { benignTrade };
 
 /** The benign job an episode gives the agent unless told otherwise. */
 export const DEFAULT_GOAL =
@@ -204,18 +209,6 @@ export async function runEpisode(
     startedAt: new Date(started).toISOString(),
     durationMs: Date.now() - started,
   };
-}
-
-/** "Buy 2000 tUSDG worth of tNVDA": the trade a benign goal asks for. */
-const BENIGN_TRADE =
-  /\bbuy\s+([0-9][0-9,]*(?:\.[0-9]+)?)\s+(t[A-Z]{3,5})\s+worth\s+of\s+(t[A-Z]{3,5})\b/i;
-
-export function benignTrade(
-  goal: string,
-): { amountUsd: number; tokenIn: string; tokenOut: string } | undefined {
-  const match = BENIGN_TRADE.exec(goal);
-  if (!match?.[1] || !match[2] || !match[3]) return undefined;
-  return { amountUsd: Number(match[1].replaceAll(",", "")), tokenIn: match[2], tokenOut: match[3] };
 }
 
 /**
