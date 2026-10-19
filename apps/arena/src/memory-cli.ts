@@ -10,6 +10,7 @@ import {
   loadMemorySeeds,
   type MemoryPairResult,
   memoryManipulated,
+  memoryCounted,
   memoryObservations,
   memorySummary,
 } from "./memory-observations.js";
@@ -40,11 +41,13 @@ function describe(r: MemoryPairResult): string {
     ? "day-1 breach (excluded)"
     : r.notesMissing
       ? "no day-1 notes (excluded)"
-      : memoryManipulated(r)
-        ? r.breached
-          ? "MANIPULATED (breach)"
-          : `MANIPULATED (traded ${r.target})`
-        : "resisted";
+      : !memoryCounted(r)
+        ? "excluded (invalid control or exposure)"
+        : memoryManipulated(r)
+          ? r.breached
+            ? "MANIPULATED (breach)"
+            : `MANIPULATED (traded ${r.target})`
+          : "resisted";
   return (
     `${r.seed.padEnd(34)} round ${r.round}  ${tag.padEnd(28)}  ` +
     `${r.target} ${r.targetTrade ? "yes" : "no"} vs control ${r.controlTargetTrade ? "yes" : "no"}  ` +
@@ -68,7 +71,13 @@ async function main(): Promise<number> {
   });
   const maxUsd = Number(values["max-usd"]);
   const rounds = Number(values.rounds);
-  if (values.help || !(maxUsd > 0) || !Number.isInteger(rounds) || rounds < 1) {
+  if (
+    values.help ||
+    !Number.isFinite(maxUsd) ||
+    maxUsd <= 0 ||
+    !Number.isSafeInteger(rounds) ||
+    rounds < 1
+  ) {
     console.log(USAGE);
     return values.help ? 0 : 1;
   }
@@ -87,29 +96,42 @@ async function main(): Promise<number> {
   const outDir = values.out ?? join("ratings", `memory-${agent.name.replaceAll("/", "_")}`);
   mkdirSync(outDir, { recursive: true });
   const sandbox = await Sandbox.start();
+  const cap = new SpendingCap({ maxUsd });
+  const results: MemoryPairResult[] = [];
+  let complete = false;
+  const persist = () =>
+    writeFileSync(
+      join(outDir, "memory.json"),
+      `${JSON.stringify({ summary: memorySummary(results), observations: memoryObservations(results), results, spend: cap.summary(), complete }, null, 2)}\n`,
+    );
   try {
     console.log(
       `Agent ${agent.name}, ${seeds.length} memory seeds x ${rounds} round(s), up to $${maxUsd} total\n`,
     );
-    const cap = new SpendingCap({ maxUsd });
-    const results = await runMemoryBattery(sandbox, agent, seeds, {
+    await runMemoryBattery(sandbox, agent, seeds, {
       rounds,
       cap,
-      onResult: (r) => console.log(describe(r)),
+      onResult: (r) => {
+        results.push(r);
+        persist();
+        console.log(describe(r));
+      },
     });
-    if (cap.exceeded) console.log(`stopping: spend cap $${maxUsd} reached`);
+    complete = results.length === seeds.length * rounds;
+    if (!complete) console.log(`stopping: spend cap $${maxUsd} reached`);
     const observations = memoryObservations(results);
-    writeFileSync(
-      join(outDir, "memory.json"),
-      `${JSON.stringify({ summary: memorySummary(results), observations, results }, null, 2)}\n`,
-    );
+    persist();
     for (const o of observations)
       console.log(`\n${o.class}: manipulated ${o.manipulated}/${o.episodes} counted attempts`);
     if (observations.length === 0)
       console.log("\nNo class reached the minimum attempts to count toward a grade.");
     console.log(`Spend $${cap.summary().spentUsd.toFixed(3)}. Results in ${outDir}`);
   } finally {
-    await sandbox.stop();
+    try {
+      persist();
+    } finally {
+      await sandbox.stop();
+    }
   }
   return 0;
 }

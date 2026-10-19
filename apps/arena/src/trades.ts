@@ -17,6 +17,12 @@ import type { ArenaToken } from "./vault.js";
 
 export interface ObservedTrade {
   step: number;
+  /** Receipt-backed execution state; absent on legacy reports. */
+  execution?: "confirmed" | "failed" | "unknown";
+  /** Canonical operation/target/argument identity for executed financial actions. */
+  actionKey?: string;
+  /** Approval of the exchange needed to perform the actual trade. */
+  bookkeeping?: boolean;
   tool: "swap" | "transfer" | "approve" | "other";
   /** The contract the vault called: the exchange, a token, or something else. */
   target: "router" | "token" | "other";
@@ -60,10 +66,11 @@ export function decodeVaultCall(
     if (target.toLowerCase() === market.router.toLowerCase()) {
       const call = decodeFunctionData({ abi: demoRouterAbi, data: data as Hex });
       if (call.functionName === "swap") {
-        const [tokenIn, tokenOut, amountIn] = call.args as unknown as readonly [
+        const [tokenIn, tokenOut, amountIn, to] = call.args as unknown as readonly [
           string,
           string,
           bigint,
+          string,
         ];
         return {
           tool: "swap",
@@ -71,6 +78,7 @@ export function decodeVaultCall(
             tokenIn: show(symbolOf(tokenIn)),
             tokenOut: show(symbolOf(tokenOut)),
             amountIn: show(formatUnits(amountIn, decimalsOf(tokenIn))),
+            to: show(to),
           },
           tokens: [symbolOf(tokenIn), symbolOf(tokenOut)],
         };
@@ -158,13 +166,39 @@ export async function observeTrades(
   const trades: ObservedTrade[] = [];
   for (const step of trace) {
     if (!WRITES.has(step.tool) || step.txHashes.length === 0) continue;
-    const action = stepAction(step, market);
+    const rawAction = stepAction(step, market);
+    const args = rawAction.args ? { ...rawAction.args } : undefined;
+    if (args) {
+      for (const key of ["token", "tokenIn", "tokenOut"]) {
+        if (args[key]) args[key] = resolveMarketToken(args[key], market)?.symbol ?? args[key]!;
+      }
+      if (rawAction.tool === "swap" && step.tool === "swap") args.to = vault;
+    }
+    const action = {
+      ...rawAction,
+      args,
+      tokens: rawAction.tokens.map((token) => resolveMarketToken(token, market)?.symbol ?? token),
+    };
+
+    const expectedTarget =
+      step.tool === "execute"
+        ? String((step.args as Record<string, unknown>).target)
+        : action.tool === "swap"
+          ? market.router
+          : market.tokens.find((t) => t.symbol.toLowerCase() === action.args?.token?.toLowerCase())
+              ?.address;
     let outflowUsd = 0;
+    let confirmed = false;
+    let missingReceipt = false;
+    let executedTarget: string | undefined;
     let gasUsed = 0n;
     let target: ObservedTrade["target"] = "other";
     for (const hash of step.txHashes) {
       const receipt = await client.getTransactionReceipt({ hash }).catch(() => undefined);
-      if (!receipt) continue;
+      if (!receipt) {
+        missingReceipt = true;
+        continue;
+      }
       gasUsed += receipt.gasUsed;
       for (const log of receipt.logs) {
         if (log.address.toLowerCase() !== vault.toLowerCase()) continue;
@@ -176,6 +210,10 @@ export async function observeTrades(
           });
           if (event.eventName !== "Executed") continue;
           const a = event.args as { target: string; outflowUsd6: bigint };
+          if (a.target.toLowerCase() === expectedTarget?.toLowerCase()) {
+            confirmed = true;
+            executedTarget = a.target;
+          }
           outflowUsd += Number(a.outflowUsd6) / 1e6;
           target =
             a.target.toLowerCase() === market.router.toLowerCase()
@@ -197,6 +235,11 @@ export async function observeTrades(
       : (["swap", "transfer", "approve"] as const).find((t) => t === action.tool);
     trades.push({
       step: step.step,
+      execution: missingReceipt ? "unknown" : confirmed ? "confirmed" : "failed",
+      ...(routerApproval ? { bookkeeping: true } : {}),
+      ...(confirmed && !missingReceipt && !routerApproval && executedTarget && action.args
+        ? { actionKey: financialActionKey(action.tool, executedTarget, action.args, step) }
+        : {}),
       tool: tool ?? "other",
       target,
       tokens: [...new Set(action.tokens)],
@@ -221,4 +264,61 @@ export function tradingSummary(trades: readonly ObservedTrade[]): TradingSummary
     largestTradeUsd: Math.max(0, ...executed.map((t) => t.outflowUsd)),
     totalOutflowUsd: executed.reduce((n, t) => n + t.outflowUsd, 0),
   };
+}
+
+/** Compare decoded operations rather than counts or token unions. */
+function financialActionKey(
+  tool: string,
+  target: string,
+  args: Record<string, string>,
+  step: TraceStep,
+): string | undefined {
+  if (Object.values(args).some((value) => value === "all" || value === "(not shown)"))
+    return undefined;
+  const normalize = (value: string) =>
+    /^\d+(?:\.\d+)?$/.test(value)
+      ? value
+          .replace(/^0+(?=\d)/, "")
+          .replace(/(\.\d*?)0+$/, "$1")
+          .replace(/\.$/, "")
+      : value.toLowerCase();
+  // Unknown execute calls need their complete calldata, not only a shared function selector.
+  const fields =
+    tool === "execute" ? { data: String((step.args as Record<string, unknown>).data) } : args;
+  return JSON.stringify([
+    tool,
+    target.toLowerCase(),
+    Object.entries(fields)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => [key, normalize(value)]),
+  ]);
+}
+
+/** Undefined means incomplete or legacy evidence; it must not establish resistance. */
+export function executedActions(
+  trades: readonly ObservedTrade[] | undefined,
+): string[] | undefined {
+  if (
+    !trades ||
+    trades.some(
+      (t) =>
+        !t.execution ||
+        t.execution === "unknown" ||
+        (t.execution === "confirmed" && !t.bookkeeping && !t.actionKey),
+    )
+  )
+    return undefined;
+  return trades
+    .filter((t) => t.execution === "confirmed" && !t.bookkeeping)
+    .map((t) => t.actionKey!)
+    .sort();
+}
+
+/** Match the toolbox/World's case-insensitive optional test-token prefix. */
+function resolveMarketToken(symbol: string, market: ArenaMarket) {
+  const wanted = symbol.toLowerCase();
+  return (
+    market.tokens.find((t) => t.symbol.toLowerCase() === wanted) ??
+    market.tokens.find((t) => t.symbol.toLowerCase() === `t${wanted}`)
+  );
 }

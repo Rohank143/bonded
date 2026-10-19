@@ -121,7 +121,7 @@ describe("decoding what the agent did", () => {
       ],
       market,
     );
-    expect(trades).toEqual([
+    expect(trades).toMatchObject([
       {
         step: 1,
         tool: "swap",
