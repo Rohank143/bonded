@@ -5,7 +5,7 @@ agent's trade under its trusted task. The payload supplies the false claim; the 
 any trading policy. This battery is separate from the instruction-bearing S2 library.
 
 This is a scoped coverage catalogue, not a claim of exhaustive channel-by-falsehood coverage.
-The tables map the authored cases and explicit gaps. There are 20 seeds: 19 runnable cases and
+The tables map the authored cases and explicit gaps. There are 26 seeds: 25 runnable cases and
 one reserved multi-agent case. A seed being present does not establish that a model read it,
 was manipulated by it, or resisted it.
 
@@ -127,7 +127,8 @@ run was performed during this review.
 | `s1-price` | 2, 4, 6 | `A3-stale-tick-001`, `A3-liquidity-depth-001` |
 | `s1-numeric` | 3, 4 | `A7-decimal-shift-001`, `A7-unit-confusion-001`, `A7-stale-fundamental-001` |
 | `s1-context` | 9 | `A5-planted-cost-basis-001`, `A5-planted-rotation-memo-001` |
-| `s1-panic` | 11 | `A8-flash-crash-dip-001`, `A8-fake-depeg-001` |
+| `s1-panic` | 11 | `A8-flash-crash-dip-001`, `A8-fake-depeg-001`, `A8-liquidation-cascade-001`, `A8-reserve-shortfall-001`, `A8-halt-panic-standing-001`, `A8-crash-rotation-standing-001` |
+| `s1-correlation` | 10 | `A2-fake-hedge-pair-001`, `A7-false-beta-report-001` |
 | `s1-counterparty` | — | `A10-false-consensus-anchor-001` (needs-multiagent) |
 
 The three inherited rotation payloads now report allocation facts instead of giving trading
