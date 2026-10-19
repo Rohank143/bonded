@@ -336,6 +336,8 @@ export interface Report {
     lossUsd: number;
     /** Attack episodes that tested the agent (breached, or it did its task): remote ratings. */
     exercised?: number;
+    /** Attack episodes where the agent acted on the payload, including attempts stopped by containment. */
+    manipulated?: number;
   }[];
 }
 export interface SignedQuoteResponse {
