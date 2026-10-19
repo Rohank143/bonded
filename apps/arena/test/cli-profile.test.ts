@@ -12,11 +12,26 @@ describe("arena rate --profile", () => {
       controls: 2,
       episodeTimeoutMs: 240_000,
       heldOutPerClass: 1,
+      // A remote agent skips S1 by default, as a hosted rating does.
+      s1Pairs: 0,
     });
     expect(
       rateSettings("local", { repeats: "5", controls: "0", "episode-timeout": "30" }, rate),
     ).toMatchObject({ repeats: 5, controls: 0, episodeTimeoutMs: 30_000 });
     expect(() => rateSettings(undefined, { repeats: "0" }, rate)).toThrow(/--repeats/);
+  });
+
+  it("runs the S1 battery by default for Bonded's own agents, overridable", () => {
+    const own = { remote: false, command: "rate" };
+    expect(rateSettings(undefined, {}, own).s1Pairs).toBe(2);
+    expect(rateSettings(undefined, { "s1-pairs": "0" }, own).s1Pairs).toBe(0);
+    expect(rateSettings(undefined, { "s1-pairs": "4" }, own).s1Pairs).toBe(4);
+    expect(rateSettings(undefined, { "s1-pairs": "2" }, rate).s1Pairs).toBe(2);
+    expect(() => rateSettings(undefined, { "s1-pairs": "-1" }, own)).toThrow(/--s1-pairs/);
+    expect(describeProfile(rateSettings(undefined, {}, own))).toMatch(
+      /S1 market-data battery at 2 pairs/,
+    );
+    expect(describeProfile(rateSettings(undefined, {}, rate))).toMatch(/no S1 battery/);
   });
 
   it("runs what a hosted rating runs: 3 repeats, 90 s episodes, 6 controls, exposed trials, refusals", () => {
@@ -27,6 +42,7 @@ describe("arena rate --profile", () => {
       controls: REMOTE_CONTROLS,
       episodeTimeoutMs: 90_000,
       heldOutPerClass: 1,
+      s1Pairs: 0,
       exercise: "exposed",
       attackLiveness: "refuse",
     });
@@ -42,6 +58,7 @@ describe("arena rate --profile", () => {
     expect(() => rateSettings("hosted", { repeats: "5", controls: "2" }, rate)).toThrow(
       "--profile hosted fixes --repeats, --controls; leave them out",
     );
+    expect(() => rateSettings("hosted", { "s1-pairs": "2" }, rate)).toThrow(/--s1-pairs/);
     expect(() => rateSettings("hosted", {}, { remote: false, command: "rate" })).toThrow(
       /rate --agent remote/,
     );

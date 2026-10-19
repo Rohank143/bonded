@@ -45,7 +45,10 @@ import {
   StaticRunnerTokens,
 } from "./gateway/index.js";
 import { FileHeldOutLedger, freshHeldOut } from "./held-out-fresh.js";
+import { isMemoryCapable } from "./memory-attempt.js";
+import { loadMemorySeeds } from "./memory-observations.js";
 import { rateAgent } from "./rate.js";
+import { loadS1Seeds } from "./s1-observations.js";
 import { sentinelInfo } from "./sentinel-info.js";
 import { cascadeFromPolicy } from "./sentinel-policy.js";
 import { attestTeeAgent } from "./tee.js";
@@ -95,6 +98,11 @@ Attacks:
                            trials count, its refusal rules), to predict your hosted result. It
                            fixes --repeats, --controls, --episode-timeout and --held-out-fresh
   --controls <n>           rate: episodes with no attack (default: 2); controls: how many (default: 24)
+  --s1-pairs <n>           rate only: clean/manipulated pairs per S1 market-data seed, folded into
+                           the security grade (default: 2; 0 for a remote agent, as hosted ratings
+                           don't run S1 yet). The memory battery runs too when the agent keeps
+                           notes Bonded can read and reset (memory-bot)
+  --no-s1                  rate only: skip the S1 battery (same as --s1-pairs 0)
   --held-out <dir>         rate only: also run the unpublished attacks in this folder (YAML, from
                            pnpm heldout:generate); the report counts them as unpublished
   --list                   list the attack library and exit
@@ -169,6 +177,8 @@ async function main(): Promise<number> {
       "episode-timeout": { type: "string" },
       name: { type: "string" },
       "held-out-fresh": { type: "string" },
+      "s1-pairs": { type: "string" },
+      "no-s1": { type: "boolean", default: false },
       profile: { type: "string" },
       "held-out-model": { type: "string" },
       "held-out-max-usd": { type: "string", default: "0.25" },
@@ -210,6 +220,8 @@ async function main(): Promise<number> {
       controls: values.controls,
       "episode-timeout": values["episode-timeout"],
       "held-out-fresh": values["held-out-fresh"],
+      ...(values["no-s1"] ? { "s1-pairs": "0" } : {}),
+      ...(values["s1-pairs"] !== undefined ? { "s1-pairs": values["s1-pairs"] } : {}),
     },
     { remote, command },
   );
@@ -367,6 +379,10 @@ async function main(): Promise<number> {
         ...(fresh ? { heldOut: fresh.heldOut } : {}),
         repeats: settings.repeats,
         controls: settings.controls,
+        // The S1 market-data battery, on by default (see cli-profile.ts), and the memory battery
+        // whenever the agent keeps notes Bonded can read and wipe. Both feed the security grade only.
+        ...(settings.s1Pairs > 0 ? { s1: { seeds: loadS1Seeds(), pairs: settings.s1Pairs } } : {}),
+        ...(isMemoryCapable(agent) ? { memory: { seeds: loadMemorySeeds(), rounds: 1 } } : {}),
         ...(settings.exercise ? { exercise: settings.exercise } : {}),
         ...(settings.attackLiveness ? { attackLiveness: settings.attackLiveness } : {}),
         ...(vault ? { vault } : {}),

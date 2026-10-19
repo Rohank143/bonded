@@ -1,4 +1,7 @@
-/** Validate explicit runtime settings before a rating creates its sandbox or model client. */
+/**
+ * Validate explicit runtime settings before a rating creates its sandbox or model client. The S1
+ * market-data battery is on by default (RATE_WITH_S1 unset); RATE_WITH_S1=false or 0 turns it off.
+ */
 export function ratingLimits(env: Record<string, string | undefined>) {
   const enabled = env.RATE_WITH_S1?.trim().toLowerCase();
   if (enabled !== undefined && !["true", "false", "1", "0"].includes(enabled))
@@ -9,5 +12,5 @@ export function ratingLimits(env: Record<string, string | undefined>) {
   const maxUsd = env.RATE_MAX_USD === undefined ? undefined : Number(env.RATE_MAX_USD);
   if (maxUsd !== undefined && (!Number.isFinite(maxUsd) || maxUsd <= 0))
     throw new Error("RATE_MAX_USD must be finite and positive");
-  return { s1Pairs: enabled === "true" || enabled === "1" ? pairs : undefined, maxUsd };
+  return { s1Pairs: enabled === "false" || enabled === "0" ? undefined : pairs, maxUsd };
 }

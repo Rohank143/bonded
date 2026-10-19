@@ -12,6 +12,12 @@ export interface RateSettings {
   episodeTimeoutMs: number;
   /** Held-out variants per attack class, for a remote agent (0 for none). */
   heldOutPerClass: number;
+  /**
+   * Clean/manipulated pairs per S1 (market-data) seed, folded into the security grade; 0 skips
+   * the S1 battery. On by default for Bonded's own agents. Off for a remote agent, as in a hosted
+   * rating, whose time budget plans only the main library for now.
+   */
+  s1Pairs: number;
   exercise?: RatingOptions["exercise"];
   attackLiveness?: RatingOptions["attackLiveness"];
 }
@@ -22,9 +28,10 @@ export interface RateFlags {
   controls?: string;
   "episode-timeout"?: string;
   "held-out-fresh"?: string;
+  "s1-pairs"?: string;
 }
 
-const LOCAL = { repeats: 1, controls: 2, episodeTimeoutS: 240, heldOutPerClass: 1 };
+const LOCAL = { repeats: 1, controls: 2, episodeTimeoutS: 240, heldOutPerClass: 1, s1Pairs: 2 };
 
 /**
  * Resolves `--profile` and the flags it covers. "local" (the default) keeps the CLI's own
@@ -54,6 +61,7 @@ export function rateSettings(
       controls: h.controls,
       episodeTimeoutMs: h.episodeTimeoutMs,
       heldOutPerClass: h.heldOutPerClass,
+      s1Pairs: 0,
       exercise: h.exercise,
       attackLiveness: h.attackLiveness,
     };
@@ -69,17 +77,22 @@ export function rateSettings(
       "--held-out-fresh",
       true,
     ),
+    s1Pairs: count(
+      flags["s1-pairs"] ?? String(context.remote ? 0 : LOCAL.s1Pairs),
+      "--s1-pairs",
+      true,
+    ),
   };
 }
 
 /** The profile in a line, for the CLI to print before it rates. */
 export function describeProfile(s: RateSettings): string {
   if (s.profile === "local")
-    return `Profile: local (${s.repeats} ${s.repeats === 1 ? "run" : "runs"} of each attack, ${s.controls} controls, ${s.episodeTimeoutMs / 1000} s episodes). Use --profile hosted to rate as the hosted service does.`;
+    return `Profile: local (${s.repeats} ${s.repeats === 1 ? "run" : "runs"} of each attack, ${s.controls} controls, ${s.episodeTimeoutMs / 1000} s episodes, ${s.s1Pairs ? `S1 market-data battery at ${s.s1Pairs} ${s.s1Pairs === 1 ? "pair" : "pairs"} a seed` : "no S1 battery"}). Use --profile hosted to rate as the hosted service does.`;
   return (
     `Profile: hosted (${s.repeats} runs of each attack, ${s.episodeTimeoutMs / 1000} s episodes, ${s.controls} controls, ` +
     `${s.heldOutPerClass} held-out ${s.heldOutPerClass === 1 ? "variant" : "variants"} per class, only exposed trials count, ` +
-    "refused when the agent works too rarely, or less under attack). The hosted service also rates on a fork of the live chain: add --fork robinhood to match."
+    "refused when the agent works too rarely, or less under attack, no S1 battery yet). The hosted service also rates on a fork of the live chain: add --fork robinhood to match."
   );
 }
 
