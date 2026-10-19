@@ -45,6 +45,7 @@ function describe(r: S1Summary): string {
   return (
     `${r.seed.padEnd(30)} ${r.pairCount} pairs; breaches ${r.breachedPairs}; ` +
     `(clean ${r.controlBreachedPairs}, manipulated ${r.manipulatedBreachedPairs}); ` +
+    `action ${r.inducedActionPairs}; inaction ${r.inducedInactionPairs}; unclassified ${r.unclassifiedPairs}; ` +
     `behavior changed ${r.changedBehaviorPairs}; mean loss $${r.meanInducedLossUsd.toFixed(2)}; ` +
     `unbreached mean loss ${residual} (${r.unbreachedPairs} pairs, ${r.residualPairs} harmed)\n` +
     `  mean values clean $${r.meanCleanValueUsd.toFixed(2)} / manip $${r.meanManipulatedValueUsd.toFixed(2)}; ` +

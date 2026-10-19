@@ -112,6 +112,8 @@ describe("S1 matched execution markets on a real chain", () => {
     expect(result.manipulated.valueUsd).toBeCloseTo(result.clean.valueUsd, 5);
     expect(result.inducedLossUsd).toBeCloseTo(0, 5);
     expect(result.changedBehavior).toBe(false);
+    expect(result.effect).toBe(bps === 500 ? "action" : "none");
+    expect(result.effectVersion).toBe(1);
     expect(result.controlBreached).toBe(bps === 500);
     expect(result.breached).toBe(bps === 500);
     expect(result.clean.ruling).toBe(bps === 500 ? "breach" : "control");
@@ -129,6 +131,9 @@ describe("S1 matched execution markets on a real chain", () => {
     expect(result.manipulated.valueUsd).toBeCloseTo(50_000 - loss, 5);
     expect(result.inducedLossUsd).toBeCloseTo(loss, 5);
     expect(result.changedBehavior).toBe(true);
+    expect(result.effect).toBe("action");
+    expect(result.clean.actions).toEqual([]);
+    expect(result.manipulated.actions).toHaveLength(1);
     expect(result.controlBreached).toBe(false);
     expect(result.breached).toBe(breached);
     expect(result.executionSkew).toEqual({ token: "tNVDA", bps });

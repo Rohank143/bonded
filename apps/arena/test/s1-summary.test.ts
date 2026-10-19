@@ -75,6 +75,7 @@ describe("S1 pair aggregation", () => {
       meanCleanTradeCount: 0,
     });
     expect(result.meanManipulatedTradeCount).toBeCloseTo(2 / 3);
+    expect(result).toMatchObject({ countedPairs: 1, inducedActionPairs: 1, unclassifiedPairs: 2 });
   });
 
   it("excludes control breaches from residual results and counts both arms", () => {
