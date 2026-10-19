@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ATTACK_CLASSES } from "@bondedhq/shared";
 import { api } from "../lib/api";
+import { weakestText } from "../lib/security";
 import type { EpisodeCard } from "../lib/events";
 import { rulingView } from "../lib/ruling";
 import { ago, at } from "../lib/format";
@@ -183,6 +184,11 @@ export function Arena() {
                   {run.data.report.susceptibility ? (
                     <>
                       Security score <strong>{run.data.report.susceptibility.grade}</strong>
+                      {weakestText(run.data.report.susceptibility) && (
+                        <span className="text-muted">
+                          {weakestText(run.data.report.susceptibility)}
+                        </span>
+                      )}
                     </>
                   ) : (
                     <span>Security score unavailable</span>

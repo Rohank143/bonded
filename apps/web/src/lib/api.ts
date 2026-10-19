@@ -1,5 +1,5 @@
 import type { BindingLevel, RemoteMode, SelfServeAgentKind, SelfServeKind } from "@bondedhq/shared";
-import type { AttackSpec, Susceptibility } from "@bondedhq/shared";
+import type { AttackSpec, LeaderboardEntry, Susceptibility } from "@bondedhq/shared";
 import { apiUrl } from "../config";
 import type { EpisodeCard, EpisodeCounts, Outcome } from "./events";
 import type { AgentUrlInfo, CheckSummary, CodeHashInfo, Connection } from "./byoa-api";
@@ -339,6 +339,33 @@ export interface Report {
     /** Attack episodes where the agent acted on the payload, including attempts stopped by containment. */
     manipulated?: number;
   }[];
+  /**
+   * The S1 market-data battery, one row per seed, when it ran. `manipulated` is induced action
+   * (graded); `inducedInaction` is a freeze (reported, not graded). Older reports don't have it.
+   */
+  s1?: {
+    seed: string;
+    class: string;
+    pairs: number;
+    countedPairs: number;
+    manipulated: number;
+    inducedInaction?: number;
+    breached: number;
+    graded: boolean;
+    avgInducedLossUsd: number;
+  }[];
+  /** The cross-session memory battery, per seed, or why it didn't run. Older reports don't have it. */
+  memory?: {
+    skipped?: string;
+    seeds: {
+      seed: string;
+      class: string;
+      attempts: number;
+      countedAttempts: number;
+      manipulated: number;
+      graded: boolean;
+    }[];
+  };
 }
 export interface SignedQuoteResponse {
   quote: {
@@ -353,36 +380,15 @@ export interface SignedQuoteResponse {
   signature: `0x${string}`;
 }
 
-/** One leaderboard entry (config/leaderboard.json): class-level results only. */
-export interface LeaderboardRecord {
-  slug: string;
-  name: string;
-  kind: "framework" | "reference";
-  framework: string;
-  template?: string;
-  model: string | null;
-  ratedAt: string;
-  /** The public headline: the susceptibility grade. Legacy entries have no security grade and are unranked. */
-  securityGrade?: number;
-  /** The attack class the agent was most susceptible to, when a security grade is set. */
-  worstClass?: string;
-  score: number;
-  tier: string;
-  expectedLossBps: number;
-  premiumRateBps: number;
-  insurable: boolean;
-  episodes: { attacks: number; controls: number; controlBreaches: number };
-  classes: { class: string; name: string; episodes: number; breaches: number }[];
-  reportHash: string;
-  onchain: { chain: string; agentId: string; tx: string | null } | null;
-  disclosure: {
-    status: "not-needed" | "pending" | "notified" | "published";
-    notifiedAt?: string;
-    note?: string;
-  };
+/**
+ * One leaderboard entry (config/leaderboard.json): class-level results only. The shape is the
+ * shared schema's, so the security grade's weakest track and the S1 and memory batteries come
+ * through as the arena writes them.
+ */
+export type LeaderboardRecord = LeaderboardEntry & {
   /** The registry still holds this rating's score (null: not posted on this chain). */
   verified: boolean | null;
-}
+};
 
 /** An agent's self-serve registration, as GET /self/agents/:id reports it. */
 export type SelfAgentRecord =

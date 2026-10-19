@@ -2,6 +2,7 @@ import { keccak256 } from "viem";
 import { apiUrl, explorerUrl, networkName } from "../config";
 import type { Report } from "./api";
 import { txUrl } from "./format";
+import { batteryName } from "./security";
 
 /** What the PDF says about one rating, besides the report itself. */
 export interface ReportContext {
@@ -46,6 +47,14 @@ export function reportDocument(report: Report, ctx: ReportContext, verified: boo
         "Security score",
         report.susceptibility ? String(report.susceptibility.grade) : "Not measured",
       ],
+      ...(report.susceptibility?.worstClass
+        ? [
+            [
+              "Weakest (sets the security score)",
+              `${report.susceptibility.worstClass}, ${batteryName(report.susceptibility.worstTrack, report.susceptibility.worstSource)}: manipulated in ${pct(report.susceptibility.worstRate, 1)} of its episodes`,
+            ],
+          ]
+        : []),
       ["Insurance score", `${report.scoring.score} (${report.scoring.tier})`],
       ["Model family", report.modelFamily],
       ["Mandate mode", report.mandateMode],
@@ -86,10 +95,26 @@ export function reportDocument(report: Report, ctx: ReportContext, verified: boo
       c.class,
       c.name,
       String(c.episodes),
+      `${c.manipulated ?? c.breaches} (${pct(c.manipulated ?? c.breaches, c.episodes)})`,
       String(c.breaches),
-      pct(c.breaches, c.episodes),
       `$${c.lossUsd.toLocaleString("en-US", { maximumFractionDigits: 0 })}`,
     ]),
+    /** The S1 market-data battery per seed: acted (graded), froze (not graded), breached. */
+    s1: (report.s1 ?? []).map((r) => [
+      r.seed,
+      r.class,
+      `${r.manipulated} of ${r.countedPairs}`,
+      String(r.inducedInaction ?? 0),
+      String(r.breached),
+    ]),
+    /** The memory battery per seed, or why it didn't run. */
+    memory: report.memory?.skipped
+      ? report.memory.skipped
+      : (report.memory?.seeds ?? []).map((r) => [
+          r.seed,
+          r.class,
+          `${r.manipulated} of ${r.countedAttempts}`,
+        ]),
     proof: [
       ["Report hash", ctx.reportHash],
       ...(ctx.mandateHash ? [["Mandate hash", ctx.mandateHash]] : []),
@@ -212,7 +237,7 @@ export async function downloadReportPdf(ctx: ReportContext) {
   autoTable(pdf, {
     ...table,
     startY: y,
-    head: [["Class", "Attack", "Episodes", "Breaches", "Breach rate", "Loss"]],
+    head: [["Class", "Attack", "Episodes", "Manipulated", "Breaches", "Loss"]],
     body: doc.classes,
     columnStyles: {
       0: { cellWidth: 44 },
@@ -222,6 +247,30 @@ export async function downloadReportPdf(ctx: ReportContext) {
       5: { halign: "right" },
     },
   });
+
+  if (doc.s1.length) {
+    y = heading("Market data (S1): acted counts toward the score, froze doesn't", after() + 30);
+    autoTable(pdf, {
+      ...table,
+      startY: y,
+      head: [["Seed", "Class", "Acted", "Froze", "Breached"]],
+      body: doc.s1,
+      columnStyles: { 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } },
+    });
+  }
+  if (typeof doc.memory === "string") {
+    y = heading("Memory", after() + 30);
+    pdf.text(`Not run: ${doc.memory}.`, M, y);
+  } else if (doc.memory.length) {
+    y = heading("Memory: acted on a planted note on a clean day", after() + 30);
+    autoTable(pdf, {
+      ...table,
+      startY: y,
+      head: [["Seed", "Class", "Acted"]],
+      body: doc.memory,
+      columnStyles: { 2: { halign: "right" } },
+    });
+  }
 
   // Keep the proof, and the line saying whether it checked out, together on one page.
   y = after() + 30;

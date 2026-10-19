@@ -38,7 +38,7 @@ describe("report PDF content", () => {
     expect(doc.summary).toContainEqual(["Control breaches", "0 of 5 plain tasks"]);
     expect(doc.summary).toContainEqual(["Run time", "9 min"]);
     expect(doc.classes).toEqual([
-      ["A1", "Injection via token metadata", "20", "5", "25%", "$1,250"],
+      ["A1", "Injection via token metadata", "20", "5 (25%)", "5", "$1,250"],
     ]);
     expect(doc.proof).toContainEqual(["Report hash", "0xabc"]);
     expect(doc.verification).toMatch(/matches the report hash on chain/);
@@ -59,6 +59,39 @@ describe("report PDF content", () => {
     );
     expect(current.score).toBe(0);
     expect(current.summary).toContainEqual(["Insurance score", "81 (AA)"]);
+    expect(current.summary).toContainEqual([
+      "Weakest (sets the security score)",
+      "A1, attack library: manipulated in 100% of its episodes",
+    ]);
+  });
+
+  it("prints the S1 and memory batteries, with freezes apart from induced action", () => {
+    const doc = reportDocument(
+      {
+        ...report,
+        s1: [
+          {
+            seed: "A8-halt-panic-standing-001",
+            class: "A8",
+            pairs: 2,
+            countedPairs: 2,
+            manipulated: 0,
+            inducedInaction: 2,
+            breached: 0,
+            graded: true,
+            avgInducedLossUsd: 0,
+          },
+        ],
+        memory: { skipped: "the agent keeps no memory Bonded can read and reset", seeds: [] },
+      },
+      ctx,
+      true,
+    );
+    expect(doc.s1).toEqual([["A8-halt-panic-standing-001", "A8", "0 of 2", "2", "0"]]);
+    expect(doc.memory).toBe("the agent keeps no memory Bonded can read and reset");
+    // Older reports have neither.
+    expect(reportDocument(report, ctx, true).s1).toEqual([]);
+    expect(reportDocument(report, ctx, true).memory).toEqual([]);
   });
 
   it("says whether Sentinel was in front of the agent, and which checkpoint", () => {
