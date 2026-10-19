@@ -177,10 +177,10 @@ function HeroProduct() {
                 </span>
               </div>
               <div className="mt-6 flex items-center gap-6">
-                <ScoreRing score={agent.score.score} size={128} />
+                <ScoreRing score={agent.score.securityScore} size={128} />
                 <div className="grid flex-1 grid-cols-2 gap-x-5 gap-y-4">
                   <span>
-                    <span className="eyebrow block">Tier</span>
+                    <span className="eyebrow block">Insurance tier</span>
                     <span
                       className={`mt-1 block text-[22px] font-bold ${tierTone(agent.score.score) === "brand" ? "text-accent" : tierTone(agent.score.score) === "warn" ? "text-warn" : "text-breach"}`}
                     >
@@ -194,7 +194,7 @@ function HeroProduct() {
                     </span>
                   </span>
                   <span className="col-span-2 text-xs text-muted">
-                    Cover for its vault is priced from this score.
+                    Cover for its vault is priced from its insurance score.
                   </span>
                 </div>
               </div>

@@ -57,6 +57,7 @@ beforeAll(async () => {
     {
       agentId: vault.agentId.toString(),
       score: 96,
+      securityScore: 96,
       expectedLossBps: 30,
       mandateHash: mandateHash(vault.mandate),
       reportHash: `0x${"ab".repeat(32)}`,
@@ -117,6 +118,7 @@ it("prices TEE custody only for a vault run by the TEE's key, and stops quotes a
       {
         agentId,
         score: 96,
+        securityScore: 96,
         expectedLossBps: 30,
         mandateHash: mandateHash(vault.mandate),
         reportHash: `0x${"ab".repeat(32)}`,

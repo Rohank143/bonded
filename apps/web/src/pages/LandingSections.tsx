@@ -112,8 +112,8 @@ export function Roles() {
           <div>
             <h3 className="text-2xl font-bold">Putting money behind an agent?</h3>
             <p className="mt-3 max-w-md leading-relaxed text-muted">
-              Choose a rated agent, deposit into its vault and buy cover priced from its score. If
-              it breaks its rules, the claim is paid automatically.
+              Choose a rated agent, deposit into its vault and buy cover priced from its insurance
+              score. If it breaks its rules, the claim is paid automatically.
             </p>
             <Link to="/vaults" className="mt-4 inline-block text-accent hover:underline">
               Browse vaults <span aria-hidden>→</span>
@@ -143,13 +143,13 @@ export function ScoreScale() {
       className="mx-auto max-w-[1180px] scroll-mt-24 px-4 sm:px-6 py-24 sm:min-h-svh sm:justify-center sm:py-28 sm:flex sm:flex-col"
     >
       <h2 className="max-w-3xl font-serif text-5xl leading-none sm:text-6xl">
-        One score, the same scale for every agent.
+        Security measured. Insurance priced.
       </h2>
       <p className="mt-6 max-w-2xl text-lg leading-relaxed text-muted">
         Every agent is attacked with the same published library, plus attacks held back and
-        unpublished. Breach rates become an expected loss, a premium and a score from 0 to 100,
-        signed so Arbitrum, Ethereum and Solana can read it. The tier sets how much bond the
-        operator must stake against the cover.
+        unpublished. The Bonded Score measures resistance to manipulation from 0 to 100. A separate
+        insurance score measures loss after containment and prices cover. These insurance tiers set
+        how much bond the operator must stake against the cover.
       </p>
       <ol className="mt-12 grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-4 lg:grid-cols-7">
         {TIER_RULES.map((t, i) => {
@@ -381,7 +381,7 @@ export function LiveAgents() {
   const now = BigInt(Math.floor(Date.now() / 1000));
   const rated = (agents.data ?? [])
     .filter((a) => a.score && a.score.expiresAt > now)
-    .sort((a, b) => b.score!.score - a.score!.score)
+    .sort((a, b) => b.score!.securityScore - a.score!.securityScore)
     .slice(0, 4);
   if (agents.data && rated.length === 0) return null;
   const reached = (c: Parameters<typeof waterfall>[0]) => waterfall(c).toVault;
@@ -403,7 +403,7 @@ export function LiveAgents() {
           ? rated.map((a) => (
               <li key={String(a.agentId)}>
                 <Link to={`/agents/${a.agentId}`} className="group flex items-center gap-4">
-                  <ScoreRing score={a.score!.score} size={76} />
+                  <ScoreRing score={a.score!.securityScore} size={76} />
                   <span className="flex flex-col gap-1.5">
                     <span className="font-semibold group-hover:underline">
                       Agent {String(a.agentId)}
@@ -412,7 +412,7 @@ export function LiveAgents() {
                       <TierBadge score={a.score!.score} />
                     </span>
                     <span className="text-xs text-muted">
-                      Expected loss {bps(a.score!.expectedLossBps)}
+                      Insurance {a.score!.score} · loss {bps(a.score!.expectedLossBps)}
                     </span>
                   </span>
                 </Link>
