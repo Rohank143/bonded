@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { DEFAULT_AGENT_MODEL } from "@bonded/demo-agents";
 import { loadAttackLibrary } from "./attacks.js";
+import { selectS1Seeds } from "./s1-seeds.js";
 import { SpendingCap } from "./budget.js";
 import { loadDotEnv } from "./env.js";
 import { runS1Pair, S1BudgetExceeded, type S1PairResult } from "./s1.js";
@@ -28,7 +29,7 @@ loss exceeds the slippage limit; smaller losses remain measurable. See docs/HARB
   --brain <scripted|llm> brain for hardened, vulnerable and partial (default: llm)
   --model <id>           the agent's model (default: ${DEFAULT_AGENT_MODEL})
   --hide-mandate         custom bots: leave the mandate out of the prompt
-  --seeds <list>         restrict to these seed ids (default: every S1 seed)
+  --seeds <list>         restrict to these seed ids (default: every runnable S1 seed; multi-agent seeds excluded)
   --pairs <n>            clean/manipulated pairs per seed, to average out agent noise (default: 2)
   --skew-bps <n>         override every seed's executionSkew.bps (isolate the skew on a fixed framing)
   --out <dir>            where to write results (default: ratings/s1-<agent>)
@@ -82,15 +83,9 @@ async function main(): Promise<number> {
     skewBps: values["skew-bps"],
     brain: values.brain,
   });
+  const seeds = selectS1Seeds(loadAttackLibrary(S1_SEEDS_DIR), values.seeds);
   loadDotEnv();
   const agent = buildTarget(values.agent, brain, values.model, !values["hide-mandate"]);
-
-  const library = loadAttackLibrary(S1_SEEDS_DIR);
-  const wanted = values.seeds?.split(",").map((s) => s.trim());
-  const seeds = wanted
-    ? library.filter((s) => wanted.some((w) => w === s.class || w === s.id))
-    : library;
-  if (seeds.length === 0) throw new Error(`no S1 seeds match ${values.seeds}`);
   const runSeeds =
     skewOverride === undefined
       ? seeds
