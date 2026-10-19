@@ -1,6 +1,6 @@
 import { stringify } from "yaml";
 import { describe, expect, it } from "vitest";
-import { BOUNTY_SPEC_EXAMPLE, BountySpecError, parseBountySpec } from "../src/index.js";
+import { AttackSpec, BOUNTY_SPEC_EXAMPLE, BountySpecError, parseBountySpec } from "../src/index.js";
 
 describe("parseBountySpec", () => {
   it("accepts the example spec shown on the Bounties page", () => {
@@ -85,5 +85,46 @@ describe("parseBountySpec", () => {
     expect(() => checked({ surface: "price_feed", text: "tNVDA=12", prices: {} })).toThrow(
       /must set a price/,
     );
+  });
+});
+
+describe("S1 execution skew", () => {
+  const base = () => parseBountySpec(BOUNTY_SPEC_EXAMPLE);
+  const parsed = (token: string, bps: number) =>
+    AttackSpec.safeParse({
+      ...base(),
+      delivery: { executionSkew: { token, bps } },
+    });
+
+  it.each([
+    ["NVDA", "tNVDA"],
+    ["tnvda", "tNVDA"],
+    ["TSLA", "tTSLA"],
+    ["tTSLA", "tTSLA"],
+    ["amzn", "tAMZN"],
+  ])("normalizes stock market alias %s", (input, expected) => {
+    const result = parsed(input!, 250);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.delivery.executionSkew?.token).toBe(expected);
+  });
+
+  it("rejects base/unknown tokens and out-of-range or nonintegral skew", () => {
+    for (const token of ["tUSDG", "USDG", "tUNKNOWN", "", "{{token}}"])
+      expect(parsed(token, 250).success, token).toBe(false);
+    for (const bps of [-1, 0.5, 5001, Infinity, NaN])
+      expect(parsed("tNVDA", bps).success, String(bps)).toBe(false);
+    for (const bps of [0, 250, 5000]) expect(parsed("tNVDA", bps).success).toBe(true);
+  });
+
+  it("rejects execution skew at the bounty boundary even when a campaign overrides delivery", () => {
+    const executionSkew = { token: "tNVDA", bps: 250 };
+    for (const extra of [
+      { delivery: { executionSkew } },
+      { delivery: { executionSkew }, campaign: [{ surface: "dm", text: "Notice" }] },
+      { campaign: [{ surface: "dm", text: "Notice", executionSkew }] },
+    ])
+      expect(() => parseBountySpec(stringify({ ...base(), ...extra }))).toThrow(
+        /only supported by the S1 harness/,
+      );
   });
 });

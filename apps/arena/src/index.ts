@@ -187,6 +187,15 @@ export {
   type Variant,
 } from "./harbinger/generate.js";
 export {
+  portfolioValueUsd,
+  runS1Pair,
+  S1BudgetExceeded,
+  S1EpisodeError,
+  type S1Options,
+  type S1PairResult,
+  type S1Side,
+} from "./s1.js";
+export {
   type HarbingerAttempt,
   type HarbingerOptions,
   type HarbingerResult,

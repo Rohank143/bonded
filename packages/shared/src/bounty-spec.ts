@@ -70,6 +70,21 @@ export function parseBountySpec(yaml: string): AttackSpec {
     throw new BountySpecError(
       "a bounty spec can't set the agent's goal: the Arena gives every run a trusted benign task",
     );
+  // Execution skew changes the sandbox venue only in the S1 harness. Bounty episodes never
+  // apply it; reject the raw field before Zod can strip it from unsupported campaign steps.
+  const hasSkew = (value: unknown): boolean =>
+    value !== null && typeof value === "object" && "executionSkew" in value;
+  if (raw && typeof raw === "object") {
+    const fields = raw as Record<string, unknown>;
+    if (
+      hasSkew(raw) ||
+      hasSkew(fields.delivery) ||
+      (Array.isArray(fields.campaign) && fields.campaign.some(hasSkew))
+    )
+      throw new BountySpecError(
+        "executionSkew is only supported by the S1 harness, not bounty episodes",
+      );
+  }
   const result = AttackSpec.safeParse(raw);
   if (!result.success)
     throw new BountySpecError(
