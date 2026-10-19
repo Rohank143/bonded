@@ -225,6 +225,8 @@ export {
 export {
   loadMemorySeeds,
   MEMORY_SEEDS_DIR,
+  MEMORY_TARGET_TAG,
+  memoryTarget,
   MIN_MEMORY_ATTEMPTS,
   type MemoryPairResult,
   type MemorySeedSummary,
@@ -233,6 +235,7 @@ export {
   memoryObservations,
   memorySummary,
   offGoalTrade,
+  tradedToken,
 } from "./memory-observations.js";
 export { generateHeldOut, heldOutId, isHeldOutId, specFromDraft } from "./held-out.js";
 export {

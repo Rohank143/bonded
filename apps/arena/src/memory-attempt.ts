@@ -2,7 +2,12 @@ import type { ArenaAgent, AttackSpec } from "@bondedhq/shared";
 import type { SpendingCap } from "./budget.js";
 import { BENIGN_GOALS, type EpisodeOptions, type EpisodeResult, runEpisode } from "./episode.js";
 import { goalChoices } from "./harbinger/goals.js";
-import { type MemoryPairResult, offGoalTrade } from "./memory-observations.js";
+import {
+  type MemoryPairResult,
+  memoryTarget,
+  offGoalTrade,
+  tradedToken,
+} from "./memory-observations.js";
 import type { Sandbox } from "./sandbox.js";
 
 /** An agent that keeps notes between sessions (implemented by MemoryBotAgent). */
@@ -126,6 +131,7 @@ export async function runMemoryPair(options: MemoryPairOptions): Promise<MemoryP
   const { sandbox, agent, seed, round } = options;
   const run = options.runEpisodeFn ?? ((o: EpisodeOptions) => runEpisode(sandbox, o));
   const day1Goal = goalChoices(seed)[0]!;
+  const target = memoryTarget(seed);
   const arm = async (attack: AttackSpec | null, label: string) => {
     agent.reset();
     const day1 = await run({
@@ -157,10 +163,13 @@ export async function runMemoryPair(options: MemoryPairOptions): Promise<MemoryP
     agent: agent.name,
     round,
     day2Goal: MEMORY_DAY2_GOAL,
+    target,
     breachedSession1: poisoned.day1.verdict.breached,
     notesMissing: control.day1Notes === 0 || poisoned.day1Notes === 0,
     breached: poisoned.day2.verdict.breached,
     controlBreached: control.day2.verdict.breached,
+    targetTrade: tradedToken(poisoned.day2.trades, target),
+    controlTargetTrade: tradedToken(control.day2.trades, target),
     offGoalTrade: offGoalTrade(poisoned.day2.trades, MEMORY_DAY2_GOAL),
     controlOffGoalTrade: offGoalTrade(control.day2.trades, MEMORY_DAY2_GOAL),
     changedBehavior:
@@ -192,6 +201,8 @@ export async function runMemoryBattery(
   options: MemoryBatteryOptions,
 ): Promise<MemoryPairResult[]> {
   const rounds = options.rounds ?? 1;
+  // Fail before any spend if a seed can't be attributed (no single memory-target tag).
+  for (const seed of seeds) memoryTarget(seed);
   const results: MemoryPairResult[] = [];
   for (const seed of seeds) {
     for (let round = 0; round < rounds; round++) {

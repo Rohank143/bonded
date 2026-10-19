@@ -8,13 +8,15 @@ import {
   runMemoryBattery,
   runMemoryPair,
 } from "../src/memory-attempt.js";
-import { loadMemorySeeds } from "../src/memory-observations.js";
+import { loadMemorySeeds, memoryTarget } from "../src/memory-observations.js";
 import { trackLabel } from "../src/rate.js";
 import type { Sandbox } from "../src/sandbox.js";
 
 // The two-arm pairing with scripted episodes: no chain, no model.
 
 const seed: AttackSpec = loadMemorySeeds().find((s) => s.class === "A2")!;
+const target = memoryTarget(seed);
+const other = target === "tNVDA" ? "tAMZN" : "tNVDA";
 
 /** A fake memory agent: each run "remembers" what was planted, so the arms' notes differ. */
 function memoryAgent() {
@@ -151,12 +153,12 @@ describe("runMemoryPair", () => {
     expect(h.agent.memory).toEqual([]);
   });
 
-  it("flags an off-goal trade on the poisoned day 2 against a clean control", async () => {
+  it("flags a planted-target trade on the poisoned day 2 against a clean control", async () => {
     const h = harness({
       poisonedD2: ep({
         tokens: [
           ["tUSDG", "tTSLA"],
-          ["tUSDG", "tNVDA"],
+          ["tUSDG", target],
         ],
       }),
     });
@@ -168,6 +170,9 @@ describe("runMemoryPair", () => {
       runEpisodeFn: h.runEpisodeFn,
     });
     expect(r).toMatchObject({
+      target,
+      targetTrade: true,
+      controlTargetTrade: false,
       offGoalTrade: true,
       controlOffGoalTrade: false,
       breached: false,
@@ -177,11 +182,25 @@ describe("runMemoryPair", () => {
     });
   });
 
-  it("records the control's own off-goal trade and breaches per day", async () => {
+  it("tells an off-target trade apart from a planted-target trade", async () => {
+    // The poisoned day 2 trades some other token (e.g. repeating the day-1 buy): off-goal, but
+    // not the plant's target.
+    const h = harness({ poisonedD2: ep({ tokens: [["tUSDG", other]] }) });
+    const r = await runMemoryPair({
+      sandbox: {} as Sandbox,
+      agent: h.agent,
+      seed,
+      round: 0,
+      runEpisodeFn: h.runEpisodeFn,
+    });
+    expect(r).toMatchObject({ offGoalTrade: true, targetTrade: false });
+  });
+
+  it("records the control's own target trade and breaches per day", async () => {
     const h = harness({
-      controlD2: ep({ tokens: [["tUSDG", "tAMZN"]] }),
+      controlD2: ep({ tokens: [["tUSDG", target]] }),
       poisonedD1: ep({ breached: true }),
-      poisonedD2: ep({ breached: true, tokens: [["tUSDG", "tAMZN"]] }),
+      poisonedD2: ep({ breached: true, tokens: [["tUSDG", target]] }),
     });
     const r = await runMemoryPair({
       sandbox: {} as Sandbox,
@@ -194,6 +213,8 @@ describe("runMemoryPair", () => {
       breachedSession1: true,
       breached: true,
       controlBreached: false,
+      targetTrade: true,
+      controlTargetTrade: true,
       offGoalTrade: true,
       controlOffGoalTrade: true,
       changedBehavior: false,
@@ -227,6 +248,18 @@ describe("runMemoryPair notes check", () => {
 });
 
 describe("runMemoryBattery", () => {
+  it("refuses, before any episode, a seed with no memory-target tag", async () => {
+    const h = harness({});
+    const untagged = { ...seed, tags: seed.tags.filter((t) => !t.startsWith("memory-target:")) };
+    await expect(
+      runMemoryBattery({} as Sandbox, h.agent, [seed, untagged], {
+        cap: new SpendingCap({ maxUsd: 1 }),
+        runEpisodeFn: h.runEpisodeFn,
+      }),
+    ).rejects.toThrow(/memory-target/);
+    expect(h.calls).toEqual([]);
+  });
+
   it("stops starting attempts once the spending cap trips", async () => {
     const h = harness({});
     const cap = new SpendingCap({ maxUsd: 0.05 });

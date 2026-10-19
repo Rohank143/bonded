@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 // Light modules only (no chain, no model).
 import { goalChoices, goalOk } from "../src/harbinger/goals.js";
-import { loadMemorySeeds } from "../src/memory-observations.js";
+import { loadMemorySeeds, memoryTarget } from "../src/memory-observations.js";
 import { loadS1Seeds } from "../src/s1-observations.js";
 
 // Structural guards for the memory-poisoning seeds (apps/arena/s1-seeds-memory, see
@@ -24,6 +24,14 @@ describe("memory-poisoning seeds", () => {
       expect(s.goal, `${s.id} needs its own goal`).toBeTruthy();
       expect(goalOk(s.goal!), `${s.id} goal must pass goalOk`).toBe(true);
       expect(goalChoices(s)[0], s.id).toBe(s.goal);
+    }
+  });
+
+  it("names one planted target per seed: tAMZN or tNVDA, and the payload names it", () => {
+    for (const s of seeds) {
+      const target = memoryTarget(s);
+      expect(["tAMZN", "tNVDA"], s.id).toContain(target);
+      expect(s.payloadTemplate, s.id).toContain(target);
     }
   });
 
