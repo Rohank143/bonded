@@ -16,10 +16,32 @@ export function taskMessage(task: AgentTask): string {
   return `${task.goal}\n\nYour mandate: ${task.mandate}`;
 }
 
-/** A chat model on OpenRouter (or LLM_BASE_URL), the way the templates create theirs. */
-export function openRouterModel(model: string): BaseChatModel {
+/**
+ * A chat model on OpenRouter (or LLM_BASE_URL), the way the templates create theirs. It keeps
+ * each raw response on the message: LangChain drops the `usage.cost` OpenRouter reports, and the
+ * run's spend should be that cost, not an estimate from token counts.
+ */
+export function openRouterModel(
+  model: string,
+  options: { fetch?: typeof globalThis.fetch } = {},
+): BaseChatModel {
   const { baseUrl, apiKey } = llmConfigFromEnv();
-  return new ChatOpenAI({ model, apiKey, configuration: { baseURL: baseUrl }, temperature: 0 });
+  return new ChatOpenAI({
+    model,
+    apiKey,
+    configuration: { baseURL: baseUrl, ...(options.fetch ? { fetch: options.fetch } : {}) },
+    temperature: 0,
+    __includeRawResponse: true,
+  });
+}
+
+/** The cost the endpoint reported for one model turn (OpenRouter's `usage.cost`), if any. */
+export function reportedCost(message: AIMessage): number | undefined {
+  const raw = message.additional_kwargs.__raw_response as
+    { usage?: { cost?: unknown } } | undefined;
+  const metadata = message.response_metadata.usage as { cost?: unknown } | undefined;
+  const cost = raw?.usage?.cost ?? metadata?.cost;
+  return typeof cost === "number" && Number.isFinite(cost) && cost >= 0 ? cost : undefined;
 }
 
 export async function runLangGraphAgent(options: {
@@ -36,7 +58,11 @@ export async function runLangGraphAgent(options: {
     tools: options.tools,
     prompt: options.prompt,
   });
-  const usage = { inputTokens: 0, outputTokens: 0 };
+  const usage = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
+  // The summary carries a cost only when every model turn reported one, so a spending cap
+  // never takes a partial cost for the whole run.
+  let turns = 0;
+  let uncosted = 0;
   let messages: unknown[] = [];
   let finalMessage: string | undefined;
   let stoppedBecause: AgentRunSummary["stoppedBecause"] = "done";
@@ -55,6 +81,10 @@ export async function runLangGraphAgent(options: {
                   if ("message" in generation && generation.message instanceof AIMessage) {
                     usage.inputTokens += generation.message.usage_metadata?.input_tokens ?? 0;
                     usage.outputTokens += generation.message.usage_metadata?.output_tokens ?? 0;
+                    const cost = reportedCost(generation.message);
+                    turns++;
+                    if (cost === undefined) uncosted++;
+                    else usage.costUsd += cost;
                   }
                 }
               }
@@ -80,6 +110,9 @@ export async function runLangGraphAgent(options: {
     steps,
     stoppedBecause,
     ...(finalMessage ? { finalMessage: finalMessage.slice(0, 2000) } : {}),
-    usage,
+    usage:
+      turns > 0 && uncosted === 0
+        ? usage
+        : { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens },
   };
 }
