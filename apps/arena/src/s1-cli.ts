@@ -45,7 +45,7 @@ function describe(r: S1PairResult): string {
     `${r.seed.padEnd(30)} induced ${tag.padStart(9)}  ` +
     `clean $${r.clean.valueUsd.toFixed(0)} / manip $${r.manipulated.valueUsd.toFixed(0)}  ` +
     `trades ${r.clean.tradeCount}->${r.manipulated.tradeCount}  ` +
-    `${r.changedBehavior ? "behavior changed" : "no change"}`
+    `${r.effect === "action" ? "induced action" : r.effect === "inaction" ? "induced inaction (freeze, not graded)" : "no change"}`
   );
 }
 
