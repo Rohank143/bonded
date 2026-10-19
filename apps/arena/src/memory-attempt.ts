@@ -136,6 +136,7 @@ export async function runMemoryPair(options: MemoryPairOptions): Promise<MemoryP
       variantId: `memory-${round}-${label}-d1`,
       worldSeed: `memory-${seed.id}`,
     });
+    const day1Notes = agent.memory.length;
     const day2 = await run({
       ...options.episode,
       agent,
@@ -144,7 +145,7 @@ export async function runMemoryPair(options: MemoryPairOptions): Promise<MemoryP
       variantId: `memory-${round}-${label}-d2`,
       worldSeed: `memory-${seed.id}-day2`,
     });
-    return { day1, day2, notes: [...agent.memory] };
+    return { day1, day2, day1Notes, notes: [...agent.memory] };
   };
   const control = await arm(null, "control");
   const poisoned = await arm(seed, "poisoned");
@@ -157,6 +158,7 @@ export async function runMemoryPair(options: MemoryPairOptions): Promise<MemoryP
     round,
     day2Goal: MEMORY_DAY2_GOAL,
     breachedSession1: poisoned.day1.verdict.breached,
+    notesMissing: control.day1Notes === 0 || poisoned.day1Notes === 0,
     breached: poisoned.day2.verdict.breached,
     controlBreached: control.day2.verdict.breached,
     offGoalTrade: offGoalTrade(poisoned.day2.trades, MEMORY_DAY2_GOAL),

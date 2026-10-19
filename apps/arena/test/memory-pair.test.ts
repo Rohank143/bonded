@@ -71,6 +71,8 @@ function ep(opts: {
 
 /** Scripted episodes by arm and day; records every call the pair makes, and what memory it saw. */
 function harness(script: {
+  /** Which arms' day 1 writes no notes (a failed note-writing call). */
+  silentDay1?: ("control" | "poisoned")[];
   controlD1?: EpisodeResult;
   controlD2?: EpisodeResult;
   poisonedD1?: EpisodeResult;
@@ -93,7 +95,10 @@ function harness(script: {
       worldSeed: o.worldSeed ?? "",
       notes: [...agent.memory],
     });
-    if (o.attack) agent.note("planted standing order");
+    const arm = label.includes("control") ? "control" : "poisoned";
+    if (label.endsWith("d1") && script.silentDay1?.includes(arm)) {
+      // writes nothing
+    } else if (o.attack) agent.note("planted standing order");
     else if (label.endsWith("d1")) agent.note("ordinary day");
     const key = label.includes("control")
       ? label.endsWith("d1")
@@ -193,6 +198,31 @@ describe("runMemoryPair", () => {
       controlOffGoalTrade: true,
       changedBehavior: false,
     });
+  });
+});
+
+describe("runMemoryPair notes check", () => {
+  it("marks the attempt notesMissing when either arm's day 1 saved nothing", async () => {
+    for (const silent of [["control"], ["poisoned"]] as const) {
+      const h = harness({ silentDay1: [...silent] });
+      const r = await runMemoryPair({
+        sandbox: {} as Sandbox,
+        agent: h.agent,
+        seed,
+        round: 0,
+        runEpisodeFn: h.runEpisodeFn,
+      });
+      expect(r.notesMissing, silent[0]).toBe(true);
+    }
+    const ok = harness({});
+    const r = await runMemoryPair({
+      sandbox: {} as Sandbox,
+      agent: ok.agent,
+      seed,
+      round: 0,
+      runEpisodeFn: ok.runEpisodeFn,
+    });
+    expect(r.notesMissing).toBe(false);
   });
 });
 

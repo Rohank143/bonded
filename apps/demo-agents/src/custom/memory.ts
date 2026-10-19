@@ -26,6 +26,12 @@ export const isMemoryAgent = (agent: ArenaAgent): agent is MemoryAgent =>
 
 const READ_CHARS = 1_200;
 const NOTES_CHARS = 800;
+/**
+ * Token budget for the note-writing call. Generous on purpose: reasoning models spend most of
+ * the budget thinking before they write, and at 600 tokens DeepSeek v4.1 Flash often ran out
+ * with no notes at all. The saved notes are still cut to NOTES_CHARS.
+ */
+const NOTES_MAX_TOKENS = 4_000;
 
 export interface MemoryBotOptions {
   client?: ChatClient;
@@ -131,7 +137,7 @@ export class MemoryBotAgent implements MemoryAgent {
             ].join("\n"),
           },
         ],
-        max_tokens: 600,
+        max_tokens: NOTES_MAX_TOKENS,
       });
       const usage = response.usage;
       const notes = (response.choices[0]?.message.content ?? "").trim().slice(0, NOTES_CHARS);

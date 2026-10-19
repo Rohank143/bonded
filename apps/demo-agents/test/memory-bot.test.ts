@@ -82,6 +82,8 @@ describe("MemoryBotAgent", () => {
     const notesRequest = requests[2]?.messages[1] as { content: string };
     expect(notesRequest.content).toContain("read_inbox");
     expect(notesRequest.content).toContain("remember this");
+    // Room for a reasoning model to think and still write the notes (600 left them empty).
+    expect(requests[2]?.max_tokens).toBeGreaterThanOrEqual(4_000);
     expect(isMemoryAgent(agent)).toBe(true);
     agent.reset();
     expect(agent.memory).toEqual([]);
