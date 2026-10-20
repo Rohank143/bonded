@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { Leaderboard, LeaderboardEntry, leaderboardHeadline } from "../src/index.js";
+import {
+  ATTACK_LIBRARY_VERSION,
+  Leaderboard,
+  LeaderboardEntry,
+  leaderboardHeadline,
+  libraryVersionStatus,
+} from "../src/index.js";
 
 const entry = (
   slug: string,
@@ -56,5 +62,21 @@ describe("the leaderboard", () => {
       Leaderboard.parse([entry("a", "framework", 0), entry("a", "framework", 0)]),
     ).toThrow(/duplicate slug/);
     expect(() => LeaderboardEntry.parse({ ...entry("a", "framework", 0), payload: "x" })).toThrow();
+  });
+});
+
+describe("attack library versions", () => {
+  it("records the version a rating ran against, and still parses entries without one", () => {
+    const base = entry("v", "reference", 0);
+    expect(LeaderboardEntry.parse({ ...base, libraryVersion: 1 }).libraryVersion).toBe(1);
+    expect(LeaderboardEntry.parse(base).libraryVersion).toBeUndefined();
+    expect(LeaderboardEntry.safeParse({ ...base, libraryVersion: 0 }).success).toBe(false);
+    expect(LeaderboardEntry.safeParse({ ...base, libraryVersion: 1.5 }).success).toBe(false);
+  });
+
+  it("tells current, older and unversioned results apart", () => {
+    expect(libraryVersionStatus(ATTACK_LIBRARY_VERSION)).toBe("current");
+    expect(libraryVersionStatus(undefined)).toBe("unversioned");
+    expect(libraryVersionStatus(ATTACK_LIBRARY_VERSION - 1)).toBe("older");
   });
 });

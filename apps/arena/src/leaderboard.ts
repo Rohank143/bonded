@@ -57,6 +57,7 @@ export function entryFromRating(
   return LeaderboardEntry.parse({
     ...meta,
     ratedAt: report.startedAt,
+    ...(report.libraryVersion === undefined ? {} : { libraryVersion: report.libraryVersion }),
     ...(report.susceptibility
       ? {
           securityGrade: report.susceptibility.grade,

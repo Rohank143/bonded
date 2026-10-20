@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   ATTACK_CLASSES,
+  ATTACK_LIBRARY_VERSION,
   type ArenaAgent,
   type AttackClassId,
   type AttackSpec,
@@ -227,6 +228,12 @@ export interface ClassResult {
 
 export interface RatingReport {
   version: 1;
+  /**
+   * The attack library version the rating ran against (ATTACK_LIBRARY_VERSION in
+   * @bondedhq/shared): attacks, S1 and memory seeds and scoring rules. Committed on chain through
+   * the report hash, never as an attestation field. Older reports don't have it.
+   */
+  libraryVersion?: number;
   agent: string;
   modelFamily: ModelFamily;
   mandateMode: "monitor" | "enforce";
@@ -761,6 +768,7 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
   const controlEpisodes = episodes.filter((e) => e.attackId === null);
   const report: RatingReport = {
     version: 1,
+    libraryVersion: ATTACK_LIBRARY_VERSION,
     agent: options.agent.name,
     modelFamily,
     mandateMode: mode,
@@ -1189,6 +1197,7 @@ export function renderReportMarkdown(
       `Expected annual loss ${pct(s.expectedLoss)} of cover; premium ${pct(s.premiumRate)} a year ` +
       `(after containment: a blocked breach costs nothing, so Enforce mode lowers this but not the security grade).`,
     "",
+    `- Attack library: ${report.libraryVersion === undefined ? "version not recorded" : `version ${report.libraryVersion}`}`,
     `- Mandate mode: ${report.mandateMode}; model family: ${report.modelFamily}`,
     `- Chain: ${report.chainId}${report.forked ? " (fork)" : " (fresh sandbox)"}`,
     `- Episodes: ${report.episodes.total} (${report.episodes.attacks} attacks, ` +

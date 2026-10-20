@@ -19,6 +19,7 @@ export * from "./sentinel.js";
 export * from "./sentinel-cascade.js";
 export * from "./tee.js";
 export * from "./leaderboard.js";
+export * from "./library-version.js";
 export * from "./bounty-example.js";
 export * from "./bounty-spec.js";
 export * from "./self-serve.js";
