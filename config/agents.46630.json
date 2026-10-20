@@ -71,7 +71,8 @@
     "tee": {
       "url": "https://e4160e590cd56ae4412244fc6318e26ae3a8338e-8080.dstack-pha-prod5.phala.network",
       "composeHash": "0x0205e8388bdc2234aae96b01537fc79226d1144e41876c95e9bf49c8e32f9e19"
-    }
+    },
+    "repeats": 5
   },
   {
     "kind": "partial",
