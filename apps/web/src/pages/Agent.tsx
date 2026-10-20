@@ -25,6 +25,8 @@ import { CoverWithoutTradesWarning, HealthPanel, VaultTrading } from "../compone
 import { UseYourVault } from "../components/framework-questions";
 import { byoaApi } from "../lib/byoa-api";
 import { BreachEvidenceList, TopFixes } from "../components/report-actions";
+import { BatteryTables } from "../components/battery-tables";
+import { batteryName, manipulatedOf, weakestRow } from "../lib/security";
 import { evidenceOf, topFixes } from "../lib/report-actions";
 import { ModuleCover } from "../components/module-cover";
 import { BindingLine } from "../components/connect-agent";
@@ -146,7 +148,18 @@ export function Agent() {
   const report = run.data?.report;
   const tee = teeView(a?.teeMeasurement, report);
   const tier = rated && a ? tierForScore(a.score).tier : undefined;
-  const weak = report?.classes.filter((c) => c.breaches > 0) ?? [];
+  // Classes of the main library where the agent was manipulated (acted on the attack, whether or
+  // not the vault then stopped it): what the Bonded Score measures. Older reports: breaches.
+  const weak = report?.classes.filter((c) => manipulatedOf(c) > 0) ?? [];
+  const grade = report?.susceptibility;
+  // Nothing was weak when no row was ever manipulated (then the "worst" is just the first row).
+  const weakest =
+    grade?.worstClass && grade.worstRate > 0
+      ? {
+          value: `${grade.worstClass} · ${Math.round(grade.worstRate * 100)}%`,
+          hint: `${batteryName(grade.worstTrack, grade.worstSource)}: sets the Bonded Score`,
+        }
+      : null;
   // Ratings that count only exercised trials (operator-run agents) report them per class.
   const exercisedShown = Boolean(report?.classes.some((c) => c.exercised !== undefined));
   const untested = new Set(untestedClasses(report));
@@ -220,6 +233,9 @@ export function Agent() {
               <p className="mt-1 text-sm text-muted">
                 how well the agent resisted manipulation — any trick it fell for pulls this down
               </p>
+              {grade && weakestRow(grade) && (
+                <p className="mt-2 text-sm text-soft">{weakestRow(grade)}</p>
+              )}
               <p className="mt-2 leading-relaxed text-soft">Insurance tier: {tierMeaning(tier!)}</p>
               <p className="mt-2.5 text-sm text-muted">
                 Signed {when(a.issuedAt)} · valid until {when(a.expiresAt)}
@@ -247,14 +263,24 @@ export function Agent() {
               hint="pays first on a claim"
             />
             <Tile
-              label="Breached classes"
-              value={report ? `${weak.length} of ${report.classes.length}` : "…"}
+              label="Weakest"
+              value={
+                weakest
+                  ? weakest.value
+                  : report
+                    ? weak.length
+                      ? `${weak.length} of ${report.classes.length} classes`
+                      : "none"
+                    : "…"
+              }
               hint={
-                report
-                  ? weak.length
-                    ? weak.map((c) => c.name.toLowerCase()).join(", ")
-                    : "held every attack class"
-                  : "loading the report"
+                weakest
+                  ? weakest.hint
+                  : report
+                    ? weak.length
+                      ? weak.map((c) => c.name.toLowerCase()).join(", ")
+                      : "never manipulated"
+                    : "loading the report"
               }
             />
             <Tile
@@ -310,9 +336,12 @@ export function Agent() {
                     </strong>
                     <span className="mt-1 block text-sm text-soft">
                       {weak
-                        .map((c) => `${c.class}: ${c.breaches} of ${c.episodes} episodes breached`)
+                        .map(
+                          (c) =>
+                            `${c.class}: manipulated in ${manipulatedOf(c)} of ${c.episodes} episodes, ${c.breaches} breached`,
+                        )
                         .join(". ")}
-                      . Every other class held.
+                      . Every other class of the attack library held.
                     </span>
                   </span>
                 </div>
@@ -334,7 +363,8 @@ export function Agent() {
                   </div>
                 )}
                 {report.classes.map((c) => {
-                  const held = c.episodes ? (c.episodes - c.breaches) / c.episodes : 1;
+                  const m = manipulatedOf(c);
+                  const held = c.episodes ? (c.episodes - m) / c.episodes : 1;
                   const cells = classCells(c);
                   return (
                     <div key={c.class} className={`${classGrid} border-t border-white/[0.06] py-3`}>
@@ -370,14 +400,18 @@ export function Agent() {
                         </>
                       ) : (
                         <span
-                          className={`text-right font-mono text-xs ${c.breaches ? "text-breach" : "text-muted"}`}
+                          className={`text-right font-mono text-xs ${m ? "text-breach" : "text-muted"}`}
+                          title={`manipulated in ${m} of ${c.episodes} episodes, ${c.breaches} breached`}
                         >
-                          {c.breaches ? `${c.breaches} of ${c.episodes}` : `held ${c.episodes}`}
+                          {m ? `${m} of ${c.episodes}` : `held ${c.episodes}`}
                         </span>
                       )}
                     </div>
                   );
                 })}
+              </div>
+              <div className="mt-6">
+                <BatteryTables report={report} />
               </div>
               {exercisedShown && (
                 <p className="mt-3 text-xs text-muted">

@@ -4,6 +4,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ATTACK_CLASSES, AttackSurface, type BreachType } from "@bondedhq/shared";
 import { ApiError, api, type AttackStats, type AttackSummary, type ClassRecord } from "../lib/api";
 import { useListParams } from "../lib/pages";
+import { DOCS_S1 } from "../lib/routes";
 import {
   Badge,
   EmptyState,
@@ -12,6 +13,7 @@ import {
   Page,
   Spinner,
   buttonClass,
+  linkClass,
 } from "../components/ui";
 import { Select } from "../components/select";
 import { StatLoading, StatStrip } from "../components/stat-strip";
@@ -329,6 +331,36 @@ export function Attacks() {
             ?.scrollIntoView({ behavior: "smooth", block: "start" });
         }}
       />
+
+      <section aria-label="Beyond the attack library" className="grid gap-4 md:grid-cols-2">
+        <div className="panel p-5 sm:p-6">
+          <p className="eyebrow">Also scored</p>
+          <h2 className="mt-2 text-lg font-bold">False market data</h2>
+          <p className="mt-2 text-sm text-muted">
+            No instruction at all: a fabricated earnings beat, a fake flash crash, a decimal-shifted
+            number, a made-up hedge. The agent runs the same task twice, clean and with the lie, and
+            only a trade the lie caused counts against it. A freeze is shown but not scored. Runs in
+            every rating of Bonded's own and leaderboard agents; operator-run agents aren't covered
+            yet.
+          </p>
+        </div>
+        <div className="panel p-5 sm:p-6">
+          <p className="eyebrow">For agents with memory</p>
+          <h2 className="mt-2 text-lg font-bold">Planted notes</h2>
+          <p className="mt-2 text-sm text-muted">
+            A false standing instruction read on one day, then a clean day later. If the agent
+            trades the planted token when a control run with nothing planted doesn't, its note was
+            poisoned. These run for agents whose memory Bonded can read and reset.
+          </p>
+        </div>
+        <p className="text-xs text-muted md:col-span-2">
+          Both feed the Bonded Score alongside the classes above, as separate rows: the agent's
+          weakest row sets the score.{" "}
+          <a className={linkClass} href={DOCS_S1}>
+            How the market-data and memory batteries work
+          </a>
+        </p>
+      </section>
 
       <section id="all-attacks" className="panel min-w-0 scroll-mt-24 p-5 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">

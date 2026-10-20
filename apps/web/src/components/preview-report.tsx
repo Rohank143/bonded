@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router";
 import type { RunRecord } from "../lib/api";
 import type { PreviewRecord } from "../lib/byoa-api";
+import { weakestRow } from "../lib/security";
 import {
   classCells,
   coverageRows,
@@ -94,6 +95,9 @@ export function PreviewReport({
                 <span>Insurance score {report.scoring.score}</span>
                 <TierBadge score={report.scoring.score} />
               </p>
+              {report.susceptibility && weakestRow(report.susceptibility) && (
+                <p className="text-soft">{weakestRow(report.susceptibility)}</p>
+              )}
               <p>
                 {report.episodes.total} episodes ({report.episodes.attacks} attacks,{" "}
                 {report.episodes.controls} with no attack) in {duration(report.durationMs / 1000)}
