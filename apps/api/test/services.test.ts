@@ -470,7 +470,16 @@ it("runs a queued rating, persists episodes and report, posts the attestation", 
       episode: { attackId: null, attackClass: null, verdict: { breached: false } },
     });
   const worker = connectChain(chain.deployment, sandbox.rpcUrl, ANVIL_KEYS.deployer);
-  await workOne(pg.db, worker, sandbox.rpcUrl, ANVIL_KEYS.deployer, console.error);
+  // This test is about the queue, the stored episodes and the attestation: run the main library
+  // only. S1 runs by default (rating-limits.test.ts covers that) and would add 100 episodes.
+  const s1 = process.env.RATE_WITH_S1;
+  process.env.RATE_WITH_S1 = "false";
+  try {
+    await workOne(pg.db, worker, sandbox.rpcUrl, ANVIL_KEYS.deployer, console.error);
+  } finally {
+    if (s1 === undefined) delete process.env.RATE_WITH_S1;
+    else process.env.RATE_WITH_S1 = s1;
+  }
   const result = (await pg.db.pool.query("SELECT * FROM ratings WHERE id=$1", [run])).rows[0];
   expect(result.error).toBeNull();
   expect(result.status).toBe("done");

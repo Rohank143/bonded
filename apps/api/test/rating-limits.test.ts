@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { ratingLimits } from "../src/rating-limits.js";
 
 describe("rating limits", () => {
-  it("keeps S1 opt-in and handles explicit false", () => {
-    expect(ratingLimits({})).toEqual({ s1Pairs: undefined, maxUsd: undefined });
+  it("runs S1 by default and handles explicit false", () => {
+    expect(ratingLimits({})).toEqual({ s1Pairs: 2, maxUsd: undefined });
+    expect(ratingLimits({ RATE_WITH_S1: "true" }).s1Pairs).toBe(2);
     for (const flag of ["false", "0"])
       expect(ratingLimits({ RATE_WITH_S1: flag }).s1Pairs).toBeUndefined();
     expect(

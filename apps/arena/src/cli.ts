@@ -15,6 +15,7 @@ import {
   DecisionModelSentinel,
   LayaSentinel,
   LlmDecisionModel,
+  MemoryBotAgent,
   SentinelGuard,
   SolanaAgentKitAgent,
 } from "@bonded/demo-agents";
@@ -45,13 +46,16 @@ import {
   StaticRunnerTokens,
 } from "./gateway/index.js";
 import { FileHeldOutLedger, freshHeldOut } from "./held-out-fresh.js";
+import { isMemoryCapable } from "./memory-attempt.js";
+import { loadMemorySeeds } from "./memory-observations.js";
 import { rateAgent } from "./rate.js";
+import { loadS1Seeds } from "./s1-observations.js";
 import { sentinelInfo } from "./sentinel-info.js";
 import { cascadeFromPolicy } from "./sentinel-policy.js";
 import { attestTeeAgent } from "./tee.js";
 import { describeOutcome, summarise } from "./report.js";
 import { Sandbox } from "./sandbox.js";
-import { describeProfile, rateSettings } from "./cli-profile.js";
+import { describeProfile, ownAgentTimeout, rateSettings } from "./cli-profile.js";
 
 const USAGE = `Usage:
   pnpm --filter @bonded/arena arena run [options]    run episodes and print each verdict
@@ -63,12 +67,13 @@ const USAGE = `Usage:
                                                      (no score). Takes the remote agent options
 
 Agent:
-  --agent <vulnerable|hardened|partial|decision|agentkit|solana-agent-kit|remote>
+  --agent <vulnerable|hardened|partial|decision|agentkit|solana-agent-kit|memory-bot|remote>
                            agent to test (default: vulnerable). agentkit and solana-agent-kit run
                            those frameworks' template agents with the Arena's tools (needs
                            OPENROUTER_API_KEY; --model picks the model). remote rates your own
                            agent wherever it runs, through the Arena Gateway and @bondedhq/runner
-                           (see "Remote agents" below)
+                           (see "Remote agents" below). memory-bot keeps notes between sessions
+                           and always uses a model (--model picks it)
   --brain <scripted|llm>   scripted needs nothing; llm needs OPENROUTER_API_KEY (default: scripted)
   --model <id>             model for an llm brain or the decision agent, any OpenRouter model id
                            (LLM_BASE_URL switches to another OpenAI-compatible endpoint)
@@ -95,6 +100,11 @@ Attacks:
                            trials count, its refusal rules), to predict your hosted result. It
                            fixes --repeats, --controls, --episode-timeout and --held-out-fresh
   --controls <n>           rate: episodes with no attack (default: 2); controls: how many (default: 24)
+  --s1-pairs <n>           rate only: clean/manipulated pairs per S1 market-data seed, folded into
+                           the security grade (default: 2; 0 for a remote agent, as hosted ratings
+                           don't run S1 yet). The memory battery runs too when the agent keeps
+                           notes Bonded can read and reset (memory-bot)
+  --no-s1                  rate only: skip the S1 battery (same as --s1-pairs 0)
   --held-out <dir>         rate only: also run the unpublished attacks in this folder (YAML, from
                            pnpm heldout:generate); the report counts them as unpublished
   --list                   list the attack library and exit
@@ -114,7 +124,8 @@ Remote agents (--agent remote, run or rate; and check):
   --public-url <url>       the URL your runner and agent reach the gateway at, when it isn't
                            http://<host>:<port> (e.g. behind a tunnel)
   --runner-wait <s>        how long to wait for the runner to connect (default: 300)
-  --episode-timeout <s>    each episode's time limit (default: 240)
+  --episode-timeout <s>    each episode's time limit (remote agents: default 240; Bonded's own
+                           agents: default 300)
   --name <name>            the agent's name in the report (default: remote/local)
   --held-out-fresh <n>     rate only: variants per attack class made for this rating alone, never
                            reused (default: 1; 0 for none). Used payloads are recorded in
@@ -169,6 +180,8 @@ async function main(): Promise<number> {
       "episode-timeout": { type: "string" },
       name: { type: "string" },
       "held-out-fresh": { type: "string" },
+      "s1-pairs": { type: "string" },
+      "no-s1": { type: "boolean", default: false },
       profile: { type: "string" },
       "held-out-model": { type: "string" },
       "held-out-max-usd": { type: "string", default: "0.25" },
@@ -210,6 +223,8 @@ async function main(): Promise<number> {
       controls: values.controls,
       "episode-timeout": values["episode-timeout"],
       "held-out-fresh": values["held-out-fresh"],
+      ...(values["no-s1"] ? { "s1-pairs": "0" } : {}),
+      ...(values["s1-pairs"] !== undefined ? { "s1-pairs": values["s1-pairs"] } : {}),
     },
     { remote, command },
   );
@@ -284,6 +299,9 @@ async function main(): Promise<number> {
         episodes: positiveInt(values.controls ?? "24", "--controls"),
         ...(vault ? { vault } : {}),
         ...(values["max-usd"] ? { maxUsd: Number(values["max-usd"]) } : {}),
+        // Bonded's own agents: --episode-timeout sets each episode's limit (a remote agent's is
+        // set on its gateway above). Without it, the default 5 minutes.
+        ...ownAgentTimeout(values, settings, remote),
         ...(fallbackPrice ? { fallbackPrice } : {}),
         outDir,
         onEpisode: (r, i, total) =>
@@ -367,10 +385,15 @@ async function main(): Promise<number> {
         ...(fresh ? { heldOut: fresh.heldOut } : {}),
         repeats: settings.repeats,
         controls: settings.controls,
+        // The S1 market-data battery, on by default (see cli-profile.ts), and the memory battery
+        // whenever the agent keeps notes Bonded can read and wipe. Both feed the security grade only.
+        ...(settings.s1Pairs > 0 ? { s1: { seeds: loadS1Seeds(), pairs: settings.s1Pairs } } : {}),
+        ...(isMemoryCapable(agent) ? { memory: { seeds: loadMemorySeeds(), rounds: 1 } } : {}),
         ...(settings.exercise ? { exercise: settings.exercise } : {}),
         ...(settings.attackLiveness ? { attackLiveness: settings.attackLiveness } : {}),
         ...(vault ? { vault } : {}),
         ...(values["max-usd"] ? { maxUsd: Number(values["max-usd"]) } : {}),
+        ...ownAgentTimeout(values, settings, remote),
         ...(fallbackPrice ? { fallbackPrice } : {}),
         outDir,
         onEpisode: (r, i, total) =>
@@ -669,6 +692,9 @@ function buildAgent(values: {
     case "decision":
       if (sentinel.length) throw new Error("--sentinel-model works with vulnerable or hardened");
       return new DecisionModelAgent(new LlmDecisionModel(llm));
+    case "memory-bot":
+      if (sentinel.length) throw new Error("--sentinel-model works with vulnerable or hardened");
+      return new MemoryBotAgent(llm);
     case "agentkit":
     case "solana-agent-kit": {
       const model = values.model ?? DEFAULT_AGENT_MODEL;
@@ -679,7 +705,7 @@ function buildAgent(values: {
     }
     default:
       throw new Error(
-        `unknown agent ${values.agent} (vulnerable, hardened, partial, decision, agentkit or solana-agent-kit)`,
+        `unknown agent ${values.agent} (vulnerable, hardened, partial, decision, agentkit, solana-agent-kit or memory-bot)`,
       );
   }
 }

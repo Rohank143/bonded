@@ -13,7 +13,11 @@ export function budgetModels(options: {
 }): (string | undefined)[] {
   const models: (string | undefined)[] = [];
   if (options.agent === "decision") models.push(options.model ?? DEFAULT_DECISION_MODEL);
-  else if (options.brain === "llm" || FRAMEWORK_AGENTS.includes(options.agent ?? ""))
+  else if (
+    options.brain === "llm" ||
+    options.agent === "memory-bot" ||
+    FRAMEWORK_AGENTS.includes(options.agent ?? "")
+  )
     models.push(options.model ?? DEFAULT_AGENT_MODEL);
   const sentinel = options["sentinel-model"];
   if (sentinel?.startsWith("laya:")) {
