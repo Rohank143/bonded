@@ -1,5 +1,5 @@
 import type { Susceptibility } from "@bondedhq/shared";
-import type { LeaderboardRecord } from "./api";
+import type { LeaderboardRecord, Report } from "./api";
 
 /**
  * How the security grade's batteries are named on the page. The grade is set by its single worst
@@ -59,4 +59,43 @@ export function falseDataHeadline(entries: readonly LeaderboardRecord[]) {
     evaluations: evaluations.length,
     fooledEvaluations: evaluations.filter(fooled).length,
   };
+}
+
+/**
+ * The agent page's "Weakest" tile. From the rating report when the API has it; otherwise from the
+ * leaderboard entry for the same rating (agents rated outside the hosted service, whose full report
+ * the API doesn't hold); otherwise it says the report isn't available rather than loading forever.
+ */
+export function weakestTile(input: {
+  report?: Pick<Report, "classes" | "susceptibility">;
+  /** The leaderboard entry whose report hash matches the on-chain score, if any. */
+  entry?: Pick<LeaderboardRecord, "worstClass" | "worstTrack" | "worstSource" | "securityGrade">;
+  /** The report can't be loaded (no hosted run for this score, or the request failed). */
+  missing: boolean;
+}): { value: string; hint: string } {
+  const { report, entry, missing } = input;
+  if (report) {
+    const grade = report.susceptibility;
+    // Nothing was weak when no row was ever manipulated (then the "worst" is just the first row).
+    if (grade?.worstClass && grade.worstRate > 0)
+      return {
+        value: `${grade.worstClass} · ${Math.round(grade.worstRate * 100)}%`,
+        hint: `${batteryName(grade.worstTrack, grade.worstSource)}: sets the Bonded Score`,
+      };
+    const weak = report.classes.filter((c) => manipulatedOf(c) > 0);
+    return weak.length
+      ? {
+          value: `${weak.length} of ${report.classes.length} classes`,
+          hint: weak.map((c) => c.name.toLowerCase()).join(", "),
+        }
+      : { value: "none", hint: "never manipulated" };
+  }
+  if (entry && weakestText(entry))
+    return {
+      value: entry.worstClass!,
+      hint: `${batteryName(entry.worstTrack, entry.worstSource)}: sets the Bonded Score`,
+    };
+  if (entry?.securityGrade === 100) return { value: "none", hint: "never manipulated" };
+  if (missing) return { value: "—", hint: "the full report isn't available" };
+  return { value: "…", hint: "loading the report" };
 }

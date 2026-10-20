@@ -26,7 +26,7 @@ import { UseYourVault } from "../components/framework-questions";
 import { byoaApi } from "../lib/byoa-api";
 import { BreachEvidenceList, TopFixes } from "../components/report-actions";
 import { BatteryTables } from "../components/battery-tables";
-import { batteryName, manipulatedOf, weakestRow } from "../lib/security";
+import { manipulatedOf, weakestRow, weakestTile } from "../lib/security";
 import { evidenceOf, topFixes } from "../lib/report-actions";
 import { ModuleCover } from "../components/module-cover";
 import { BindingLine } from "../components/connect-agent";
@@ -94,6 +94,9 @@ export function Agent() {
     queryFn: () => api.run(score.data!.runId),
     enabled: Boolean(score.data?.runId),
   });
+  // Agents rated outside the hosted service (the leaderboard's) have no hosted run to load: their
+  // weakest row comes from the leaderboard entry for the same rating.
+  const board = useQuery({ queryKey: ["leaderboard"], queryFn: api.leaderboard, enabled: valid });
   const liveCheck = useQuery({
     queryKey: ["tee", id],
     queryFn: () => api.tee(id),
@@ -152,14 +155,14 @@ export function Agent() {
   // not the vault then stopped it): what the Bonded Score measures. Older reports: breaches.
   const weak = report?.classes.filter((c) => manipulatedOf(c) > 0) ?? [];
   const grade = report?.susceptibility;
-  // Nothing was weak when no row was ever manipulated (then the "worst" is just the first row).
-  const weakest =
-    grade?.worstClass && grade.worstRate > 0
-      ? {
-          value: `${grade.worstClass} · ${Math.round(grade.worstRate * 100)}%`,
-          hint: `${batteryName(grade.worstTrack, grade.worstSource)}: sets the Bonded Score`,
-        }
-      : null;
+  const entry = board.data?.entries.find(
+    (e) => a && e.reportHash.toLowerCase() === a.reportHash.toLowerCase(),
+  );
+  const weakest = weakestTile({
+    ...(report ? { report } : {}),
+    ...(entry ? { entry } : {}),
+    missing: run.isError || score.isError,
+  });
   // Ratings that count only exercised trials (operator-run agents) report them per class.
   const exercisedShown = Boolean(report?.classes.some((c) => c.exercised !== undefined));
   const untested = new Set(untestedClasses(report));
@@ -262,27 +265,7 @@ export function Agent() {
               value={bond?.result !== undefined ? `$${usd(bond.result, 0)}` : "…"}
               hint="pays first on a claim"
             />
-            <Tile
-              label="Weakest"
-              value={
-                weakest
-                  ? weakest.value
-                  : report
-                    ? weak.length
-                      ? `${weak.length} of ${report.classes.length} classes`
-                      : "none"
-                    : "…"
-              }
-              hint={
-                weakest
-                  ? weakest.hint
-                  : report
-                    ? weak.length
-                      ? weak.map((c) => c.name.toLowerCase()).join(", ")
-                      : "never manipulated"
-                    : "loading the report"
-              }
-            />
+            <Tile label="Weakest" value={weakest.value} hint={weakest.hint} />
             <Tile
               label={<Term term="tee">Key custody</Term>}
               value={tee.inTee ? "TEE" : "Operator"}
