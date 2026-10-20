@@ -38,17 +38,17 @@ The agents in this repo mix two brains with an optional **guard**: code that che
 
 ## The agents
 
-All on Robinhood Chain testnet (chain 46630), on the contracts deployed Oct 10, 2026. Scores are what the registry holds; each agent's profile at `https://www.bondedhq.xyz/agents/<id>` shows the full report.
+All on Robinhood Chain testnet (chain 46630), on the contracts deployed Oct 10, 2026. Scores are what the registry holds, except agents 5, 6 and 8 to 11: their 2026-10-19 and 2026-10-20 re-ratings (security grade, then insurance score) are on the [leaderboard](https://www.bondedhq.xyz/leaderboard) and not yet on chain, because the new score format needs a redeployed registry. Each agent's profile at `https://www.bondedhq.xyz/agents/<id>` shows the full report.
 
 | Agent | What it is | Brain | Guard | Vault | Score | What it shows |
 |---|---|---|---|---|---|---|
 | **1** | The Gate 1 agent: the first live agent on these contracts | Hardened (script) | Policy | Monitor, key on the operator's server | 57 (BB) | A clean agent whose score is held down by uncertainty: one run per attack, and an operator-held key. Its cover paid a deliberate breach automatically ([evidence](progress/evidence/gate-1-testnet.json)) |
 | **2** | **Agent B** in the demo | Hardened (script) | Policy | **Enforce**, key generated inside a **TEE** ([docs/TEE.md](TEE.md)) | 97 (AAA) | Best practice: five runs per attack, no breaches, verified key custody |
 | **3** | **Agent A** in the demo | Vulnerable (script) | Policy, **with one gap**: it compares an address by its first 6 and last 4 characters only | Monitor; refunds to the depositor allowed | 54 (BB) | An insurable agent with one measured weakness, which the demo then exploits |
-| **5, 10** | Coinbase AgentKit LangChain chatbot, unchanged | DeepSeek V4.1 Flash / GLM 5.3 Flash | None | Monitor | 81 (AA) / 81 (AA) | Real open-source agents ([leaderboard](https://www.bondedhq.xyz/leaderboard), [disclosures](disclosures/README.md)) |
-| **6** | Bonded hardened agent, as a leaderboard reference | Hardened (script) | Policy | Monitor | 81 (AA) | The same agent as 1, rated like the templates |
-| **8, 11** | Solana Agent Kit LangGraph example, unchanged | DeepSeek V4.1 Flash / GLM 5.3 Flash | None | Monitor | 81 (AA) / 81 (AA) | Real open-source agents |
-| **9** | Bonded vulnerable agent, as a leaderboard reference | Vulnerable (script) | None | Monitor | 2 (CCC), uninsurable | What falling for everything looks like |
+| **5, 10** | Coinbase AgentKit LangChain chatbot, unchanged | DeepSeek V4.1 Flash / GLM 5.3 Flash | None | Monitor | 33, insurance 83 (AA) / 11, insurance 81 (AA) | Real open-source agents ([leaderboard](https://www.bondedhq.xyz/leaderboard), [disclosures](disclosures/README.md)) |
+| **6** | Bonded hardened agent, as a leaderboard reference | Hardened (script) | Policy | Monitor | 100, insurance 83 (AA) | The same agent as 1, rated like the templates |
+| **8, 11** | Solana Agent Kit LangGraph example, unchanged | DeepSeek V4.1 Flash / GLM 5.3 Flash | None | Monitor | 17, insurance 83 (AA) / 11, insurance 82 (AA) | Real open-source agents |
+| **9** | Bonded vulnerable agent, as a leaderboard reference | Vulnerable (script) | None | Monitor | 0, insurance 2 (CCC), uninsurable | What falling for everything looks like |
 
 Agents 4 and 7 hold earlier ratings of the two templates with Claude Haiku 4.5 (2026-10-04); the leaderboard no longer lists them. The templates now run with GLM 5.3 Flash instead: its list price per token is less than a sixth of Haiku 4.5's, and a full rating of 275 episodes cost $0.22 to $0.26 with GLM or DeepSeek (measured from the OpenRouter key's usage).
 
