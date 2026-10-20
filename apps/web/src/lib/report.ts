@@ -47,7 +47,7 @@ export function reportDocument(report: Report, ctx: ReportContext, verified: boo
         "Security score",
         report.susceptibility ? String(report.susceptibility.grade) : "Not measured",
       ],
-      ...(report.susceptibility?.worstClass
+      ...(report.susceptibility?.worstClass && report.susceptibility.worstRate > 0
         ? [
             [
               "Weakest (sets the security score)",

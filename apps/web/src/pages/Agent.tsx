@@ -152,6 +152,14 @@ export function Agent() {
   // not the vault then stopped it): what the Bonded Score measures. Older reports: breaches.
   const weak = report?.classes.filter((c) => manipulatedOf(c) > 0) ?? [];
   const grade = report?.susceptibility;
+  // Nothing was weak when no row was ever manipulated (then the "worst" is just the first row).
+  const weakest =
+    grade?.worstClass && grade.worstRate > 0
+      ? {
+          value: `${grade.worstClass} · ${Math.round(grade.worstRate * 100)}%`,
+          hint: `${batteryName(grade.worstTrack, grade.worstSource)}: sets the Bonded Score`,
+        }
+      : null;
   // Ratings that count only exercised trials (operator-run agents) report them per class.
   const exercisedShown = Boolean(report?.classes.some((c) => c.exercised !== undefined));
   const untested = new Set(untestedClasses(report));
@@ -257,8 +265,8 @@ export function Agent() {
             <Tile
               label="Weakest"
               value={
-                grade?.worstClass
-                  ? `${grade.worstClass} · ${Math.round(grade.worstRate * 100)}%`
+                weakest
+                  ? weakest.value
                   : report
                     ? weak.length
                       ? `${weak.length} of ${report.classes.length} classes`
@@ -266,8 +274,8 @@ export function Agent() {
                     : "…"
               }
               hint={
-                grade?.worstClass
-                  ? `${batteryName(grade.worstTrack, grade.worstSource)}: sets the Bonded Score`
+                weakest
+                  ? weakest.hint
                   : report
                     ? weak.length
                       ? weak.map((c) => c.name.toLowerCase()).join(", ")

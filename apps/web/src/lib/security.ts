@@ -10,13 +10,19 @@ export function batteryName(track?: "s1" | "s2" | null, source?: "memory"): stri
   return "attack library";
 }
 
-/** "Weakest: A8, market data", or null when nothing was weak or the grade predates the field. */
+/**
+ * "Weakest: A8, market data", or null when nothing was weak (a perfect grade: with every row at
+ * 0%, the "worst" is just the first row) or the grade predates the field.
+ */
 export function weakestText(w: {
   worstClass?: string | null;
   worstTrack?: "s1" | "s2" | null;
   worstSource?: "memory";
+  /** A leaderboard entry's grade, or a report's worst rate: either says whether anything was weak. */
+  securityGrade?: number;
+  worstRate?: number;
 }): string | null {
-  if (!w.worstClass) return null;
+  if (!w.worstClass || w.securityGrade === 100 || w.worstRate === 0) return null;
   return `Weakest: ${w.worstClass}, ${batteryName(w.worstTrack, w.worstSource)}`;
 }
 
