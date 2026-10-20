@@ -51,6 +51,42 @@ export interface ForkProxy {
   close(): Promise<void>;
 }
 
+/**
+ * State reads anvil sends at the fork block, with the index of their block parameter. Some RPCs
+ * keep old state only for a while (Robinhood Chain testnet's: about 15 minutes in Oct 2026), and a
+ * rating reads state lazily for longer than that, so a slot first read late fails with "historical
+ * state … is not available". Those reads are asked again at the latest block: a slot nothing has
+ * written since the fork reads the same, and one that changed reads its newer value.
+ */
+const STATE_READS: Record<string, number> = {
+  eth_getBalance: 1,
+  eth_getCode: 1,
+  eth_getTransactionCount: 1,
+  eth_getStorageAt: 2,
+};
+const STATE_GONE = /historical state|missing trie node/i;
+
+interface RpcRequest {
+  jsonrpc?: string;
+  id?: unknown;
+  method?: string;
+  params?: unknown[];
+}
+interface RpcResponse {
+  id?: unknown;
+  error?: { message?: string };
+}
+
+/** The request asked again at the latest block, if it is a state read whose state was gone. */
+function atLatest(request: RpcRequest, response: RpcResponse | undefined): RpcRequest | undefined {
+  const at = request.method ? STATE_READS[request.method] : undefined;
+  if (at === undefined || !Array.isArray(request.params) || request.params.length <= at) return;
+  if (!STATE_GONE.test(response?.error?.message ?? "")) return;
+  const params = [...request.params];
+  params[at] = "latest";
+  return { ...request, params };
+}
+
 /** Starts the proxy on a free local port, forwarding to `upstream` within `budget`. */
 export async function startForkProxy(upstream: string, budget: ForkBudget): Promise<ForkProxy> {
   let forwarded = 0;
@@ -81,6 +117,41 @@ export async function startForkProxy(upstream: string, budget: ForkBudget): Prom
     return turn;
   };
 
+  // Asks again at the latest block the state reads whose state was gone, and puts their answers
+  // in place of the errors. Returns undefined when there is nothing to retry. The retries count
+  // against the overall ceiling and are paced, but aren't charged to the agent's scope: they are
+  // the RPC's shortfall, not more reads.
+  const retryAtLatest = async (
+    parsed: unknown,
+    bytes: Buffer,
+    send: (payload: string) => Promise<Response>,
+  ): Promise<Buffer | undefined> => {
+    if (parsed === undefined) return;
+    let answer: unknown;
+    try {
+      answer = JSON.parse(bytes.toString("utf8")) as unknown;
+    } catch {
+      return;
+    }
+    const requests = (Array.isArray(parsed) ? parsed : [parsed]) as RpcRequest[];
+    const answers = (Array.isArray(answer) ? answer : [answer]) as RpcResponse[];
+    const byId = new Map(answers.map((a) => [JSON.stringify(a?.id ?? null), a]));
+    const again = requests
+      .map((r) => atLatest(r, byId.get(JSON.stringify(r?.id ?? null))))
+      .filter((r): r is RpcRequest => r !== undefined);
+    if (again.length === 0 || forwarded + again.length > budget.total) return;
+    forwarded += again.length;
+    await pace(again.length);
+    // A single request is asked again on its own, in case the RPC takes no batches.
+    const response = await send(JSON.stringify(Array.isArray(parsed) ? again : again[0]));
+    if (!response.ok) return;
+    const retried = (await response.json()) as RpcResponse | RpcResponse[];
+    for (const a of Array.isArray(retried) ? retried : [retried])
+      byId.set(JSON.stringify(a?.id ?? null), a);
+    const merged = answers.map((a) => byId.get(JSON.stringify(a?.id ?? null)) ?? a);
+    return Buffer.from(JSON.stringify(Array.isArray(answer) ? merged : merged[0]));
+  };
+
   const server: Server = createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -88,8 +159,9 @@ export async function startForkProxy(upstream: string, budget: ForkBudget): Prom
       void (async () => {
         const body = Buffer.concat(chunks).toString("utf8");
         let cost = 1;
+        let parsed: unknown;
         try {
-          const parsed = JSON.parse(body) as unknown;
+          parsed = JSON.parse(body) as unknown;
           if (Array.isArray(parsed)) cost = Math.max(1, parsed.length);
         } catch {
           // Not JSON: forwarded as one request, and the upstream answers it.
@@ -115,17 +187,21 @@ export async function startForkProxy(upstream: string, budget: ForkBudget): Prom
           return refuse("the fork's budget of live-chain requests is spent");
         forwarded += cost;
         await pace(cost);
-        try {
-          const response = await fetch(upstream, {
+        const send = (payload: string) =>
+          fetch(upstream, {
             method: "POST",
             headers: { "content-type": req.headers["content-type"] ?? "application/json" },
-            body,
+            body: payload,
             signal: AbortSignal.timeout(30_000),
           });
+        try {
+          const response = await send(body);
+          const bytes = Buffer.from(await response.arrayBuffer());
+          const retried = response.ok ? await retryAtLatest(parsed, bytes, send) : undefined;
           res.writeHead(response.status, {
             "content-type": response.headers.get("content-type") ?? "application/json",
           });
-          res.end(Buffer.from(await response.arrayBuffer()));
+          res.end(retried ?? bytes);
         } catch {
           res.writeHead(502).end();
         }
