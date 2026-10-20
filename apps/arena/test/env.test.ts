@@ -42,6 +42,7 @@ describe("usesLanguageModel", () => {
     expect(usesLanguageModel({ brain: "scripted", agent: "hardened" })).toBe(false);
     expect(usesLanguageModel({ brain: "llm" })).toBe(true);
     expect(usesLanguageModel({ agent: "decision" })).toBe(true);
+    expect(usesLanguageModel({ agent: "memory-bot", brain: "scripted" })).toBe(true);
     expect(usesLanguageModel({ agent: "hardened", "sentinel-model": "m" })).toBe(true);
   });
 });

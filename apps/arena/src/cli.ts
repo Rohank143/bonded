@@ -15,6 +15,7 @@ import {
   DecisionModelSentinel,
   LayaSentinel,
   LlmDecisionModel,
+  MemoryBotAgent,
   SentinelGuard,
   SolanaAgentKitAgent,
 } from "@bonded/demo-agents";
@@ -66,12 +67,13 @@ const USAGE = `Usage:
                                                      (no score). Takes the remote agent options
 
 Agent:
-  --agent <vulnerable|hardened|partial|decision|agentkit|solana-agent-kit|remote>
+  --agent <vulnerable|hardened|partial|decision|agentkit|solana-agent-kit|memory-bot|remote>
                            agent to test (default: vulnerable). agentkit and solana-agent-kit run
                            those frameworks' template agents with the Arena's tools (needs
                            OPENROUTER_API_KEY; --model picks the model). remote rates your own
                            agent wherever it runs, through the Arena Gateway and @bondedhq/runner
-                           (see "Remote agents" below)
+                           (see "Remote agents" below). memory-bot keeps notes between sessions
+                           and always uses a model (--model picks it)
   --brain <scripted|llm>   scripted needs nothing; llm needs OPENROUTER_API_KEY (default: scripted)
   --model <id>             model for an llm brain or the decision agent, any OpenRouter model id
                            (LLM_BASE_URL switches to another OpenAI-compatible endpoint)
@@ -690,6 +692,9 @@ function buildAgent(values: {
     case "decision":
       if (sentinel.length) throw new Error("--sentinel-model works with vulnerable or hardened");
       return new DecisionModelAgent(new LlmDecisionModel(llm));
+    case "memory-bot":
+      if (sentinel.length) throw new Error("--sentinel-model works with vulnerable or hardened");
+      return new MemoryBotAgent(llm);
     case "agentkit":
     case "solana-agent-kit": {
       const model = values.model ?? DEFAULT_AGENT_MODEL;
@@ -700,7 +705,7 @@ function buildAgent(values: {
     }
     default:
       throw new Error(
-        `unknown agent ${values.agent} (vulnerable, hardened, partial, decision, agentkit or solana-agent-kit)`,
+        `unknown agent ${values.agent} (vulnerable, hardened, partial, decision, agentkit, solana-agent-kit or memory-bot)`,
       );
   }
 }

@@ -26,12 +26,22 @@ describe("arena rate --profile", () => {
     expect(rateSettings(undefined, {}, own).s1Pairs).toBe(2);
     expect(rateSettings(undefined, { "s1-pairs": "0" }, own).s1Pairs).toBe(0);
     expect(rateSettings(undefined, { "s1-pairs": "4" }, own).s1Pairs).toBe(4);
-    expect(rateSettings(undefined, { "s1-pairs": "2" }, rate).s1Pairs).toBe(2);
+    expect(() => rateSettings(undefined, { "s1-pairs": "2" }, rate)).toThrow(
+      /remote ratings currently run S2 only/,
+    );
+    expect(rateSettings(undefined, { "s1-pairs": "0" }, rate).s1Pairs).toBe(0);
     expect(() => rateSettings(undefined, { "s1-pairs": "-1" }, own)).toThrow(/--s1-pairs/);
     expect(describeProfile(rateSettings(undefined, {}, own))).toMatch(
       /S1 market-data battery at 2 pairs/,
     );
     expect(describeProfile(rateSettings(undefined, {}, rate))).toMatch(/no S1 battery/);
+  });
+
+  it("reports the effective timeout for built-in ratings and accepts an override", () => {
+    const own = { remote: false, command: "rate" };
+    expect(rateSettings(undefined, {}, own).episodeTimeoutMs).toBe(300_000);
+    expect(describeProfile(rateSettings(undefined, {}, own))).toContain("300 s episodes");
+    expect(rateSettings(undefined, { "episode-timeout": "1" }, own).episodeTimeoutMs).toBe(1000);
   });
 
   it("runs what a hosted rating runs: 3 repeats, 90 s episodes, 6 controls, exposed trials, refusals", () => {

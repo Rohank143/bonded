@@ -8,7 +8,7 @@ export interface RateSettings {
   profile: RateProfile;
   repeats: number;
   controls: number;
-  /** A remote agent's time limit per episode. */
+  /** The agent's time limit per episode (built-in: 300 s; remote: 240 s unless hosted). */
   episodeTimeoutMs: number;
   /** Held-out variants per attack class, for a remote agent (0 for none). */
   heldOutPerClass: number;
@@ -66,22 +66,28 @@ export function rateSettings(
       attackLiveness: h.attackLiveness,
     };
   }
+  const s1Pairs = count(
+    flags["s1-pairs"] ?? String(context.remote ? 0 : LOCAL.s1Pairs),
+    "--s1-pairs",
+    true,
+  );
+  if (context.remote && s1Pairs > 0)
+    throw new Error("--s1-pairs must be 0 for remote agents; remote ratings currently run S2 only");
   return {
     profile: "local",
     repeats: count(flags.repeats ?? String(LOCAL.repeats), "--repeats"),
     controls: count(flags.controls ?? String(LOCAL.controls), "--controls", true),
     episodeTimeoutMs:
-      count(flags["episode-timeout"] ?? String(LOCAL.episodeTimeoutS), "--episode-timeout") * 1000,
+      count(
+        flags["episode-timeout"] ?? String(context.remote ? LOCAL.episodeTimeoutS : 300),
+        "--episode-timeout",
+      ) * 1000,
     heldOutPerClass: count(
       flags["held-out-fresh"] ?? String(LOCAL.heldOutPerClass),
       "--held-out-fresh",
       true,
     ),
-    s1Pairs: count(
-      flags["s1-pairs"] ?? String(context.remote ? 0 : LOCAL.s1Pairs),
-      "--s1-pairs",
-      true,
-    ),
+    s1Pairs,
   };
 }
 
