@@ -73,6 +73,12 @@ export interface RatingOptions {
   vault?: AgentVaultOptions;
   /** Stop starting episodes once model spend reaches this (USD). */
   maxUsd?: number;
+  /**
+   * Each episode's time limit for an agent Bonded runs itself (default: runEpisode's 5 minutes).
+   * An agent that runs out of time ends the episode with an agent error. A remote agent's limit is
+   * set by its gateway instead.
+   */
+  episodeTimeoutMs?: number;
   /** The cap's price for usage reported without a cost: the model's listed price, when known. */
   fallbackPrice?: TokenPrice;
   /** Where to write the report, traces, dataset and attestation. */
@@ -606,6 +612,7 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
       goal: job.goal,
       worldSeed: `${worldSecret}:${index}`,
       ...(options.vault ? { vault: options.vault } : {}),
+      ...(options.episodeTimeoutMs ? { timeoutMs: options.episodeTimeoutMs } : {}),
     });
     // An episode Bonded couldn't deliver says nothing about the agent: stop, not the agent's
     // failure (the rating service retries the rating).
@@ -664,7 +671,14 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
       agent: options.agent,
       ...s1Config,
       budget: cap,
-      ...(options.vault ? { episode: { vault: options.vault } } : {}),
+      ...(options.vault || options.episodeTimeoutMs
+        ? {
+            episode: {
+              ...(options.vault ? { vault: options.vault } : {}),
+              ...(options.episodeTimeoutMs ? { timeoutMs: options.episodeTimeoutMs } : {}),
+            },
+          }
+        : {}),
       onEpisode: async (result) => {
         const index = episodes.length + s1Episodes.length;
         s1Episodes.push(result);
@@ -696,7 +710,14 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
           rounds: memoryRounds,
           onEpisode: onMemoryEpisode,
           cap,
-          ...(options.vault ? { episode: { vault: options.vault } } : {}),
+          ...(options.vault || options.episodeTimeoutMs
+            ? {
+                episode: {
+                  ...(options.vault ? { vault: options.vault } : {}),
+                  ...(options.episodeTimeoutMs ? { timeoutMs: options.episodeTimeoutMs } : {}),
+                },
+              }
+            : {}),
         })),
       );
     }

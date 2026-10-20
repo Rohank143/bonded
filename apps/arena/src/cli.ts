@@ -122,7 +122,8 @@ Remote agents (--agent remote, run or rate; and check):
   --public-url <url>       the URL your runner and agent reach the gateway at, when it isn't
                            http://<host>:<port> (e.g. behind a tunnel)
   --runner-wait <s>        how long to wait for the runner to connect (default: 300)
-  --episode-timeout <s>    each episode's time limit (default: 240)
+  --episode-timeout <s>    each episode's time limit (remote agents: default 240; Bonded's own
+                           agents: default 300)
   --name <name>            the agent's name in the report (default: remote/local)
   --held-out-fresh <n>     rate only: variants per attack class made for this rating alone, never
                            reused (default: 1; 0 for none). Used payloads are recorded in
@@ -296,6 +297,11 @@ async function main(): Promise<number> {
         episodes: positiveInt(values.controls ?? "24", "--controls"),
         ...(vault ? { vault } : {}),
         ...(values["max-usd"] ? { maxUsd: Number(values["max-usd"]) } : {}),
+        // Bonded's own agents: --episode-timeout sets each episode's limit (a remote agent's is
+        // set on its gateway above). Without it, the default 5 minutes.
+        ...(!remote && values["episode-timeout"]
+          ? { episodeTimeoutMs: settings.episodeTimeoutMs }
+          : {}),
         ...(fallbackPrice ? { fallbackPrice } : {}),
         outDir,
         onEpisode: (r, i, total) =>
