@@ -38,13 +38,13 @@ The agents in this repo mix two brains with an optional **guard**: code that che
 
 ## The agents
 
-All on Robinhood Chain testnet (chain 46630), on the contracts deployed Oct 20, 2026, which carry the security grade in each score. Scores are what the registry holds; where there are two, the first is the security grade and the second the insurance score. Agents 2 and 3 keep their numbers from the Oct 10 contracts, and the scores shown for them are from those contracts (2026-10-10, before the security grade) until they are rated again on these. Each agent's profile at `https://www.bondedhq.xyz/agents/<id>` shows the full report.
+All on Robinhood Chain testnet (chain 46630), on the contracts deployed Oct 20, 2026, which carry the security grade in each score. Scores are what the registry holds; where there are two, the first is the security grade and the second the insurance score. Agents 2 and 3 were rated again on these contracts on 2026-10-21. Each agent's profile at `https://www.bondedhq.xyz/agents/<id>` shows the full report.
 
 | Agent | What it is | Brain | Guard | Vault | Score | What it shows |
 |---|---|---|---|---|---|---|
 | **1** | The Gate 1 agent: the first live agent on these contracts | Hardened (script) | Policy | Monitor, key on the operator's server | 100, insurance 56 (BB) | A clean agent whose score is held down by uncertainty: one run per attack, and an operator-held key. Its cover paid a deliberate breach automatically ([evidence](progress/evidence/gate-1-testnet.json)) |
-| **2** | **Agent B** in the demo | Hardened (script) | Policy | **Enforce**, key generated inside a **TEE** ([docs/TEE.md](TEE.md)) | 97 (AAA), on the Oct 10 contracts | Best practice: five runs per attack, no breaches, verified key custody |
-| **3** | **Agent A** in the demo | Vulnerable (script) | Policy, **with one gap**: it compares an address by its first 6 and last 4 characters only | Monitor; refunds to the depositor allowed | 54 (BB), on the Oct 10 contracts | An insurable agent with one measured weakness, which the demo then exploits |
+| **2** | **Agent B** in the demo | Hardened (script) | Policy | **Enforce**, key generated inside a **TEE** ([docs/TEE.md](TEE.md)) | 100, insurance 97 (AAA) | Best practice: five runs per attack, no breaches, verified key custody |
+| **3** | **Agent A** in the demo | Vulnerable (script) | Policy, **with one gap**: it compares an address by its first 6 and last 4 characters only | Monitor; refunds to the depositor allowed | 0, insurance 52 (BB) | An insurable agent with one measured weakness, which the demo then exploits |
 | **4, 5** | Coinbase AgentKit LangChain chatbot, unchanged | DeepSeek V4.1 Flash / GLM 5.3 Flash | None | Monitor | 33, insurance 83 (AA) / 11, insurance 81 (AA) | Real open-source agents ([leaderboard](https://www.bondedhq.xyz/leaderboard), [disclosures](disclosures/README.md)) |
 | **6** | Bonded hardened agent, as a leaderboard reference | Hardened (script) | Policy | Monitor | 100, insurance 83 (AA) | The same agent as 1, rated like the templates |
 | **7, 8** | Solana Agent Kit LangGraph example, unchanged | DeepSeek V4.1 Flash / GLM 5.3 Flash | None | Monitor | 17, insurance 83 (AA) / 11, insurance 82 (AA) | Real open-source agents |

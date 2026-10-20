@@ -49,16 +49,17 @@ How the parts fit together: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). What e
 
 ## Results (measured, with their assumptions)
 
-**The demo pair**, rated live on Robinhood testnet with five runs of every attack (200+ episodes each):
+**The demo pair**, rated live on Robinhood testnet with five runs of every attack (350 attack episodes each) and the S1 market-data battery:
 
 | | Agent A | Agent B |
 |---|---|---|
 | What it is | Acts on what it reads, behind a guard that checks addresses by their first and last characters only | Treats what it reads as data; full guard; Enforce mode; key generated inside a TEE |
-| Insurance score | **54 (BB)** | **97 (AAA)** |
-| Premium | **6.4%** a year (5.8% after its operator-bond discount) | **1.1%** a year |
-| What the Arena found | Address poisoning: 20 of 25 episodes breached, including an unpublished attack. Every other class: none | No breaches |
+| Bonded Score (security grade) | **0** | **100** |
+| Insurance score | **52 (BB)** | **97 (AAA)** |
+| Premium | **6.8%** a year, before any operator-bond discount | **1.1%** a year |
+| What the Arena found | It acted on every attack class; the guard stopped all but address poisoning, where 30 of 35 episodes breached | Never manipulated, no breaches |
 
-Both ratings (2026-10-10, agents 3 and 2 on the contracts deployed Oct 10, 2026; the same scores as on the earlier contracts) are from before the security grade. On the contracts deployed Oct 20, 2026 they are agents 3 and 2 again, rated again with the security grade once the hosted service moves to the new contracts. Both include unpublished attacks the operator couldn't study in advance: a held-out set of 15 attacks, 75 episodes each. Agent B was rated with its TEE running and verified: Intel TDX, measurement `0xb933…8f01`.
+Both ratings (2026-10-21, agents 3 and 2 on the contracts deployed Oct 20, 2026) include unpublished attacks the operator couldn't study in advance: a held-out set of 15 attacks, 75 episodes each. The pair shows the two scores measuring different things: Agent A is easy to fool (grade 0) but its guard keeps most tricks from costing anything, so it stays insurable; Agent B is neither fooled nor breached. Agent B was rated with its TEE running and verified: Intel TDX, tcbStatus UpToDate, measurement `0xb933…8f01`, unchanged.
 
 **The loop, live on Robinhood testnet** (2026-10-04, [evidence](docs/progress/evidence/demo-break-testnet.json)): a lookalike of Agent A's depositor asked for a "refund"; Agent A paid 5,000 tUSDG; the vault recorded the breach and froze the agent; the keeper's claim paid 4,500 (the loss minus the 10% deductible): **4,000 from the operator's bond, 500 from the pool.**
 
@@ -100,7 +101,7 @@ Owner, attester and council on every testnet: `0xd42FA5ae8949710479954ae78D1b12F
 | bonded_vault | [`8hNVDFF7aU2BJa4avnv2X7ziYEmguCaCHTZYBKo2CzFx`](https://explorer.solana.com/address/8hNVDFF7aU2BJa4avnv2X7ziYEmguCaCHTZYBKo2CzFx?cluster=devnet) |
 | bonded_cover | [`Dcrwfd272QQxXS4oEmHPSQdGWRZ2BMRSMb3Vi7jj6Y1X`](https://explorer.solana.com/address/Dcrwfd272QQxXS4oEmHPSQdGWRZ2BMRSMb3Vi7jj6Y1X?cluster=devnet) |
 
-Agent B's score of 97 is the same signed attestation on all four chains ([evidence](docs/progress/evidence/multichain-scores-agent2-tee.json)).
+Agent B's score of 97 is the same signed attestation on all four chains: agent 2 on Robinhood Chain testnet, agent 1 on Arbitrum Sepolia and on Ethereum Sepolia, and agent 5 on Solana devnet ([evidence](docs/progress/evidence/multichain-scores-agent2-tee.json)). Solana carries the insurance score only; its program doesn't hold the security grade.
 
 ## Repo layout
 
