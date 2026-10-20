@@ -42,9 +42,20 @@ LOCK="${TMPDIR:-/tmp}/rate-live-tee-$CVM_NAME.lock"
 mkdir "$LOCK" 2>/dev/null || { echo "Another run is in progress (remove $LOCK if it is stale)." >&2; exit 1; }
 
 status() { phala cvms get "$CVM_NAME" --json | python3 -c 'import sys,json;print(json.load(sys.stdin)["status"])'; }
+# Stop the VM and check that it stopped, retrying: a VM left running bills by the hour, and one
+# failed call (a dropped connection, the VM still busy) must not leave it on.
 stop_vm() {
-  echo "Stopping $CVM_NAME so it stops billing…"
-  phala cvms stop "$CVM_NAME" >/dev/null 2>&1 || echo "Could not stop it. Run: phala cvms stop $CVM_NAME" >&2
+  echo "Stopping ${CVM_NAME} so it stops billing…"
+  for attempt in 1 2 3 4 5; do
+    phala cvms stop "$CVM_NAME" >/dev/null 2>&1 || true
+    for _ in $(seq 1 12); do
+      [ "$(status 2>/dev/null || true)" = stopped ] && { echo "Stopped."; return 0; }
+      sleep 5
+    done
+    echo "  not stopped yet (attempt $attempt of 5), trying again" >&2
+  done
+  echo "COULD NOT STOP ${CVM_NAME}: it is still billing. Run: phala cvms stop $CVM_NAME" >&2
+  return 1
 }
 trap 'stop_vm; rmdir "$LOCK" 2>/dev/null || true' EXIT
 
@@ -66,9 +77,28 @@ run="$(printf 'Authorization: Bearer %s\nContent-Type: application/json\n' "$API
 RUN_ID="$(printf %s "$run" | python3 -c 'import sys,json;print(json.load(sys.stdin)["runId"])')"
 echo "Rating run $RUN_ID started."
 
+# One poll of the run's status, or nothing when the API didn't answer with it (a dropped
+# connection, an empty or non-JSON reply). Never fails, so `set -e` can't end the script mid-run.
+poll() {
+  curl -sf -m 30 "$API_URL/arena/runs/$RUN_ID" 2>/dev/null |
+    python3 -c 'import sys,json;d=json.load(sys.stdin);print(d["status"], d.get("error") or "")' 2>/dev/null || true
+}
+
 state=""
+misses=0
 for _ in $(seq 1 120); do
-  state="$(curl -sf -m 30 "$API_URL/arena/runs/$RUN_ID" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d["status"], d.get("error") or "")')"
+  polled="$(poll)"
+  if [ -z "$polled" ]; then
+    # A missed poll says nothing about the run, which goes on in the API: try again, and only
+    # give up after several in a row.
+    misses=$((misses + 1))
+    echo "  (no answer from the API, $misses in a row)"
+    [ "$misses" -lt 8 ] || { echo "The API stopped answering. Run $RUN_ID may still finish: check it before trying again." >&2; exit 1; }
+    sleep 15
+    continue
+  fi
+  misses=0
+  state="$polled"
   echo "  $state"
   case "$state" in
     done*) break ;;
@@ -82,9 +112,9 @@ curl -sf -m 30 "$API_URL/arena/runs/$RUN_ID" | python3 -c '
 import sys,json
 r=json.load(sys.stdin)["report"]
 print("score", r["scoring"]["score"], r["scoring"]["tier"])
-print("tee  ", r.get("tee"))'
+print("tee  ", r.get("tee"))' || echo "Could not read run $RUN_ID's report; the rating itself is done." >&2
 curl -sf -m 30 "$API_URL/agents/$AGENT_ID/score" | python3 -c '
 import sys,json
 d=json.load(sys.stdin)
 print("posted tx", d["tx_hash"])
-print("on-chain teeMeasurement", d["signed"]["attestation"]["teeMeasurement"])'
+print("on-chain teeMeasurement", d["signed"]["attestation"]["teeMeasurement"])' || echo "Could not read agent $AGENT_ID's posted score." >&2
