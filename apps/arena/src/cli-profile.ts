@@ -85,6 +85,19 @@ export function rateSettings(
   };
 }
 
+/**
+ * The episode time limit to pass to `rateAgent` / `runControls` for one of Bonded's own agents:
+ * the `--episode-timeout` value when given, else nothing (episode.ts's 5-minute default). A remote
+ * agent's limit is set on its gateway instead, so it gets nothing here.
+ */
+export function ownAgentTimeout(
+  flags: RateFlags,
+  settings: RateSettings,
+  remote: boolean,
+): { episodeTimeoutMs?: number } {
+  return !remote && flags["episode-timeout"] ? { episodeTimeoutMs: settings.episodeTimeoutMs } : {};
+}
+
 /** The profile in a line, for the CLI to print before it rates. */
 export function describeProfile(s: RateSettings): string {
   if (s.profile === "local")

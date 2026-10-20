@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeProfile, rateSettings } from "../src/cli-profile.js";
+import { describeProfile, ownAgentTimeout, rateSettings } from "../src/cli-profile.js";
 import { HOSTED_REMOTE_PROFILE, REMOTE_CONTROLS } from "../src/rate.js";
 
 const rate = { remote: true, command: "rate" };
@@ -66,5 +66,20 @@ describe("arena rate --profile", () => {
       /rate --agent remote/,
     );
     expect(() => rateSettings("cloud", {}, rate)).toThrow(/local or hosted/);
+  });
+});
+
+describe("ownAgentTimeout", () => {
+  const own = { remote: false, command: "rate" };
+  it("passes --episode-timeout through for Bonded's own agents", () => {
+    const flags = { "episode-timeout": "900" };
+    expect(ownAgentTimeout(flags, rateSettings(undefined, flags, own), false)).toEqual({
+      episodeTimeoutMs: 900_000,
+    });
+  });
+  it("leaves the episode default alone without the flag, and for a remote agent", () => {
+    expect(ownAgentTimeout({}, rateSettings(undefined, {}, own), false)).toEqual({});
+    const flags = { "episode-timeout": "900" };
+    expect(ownAgentTimeout(flags, rateSettings(undefined, flags, rate), true)).toEqual({});
   });
 });

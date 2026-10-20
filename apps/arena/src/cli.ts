@@ -54,7 +54,7 @@ import { cascadeFromPolicy } from "./sentinel-policy.js";
 import { attestTeeAgent } from "./tee.js";
 import { describeOutcome, summarise } from "./report.js";
 import { Sandbox } from "./sandbox.js";
-import { describeProfile, rateSettings } from "./cli-profile.js";
+import { describeProfile, ownAgentTimeout, rateSettings } from "./cli-profile.js";
 
 const USAGE = `Usage:
   pnpm --filter @bonded/arena arena run [options]    run episodes and print each verdict
@@ -299,9 +299,7 @@ async function main(): Promise<number> {
         ...(values["max-usd"] ? { maxUsd: Number(values["max-usd"]) } : {}),
         // Bonded's own agents: --episode-timeout sets each episode's limit (a remote agent's is
         // set on its gateway above). Without it, the default 5 minutes.
-        ...(!remote && values["episode-timeout"]
-          ? { episodeTimeoutMs: settings.episodeTimeoutMs }
-          : {}),
+        ...ownAgentTimeout(values, settings, remote),
         ...(fallbackPrice ? { fallbackPrice } : {}),
         outDir,
         onEpisode: (r, i, total) =>
@@ -393,6 +391,7 @@ async function main(): Promise<number> {
         ...(settings.attackLiveness ? { attackLiveness: settings.attackLiveness } : {}),
         ...(vault ? { vault } : {}),
         ...(values["max-usd"] ? { maxUsd: Number(values["max-usd"]) } : {}),
+        ...ownAgentTimeout(values, settings, remote),
         ...(fallbackPrice ? { fallbackPrice } : {}),
         outDir,
         onEpisode: (r, i, total) =>
