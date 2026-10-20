@@ -19,6 +19,8 @@ export const PAGES = [
   },
 
   { src: "docs/ARCHITECTURE.md", slug: "concepts/architecture", label: "Architecture" },
+  { src: "docs/SCORING.md", slug: "concepts/scoring", label: "Security grade and insurance score" },
+  { src: "docs/S1-TAXONOMY.md", slug: "concepts/s1-taxonomy", label: "S1 market-data attacks" },
   { src: "docs/AGENTS.md", slug: "concepts/agents", label: "Agents" },
   { src: "contracts/evm/README.md", slug: "concepts/contracts", label: "Smart contracts" },
   {
@@ -111,6 +113,8 @@ export const SHORT_NAMES = {
   "docs/SPECIFICATION.md": "the product specification",
   "docs/ARCHITECTURE.md": "the architecture page",
   "docs/AGENTS.md": "the agents page",
+  "docs/SCORING.md": "the scoring page",
+  "docs/S1-TAXONOMY.md": "the S1 coverage map",
   "docs/YOUR-AGENTS.md": "Bonded and your agents",
   "docs/BRING-YOUR-OWN-AGENT.md": "the bring-your-own-agent guide",
   "docs/BOUNTIES-EXPLAINED.md": "the bounty overview",

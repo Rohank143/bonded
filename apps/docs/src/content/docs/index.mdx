@@ -30,17 +30,19 @@ There is no common way yet to tell a hardened agent from a gullible one. Bonded 
     may go, how much per trade and per day. A breach is blocked or recorded on chain.
   </Card>
   <Card title="2. The Arena" icon="warning">
-    AI attacker scenarios across 10 classes are planted in the agent's world inside a sandbox. The
-    verdict of each episode is the vault's breach log.
+    AI attacker scenarios are planted in the agent's world inside a sandbox: the main library's 10
+    classes, judged by the vault's breach log, plus false market data (S1) and, for agents with
+    memory Bonded can reset, poisoned memory, each judged against a clean run of the same world.
   </Card>
   <Card title="3. Bonded Score" icon="star">
-    Breach rates become an expected loss, a premium and a score from 0 to 100, signed by the
-    attester and readable on Robinhood Chain, Arbitrum, Ethereum and Solana. The same scale for
-    every agent, so it can serve as the standard.
+    The manipulation rate on the agent's worst row gives the Bonded Score, a security grade from 0
+    to 100. Breach losses give a separate insurance score and the premium. Signed by the attester
+    and readable on Robinhood Chain, Arbitrum, Ethereum and Solana. The same scale for every agent,
+    so it can serve as the standard.
   </Card>
   <Card title="4. Bond and cover" icon="open-book">
     The operator's bond pays first. Underwriters fund a pool that pays the rest. Depositors buy
-    cover priced from the score.
+    cover priced from the insurance score.
   </Card>
   <Card title="5. Automatic claims" icon="rocket">
     When the vault records a breach, the keeper files the claim within seconds. The contract slashes
