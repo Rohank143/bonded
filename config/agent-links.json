@@ -1,13 +1,1 @@
-[
-  {
-    "home": {
-      "chain": "robinhoodTestnet",
-      "agentId": "2"
-    },
-    "links": {
-      "arbitrumSepolia": "1",
-      "sepolia": "1",
-      "solanaDevnet": "4"
-    }
-  }
-]
+[]

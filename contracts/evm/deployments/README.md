@@ -4,77 +4,77 @@
 
 ## Live testnets
 
-Deployed Oct 10, 2026 by `0xd42FA5ae8949710479954ae78D1b12Ff2e50A841`, which owns every contract and is the attester and the dispute council (a single key on testnet; a multisig is a mainnet prerequisite). Waiting period 0, so the demo loop runs without waiting. The test tokens, MockOracle and DemoRouter are testnet stand-ins: they have no value.
+Deployed Oct 20, 2026 by `0xd42FA5ae8949710479954ae78D1b12Ff2e50A841`, which owns every contract and is the attester and the dispute council (a single key on testnet; a multisig is a mainnet prerequisite). Waiting period 0, so the demo loop runs without waiting. The test tokens, MockOracle and DemoRouter are testnet stand-ins: they have no value.
 
 | Chain | Chain id | Deploy block | Explorer | File |
 |---|---|---|---|---|
-| Robinhood Chain testnet | 46630 | 132,181,779 | https://explorer.testnet.chain.robinhood.com | [`46630.json`](46630.json) |
-| Arbitrum Sepolia | 421614 | 317,698,201 | https://sepolia.arbiscan.io | [`421614.json`](421614.json) |
-| Ethereum Sepolia | 11155111 | 11,883,864 | https://sepolia.etherscan.io | [`11155111.json`](11155111.json) |
+| Robinhood Chain testnet | 46630 | 139,637,933 | https://explorer.testnet.chain.robinhood.com | [`46630.json`](46630.json) |
+| Arbitrum Sepolia | 421614 | 321,171,750 | https://sepolia.arbiscan.io | [`421614.json`](421614.json) |
+| Ethereum Sepolia | 11155111 | 11,957,720 | https://sepolia.etherscan.io | [`11155111.json`](11155111.json) |
 
 ### Robinhood Chain testnet (46630)
 
 | Contract | Address | What it does |
 |---|---|---|
-| BondedRegistry | [`0x691563A85D1D80f2891c0ecb2096E58CC4b4DFBA`](https://explorer.testnet.chain.robinhood.com/address/0x691563A85D1D80f2891c0ecb2096E58CC4b4DFBA) | agents, scores and attesters |
-| MandateVaultFactory | [`0xB63392D0451877B6c5cFb15eBF78062B7CdcD45f`](https://explorer.testnet.chain.robinhood.com/address/0xB63392D0451877B6c5cFb15eBF78062B7CdcD45f) | creates Mandate Vaults |
-| MandateModuleFactory | [`0x0DafdC13b77114e472C910B58608f905972a801a`](https://explorer.testnet.chain.robinhood.com/address/0x0DafdC13b77114e472C910B58608f905972a801a) | creates MandateModules for ERC-7579 smart accounts |
-| CoverManager | [`0x17F6aebb3976669F6b5D6def2eb0fd12a08678Be`](https://explorer.testnet.chain.robinhood.com/address/0x17F6aebb3976669F6b5D6def2eb0fd12a08678Be) | buys and renews cover |
-| CoverPool | [`0x8D66B526e5bBDbc3BFd46B8c0e199E6555362b75`](https://explorer.testnet.chain.robinhood.com/address/0x8D66B526e5bBDbc3BFd46B8c0e199E6555362b75) | holds the capital that pays claims |
-| OperatorBond | [`0x6001e51A208F11EfdD8716B1aa5986AABfb76Ca5`](https://explorer.testnet.chain.robinhood.com/address/0x6001e51A208F11EfdD8716B1aa5986AABfb76Ca5) | operators' bonds |
-| ClaimsEngine | [`0xCE05398FCcddbc1E5874f7A6bC517eD24d4bE849`](https://explorer.testnet.chain.robinhood.com/address/0xCE05398FCcddbc1E5874f7A6bC517eD24d4bE849) | pays claims from on-chain breach records |
-| DisputeModule | [`0xA21Eb03BC2D067f9068c44e2952BE7473e626377`](https://explorer.testnet.chain.robinhood.com/address/0xA21Eb03BC2D067f9068c44e2952BE7473e626377) | disputes and the council's decisions |
-| BountyBoard | [`0xE78Afc3309A28c2c0a827451A8aB3A22EcCB1b06`](https://explorer.testnet.chain.robinhood.com/address/0xE78Afc3309A28c2c0a827451A8aB3A22EcCB1b06) | attack bounties |
-| tUSDG | [`0xee6994766d49962CfbC6C592E724828f80815b1D`](https://explorer.testnet.chain.robinhood.com/address/0xee6994766d49962CfbC6C592E724828f80815b1D) | test dollar, the base asset |
-| tTSLA | [`0x09Dbb4537432997d96f8c594676644Bc0A6169FF`](https://explorer.testnet.chain.robinhood.com/address/0x09Dbb4537432997d96f8c594676644Bc0A6169FF) | test token |
-| tAMZN | [`0xF70580bfA582d08DC3a0DE0811D558a12451de73`](https://explorer.testnet.chain.robinhood.com/address/0xF70580bfA582d08DC3a0DE0811D558a12451de73) | test token |
-| tNVDA | [`0x2021867c5Be6DD58B292c0993B3850a19789888b`](https://explorer.testnet.chain.robinhood.com/address/0x2021867c5Be6DD58B292c0993B3850a19789888b) | test token |
-| MockOracle | [`0xccAf39258CD76766fCBa2E339c5932f1d027d9C2`](https://explorer.testnet.chain.robinhood.com/address/0xccAf39258CD76766fCBa2E339c5932f1d027d9C2) | test prices, set by the owner |
-| DemoRouter | [`0xcC29B5a0b2E6c6F6b3F582F2d191cBE3425C8e5B`](https://explorer.testnet.chain.robinhood.com/address/0xcC29B5a0b2E6c6F6b3F582F2d191cBE3425C8e5B) | test swaps |
+| BondedRegistry | [`0x109D98d2ab039273FB07D08617FbD353Ca8747F2`](https://explorer.testnet.chain.robinhood.com/address/0x109D98d2ab039273FB07D08617FbD353Ca8747F2) | agents, scores and attesters |
+| MandateVaultFactory | [`0x89cA6deC91C737A44DA7D3efc9f6Db7b1Ff23FC6`](https://explorer.testnet.chain.robinhood.com/address/0x89cA6deC91C737A44DA7D3efc9f6Db7b1Ff23FC6) | creates Mandate Vaults |
+| MandateModuleFactory | [`0xbC510cec5F2011DCDdeA108086206FBd1d30b48F`](https://explorer.testnet.chain.robinhood.com/address/0xbC510cec5F2011DCDdeA108086206FBd1d30b48F) | creates MandateModules for ERC-7579 smart accounts |
+| CoverManager | [`0xCbDFB40b1A53adcf142Aa784609cFe2B9F33698D`](https://explorer.testnet.chain.robinhood.com/address/0xCbDFB40b1A53adcf142Aa784609cFe2B9F33698D) | buys and renews cover |
+| CoverPool | [`0xba8f66D2BBb87B66f42faE0F83Be14A180BF21F9`](https://explorer.testnet.chain.robinhood.com/address/0xba8f66D2BBb87B66f42faE0F83Be14A180BF21F9) | holds the capital that pays claims |
+| OperatorBond | [`0xd0819B59E1E53160B783c7aB479De783BC6865a5`](https://explorer.testnet.chain.robinhood.com/address/0xd0819B59E1E53160B783c7aB479De783BC6865a5) | operators' bonds |
+| ClaimsEngine | [`0x0e263aaE54F5562e6841b4b536f32c2ecE0A1EEd`](https://explorer.testnet.chain.robinhood.com/address/0x0e263aaE54F5562e6841b4b536f32c2ecE0A1EEd) | pays claims from on-chain breach records |
+| DisputeModule | [`0xcd04e14dD1d4766A7F65117780f8Fc7a27003471`](https://explorer.testnet.chain.robinhood.com/address/0xcd04e14dD1d4766A7F65117780f8Fc7a27003471) | disputes and the council's decisions |
+| BountyBoard | [`0xc76C5ecCeAE524fCb10fB4257Ba28475c0f05332`](https://explorer.testnet.chain.robinhood.com/address/0xc76C5ecCeAE524fCb10fB4257Ba28475c0f05332) | attack bounties |
+| tUSDG | [`0x722211FDE33d059EA934dcA6f5D6340d098f4AE0`](https://explorer.testnet.chain.robinhood.com/address/0x722211FDE33d059EA934dcA6f5D6340d098f4AE0) | test dollar, the base asset |
+| tTSLA | [`0xBE837997591B51430300cb45569ea79cDF861Fa6`](https://explorer.testnet.chain.robinhood.com/address/0xBE837997591B51430300cb45569ea79cDF861Fa6) | test token |
+| tAMZN | [`0x614d52313bc2B4E0667a4ee930720430BB699801`](https://explorer.testnet.chain.robinhood.com/address/0x614d52313bc2B4E0667a4ee930720430BB699801) | test token |
+| tNVDA | [`0x3CC1B76c98306D178f7ab992F6760952539022d4`](https://explorer.testnet.chain.robinhood.com/address/0x3CC1B76c98306D178f7ab992F6760952539022d4) | test token |
+| MockOracle | [`0x9d7eAd687fA1C9aD6E1f5ce62CB94c7C9b008304`](https://explorer.testnet.chain.robinhood.com/address/0x9d7eAd687fA1C9aD6E1f5ce62CB94c7C9b008304) | test prices, set by the owner |
+| DemoRouter | [`0x36537761aFBA9b6cBd8D8494AaCB9502B1a231F8`](https://explorer.testnet.chain.robinhood.com/address/0x36537761aFBA9b6cBd8D8494AaCB9502B1a231F8) | test swaps |
 
 ### Arbitrum Sepolia (421614)
 
 | Contract | Address | What it does |
 |---|---|---|
-| BondedRegistry | [`0xa8896AEd5c2bF49De4Da3578C515eb5B6eB56B42`](https://sepolia.arbiscan.io/address/0xa8896AEd5c2bF49De4Da3578C515eb5B6eB56B42) | agents, scores and attesters |
-| MandateVaultFactory | [`0x245acb12F05dC60ac9B7547Dae9bF0215769e308`](https://sepolia.arbiscan.io/address/0x245acb12F05dC60ac9B7547Dae9bF0215769e308) | creates Mandate Vaults |
-| MandateModuleFactory | [`0x7DFb980BD1Ed4B12EB149F4e48AF433adE6058c6`](https://sepolia.arbiscan.io/address/0x7DFb980BD1Ed4B12EB149F4e48AF433adE6058c6) | creates MandateModules for ERC-7579 smart accounts |
-| CoverManager | [`0xF9020e6DFaE001f58dd2380C0724b04157367CCF`](https://sepolia.arbiscan.io/address/0xF9020e6DFaE001f58dd2380C0724b04157367CCF) | buys and renews cover |
-| CoverPool | [`0x2AAc3078ec420e5727c5A83D414f6818Ca87AAae`](https://sepolia.arbiscan.io/address/0x2AAc3078ec420e5727c5A83D414f6818Ca87AAae) | holds the capital that pays claims |
-| OperatorBond | [`0x470ae0b43FcFd302964921745ac2Fb83718B330E`](https://sepolia.arbiscan.io/address/0x470ae0b43FcFd302964921745ac2Fb83718B330E) | operators' bonds |
-| ClaimsEngine | [`0x0a98FF1647fFc1cB411851Fd24cA7Ad459eB75a4`](https://sepolia.arbiscan.io/address/0x0a98FF1647fFc1cB411851Fd24cA7Ad459eB75a4) | pays claims from on-chain breach records |
-| DisputeModule | [`0x7F4b4379Fd4e56Cc0b545a344316e6bb2994b0a1`](https://sepolia.arbiscan.io/address/0x7F4b4379Fd4e56Cc0b545a344316e6bb2994b0a1) | disputes and the council's decisions |
-| BountyBoard | [`0x92FE64fCAD46065e4d93Fe0b6F8ECD5Fbfb8B0D1`](https://sepolia.arbiscan.io/address/0x92FE64fCAD46065e4d93Fe0b6F8ECD5Fbfb8B0D1) | attack bounties |
-| tUSDG | [`0x6a4FDda2F20e7FD99d1C21Cb74F953F0F15035AC`](https://sepolia.arbiscan.io/address/0x6a4FDda2F20e7FD99d1C21Cb74F953F0F15035AC) | test dollar, the base asset |
-| tTSLA | [`0xCb77Ab45E93FB775d28f01233F70B4CD10311f55`](https://sepolia.arbiscan.io/address/0xCb77Ab45E93FB775d28f01233F70B4CD10311f55) | test token |
-| tAMZN | [`0xd5A86802B28Da2407D9e25C174a72241d052e291`](https://sepolia.arbiscan.io/address/0xd5A86802B28Da2407D9e25C174a72241d052e291) | test token |
-| tNVDA | [`0xD0Fd33EB27416CAEFa8e9eaB3150687d4098d907`](https://sepolia.arbiscan.io/address/0xD0Fd33EB27416CAEFa8e9eaB3150687d4098d907) | test token |
-| MockOracle | [`0x36DfFc9D91Cc40cBB0cDE7c808291e323f48dD5d`](https://sepolia.arbiscan.io/address/0x36DfFc9D91Cc40cBB0cDE7c808291e323f48dD5d) | test prices, set by the owner |
-| DemoRouter | [`0xF2BCEBA860806D0DE44edA2c9489284a869F55f7`](https://sepolia.arbiscan.io/address/0xF2BCEBA860806D0DE44edA2c9489284a869F55f7) | test swaps |
+| BondedRegistry | [`0x836aF1176812561d692eCb4f05303a03b078e903`](https://sepolia.arbiscan.io/address/0x836aF1176812561d692eCb4f05303a03b078e903) | agents, scores and attesters |
+| MandateVaultFactory | [`0xeD9593848721E56b5f7EeAa9C1e96c05B2D910E7`](https://sepolia.arbiscan.io/address/0xeD9593848721E56b5f7EeAa9C1e96c05B2D910E7) | creates Mandate Vaults |
+| MandateModuleFactory | [`0x12c386bbC1462b915F1c13eDA7669Db3d5AdD407`](https://sepolia.arbiscan.io/address/0x12c386bbC1462b915F1c13eDA7669Db3d5AdD407) | creates MandateModules for ERC-7579 smart accounts |
+| CoverManager | [`0xcc1Ee2045D9A75b3192BAE13E4A0de13B7050842`](https://sepolia.arbiscan.io/address/0xcc1Ee2045D9A75b3192BAE13E4A0de13B7050842) | buys and renews cover |
+| CoverPool | [`0x374855e2B2a08Be72F4d9b9D1C83D7663BEBebA4`](https://sepolia.arbiscan.io/address/0x374855e2B2a08Be72F4d9b9D1C83D7663BEBebA4) | holds the capital that pays claims |
+| OperatorBond | [`0x027Da33006fD6d077854D30f15C06ECB80030E47`](https://sepolia.arbiscan.io/address/0x027Da33006fD6d077854D30f15C06ECB80030E47) | operators' bonds |
+| ClaimsEngine | [`0xD695711DBa47e03940b76EF379E3648C020C91D9`](https://sepolia.arbiscan.io/address/0xD695711DBa47e03940b76EF379E3648C020C91D9) | pays claims from on-chain breach records |
+| DisputeModule | [`0x61F56C5e8e3E4c260249462E5040aA5DAa45f689`](https://sepolia.arbiscan.io/address/0x61F56C5e8e3E4c260249462E5040aA5DAa45f689) | disputes and the council's decisions |
+| BountyBoard | [`0xF0f77618dc5EE72B560Ab266cF4bc28F01d4FC0C`](https://sepolia.arbiscan.io/address/0xF0f77618dc5EE72B560Ab266cF4bc28F01d4FC0C) | attack bounties |
+| tUSDG | [`0xbD937FDfF3CB767E1d05a46a67040F1A71F9415F`](https://sepolia.arbiscan.io/address/0xbD937FDfF3CB767E1d05a46a67040F1A71F9415F) | test dollar, the base asset |
+| tTSLA | [`0xC7e5d48F66cBAe3cce2f4A00527fBF32137a34A5`](https://sepolia.arbiscan.io/address/0xC7e5d48F66cBAe3cce2f4A00527fBF32137a34A5) | test token |
+| tAMZN | [`0x5D5B6ee27e881bB94b362589cab8D17d10113280`](https://sepolia.arbiscan.io/address/0x5D5B6ee27e881bB94b362589cab8D17d10113280) | test token |
+| tNVDA | [`0x5A7f2d29131Ba3AC7E1CF1da5D2f5Bda1259D44C`](https://sepolia.arbiscan.io/address/0x5A7f2d29131Ba3AC7E1CF1da5D2f5Bda1259D44C) | test token |
+| MockOracle | [`0xA832A97Ed8f2Cf53d92847025703A465F2764126`](https://sepolia.arbiscan.io/address/0xA832A97Ed8f2Cf53d92847025703A465F2764126) | test prices, set by the owner |
+| DemoRouter | [`0x74D0485F9ad53126368C6618CD27A87984EfbA50`](https://sepolia.arbiscan.io/address/0x74D0485F9ad53126368C6618CD27A87984EfbA50) | test swaps |
 
 ### Ethereum Sepolia (11155111)
 
 | Contract | Address | What it does |
 |---|---|---|
-| BondedRegistry | [`0x2AAc3078ec420e5727c5A83D414f6818Ca87AAae`](https://sepolia.etherscan.io/address/0x2AAc3078ec420e5727c5A83D414f6818Ca87AAae) | agents, scores and attesters |
-| MandateVaultFactory | [`0x470ae0b43FcFd302964921745ac2Fb83718B330E`](https://sepolia.etherscan.io/address/0x470ae0b43FcFd302964921745ac2Fb83718B330E) | creates Mandate Vaults |
-| MandateModuleFactory | [`0x6FA4Bc8cF38BeDE702D588D93f14585F0033eb34`](https://sepolia.etherscan.io/address/0x6FA4Bc8cF38BeDE702D588D93f14585F0033eb34) | creates MandateModules for ERC-7579 smart accounts |
-| CoverManager | [`0x7F4b4379Fd4e56Cc0b545a344316e6bb2994b0a1`](https://sepolia.etherscan.io/address/0x7F4b4379Fd4e56Cc0b545a344316e6bb2994b0a1) | buys and renews cover |
-| CoverPool | [`0x92FE64fCAD46065e4d93Fe0b6F8ECD5Fbfb8B0D1`](https://sepolia.etherscan.io/address/0x92FE64fCAD46065e4d93Fe0b6F8ECD5Fbfb8B0D1) | holds the capital that pays claims |
-| OperatorBond | [`0xF9020e6DFaE001f58dd2380C0724b04157367CCF`](https://sepolia.etherscan.io/address/0xF9020e6DFaE001f58dd2380C0724b04157367CCF) | operators' bonds |
-| ClaimsEngine | [`0x74e6ea49f417a791789db5Ad3B3186d1bd2DF622`](https://sepolia.etherscan.io/address/0x74e6ea49f417a791789db5Ad3B3186d1bd2DF622) | pays claims from on-chain breach records |
-| DisputeModule | [`0x6CdFa3d9D206AA5F4F3B24C620CB4eD4eE002d5D`](https://sepolia.etherscan.io/address/0x6CdFa3d9D206AA5F4F3B24C620CB4eD4eE002d5D) | disputes and the council's decisions |
-| BountyBoard | [`0x0a98FF1647fFc1cB411851Fd24cA7Ad459eB75a4`](https://sepolia.etherscan.io/address/0x0a98FF1647fFc1cB411851Fd24cA7Ad459eB75a4) | attack bounties |
-| tUSDG | [`0xd5A86802B28Da2407D9e25C174a72241d052e291`](https://sepolia.etherscan.io/address/0xd5A86802B28Da2407D9e25C174a72241d052e291) | test dollar, the base asset |
-| tTSLA | [`0xD0Fd33EB27416CAEFa8e9eaB3150687d4098d907`](https://sepolia.etherscan.io/address/0xD0Fd33EB27416CAEFa8e9eaB3150687d4098d907) | test token |
-| tAMZN | [`0x36DfFc9D91Cc40cBB0cDE7c808291e323f48dD5d`](https://sepolia.etherscan.io/address/0x36DfFc9D91Cc40cBB0cDE7c808291e323f48dD5d) | test token |
-| tNVDA | [`0xf2Ca3a0643cE644a02D286B7b7487CA21Ea646B1`](https://sepolia.etherscan.io/address/0xf2Ca3a0643cE644a02D286B7b7487CA21Ea646B1) | test token |
-| MockOracle | [`0x60B909C5c854fAF427094604955fF1D2e5575bF9`](https://sepolia.etherscan.io/address/0x60B909C5c854fAF427094604955fF1D2e5575bF9) | test prices, set by the owner |
-| DemoRouter | [`0xBAd7809808f112b2E3cbebD666BBdACc4379A438`](https://sepolia.etherscan.io/address/0xBAd7809808f112b2E3cbebD666BBdACc4379A438) | test swaps |
+| BondedRegistry | [`0x374855e2B2a08Be72F4d9b9D1C83D7663BEBebA4`](https://sepolia.etherscan.io/address/0x374855e2B2a08Be72F4d9b9D1C83D7663BEBebA4) | agents, scores and attesters |
+| MandateVaultFactory | [`0x027Da33006fD6d077854D30f15C06ECB80030E47`](https://sepolia.etherscan.io/address/0x027Da33006fD6d077854D30f15C06ECB80030E47) | creates Mandate Vaults |
+| MandateModuleFactory | [`0xF4a0aBADC795f1f78A7935205Dc73D531BDDEb33`](https://sepolia.etherscan.io/address/0xF4a0aBADC795f1f78A7935205Dc73D531BDDEb33) | creates MandateModules for ERC-7579 smart accounts |
+| CoverManager | [`0x61F56C5e8e3E4c260249462E5040aA5DAa45f689`](https://sepolia.etherscan.io/address/0x61F56C5e8e3E4c260249462E5040aA5DAa45f689) | buys and renews cover |
+| CoverPool | [`0xF0f77618dc5EE72B560Ab266cF4bc28F01d4FC0C`](https://sepolia.etherscan.io/address/0xF0f77618dc5EE72B560Ab266cF4bc28F01d4FC0C) | holds the capital that pays claims |
+| OperatorBond | [`0xcc1Ee2045D9A75b3192BAE13E4A0de13B7050842`](https://sepolia.etherscan.io/address/0xcc1Ee2045D9A75b3192BAE13E4A0de13B7050842) | operators' bonds |
+| ClaimsEngine | [`0x86b6677994DEE899d4b7D16Df78A802eEf3DF9a8`](https://sepolia.etherscan.io/address/0x86b6677994DEE899d4b7D16Df78A802eEf3DF9a8) | pays claims from on-chain breach records |
+| DisputeModule | [`0xEAcc211aBe784f16daC594cB2228E9a1166035e1`](https://sepolia.etherscan.io/address/0xEAcc211aBe784f16daC594cB2228E9a1166035e1) | disputes and the council's decisions |
+| BountyBoard | [`0xD695711DBa47e03940b76EF379E3648C020C91D9`](https://sepolia.etherscan.io/address/0xD695711DBa47e03940b76EF379E3648C020C91D9) | attack bounties |
+| tUSDG | [`0x5D5B6ee27e881bB94b362589cab8D17d10113280`](https://sepolia.etherscan.io/address/0x5D5B6ee27e881bB94b362589cab8D17d10113280) | test dollar, the base asset |
+| tTSLA | [`0x5A7f2d29131Ba3AC7E1CF1da5D2f5Bda1259D44C`](https://sepolia.etherscan.io/address/0x5A7f2d29131Ba3AC7E1CF1da5D2f5Bda1259D44C) | test token |
+| tAMZN | [`0xA832A97Ed8f2Cf53d92847025703A465F2764126`](https://sepolia.etherscan.io/address/0xA832A97Ed8f2Cf53d92847025703A465F2764126) | test token |
+| tNVDA | [`0x2a57aB965C4C51aebDF594Ef3307FffA57645047`](https://sepolia.etherscan.io/address/0x2a57aB965C4C51aebDF594Ef3307FffA57645047) | test token |
+| MockOracle | [`0x8aADe81092D5E019ab523f65Af663843f2c2fcf4`](https://sepolia.etherscan.io/address/0x8aADe81092D5E019ab523f65Af663843f2c2fcf4) | test prices, set by the owner |
+| DemoRouter | [`0x09fD7De07b56e323301c5599067Ec38a3607A27B`](https://sepolia.etherscan.io/address/0x09fD7De07b56e323301c5599067Ec38a3607A27B) | test swaps |
 
 Addresses differ between chains, so always read them from `<chainId>.json` (or `@bondedhq/shared`), never from another chain.
 
-An earlier deployment (Sep 27, 2026 on Robinhood and Arbitrum Sepolia, Sep 30 on Ethereum Sepolia) predates MandateModule and is no longer used by the hosted service; agents, vaults, bonds and cover made on it stay there. Its addresses are in this file's git history.
+Two earlier deployments are no longer used by the hosted service; agents, vaults, bonds and cover made on them stay there, and their addresses are in this file's git history. The Oct 10, 2026 one predates the security grade in the attestation (its registry can't accept the new format); the Sep 27, 2026 one (Sep 30 on Ethereum Sepolia) also predates MandateModule.
 
 ## Deploying
 
@@ -101,6 +101,8 @@ If step 2 fails on a flaky RPC after a successful deploy, re-run it alone: `forg
 If the RPC drops out partway through step 1, `forge script script/Deploy.s.sol --rpc-url <rpc> --broadcast --slow --resume` sends the rest. Two traps, both hit on Sepolia:
 - If a transaction was mined but forge never saw its receipt, the resume fails with "nonce too low". Fetch it (`cast receipt <hash> --rpc-url <rpc> --json`), append it to `receipts` in `broadcast/Deploy.s.sol/<chainId>/run-latest.json`, and resume again.
 - The resume re-runs the script, which rewrites the pending file with addresses simulated from the current nonce. Those are wrong. Rebuild the pending file from the `contractAddress` of each CREATE in `run-latest.json` before running step 2; step 2 then checks every address on chain.
+
+Sepolia's gas price also jumps. On Oct 20, 2026 it was 0.75 gwei for the first 15 transactions (0.033 ETH, against a dry-run estimate under 0.001), and the deployer ran out of funds; it was back to 0.001 gwei minutes later. Check `cast gas-price` first, and cap a resume with `--with-gas-price 10000000 --priority-gas-price 1000000` (both are needed: the priority fee must not be above the cap).
 
 For a free dry run that simulates everything and writes nothing: `forge script script/Deploy.s.sol --rpc-url <rpc>`.
 

@@ -17,16 +17,16 @@
         "family": "evm",
         "chainId": 46630
       },
-      "baseAsset": "0xee6994766d49962CfbC6C592E724828f80815b1D",
+      "baseAsset": "0x722211FDE33d059EA934dcA6f5D6340d098f4AE0",
       "assets": [
-        "0xee6994766d49962CfbC6C592E724828f80815b1D",
-        "0x09Dbb4537432997d96f8c594676644Bc0A6169FF",
-        "0xF70580bfA582d08DC3a0DE0811D558a12451de73",
-        "0x2021867c5Be6DD58B292c0993B3850a19789888b"
+        "0x722211FDE33d059EA934dcA6f5D6340d098f4AE0",
+        "0xBE837997591B51430300cb45569ea79cDF861Fa6",
+        "0x614d52313bc2B4E0667a4ee930720430BB699801",
+        "0x3CC1B76c98306D178f7ab992F6760952539022d4"
       ],
       "targets": [
         {
-          "address": "0xcC29B5a0b2E6c6F6b3F582F2d191cBE3425C8e5B",
+          "address": "0x36537761aFBA9b6cBd8D8494AaCB9502B1a231F8",
           "selectors": ["0x6e81221c"]
         }
       ],
@@ -52,16 +52,16 @@
         "family": "evm",
         "chainId": 46630
       },
-      "baseAsset": "0xee6994766d49962CfbC6C592E724828f80815b1D",
+      "baseAsset": "0x722211FDE33d059EA934dcA6f5D6340d098f4AE0",
       "assets": [
-        "0xee6994766d49962CfbC6C592E724828f80815b1D",
-        "0x09Dbb4537432997d96f8c594676644Bc0A6169FF",
-        "0xF70580bfA582d08DC3a0DE0811D558a12451de73",
-        "0x2021867c5Be6DD58B292c0993B3850a19789888b"
+        "0x722211FDE33d059EA934dcA6f5D6340d098f4AE0",
+        "0xBE837997591B51430300cb45569ea79cDF861Fa6",
+        "0x614d52313bc2B4E0667a4ee930720430BB699801",
+        "0x3CC1B76c98306D178f7ab992F6760952539022d4"
       ],
       "targets": [
         {
-          "address": "0xcC29B5a0b2E6c6F6b3F582F2d191cBE3425C8e5B",
+          "address": "0x36537761aFBA9b6cBd8D8494AaCB9502B1a231F8",
           "selectors": ["0x6e81221c"]
         }
       ],
@@ -71,8 +71,7 @@
     "tee": {
       "url": "https://e4160e590cd56ae4412244fc6318e26ae3a8338e-8080.dstack-pha-prod5.phala.network",
       "composeHash": "0x0205e8388bdc2234aae96b01537fc79226d1144e41876c95e9bf49c8e32f9e19"
-    },
-    "repeats": 5
+    }
   },
   {
     "kind": "partial",
@@ -92,16 +91,16 @@
         "family": "evm",
         "chainId": 46630
       },
-      "baseAsset": "0xee6994766d49962CfbC6C592E724828f80815b1D",
+      "baseAsset": "0x722211FDE33d059EA934dcA6f5D6340d098f4AE0",
       "assets": [
-        "0xee6994766d49962CfbC6C592E724828f80815b1D",
-        "0x09Dbb4537432997d96f8c594676644Bc0A6169FF",
-        "0xF70580bfA582d08DC3a0DE0811D558a12451de73",
-        "0x2021867c5Be6DD58B292c0993B3850a19789888b"
+        "0x722211FDE33d059EA934dcA6f5D6340d098f4AE0",
+        "0xBE837997591B51430300cb45569ea79cDF861Fa6",
+        "0x614d52313bc2B4E0667a4ee930720430BB699801",
+        "0x3CC1B76c98306D178f7ab992F6760952539022d4"
       ],
       "targets": [
         {
-          "address": "0xcC29B5a0b2E6c6F6b3F582F2d191cBE3425C8e5B",
+          "address": "0x36537761aFBA9b6cBd8D8494AaCB9502B1a231F8",
           "selectors": ["0x6e81221c"]
         }
       ],
