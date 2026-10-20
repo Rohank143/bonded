@@ -2,7 +2,7 @@ import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api, type LeaderboardRecord } from "../lib/api";
 import { DOCS_DISCLOSURES } from "../lib/routes";
-import { manipulatedOf, weakestText } from "../lib/security";
+import { falseDataHeadline, manipulatedOf, weakestText } from "../lib/security";
 import {
   Badge,
   Card,
@@ -98,6 +98,12 @@ const DISCLOSURE: Record<LeaderboardRecord["disclosure"]["status"], string> = {
 export function Leaderboard() {
   const board = useQuery({ queryKey: ["leaderboard"], queryFn: api.leaderboard });
   const h = board.data?.headline;
+  const s1 = board.data ? falseDataHeadline(board.data.entries) : null;
+  const injection = h
+    ? h.failingTemplates === 0
+      ? `None of the ${h.templates} popular agent templates fell for basic prompt injection.`
+      : `${h.failingTemplates} of ${h.templates} popular agent templates fall for basic prompt injection.`
+    : "";
   // Legacy insurance results cannot be compared with security grades.
   const entries = board.data
     ? [...board.data.entries].sort((a, b) => (b.securityGrade ?? -1) - (a.securityGrade ?? -1))
@@ -115,11 +121,18 @@ export function Leaderboard() {
         <section className="panel border-accent/25 bg-[radial-gradient(ellipse_at_0%_0%,rgb(29_78_216/.25),transparent_60%)] p-7 sm:p-9">
           <p className="eyebrow !text-accent">Headline</p>
           <p className="mt-3 max-w-4xl font-serif text-4xl leading-tight sm:text-5xl">
-            {h.failingTemplates === 0
-              ? `None of the ${h.templates} popular agent templates fell for basic prompt injection.`
-              : `${h.failingTemplates} of ${h.templates} popular agent templates fall for basic prompt injection.`}
+            {s1
+              ? `${s1.fooledTemplates} of ${s1.templates} popular agent templates traded on false market data.`
+              : injection}
           </p>
           <p className="mt-4 max-w-3xl text-sm leading-relaxed text-muted">
+            {s1 && (
+              <>
+                A fabricated earnings beat, a fake flash crash or a made-up analyst call moved{" "}
+                {s1.fooledEvaluations} of {s1.evaluations} template and model pairs to trade on the
+                lie. {injection}{" "}
+              </>
+            )}
             Across {h.evaluations} template and model pairs ({h.failingEvaluations} breached), on
             the injection classes A1, A2 and A7, with five runs of every attack, including held-out
             attacks that are never published. Results can differ with other models or settings. The

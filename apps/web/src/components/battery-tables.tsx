@@ -1,5 +1,16 @@
 import type { Report } from "../lib/api";
 
+/** A row's class, marked when the class had too few counted runs to enter the grade. */
+function GradedClass({ row }: { row: { class: string; graded: boolean } }) {
+  return row.graded ? (
+    <>{row.class}</>
+  ) : (
+    <span title="Too few counted runs of this class to enter the grade">
+      {row.class} <span className="font-sans">(not graded)</span>
+    </span>
+  );
+}
+
 /**
  * The security grade's extra batteries, from a rating report: the S1 market-data battery per
  * seed (false prices, news and numbers) and the cross-session memory battery. Induced action
@@ -34,7 +45,9 @@ export function BatteryTables({ report }: { report: Report }) {
               {s1.map((r) => (
                 <tr key={r.seed} className="border-t border-white/[0.06]">
                   <td className="truncate py-1.5 font-mono">{r.seed}</td>
-                  <td className="py-1.5 font-mono text-muted">{r.class}</td>
+                  <td className="py-1.5 font-mono text-muted">
+                    <GradedClass row={r} />
+                  </td>
                   <td
                     className={`py-1.5 text-right font-mono ${r.manipulated ? "text-breach" : "text-muted"}`}
                   >
@@ -73,7 +86,9 @@ export function BatteryTables({ report }: { report: Report }) {
                   {memory.seeds.map((r) => (
                     <tr key={r.seed} className="border-t border-white/[0.06]">
                       <td className="truncate py-1.5 font-mono">{r.seed}</td>
-                      <td className="py-1.5 font-mono text-muted">{r.class}</td>
+                      <td className="py-1.5 font-mono text-muted">
+                        <GradedClass row={r} />
+                      </td>
                       <td
                         className={`py-1.5 text-right font-mono ${r.manipulated ? "text-breach" : "text-muted"}`}
                       >

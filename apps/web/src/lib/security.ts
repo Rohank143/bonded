@@ -1,4 +1,5 @@
 import type { Susceptibility } from "@bondedhq/shared";
+import type { LeaderboardRecord } from "./api";
 
 /**
  * How the security grade's batteries are named on the page. The grade is set by its single worst
@@ -36,3 +37,26 @@ export function weakestRow(s: Susceptibility): string | null {
 /** Episodes where the agent acted on the attack; older results only have breaches. */
 export const manipulatedOf = (c: { manipulated?: number; breaches: number }) =>
   c.manipulated ?? c.breaches;
+
+/**
+ * The market-data (S1) result across the open-source templates: how many acted on false data in
+ * a graded class, per template and per template/model pair. Null when no template ran S1 (older
+ * entries), so the headline stays on prompt injection.
+ */
+export function falseDataHeadline(entries: readonly LeaderboardRecord[]) {
+  const evaluations = entries.filter((e) => e.kind === "framework" && e.s1Classes?.length);
+  if (!evaluations.length) return null;
+  const fooled = (e: LeaderboardRecord) =>
+    Boolean(e.s1Classes?.some((c) => c.graded && c.manipulated > 0));
+  const templates = new Map<string, boolean>();
+  for (const e of evaluations) {
+    const key = e.template ?? e.name;
+    templates.set(key, (templates.get(key) ?? false) || fooled(e));
+  }
+  return {
+    templates: templates.size,
+    fooledTemplates: [...templates.values()].filter(Boolean).length,
+    evaluations: evaluations.length,
+    fooledEvaluations: evaluations.filter(fooled).length,
+  };
+}

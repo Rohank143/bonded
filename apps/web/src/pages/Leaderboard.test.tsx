@@ -126,4 +126,36 @@ describe("leaderboard security grades", () => {
       within(row).getByText("Memory: acted on a planted note in 1 of 5 attempts"),
     ).toBeTruthy();
   });
+
+  it("leads the headline with false market data once templates ran it", async () => {
+    const template = (model: string, manipulated: number): LeaderboardRecord => ({
+      ...entry(`AgentKit ${model}`, 83, 20),
+      slug: `agentkit-${model}`,
+      kind: "framework",
+      template: "https://example.com/agentkit",
+      s1Classes: [
+        { class: "A2", counted: 18, manipulated, inducedInaction: 0, breaches: 0, graded: true },
+      ],
+    });
+    vi.spyOn(api, "leaderboard").mockResolvedValue({
+      headline: { templates: 1, failingTemplates: 0, evaluations: 2, failingEvaluations: 0 },
+      entries: [template("deepseek", 15), template("glm", 0)],
+    });
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={new QueryClient()}>
+          <Leaderboard />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    expect(
+      await screen.findByText("1 of 1 popular agent templates traded on false market data."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/moved 1 of 2 template and model pairs to trade on the lie/),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/None of the 1 popular agent templates fell for basic prompt injection/),
+    ).toBeTruthy();
+  });
 });

@@ -37,8 +37,26 @@ describe("report PDF content", () => {
     expect(doc.summary).toContainEqual(["Episodes", "280 (275 attacks, 5 controls)"]);
     expect(doc.summary).toContainEqual(["Control breaches", "0 of 5 plain tasks"]);
     expect(doc.summary).toContainEqual(["Run time", "9 min"]);
+    // An older report measured breaches only, so its table keeps the breach columns.
+    expect(doc.classHead).toEqual([
+      "Class",
+      "Attack",
+      "Episodes",
+      "Breaches",
+      "Breach rate",
+      "Loss",
+    ]);
     expect(doc.classes).toEqual([
-      ["A1", "Injection via token metadata", "20", "5 (25%)", "5", "$1,250"],
+      ["A1", "Injection via token metadata", "20", "5", "25%", "$1,250"],
+    ]);
+    const current = reportDocument(
+      { ...report, classes: [{ ...report.classes[0]!, manipulated: 8 }] },
+      ctx,
+      true,
+    );
+    expect(current.classHead[3]).toBe("Manipulated");
+    expect(current.classes).toEqual([
+      ["A1", "Injection via token metadata", "20", "8 (40%)", "5", "$1,250"],
     ]);
     expect(doc.proof).toContainEqual(["Report hash", "0xabc"]);
     expect(doc.verification).toMatch(/matches the report hash on chain/);
@@ -81,13 +99,28 @@ describe("report PDF content", () => {
             graded: true,
             avgInducedLossUsd: 0,
           },
+          {
+            seed: "A5-planted-cost-basis-001",
+            class: "A5",
+            pairs: 2,
+            countedPairs: 2,
+            manipulated: 1,
+            inducedInaction: 0,
+            breached: 0,
+            graded: false,
+            avgInducedLossUsd: 27,
+          },
         ],
         memory: { skipped: "the agent keeps no memory Bonded can read and reset", seeds: [] },
       },
       ctx,
       true,
     );
-    expect(doc.s1).toEqual([["A8-halt-panic-standing-001", "A8", "0 of 2", "2", "0"]]);
+    expect(doc.s1).toEqual([
+      ["A8-halt-panic-standing-001", "A8", "0 of 2", "2", "0"],
+      // Too few runs of A5 to enter the grade, and the row says so.
+      ["A5-planted-cost-basis-001", "A5 (not graded)", "1 of 2", "0", "0"],
+    ]);
     expect(doc.memory).toBe("the agent keeps no memory Bonded can read and reset");
     // Older reports have neither.
     expect(reportDocument(report, ctx, true).s1).toEqual([]);

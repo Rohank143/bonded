@@ -26,6 +26,9 @@ export const matchesHash = (bytes: Uint8Array, reportHash: string) =>
   keccak256(bytes).toLowerCase() === reportHash.toLowerCase();
 
 const pct = (n: number, d: number) => (d ? `${Math.round((n / d) * 100)}%` : "–");
+/** A battery row's class, marked when the class had too few counted runs to enter the grade. */
+const graded = (r: { class: string; graded: boolean }) =>
+  r.graded ? r.class : `${r.class} (not graded)`;
 const minutes = (ms: number) =>
   ms < 60_000 ? `${Math.round(ms / 1000)} s` : `${Math.round(ms / 60_000)} min`;
 
@@ -35,6 +38,9 @@ const minutes = (ms: number) =>
  */
 export function reportDocument(report: Report, ctx: ReportContext, verified: boolean) {
   const rated = new Date(report.startedAt);
+  // Older reports measured breaches only: their table keeps the breach columns rather than label
+  // breaches as manipulation.
+  const legacy = !report.classes.some((c) => c.manipulated !== undefined);
   return {
     filename: `bonded-agent-${ctx.agentId}-report`,
     title: `Agent ${ctx.agentId}`,
@@ -91,18 +97,25 @@ export function reportDocument(report: Report, ctx: ReportContext, verified: boo
           : "Off",
       ],
     ] as [string, string][],
+    classHead: legacy
+      ? ["Class", "Attack", "Episodes", "Breaches", "Breach rate", "Loss"]
+      : ["Class", "Attack", "Episodes", "Manipulated", "Breaches", "Loss"],
     classes: report.classes.map((c) => [
       c.class,
       c.name,
       String(c.episodes),
-      `${c.manipulated ?? c.breaches} (${pct(c.manipulated ?? c.breaches, c.episodes)})`,
-      String(c.breaches),
+      ...(legacy
+        ? [String(c.breaches), pct(c.breaches, c.episodes)]
+        : [
+            `${c.manipulated ?? c.breaches} (${pct(c.manipulated ?? c.breaches, c.episodes)})`,
+            String(c.breaches),
+          ]),
       `$${c.lossUsd.toLocaleString("en-US", { maximumFractionDigits: 0 })}`,
     ]),
     /** The S1 market-data battery per seed: acted (graded), froze (not graded), breached. */
     s1: (report.s1 ?? []).map((r) => [
       r.seed,
-      r.class,
+      graded(r),
       `${r.manipulated} of ${r.countedPairs}`,
       String(r.inducedInaction ?? 0),
       String(r.breached),
@@ -112,7 +125,7 @@ export function reportDocument(report: Report, ctx: ReportContext, verified: boo
       ? report.memory.skipped
       : (report.memory?.seeds ?? []).map((r) => [
           r.seed,
-          r.class,
+          graded(r),
           `${r.manipulated} of ${r.countedAttempts}`,
         ]),
     proof: [
@@ -237,7 +250,7 @@ export async function downloadReportPdf(ctx: ReportContext) {
   autoTable(pdf, {
     ...table,
     startY: y,
-    head: [["Class", "Attack", "Episodes", "Manipulated", "Breaches", "Loss"]],
+    head: [doc.classHead],
     body: doc.classes,
     columnStyles: {
       0: { cellWidth: 44 },
@@ -248,8 +261,10 @@ export async function downloadReportPdf(ctx: ReportContext) {
     },
   });
 
+  // Where the last block ended: a table's end, or the skipped-memory line, which isn't a table.
+  let end = after();
   if (doc.s1.length) {
-    y = heading("Market data (S1): acted counts toward the score, froze doesn't", after() + 30);
+    y = heading("Market data (S1): acted counts toward the score, froze doesn't", end + 30);
     autoTable(pdf, {
       ...table,
       startY: y,
@@ -257,12 +272,19 @@ export async function downloadReportPdf(ctx: ReportContext) {
       body: doc.s1,
       columnStyles: { 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } },
     });
+    end = after();
   }
   if (typeof doc.memory === "string") {
-    y = heading("Memory", after() + 30);
-    pdf.text(`Not run: ${doc.memory}.`, M, y);
+    y = heading("Memory", end + 30);
+    const lines = pdf
+      .setTextColor(...muted)
+      .setFont("helvetica", "normal")
+      .setFontSize(9.5)
+      .splitTextToSize(`Not run: ${doc.memory}.`, W - 2 * M) as string[];
+    pdf.text(lines, M, y + 8);
+    end = y + 8 + lines.length * 12;
   } else if (doc.memory.length) {
-    y = heading("Memory: acted on a planted note on a clean day", after() + 30);
+    y = heading("Memory: acted on a planted note on a clean day", end + 30);
     autoTable(pdf, {
       ...table,
       startY: y,
@@ -270,10 +292,11 @@ export async function downloadReportPdf(ctx: ReportContext) {
       body: doc.memory,
       columnStyles: { 2: { halign: "right" } },
     });
+    end = after();
   }
 
   // Keep the proof, and the line saying whether it checked out, together on one page.
-  y = after() + 30;
+  y = end + 30;
   const proofHeight = 40 + doc.proof.length * 24 + 60;
   if (y + proofHeight > pdf.internal.pageSize.getHeight() - 48) {
     pdf.addPage();
