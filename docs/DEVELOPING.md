@@ -62,7 +62,7 @@ pnpm arena rate --agent remote --profile hosted   # the same, with a hosted rati
                                              # --episode-timeout and --held-out-fresh)
 ```
 
-Every rating runs three batteries by default: the main attack library (`attacks/`), the S1 market-data battery (`apps/arena/s1-seeds`, 2 clean/manipulated pairs per seed) and, when the agent keeps memory Bonded can read and reset (today only Bonded's `MemoryBotAgent`, which `pnpm --filter @bonded/arena memory` targets), the memory battery (`apps/arena/s1-seeds-memory`). The security grade takes the worst row of all three; the insurance score uses the main library only ([SCORING.md](SCORING.md)). `--no-s1` is for local debugging: a rating without S1 is missing a row of the grade.
+Every rating of a built-in agent runs three batteries by default: the main attack library (`attacks/`), the S1 market-data battery (`apps/arena/s1-seeds`, 2 clean/manipulated pairs per seed) and, when the agent keeps memory Bonded can read and reset (today only Bonded's `MemoryBotAgent`, which `pnpm --filter @bonded/arena memory` targets), the memory battery (`apps/arena/s1-seeds-memory`). The security grade takes the worst row of all three; the insurance score uses the main library only ([SCORING.md](SCORING.md)). `--no-s1` is for local debugging: a rating without S1 is missing a row of the grade. Operator-run agents and previews run the main library only for now, because their time budget plans only that.
 
 Arena output goes to `apps/arena/traces/` and `apps/arena/ratings/<agent>/`; `report.md` there is the human-readable rating. A sandbox's throwaway deployment files go to `contracts/evm/deployments/sandbox/` (git-ignored; the deploy scripts take `DEPLOYMENTS_DIR`), never beside the committed ones.
 
@@ -173,8 +173,8 @@ To run the rating service's gateway yourself, start the API in the `arena-worker
 | `HELD_OUT_FRESH_PER_CLASS` | 1 | Held-out variants per attack class made for each remote rating (0 to 5); part of the remote policy |
 | `HELD_OUT_MODEL`, `HELD_OUT_MAX_USD` | `deepseek/deepseek-v4.1-flash`, 0.25 | Model that drafts them when `OPENROUTER_API_KEY` or `LLM_API_KEY` is set (otherwise deterministic rewrites), and its cap per rating |
 | `GATEWAY_TRUST_PROXY` | 0 | How many proxies in front of the gateway to trust for `X-Forwarded-For` (Railway: 1). Per-address connection limits use the client address that many hops from the right |
-| `RATE_WITH_S1` | on | The S1 market-data battery in the worker's ratings (built-in agents, operator-run agents and previews). `false` or `0` turns it off; `true`, `1` or unset leave it on |
-| `RATE_WITH_S1_PAIRS` | 2 | S1 pairs per seed in an official rating (a positive integer); previews run 1 |
+| `RATE_WITH_S1` | on | The S1 market-data battery in the worker's ratings (built-in agents; operator-run agents and previews skip S1 for now). `false` or `0` turns it off; `true`, `1` or unset leave it on |
+| `RATE_WITH_S1_PAIRS` | 2 | S1 pairs per seed in a worker rating of a built-in agent (a positive integer) |
 | `RATE_MAX_USD` | unset (no cap) | Model-spend cap for one rating; must be finite and positive when set. Checked between episodes, so a call already in progress can overrun it |
 | `REMOTE_REPEATS` | 3 | Runs of each attack in a remote rating (built-in designs: 5) |
 | `REMOTE_EPISODE_TIMEOUT_MS` | 90000 | One remote episode's time limit |

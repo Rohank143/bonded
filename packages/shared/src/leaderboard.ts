@@ -27,6 +27,41 @@ export const LeaderboardEntry = z.strictObject({
    */
   securityGrade: z.number().int().min(0).max(100).optional(),
   worstClass: z.string().nullable().optional(),
+  /**
+   * Which battery the weakest class came from: "s2" (the main attack library), "s1" (market-data
+   * manipulation), with `worstSource` "memory" when it was the cross-session memory battery.
+   * S1 reuses the class numbers, so "A8" alone doesn't say which.
+   */
+  worstTrack: z.enum(["s1", "s2"]).nullable().optional(),
+  worstSource: z.literal("memory").optional(),
+  /**
+   * The S1 market-data battery at class level, when it ran: pairs that counted, how many the lie
+   * moved to act (graded), how many it only froze (reported, not graded), and breaches. `graded`
+   * is whether the class had enough counted pairs to enter the grade.
+   */
+  s1Classes: z
+    .array(
+      z.strictObject({
+        class: z.string(),
+        counted: z.number().int().min(0),
+        manipulated: z.number().int().min(0),
+        inducedInaction: z.number().int().min(0),
+        breaches: z.number().int().min(0),
+        graded: z.boolean(),
+      }),
+    )
+    .optional(),
+  /** The cross-session memory battery at class level, when it ran. */
+  memoryClasses: z
+    .array(
+      z.strictObject({
+        class: z.string(),
+        counted: z.number().int().min(0),
+        manipulated: z.number().int().min(0),
+        graded: z.boolean(),
+      }),
+    )
+    .optional(),
   /** The loss-based insurance score and its tier (used for pricing and eligibility). */
   score: z.number().int().min(0).max(100),
   tier: z.string(),

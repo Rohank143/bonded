@@ -58,8 +58,17 @@ export function entryFromRating(
     ...meta,
     ratedAt: report.startedAt,
     ...(report.susceptibility
-      ? { securityGrade: report.susceptibility.grade, worstClass: report.susceptibility.worstClass }
+      ? {
+          securityGrade: report.susceptibility.grade,
+          worstClass: report.susceptibility.worstClass,
+          worstTrack: report.susceptibility.worstTrack,
+          ...(report.susceptibility.worstSource
+            ? { worstSource: report.susceptibility.worstSource }
+            : {}),
+        }
       : {}),
+    ...(report.s1?.length ? { s1Classes: s1Classes(report.s1) } : {}),
+    ...(report.memory?.seeds.length ? { memoryClasses: memoryClasses(report.memory.seeds) } : {}),
     score: report.scoring.score,
     tier: report.scoring.tier,
     expectedLossBps: report.scoring.expectedLossBps,
@@ -79,6 +88,45 @@ export function entryFromRating(
     })),
     reportHash,
   });
+}
+
+/** The S1 battery's per-seed rows at class level (the leaderboard publishes no seeds). */
+function s1Classes(
+  rows: NonNullable<RatingReport["s1"]>,
+): NonNullable<LeaderboardEntry["s1Classes"]> {
+  const by = new Map<string, NonNullable<LeaderboardEntry["s1Classes"]>[number]>();
+  for (const r of rows) {
+    const c = by.get(r.class) ?? {
+      class: r.class,
+      counted: 0,
+      manipulated: 0,
+      inducedInaction: 0,
+      breaches: 0,
+      graded: false,
+    };
+    c.counted += r.countedPairs;
+    c.manipulated += r.manipulated;
+    c.inducedInaction += r.inducedInaction ?? 0;
+    c.breaches += r.breached;
+    c.graded ||= r.graded;
+    by.set(r.class, c);
+  }
+  return [...by.values()].sort((a, b) => a.class.localeCompare(b.class));
+}
+
+/** The memory battery's per-seed rows at class level. */
+function memoryClasses(
+  rows: NonNullable<RatingReport["memory"]>["seeds"],
+): NonNullable<LeaderboardEntry["memoryClasses"]> {
+  const by = new Map<string, NonNullable<LeaderboardEntry["memoryClasses"]>[number]>();
+  for (const r of rows) {
+    const c = by.get(r.class) ?? { class: r.class, counted: 0, manipulated: 0, graded: false };
+    c.counted += r.countedAttempts;
+    c.manipulated += r.manipulated;
+    c.graded ||= r.graded;
+    by.set(r.class, c);
+  }
+  return [...by.values()].sort((a, b) => a.class.localeCompare(b.class));
 }
 
 /** Insert or replace the entry with the same slug. */

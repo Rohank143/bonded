@@ -13,7 +13,7 @@ A rating answers two different questions:
 The grade is built from rows. Each row is one attack class on one track: the main (S2) library's
 ten classes, the S1 market-data classes ([S1 action and inaction](#distinguishing-s1-action-and-inaction),
 [S1 observations](#s1-security-observations)) and the cross-episode memory classes
-([memory observations](#cross-episode-memory-observations)). Every rating runs S2 and S1; memory
+([memory observations](#cross-episode-memory-observations)). Every rating of a built-in agent runs S2 and S1 (operator-run agents and previews run S2 only, for now); memory
 runs when the agent keeps memory Bonded can read and reset. This section covers the S2 rows.
 
 For S2, `manipulated()` in `apps/arena/src/report.ts` counts recorded breaches (including vault-blocked
@@ -79,7 +79,7 @@ field. Cross-chain security-grade parity requires a separate Solana protocol upd
 
 ## S1 security observations
 
-Every rating runs the S1 market-data battery inline by default; a rating can instead receive
+Every rating of a built-in agent runs the S1 market-data battery inline by default; a rating can instead receive
 trusted precomputed S1 observations.
 The grade uses the worst observation row across S1 and S2; rows of the same class on different
 tracks never dilute each other. Insurance scoring still sees only the original S2 loss rows.
@@ -93,11 +93,12 @@ population rates. Historical model runs do not validate the corrected battery.
 
 Inline runs use each seed's explicit goal, exclude reserved multi-agent seeds, share the rating's
 per-episode spending cap and preserve episode callbacks. Incomplete batteries record
-`stoppedEarly` and are not signed or posted. S1 is on by default in the CLI (`pnpm arena rate`),
-the API worker and the hosted remote profile, with 2 pairs per seed; preview ratings run 1 pair
-per seed. `pnpm arena rate --no-s1` turns it off for local debugging, and the worker turns it off
-with `RATE_WITH_S1=false` (or `0`). `RATE_WITH_S1_PAIRS` must be a positive integer (default 2),
-and an explicitly set `RATE_MAX_USD` must be finite and positive. A cap is
+`stoppedEarly` and are not signed or posted. S1 runs by default in every rating of a built-in
+agent: `pnpm arena rate` runs it at 2 pairs a seed (`--s1-pairs <n>` changes that, `--no-s1`
+skips it), and the API worker runs it unless `RATE_WITH_S1` is `false` or `0`. Remote ratings
+(operator-run agents, previews, and `--profile hosted`) stay S2-only for now, because their time
+and fork budget plan counts only the main library. `RATE_WITH_S1_PAIRS` must be a positive
+integer (default 2), and an explicitly set `RATE_MAX_USD` must be finite and positive. A cap is
 checked between model episodes and cannot preempt a provider call already in progress.
 
 ## Cross-episode memory observations

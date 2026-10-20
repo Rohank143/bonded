@@ -22,22 +22,28 @@ const costly: ArenaAgent = {
 const [published, heldA, heldB] = loadAttackLibrary();
 const unpublished = new Set([heldA!.id, heldB!.id]);
 
-it("refuses an unmeasured security grade when the cap stops before any attack", async () => {
+it("refuses an unmeasured security grade when no episodes ran", async () => {
   const r = await rateAgent(sandbox, {
     agent: costly,
-    attacks: [published!, heldA!, heldB!],
+    attacks: [],
     unpublished,
     controls: 0,
-    maxUsd: 0,
+    maxUsd: 0.5,
   });
   expect(r.report.episodes.total).toBe(0);
   expect(r.report.unpublished).toEqual({ attacks: 0, episodes: 0 });
-  expect(r.report.stoppedEarly).toMatch(/spending cap/);
+  expect(r.report.stoppedEarly).toBeNull();
   expect(r.report.susceptibility).toBeUndefined();
   expect(r.attestation).toBeNull();
   expect(r.refused).toMatch(/no control episode/);
   expect(r.posted).toEqual({ posted: false, reason: `not attested: ${r.refused}` });
 }, 300_000);
+
+it("rejects a zero spending cap before starting a rating", async () => {
+  await expect(
+    rateAgent(sandbox, { agent: costly, attacks: [published!], maxUsd: 0 }),
+  ).rejects.toThrow("maxUsd must be finite and positive");
+});
 
 it("counts only the unpublished attacks that ran when the cap stops it partway", async () => {
   // $1 an episode with a $1.50 cap: two of the three attacks run, in the rating's random order.
