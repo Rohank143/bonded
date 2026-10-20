@@ -117,6 +117,8 @@ It also stores each agent's **Bonded Score**, a 0–100 safety rating from the A
 - Other contracts can read it. A vault, a lending market or a trading platform can require a minimum score before it accepts an agent, which is how the score becomes a standard rather than a badge.
 - It keeps the list of approved attesters, which CoverManager and BountyBoard also use.
 
+**The attestation format is frozen.** The registry can't be upgraded, so changing `BondedTypes.Attestation` (a field, its type or its order) or its EIP-712 typehash means redeploying everything and re-rating every agent. New rating detail goes in the Arena report, which the attestation commits to through `reportHash`. `test_AttestationFormatIsFrozen` fails if the format changes; see [SCORING.md](../../docs/SCORING.md#the-attestation-format-is-frozen).
+
 ### MandateVaultFactory
 
 **Creates vaults and vouches for them.** Anyone can create a vault for an agent. The factory records it as genuine, and CoverManager only insures vaults the factory created. That way nobody can insure a fake vault that reports made-up breaches.

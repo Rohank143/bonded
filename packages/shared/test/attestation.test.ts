@@ -53,7 +53,8 @@ const quote: Quote = {
 };
 
 describe("EIP-712 type strings", () => {
-  // These literals are duplicated in contracts/evm/test/BondedTypes.t.sol.
+  // These literals are duplicated in contracts/evm/test/BondedTypes.t.sol. The attestation format
+  // is frozen (docs/SCORING.md): new rating detail goes in the report, which reportHash commits to.
   it("match the strings the Solidity typehashes use", () => {
     expect(ATTESTATION_TYPE_STRING).toBe(
       "Attestation(uint256 agentId,uint16 score,uint16 securityScore,uint32 expectedLossBps,bytes32 reportHash,bytes32 mandateHash,bytes32 codeHash,bytes32 teeMeasurement,uint8 modelFamily,uint64 issuedAt,uint64 expiresAt)",

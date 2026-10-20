@@ -25,4 +25,5 @@ Read `docs/PLAN.md` for the product and the 16-day build plan. (It is not in the
 
 - Payouts and pass/fail are decided by deterministic, on-chain logic. AI output (Claude, Laya) is advisory only.
 - Tests go in the same commit as the code they test.
+- The on-chain attestation format is frozen (`BondedTypes.Attestation`, its typehash, the shared schema and ABI). New rating detail goes in the report, which `reportHash` commits to. Bump `ATTACK_LIBRARY_VERSION` when attacks, seeds or scoring change (docs/SCORING.md).
 - Keep metrics honest: report held-out numbers and list the assumptions next to them.

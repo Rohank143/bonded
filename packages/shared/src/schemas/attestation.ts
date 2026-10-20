@@ -41,6 +41,11 @@ export const MODEL_FAMILY_CODE: Record<ModelFamily, number> = {
 
 export const ZERO_BYTES32 = `0x${"0".repeat(64)}` as const;
 
+/**
+ * The signed attestation, mirrored by `BondedTypes.Attestation` on chain. Frozen: registries are
+ * immutable, so a new field means a full redeploy. New rating detail goes in the report, which
+ * `reportHash` commits to (docs/SCORING.md, "The attestation format is frozen").
+ */
 export const Attestation = z
   .object({
     agentId: uintString,

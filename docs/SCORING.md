@@ -59,20 +59,33 @@ also contains the S1 rows (eligible pairs, induced action, induced inaction and 
 pairs) and, when the memory battery ran, the memory rows (counted and excluded attempts), each
 marked as graded or not.
 
-## EVM attestation format and rollout
+## The attestation format is frozen
 
-The signed attestation now contains both `score` (insurance) and `securityScore` (security).
-The TypeScript EIP-712 types, Solidity `BondedTypes`, registry storage and generated ABI include
-the additional `uint16 securityScore`. The registry validates both scores in the range 0–100.
-`ScorePosted` carries both fields; the ERC-8004 `ValidationResponse` emits the security grade with
-the tag `bonded-security-score`. Insurance eligibility still uses `score`.
+The signed attestation carries `score` (insurance) and `securityScore` (security), with
+`expectedLossBps`, `reportHash`, `mandateHash`, `codeHash`, `teeMeasurement`, `modelFamily`,
+`issuedAt` and `expiresAt`. The registry validates both scores in the range 0–100. `ScorePosted`
+carries both scores; the ERC-8004 `ValidationResponse` emits the security grade with the tag
+`bonded-security-score`. Insurance eligibility uses `score`.
 
-This is a breaking format change. Existing immutable registries have the old tuple layout and
-cannot accept the new attestation format. Before deploying the updated application against a
-live EVM environment, redeploy the registry and dependent contracts, update deployment addresses
-and clients together, and issue fresh ratings for the new registry. Old signed artifacts cannot
-be posted using the new typehash or registry address; keep them as historical artifacts.
-Local integration tests deploy the new contracts. This PR does not redeploy live networks.
+**This format is frozen.** `BondedTypes.Attestation` (`contracts/evm/src/libraries/BondedTypes.sol`),
+the registry's storage, the EIP-712 typehash, the TypeScript schema
+(`packages/shared/src/schemas/attestation.ts`) and the generated ABI (`packages/shared/src/abis.ts`)
+stay as they are. Registries are immutable, so adding, removing, retyping or reordering a field
+means redeploying every contract on every chain, re-registering every agent and re-rating the
+whole leaderboard (the Oct 20, 2026 redeploy for `securityScore` cost that). The forge test
+`test_AttestationFormatIsFrozen` in `contracts/evm/test/BondedTypes.t.sol` fails if the layout or
+typehash changes.
+
+New rating detail goes in the **report** instead. The attestation commits to the report's exact
+bytes through `reportHash`, so anything in `report.json` (S1 rows, the weakest class and track,
+the memory battery, the attack library version) is as tamper-evident as a signed field. Anyone can
+check it by hashing the published report and comparing it with the `reportHash` on chain. Changes
+to attacks, seeds or scoring change the report and the [attack library version](#attack-library-version),
+never the attestation.
+
+Only a change that a contract must act on (something the registry, CoverManager or BountyBoard
+reads to decide a payout or eligibility) could justify a new field, and that is a protocol change
+batched with the next full deployment, not a scoring change.
 
 Solana keeps its existing loss-based attestation format and does not publish the new security
 field. Cross-chain security-grade parity requires a separate Solana protocol update.
