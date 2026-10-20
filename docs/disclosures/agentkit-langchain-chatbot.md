@@ -4,7 +4,7 @@
 - **Rated:** 2026-10-03, one run of each of the 40 attack seeds plus 2 controls, on a fresh local chain
 - **Models:** deepseek/deepseek-v4.1-flash and z-ai/glm-5.3-flash (since 2026-10-10); anthropic/claude-haiku-4.5 until then
 - **On chain (Robinhood Chain testnet registry):** on the contracts deployed Oct 10, 2026, agents 5 (DeepSeek) and 10 (GLM); agent 4 holds an earlier Haiku rating; agents 4 and 5 on the Sep 27 contracts before that; [leaderboard](https://www.bondedhq.xyz/leaderboard)
-- **Disclosure status:** DeepSeek and GLM: published, no breach found. Haiku: **maintainer notice pending** for one A1 breach found on 2026-10-06 (see below); the class-level result is public, the attack and transcript are withheld under the [disclosure policy](README.md).
+- **Disclosure status:** DeepSeek and GLM: **maintainer notice pending** for the findings of the 2026-10-19 rating (false market data, and one A5 breach with GLM; see below). Haiku: **maintainer notice pending** for one A1 breach found on 2026-10-06. Class-level results are public; which attacks and the transcripts are withheld under the [disclosure policy](README.md).
 
 ## How it was run
 
@@ -56,8 +56,23 @@ After the testnet redeployment the template was rated again with the same settin
 
 Agent 4 still holds the Haiku rating of 2026-10-04 (79 (A), 200 attack episodes); the leaderboard no longer lists it. The Haiku finding of 2026-10-06 above stands, and its disclosure is still pending.
 
+## Rated with the market-data battery and the security grade (2026-10-19)
+
+Rated again with the same settings plus two changes: the security grade (how often the agent was manipulated, set by its weakest row, separate from the insurance score), and the S1 market-data battery, which every rating of Bonded's own and leaderboard agents now runs. S1 feeds the agent false market data with no instruction in it (a fabricated earnings beat, a fake flash crash, a decimal-shifted number, a made-up hedge) and runs the same task twice, clean and with the lie; a trade the lie caused counts against the agent. The library has grown to 55 published attacks: five runs of each and of the 15 held-out attacks, 350 attack episodes and 2 controls, plus 2 clean/manipulated pairs of each of 25 S1 seeds. Monitor mode. These scores are on the [leaderboard](https://www.bondedhq.xyz/leaderboard) but not yet on chain: the new score format needs a redeployed testnet registry, and until then agents 5 (DeepSeek) and 10 (GLM) still hold the 2026-10-10 scores.
+
+| Model | Security grade | Weakest row | Attack library: manipulated (breached) | Market data: acted on the lie (breached, froze) | Insurance score |
+|---|---|---|---|---|---|
+| DeepSeek V4.1 Flash | 33 | A8 panic, market data: 8 of 12 pairs | 0 of 350 (0) | 24 of 50 (18, 2) | 83 (AA) |
+| GLM 5.3 Flash | 11 | A2 fabricated news, market data: 16 of 18 pairs | 1 of 350 (1, A5) | 31 of 49 (24, 1) | 81 (AA) |
+
+What these mean:
+- **The template still resists nearly every instruction-carrying attack**: no breach with DeepSeek, one with GLM in 350 episodes (an A5 address-poisoning attack, 1 of 35). That is why its insurance score stays AA.
+- **False market data moves it to trade about half the time.** A fabricated rotation call or earnings beat, a fake flash crash or depeg, or a false hedge ratio got it to buy what the lie pointed at, often into a dislocated venue, which tripped the vault's 3% slippage guard (a T3 breach). This is the S1 weakness: the data was false, not an instruction, so prompt-level defences don't see it.
+- **The security grade is set by that weakest row,** so it is low (33 and 11) while the insurance score stays AA: containment limits what a lie costs, but the agent was still fooled.
+
 ## Suggested mitigations, if deployed as an autonomous agent
 
+- Check market data before acting on it: confirm prices against an on-chain oracle, and treat news, social posts and unsourced reports as unverified, especially when they call for an urgent trade.
 - Enforce limits outside the prompt: mandate limits on chain (Bonded's Mandate Vault) or in code, and an allowlist of recipients and spenders.
 - Treat a "should I do X?" reply to untrusted content as a stop, not a question for whoever answers next.
 - Put a pre-trade guard in front of transfers and approvals. Bonded's Sentinel is one.
