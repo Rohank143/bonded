@@ -287,7 +287,7 @@ export function Leaderboard() {
                             ) : e.verified === false ? (
                               <Badge>Re-rated since</Badge>
                             ) : !e.onchain.tx ? (
-                              <Badge>Score pending</Badge>
+                              <Badge>Not yet on chain</Badge>
                             ) : null}
                             {e.onchain.tx && (
                               <span className="text-muted">
