@@ -90,6 +90,50 @@ batched with the next full deployment, not a scoring change.
 Solana keeps its existing loss-based attestation format and does not publish the new security
 field. Cross-chain security-grade parity requires a separate Solana protocol update.
 
+## Attack library version
+
+`ATTACK_LIBRARY_VERSION` (`packages/shared/src/library-version.ts`) is one number for everything a
+rating is measured against: the published attacks (`attacks/`), the S1 market-data seeds
+(`apps/arena/s1-seeds`), the memory seeds (`apps/arena/s1-seeds-memory`) and the scoring rules
+(`susceptibility()` and `scoreRating()`, the S1 and memory counting rules). Every rating report
+records it as `libraryVersion` (and in `report.md`), and every leaderboard entry copies it.
+
+Bump it by hand, in the same commit, when a seed is added, removed or changed, or when a scoring
+rule changes what a rating would produce, and add a line to the history in that file. The test
+`apps/arena/test/library-version.test.ts` fingerprints the three seed folders and fails if they
+change without a bump; scoring rules aren't fingerprinted, so a scoring change needs the bump by
+judgement. Bumping it costs nothing on chain: the version is in the report, which `reportHash`
+commits to.
+
+The web leaderboard shows the current version. Entries rated on an older version are marked as
+such and left off the podium, and entries with no version are shown as rated before versions
+were recorded. The six entries from the Oct 19–20, 2026 re-rating were backfilled as version 1:
+their reports carry S1 fields that only the code after commit 82814f61 writes, and the seeds and
+`actuarial.ts` have not changed since 21:53 on Oct 19, before they started.
+
+To bring the board up to date after a bump, run `pnpm --filter @bonded/arena leaderboard refresh`
+([below](#refreshing-the-leaderboard)).
+
+## Refreshing the leaderboard
+
+`pnpm --filter @bonded/arena leaderboard refresh` re-rates every entry in `config/leaderboard.json`
+(or `--only <slug,slug>`) with its agent and model and the standard settings: 5 runs of each
+attack, the held-out set (the newest folder in `~/.config/bonded/held-out`, or `--held-out`),
+900 s episodes, S1 at 2 pairs a seed, and a total `--max-usd` cap shared across the model-driven
+entries. It writes each rating to `apps/arena/ratings/refresh-v<version>/<slug>` and is safe to
+run again: a slug whose folder holds a complete, publishable rating on the current version is
+skipped, and a folder from a rating that stopped early, hit an agent error or crashed is moved
+aside (to `<slug>.failed-<n>`, its spend still counted against the cap) and rated again. Once every
+entry is complete it posts them all with `leaderboard add --post` semantics (a score already
+posted for the same report is not posted twice) and prints a summary. `--dry-run` prints the plan
+and a cost estimate without running anything; `--no-post` stops after updating the file.
+
+Each rating is its own `arena rate` process on its own local chain, logged to `<slug>.log` next to
+its folder. A model-driven rating took 70–90 minutes in the Oct 19–20 re-rating, so the default
+one-at-a-time run of the six entries takes about six hours; `--parallel 4` cuts that to under two.
+The cost estimate is $0.45 per model-driven rating at 5 runs (that re-rating spent $0.33–0.41 per
+entry on DeepSeek v4.1 Flash and GLM 5.3 Flash); retries cost extra and count against the cap.
+
 ## S1 security observations
 
 Every rating of a built-in agent runs the S1 market-data battery inline by default; a rating can instead receive
