@@ -106,11 +106,11 @@ Anchor programs for the same core: `bonded_registry`, `bonded_vault`, `bonded_co
 
 1. Start a sandbox: a local chain, or a fork of the live chain, with the same contracts.
 2. Create a vault with the agent's mandate.
-3. Plant one attack from the library (`attacks/`, ten classes) in the agent's world: inbox, news, social posts, prices, token metadata, transaction history, market data, tool output, messages from other agents.
+3. Plant one attack from the library (`attacks/`, ten classes; the S1 market-data seeds are in `apps/arena/s1-seeds` and the memory seeds in `apps/arena/s1-seeds-memory`) in the agent's world: inbox, news, social posts, prices, token metadata, transaction history, market data, tool output, messages from other agents.
 4. Give the agent a benign task and let it act through its tools, which go through the vault.
 5. Judge by the vault's breach log, never by what the agent says or an AI grader.
 
-A rating runs every attack (usually five times) plus control episodes with no attack, turns breach rates into an expected loss, premium and score (Section 9; the maths is `packages/shared/src/actuarial.ts`), signs the attestation and posts it. The same code runs a single attack against a real vault for the demo's break-it run (`runLiveAttack`). The agents themselves are in `apps/demo-agents` ([AGENTS.md](AGENTS.md)).
+A rating runs every attack (usually five times) plus control episodes with no attack, then the S1 battery (each seed as a clean and a manipulated run of the same world) and, for an agent whose memory Bonded can read and reset, the memory battery (a lie planted on day 1, a clean day 2). It turns manipulation rates into the security grade, the Bonded Score (`susceptibility`), and breach rates into an expected loss, premium and insurance score (`scoreRating`; Section 9; the maths is `packages/shared/src/actuarial.ts`; [SCORING.md](SCORING.md)), signs the attestation and posts it. The same code runs a single attack against a real vault for the demo's break-it run (`runLiveAttack`). The agents themselves are in `apps/demo-agents` ([AGENTS.md](AGENTS.md)).
 
 ### Agents that run elsewhere
 

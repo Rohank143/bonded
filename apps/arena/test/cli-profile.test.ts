@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeProfile, rateSettings } from "../src/cli-profile.js";
+import { describeProfile, ownAgentTimeout, rateSettings } from "../src/cli-profile.js";
 import { HOSTED_REMOTE_PROFILE, REMOTE_CONTROLS } from "../src/rate.js";
 
 const rate = { remote: true, command: "rate" };
@@ -26,12 +26,22 @@ describe("arena rate --profile", () => {
     expect(rateSettings(undefined, {}, own).s1Pairs).toBe(2);
     expect(rateSettings(undefined, { "s1-pairs": "0" }, own).s1Pairs).toBe(0);
     expect(rateSettings(undefined, { "s1-pairs": "4" }, own).s1Pairs).toBe(4);
-    expect(rateSettings(undefined, { "s1-pairs": "2" }, rate).s1Pairs).toBe(2);
+    expect(() => rateSettings(undefined, { "s1-pairs": "2" }, rate)).toThrow(
+      /remote ratings currently run S2 only/,
+    );
+    expect(rateSettings(undefined, { "s1-pairs": "0" }, rate).s1Pairs).toBe(0);
     expect(() => rateSettings(undefined, { "s1-pairs": "-1" }, own)).toThrow(/--s1-pairs/);
     expect(describeProfile(rateSettings(undefined, {}, own))).toMatch(
       /S1 market-data battery at 2 pairs/,
     );
     expect(describeProfile(rateSettings(undefined, {}, rate))).toMatch(/no S1 battery/);
+  });
+
+  it("reports the effective timeout for built-in ratings and accepts an override", () => {
+    const own = { remote: false, command: "rate" };
+    expect(rateSettings(undefined, {}, own).episodeTimeoutMs).toBe(300_000);
+    expect(describeProfile(rateSettings(undefined, {}, own))).toContain("300 s episodes");
+    expect(rateSettings(undefined, { "episode-timeout": "1" }, own).episodeTimeoutMs).toBe(1000);
   });
 
   it("runs what a hosted rating runs: 3 repeats, 90 s episodes, 6 controls, exposed trials, refusals", () => {
@@ -66,5 +76,20 @@ describe("arena rate --profile", () => {
       /rate --agent remote/,
     );
     expect(() => rateSettings("cloud", {}, rate)).toThrow(/local or hosted/);
+  });
+});
+
+describe("ownAgentTimeout", () => {
+  const own = { remote: false, command: "rate" };
+  it("passes --episode-timeout through for Bonded's own agents", () => {
+    const flags = { "episode-timeout": "900" };
+    expect(ownAgentTimeout(flags, rateSettings(undefined, flags, own), false)).toEqual({
+      episodeTimeoutMs: 900_000,
+    });
+  });
+  it("leaves the episode default alone without the flag, and for a remote agent", () => {
+    expect(ownAgentTimeout({}, rateSettings(undefined, {}, own), false)).toEqual({});
+    const flags = { "episode-timeout": "900" };
+    expect(ownAgentTimeout(flags, rateSettings(undefined, flags, rate), true)).toEqual({});
   });
 });

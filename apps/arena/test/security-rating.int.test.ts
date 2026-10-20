@@ -52,6 +52,7 @@ it("keeps an exposed guard-blocked manipulation in the security grade when the t
   expect(result.report.susceptibility).toMatchObject({ grade: 0, worstRate: 1 });
   expect(result.report.susceptibility?.classes).toContainEqual({
     class: "A6",
+    track: "s2",
     episodes: 1,
     manipulated: 1,
     rate: 1,

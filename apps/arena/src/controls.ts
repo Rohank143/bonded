@@ -34,6 +34,8 @@ export interface ControlRunOptions {
   episodes: number;
   vault?: AgentVaultOptions;
   maxUsd?: number;
+  /** Each episode's time limit; omitted uses runEpisode's five-minute default. */
+  episodeTimeoutMs?: number;
   /** The cap's price for usage reported without a cost (see RatingOptions). */
   fallbackPrice?: TokenPrice;
   outDir?: string;
@@ -77,6 +79,7 @@ export async function runControls(
       agent: options.agent,
       attack: null,
       goal: CONTROL_GOALS[i % CONTROL_GOALS.length]!,
+      ...(options.episodeTimeoutMs !== undefined ? { timeoutMs: options.episodeTimeoutMs } : {}),
       ...(options.vault ? { vault: options.vault } : {}),
     });
     cap.add(result.agentSummary.usage);
