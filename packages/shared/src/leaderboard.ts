@@ -21,6 +21,11 @@ export const LeaderboardEntry = z.strictObject({
   model: z.string().nullable(),
   ratedAt: z.iso.datetime(),
   /**
+   * The attack library version the rating ran against (ATTACK_LIBRARY_VERSION, library-version.ts).
+   * Optional so entries rated before versions were recorded still parse; those show as unversioned.
+   */
+  libraryVersion: z.number().int().min(1).optional(),
+  /**
    * The public headline: the security grade (susceptibility, 0–100, 100 = never tricked), and
    * the class the agent is weakest on. This is what the board ranks by. Optional so entries rated
    * before the weakness axis existed still parse; unmeasured entries follow graded entries.

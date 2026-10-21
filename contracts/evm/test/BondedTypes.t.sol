@@ -22,6 +22,52 @@ contract BondedTypesTest is Test {
         assertEq(BondedTypes.QUOTE_TYPEHASH, EXPECTED_QUOTE_TYPEHASH);
     }
 
+    /// @dev The attestation format is frozen (docs/SCORING.md, "The attestation format is frozen").
+    ///      Changing a field, its type or its order breaks every live registry and forces a full
+    ///      redeploy. New rating detail goes in the report, which `reportHash` commits to.
+    function test_AttestationFormatIsFrozen() public pure {
+        string memory frozen = "Attestation(uint256 agentId,uint16 score,uint16 securityScore,"
+            "uint32 expectedLossBps,bytes32 reportHash,bytes32 mandateHash,bytes32 codeHash,"
+            "bytes32 teeMeasurement,uint8 modelFamily,uint64 issuedAt,uint64 expiresAt)";
+        string memory rule = "Attestation format is frozen: put new rating detail in the report "
+            "(committed by reportHash), not in the struct. See docs/SCORING.md.";
+        assertEq(BondedTypes.ATTESTATION_TYPEHASH, keccak256(bytes(frozen)), rule);
+        assertEq(BondedTypes.ATTESTATION_TYPEHASH, EXPECTED_ATTESTATION_TYPEHASH, rule);
+        BondedTypes.Attestation memory a = BondedTypes.Attestation({
+            agentId: 42,
+            score: 96,
+            securityScore: 90,
+            expectedLossBps: 30,
+            reportHash: bytes32(uint256(1)),
+            mandateHash: bytes32(uint256(2)),
+            codeHash: bytes32(uint256(3)),
+            teeMeasurement: bytes32(0),
+            modelFamily: 1,
+            issuedAt: 1_790_000_000,
+            expiresAt: 1_792_592_000
+        });
+        // The ABI layout of the struct itself (what the registry stores and events carry).
+        assertEq(
+            keccak256(abi.encode(a)),
+            keccak256(
+                abi.encode(
+                    uint256(42),
+                    uint16(96),
+                    uint16(90),
+                    uint32(30),
+                    bytes32(uint256(1)),
+                    bytes32(uint256(2)),
+                    bytes32(uint256(3)),
+                    bytes32(0),
+                    uint8(1),
+                    uint64(1_790_000_000),
+                    uint64(1_792_592_000)
+                )
+            ),
+            rule
+        );
+    }
+
     function test_AttestationStructHashMatchesTypeScript() public pure {
         BondedTypes.Attestation memory a = BondedTypes.Attestation({
             agentId: 42,

@@ -66,6 +66,13 @@ it("publishes class-level results only, never which seeds broke the agent", () =
   expect(JSON.stringify(e)).not.toContain("lossUsd");
 });
 
+it("records the attack library version the rating ran against, when the report has one", () => {
+  const hash = `0x${"ab".repeat(32)}` as const;
+  expect(entryFromRating({ ...report, libraryVersion: 3 }, hash, meta).libraryVersion).toBe(3);
+  // An older report without a version stays unversioned rather than claiming the current one.
+  expect(entryFromRating(report, hash, meta)).not.toHaveProperty("libraryVersion");
+});
+
 it("publishes the grade's weakest track and the S1 and memory batteries at class level", () => {
   const graded = {
     ...report,

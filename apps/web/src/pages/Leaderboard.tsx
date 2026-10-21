@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
+import { ATTACK_LIBRARY_VERSION, libraryVersionStatus } from "@bondedhq/shared";
 import { api, type LeaderboardRecord } from "../lib/api";
 import { DOCS_DISCLOSURES } from "../lib/routes";
 import { falseDataHeadline, manipulatedOf, weakestText } from "../lib/security";
@@ -88,6 +89,21 @@ function batteryLines(e: LeaderboardRecord): string[] {
   return lines;
 }
 
+/**
+ * A note for a result measured against an older attack library, or before versions were
+ * recorded: it isn't comparable with current results. Undefined for a current one.
+ */
+function libraryNote(e: LeaderboardRecord): string | undefined {
+  switch (libraryVersionStatus(e.libraryVersion)) {
+    case "older":
+      return `Rated on attack library v${e.libraryVersion}; current is v${ATTACK_LIBRARY_VERSION}`;
+    case "unversioned":
+      return "Rated before attack library versions were recorded";
+    default:
+      return undefined;
+  }
+}
+
 const DISCLOSURE: Record<LeaderboardRecord["disclosure"]["status"], string> = {
   "not-needed": "Bonded's own",
   pending: "maintainer notice pending",
@@ -108,8 +124,10 @@ export function Leaderboard() {
   const entries = board.data
     ? [...board.data.entries].sort((a, b) => (b.securityGrade ?? -1) - (a.securityGrade ?? -1))
     : [];
+  // The podium shows only results measured against the current attack library.
   const graded = entries.filter(
-    (e): e is LeaderboardRecord & { securityGrade: number } => e.securityGrade !== undefined,
+    (e): e is LeaderboardRecord & { securityGrade: number } =>
+      e.securityGrade !== undefined && !libraryNote(e),
   );
   return (
     <Page
@@ -168,7 +186,7 @@ export function Leaderboard() {
 
       <Card
         title="Rankings"
-        description="The security score is set by the agent's weakest row. One square per attack class of the main library, A1 to A10, coloured by how often the agent was manipulated; hover for breaches. Market-data and memory results are summed up under each strip."
+        description={`The security score is set by the agent's weakest row. One square per attack class of the main library, A1 to A10, coloured by how often the agent was manipulated; hover for breaches. Market-data and memory results are summed up under each strip. Current attack library: v${ATTACK_LIBRARY_VERSION}; results from an older library are marked.`}
         actions={
           <div className="flex flex-wrap items-center gap-3.5 text-xs text-muted">
             <span className="inline-flex items-center gap-1.5">
@@ -237,6 +255,15 @@ export function Leaderboard() {
                         <span className="mt-1 block text-[11px] text-muted/80">
                           {DISCLOSURE[e.disclosure.status]}
                         </span>
+                        {libraryNote(e) ? (
+                          <span className="mt-1 block text-[11px] leading-snug text-warn">
+                            {libraryNote(e)}
+                          </span>
+                        ) : (
+                          <span className="mt-1 block text-[11px] text-muted/80">
+                            Attack library v{e.libraryVersion}
+                          </span>
+                        )}
                       </span>
                       <span className="flex flex-col items-start gap-2">
                         {e.securityGrade === undefined ? (
@@ -331,6 +358,12 @@ export function Leaderboard() {
           <li>
             Every agent faces the same attack library, five runs of each attack, including held-out
             attacks that are never published, so no one can tune for them.
+          </li>
+          <li>
+            Every rating records the attack library version it ran against (now v
+            {ATTACK_LIBRARY_VERSION}). The version goes up when attacks, market-data or memory
+            seeds, or scoring rules change, and results from an older version are marked until the
+            agent is re-rated.
           </li>
           <li>
             Results are shown per attack class. Which attack broke a third-party agent stays private

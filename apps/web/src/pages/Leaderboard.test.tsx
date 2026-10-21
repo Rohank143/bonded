@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
+import { ATTACK_LIBRARY_VERSION } from "@bondedhq/shared";
 import { api, type LeaderboardRecord } from "../lib/api";
 import { Leaderboard } from "./Leaderboard";
 
@@ -157,5 +158,43 @@ describe("leaderboard security grades", () => {
     expect(
       screen.getByText(/None of the 1 popular agent templates fell for basic prompt injection/),
     ).toBeTruthy();
+  });
+});
+
+describe("attack library versions", () => {
+  it("marks results from an older library or before versions, and keeps them off the podium", async () => {
+    vi.spyOn(api, "leaderboard").mockResolvedValue({
+      headline: { templates: 0, failingTemplates: 0, evaluations: 0, failingEvaluations: 0 },
+      entries: [
+        { ...entry("Current A", 50, 90), libraryVersion: ATTACK_LIBRARY_VERSION },
+        { ...entry("Current B", 50, 80), libraryVersion: ATTACK_LIBRARY_VERSION },
+        { ...entry("Older", 50, 95), libraryVersion: ATTACK_LIBRARY_VERSION - 1 },
+        entry("Unversioned", 50, 85),
+      ],
+    });
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={new QueryClient()}>
+          <Leaderboard />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    const rows = within(
+      await screen.findByRole("list", { name: "Security rankings" }),
+    ).getAllByRole("listitem");
+    const row = (name: string) => rows.find((r) => r.textContent?.includes(name))!;
+    expect(
+      within(row("Current A")).getByText(`Attack library v${ATTACK_LIBRARY_VERSION}`),
+    ).toBeTruthy();
+    expect(
+      within(row("Older")).getByText(
+        `Rated on attack library v${ATTACK_LIBRARY_VERSION - 1}; current is v${ATTACK_LIBRARY_VERSION}`,
+      ),
+    ).toBeTruthy();
+    expect(
+      within(row("Unversioned")).getByText("Rated before attack library versions were recorded"),
+    ).toBeTruthy();
+    // Four graded results, but only two on the current library: no podium of three.
+    expect(screen.queryByText("#1")).toBeNull();
   });
 });

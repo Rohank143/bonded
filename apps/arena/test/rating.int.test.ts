@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ScriptedHardenedAgent, ScriptedVulnerableAgent } from "@bonded/demo-agents";
-import { bondedRegistryAbi } from "@bondedhq/shared";
+import { ATTACK_LIBRARY_VERSION, bondedRegistryAbi } from "@bondedhq/shared";
 import { keccak256, stringToBytes } from "viem";
 import { afterAll, assert, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -54,6 +54,14 @@ describe("a full rating of both demo agents", () => {
       expect(r.report.episodes.agentErrors).toBe(0);
       expect(r.report.stoppedEarly).toBeNull();
     }
+  });
+
+  it("records the attack library version in the report the attestation commits to", () => {
+    for (const r of [vulnerable, hardened])
+      expect(r.report.libraryVersion).toBe(ATTACK_LIBRARY_VERSION);
+    expect(readFileSync(vulnerable.files.markdown!, "utf8")).toContain(
+      `Attack library: version ${ATTACK_LIBRARY_VERSION}`,
+    );
   });
 
   it("counts the unpublished attacks it ran, and reports none when there were none", () => {
