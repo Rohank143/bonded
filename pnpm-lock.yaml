@@ -515,9 +515,12 @@ importers:
       '@bondedhq/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@noble/hashes':
+        specifier: ^1.8.0
+        version: 1.8.0
       '@phala/dstack-sdk':
         specifier: 0.5.8
-        version: 0.5.8(@noble/curves@1.9.7)(@noble/hashes@2.4.0)(@solana/web3.js@1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10))(viem@2.56.9(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.6.5))
+        version: 0.5.8(@noble/curves@1.9.7)(@noble/hashes@1.8.0)(@solana/web3.js@1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10))(viem@2.56.9(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.6.5))
       '@solana/web3.js':
         specifier: ^1.98.4
         version: 1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
@@ -11446,9 +11449,9 @@ snapshots:
     transitivePeerDependencies:
       - encoding
 
-  '@phala/dstack-sdk@0.5.8(@noble/curves@1.9.7)(@noble/hashes@2.4.0)(@solana/web3.js@1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10))(viem@2.56.9(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.6.5))':
+  '@phala/dstack-sdk@0.5.8(@noble/curves@1.9.7)(@noble/hashes@1.8.0)(@solana/web3.js@1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10))(viem@2.56.9(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.6.5))':
     dependencies:
-      '@noble/hashes': 2.4.0
+      '@noble/hashes': 1.8.0
     optionalDependencies:
       '@noble/curves': 1.9.7
       '@solana/web3.js': 1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)

@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@bondedhq/shared": "workspace:*",
+    "@noble/hashes": "^1.8.0",
     "@phala/dstack-sdk": "0.5.8",
     "@solana/web3.js": "^1.98.4",
     "viem": "^2.56.9"
