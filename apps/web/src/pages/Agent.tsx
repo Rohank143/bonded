@@ -162,6 +162,7 @@ export function Agent() {
     ...(report ? { report } : {}),
     ...(entry ? { entry } : {}),
     missing: run.isError || score.isError,
+    entryPending: board.isPending,
   });
   // Ratings that count only exercised trials (operator-run agents) report them per class.
   const exercisedShown = Boolean(report?.classes.some((c) => c.exercised !== undefined));

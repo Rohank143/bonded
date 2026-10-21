@@ -113,4 +113,9 @@ describe("agent page weakest tile", () => {
     });
     expect(weakestTile({ missing: false }).hint).toBe("loading the report");
   });
+
+  it("keeps loading while the leaderboard could still supply the weakest row", () => {
+    expect(weakestTile({ missing: true, entryPending: true }).hint).toBe("loading the report");
+    expect(weakestTile({ missing: true, entryPending: false }).value).toBe("—");
+  });
 });

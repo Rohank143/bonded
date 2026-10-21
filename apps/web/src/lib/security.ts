@@ -72,8 +72,10 @@ export function weakestTile(input: {
   entry?: Pick<LeaderboardRecord, "worstClass" | "worstTrack" | "worstSource" | "securityGrade">;
   /** The report can't be loaded (no hosted run for this score, or the request failed). */
   missing: boolean;
+  /** The leaderboard is still loading, so an entry may yet arrive: keep loading until it settles. */
+  entryPending?: boolean;
 }): { value: string; hint: string } {
-  const { report, entry, missing } = input;
+  const { report, entry, missing, entryPending } = input;
   if (report) {
     const grade = report.susceptibility;
     // Nothing was weak when no row was ever manipulated (then the "worst" is just the first row).
@@ -96,6 +98,6 @@ export function weakestTile(input: {
       hint: `${batteryName(entry.worstTrack, entry.worstSource)}: sets the Bonded Score`,
     };
   if (entry?.securityGrade === 100) return { value: "none", hint: "never manipulated" };
-  if (missing) return { value: "—", hint: "the full report isn't available" };
+  if (missing && !entryPending) return { value: "—", hint: "the full report isn't available" };
   return { value: "…", hint: "loading the report" };
 }
