@@ -6,36 +6,37 @@
   "score": {
     "agentId": "2",
     "score": 97,
-    "expectedLossBps": 24,
-    "reportHash": "0xfe6b16e778c4594ade5c21d3040cb522c0473734b167fb694e1e4736b7aaf2e5",
-    "mandateHash": "0x63b2c627d71abbf8dc31169a683e6eb1fb294129388cab7a7612fcb4370295d5",
+    "securityScore": 100,
+    "expectedLossBps": 21,
+    "reportHash": "0x3fc076e3ae296796ce0e9a374062f14ea857662c4ff01af55d34b6b23125f4a6",
+    "mandateHash": "0x439fc2344cda69b832f6fe84f2d1aed13cd82a7953261a04a50d4abc1635dd3d",
     "codeHash": "0xd4f47556cb3c40c3547ea51e0152be194b98c879ddb6933d2d7f8229233185cc",
     "teeMeasurement": "0xb933453b890e41dfef68870e96c97c19fce7078bce7bf6bc5dd7b0973fcc8f01",
     "modelFamily": "unknown",
-    "issuedAt": 1791663283,
-    "expiresAt": 1794255283
+    "issuedAt": 1792538596,
+    "expiresAt": 1795130596
   },
   "results": [
     {
       "chain": "arbitrumSepolia",
       "agentId": "1",
-      "status": "posted",
-      "registeredNow": true,
-      "tx": "0x622bc519d211c34388bba44b0de819c89537a4149602bed57494a195e0e7d4db"
+      "status": "already-current",
+      "registeredNow": false,
+      "tx": "0xc47215a2e6785dce76252fef2482414e853704f2dcebdc07255b3086430a7bad"
     },
     {
       "chain": "sepolia",
       "agentId": "1",
-      "status": "posted",
-      "registeredNow": true,
-      "tx": "0xb33a3061688aa9614ffb8e9fc6a9014642b165aaf4dab41b2a96455bfd4928b2"
+      "status": "already-current",
+      "registeredNow": false,
+      "tx": "0x7c000fc2c999300fe7ccabad242e032befdb34fc92960f50a97be60f9217f913"
     },
     {
       "chain": "solanaDevnet",
-      "agentId": "4",
+      "agentId": "5",
       "status": "posted",
       "registeredNow": true,
-      "tx": "3D34oG3ZFy5kZZuUeGEqBzXKWBxd3afhZcWRyW9dQFrHgUNw4bN5a8VoZgxvcRfm6AyfH3WufbQVGViF9vWxdCvF"
+      "tx": "4mdxBJUd1KJqduanMtUvT2ADCKKZvcCNyFWWmUmEvM6DnLT4pGqUM9tvaA4gCEYhFJTBcugURcS9mVjPb3rQUZSR"
     }
   ]
 }
