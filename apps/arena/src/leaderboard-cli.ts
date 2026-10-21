@@ -5,6 +5,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { type LeaderboardEntry } from "@bondedhq/shared";
+import { readEvmScore } from "./crosspost.js";
 import { addRating } from "./leaderboard-add.js";
 import {
   defaultHeldOutDir,
@@ -16,6 +17,7 @@ import {
   REFRESH_DEFAULTS,
   refreshRunDir,
   runRefresh,
+  verifiedOnChain,
 } from "./leaderboard-refresh.js";
 import { LEADERBOARD_FILE, readLeaderboard } from "./leaderboard.js";
 
@@ -36,8 +38,9 @@ with --post registers the agent on Robinhood Chain testnet and posts its score t
 
 refresh: re-rates every leaderboard entry with its agent and model and the standard settings
 (${REFRESH_DEFAULTS.repeats} runs of each attack, the held-out set, ${REFRESH_DEFAULTS.episodeTimeoutS} s episodes, S1 on), then adds them all to
-the file and posts them together. Safe to run again: complete ratings are skipped and only what
-failed (a timeout, an agent error, a crash) is rated again. Ratings go in
+the file and posts them together. An entry already rated on the current attack library, whose
+score the registry confirms, is skipped. Safe to run again: complete ratings are skipped and only
+what failed (a timeout, an agent error, a crash) is rated again. Ratings go in
 apps/arena/ratings/refresh-v<library version>/<slug>.
 
   --dry-run            print the plan and cost estimate; run nothing
@@ -52,7 +55,7 @@ apps/arena/ratings/refresh-v<library version>/<slug>.
   --attempts <n>       tries per entry in this run (default: ${REFRESH_DEFAULTS.attempts})
   --parallel <n>       ratings at once, each on its own local chain (default: ${REFRESH_DEFAULTS.parallel})
   --run <name>         the run folder under apps/arena/ratings (default: refresh-v<version>);
-                       a new name re-rates everything on the same version
+                       a new name re-rates everything on the same version, current entries too
   --estimate-usd <n>   cost estimate per model-driven rating (default: ${REFRESH_DEFAULTS.estimateUsd})
   --no-post            update the leaderboard file only; don't post on chain
   --publish-partial    publish the complete entries even if some failed
@@ -171,14 +174,18 @@ async function refresh(
     heldOut,
   };
   const maxUsd = values["max-usd"] === undefined ? undefined : usd(values["max-usd"], "--max-usd");
+  const entries = readLeaderboard(file);
   const plan = planRefresh({
-    entries: readLeaderboard(file),
+    entries,
     runDir: refreshRunDir(RATINGS_DIR, values.run),
     ...(values.only ? { only: values.only.split(",").map((s) => s.trim()) } : {}),
     ...(values["estimate-usd"]
       ? { estimateUsd: usd(values["estimate-usd"], "--estimate-usd") }
       : {}),
     repeats: settings.repeats,
+    // The default run skips entries already rated on this library and confirmed on chain; a
+    // named run re-rates them.
+    ...(values.run ? {} : { verified: await verifiedOnChain(entries, readEvmScore) }),
   });
   for (const line of describePlan(plan, settings, maxUsd)) console.log(line);
   if (values["dry-run"]) return 0;

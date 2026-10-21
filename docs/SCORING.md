@@ -128,6 +128,12 @@ entry is complete it posts them all with `leaderboard add --post` semantics (a s
 posted for the same report is not posted twice) and prints a summary. `--dry-run` prints the plan
 and a cost estimate without running anything; `--no-post` stops after updating the file.
 
+An entry the board already lists on the current attack library is skipped too, when the
+registry on Robinhood Chain testnet holds its score (the same report hash and insurance score):
+it is not re-rated or posted again, so a refresh right after a library bump re-rates only what the
+bump made stale. If the registry can't be read, the refresh stops rather than re-rate entries that
+may be current. A named run (`--run <name>`) skips this check and re-rates every entry.
+
 Each rating is its own `arena rate` process on its own local chain, logged to `<slug>.log` next to
 its folder. A model-driven rating took 70–90 minutes in the Oct 19–20 re-rating, so the default
 one-at-a-time run of the six entries takes about six hours; `--parallel 4` cuts that to under two.
