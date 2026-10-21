@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LeaderboardRecord } from "./api";
-import { batteryName, falseDataHeadline, weakestRow, weakestText } from "./security";
+import { batteryName, falseDataHeadline, weakestRow, weakestText, weakestTile } from "./security";
 
 describe("security score labels", () => {
   it("names the weakest row's battery", () => {
@@ -71,5 +71,51 @@ describe("false market data headline", () => {
 
   it("is null when no template ran the market-data battery", () => {
     expect(falseDataHeadline([evaluation("agentkit"), evaluation("solana", [])])).toBeNull();
+  });
+});
+
+describe("agent page weakest tile", () => {
+  const susceptibility = {
+    grade: 33,
+    worstClass: "A8" as const,
+    worstTrack: "s1" as const,
+    worstRate: 0.67,
+    overallRate: 0.1,
+    classes: [],
+  };
+
+  it("uses the report when the API has it", () => {
+    expect(weakestTile({ report: { classes: [], susceptibility }, missing: false })).toEqual({
+      value: "A8 · 67%",
+      hint: "market data: sets the Bonded Score",
+    });
+  });
+
+  it("falls back to the leaderboard entry when there's no hosted report", () => {
+    expect(
+      weakestTile({
+        entry: { worstClass: "A2", worstTrack: "s1", securityGrade: 11 },
+        missing: true,
+      }),
+    ).toEqual({ value: "A2", hint: "market data: sets the Bonded Score" });
+    expect(
+      weakestTile({
+        entry: { worstClass: "A1", worstTrack: "s2", securityGrade: 100 },
+        missing: true,
+      }),
+    ).toEqual({ value: "none", hint: "never manipulated" });
+  });
+
+  it("says the report isn't available instead of loading forever", () => {
+    expect(weakestTile({ missing: true })).toEqual({
+      value: "—",
+      hint: "the full report isn't available",
+    });
+    expect(weakestTile({ missing: false }).hint).toBe("loading the report");
+  });
+
+  it("keeps loading while the leaderboard could still supply the weakest row", () => {
+    expect(weakestTile({ missing: true, entryPending: true }).hint).toBe("loading the report");
+    expect(weakestTile({ missing: true, entryPending: false }).value).toBe("—");
   });
 });
