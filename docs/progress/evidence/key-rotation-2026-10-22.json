@@ -1,0 +1,457 @@
+{
+  "date": "2026-10-22",
+  "reason": "Railway disclosed on Oct 21, 2026 that customer environment variables may have been exposed. The testnet deployer key was stored there as ATTESTER_KEY, and the keeper key as KEEPER_KEY.",
+  "old": {
+    "deployer": "0xd42FA5ae8949710479954ae78D1b12Ff2e50A841",
+    "keeper": "0x35AC3B9747B665cdE03b2600c0db55ffD9864681"
+  },
+  "new": {
+    "deployer": "0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b",
+    "keeper": "0x4B9e61d0c590d1e279D67eeE33Dd07e2Ad4C7632"
+  },
+  "chains": {
+    "46630": {
+      "name": "Robinhood Chain testnet",
+      "transactions": [
+        {
+          "from": "old",
+          "to": "0x109D98d2ab039273FB07D08617FbD353Ca8747F2",
+          "call": "setAttester(address,bool)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b", "true"],
+          "tx": "0xbea0b3b2d81a9eaafedc59b058c773e54407ae538afefd541ca9feada08f47b0"
+        },
+        {
+          "from": "old",
+          "to": "0xCbDFB40b1A53adcf142Aa784609cFe2B9F33698D",
+          "call": "setTreasury(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0x9d10cab014a8c1aa459a551bba472a2933d535ccdcd05e5e1e062971581e23fd"
+        },
+        {
+          "from": "old",
+          "to": "0xcd04e14dD1d4766A7F65117780f8Fc7a27003471",
+          "call": "setCouncil(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0xf8a6053cff1c3ca6a20f6f75bd82677e611e7f1ec10b0deaacb206ad27fb22ef"
+        },
+        {
+          "from": "old",
+          "to": "0x109D98d2ab039273FB07D08617FbD353Ca8747F2",
+          "call": "transferOwnership(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0x980ac20d91a7e9bedf733e6a7b204763ebb03b3ed27a69094ff9ae2455706d8e"
+        },
+        {
+          "from": "old",
+          "to": "0xd0819B59E1E53160B783c7aB479De783BC6865a5",
+          "call": "transferOwnership(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0x86b9f884b36e5d423a47e78e4862dcf5858d10074758f81dfa89b8b66c54a735"
+        },
+        {
+          "from": "old",
+          "to": "0x0e263aaE54F5562e6841b4b536f32c2ecE0A1EEd",
+          "call": "transferOwnership(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0x7144e93c65664ff55e30842da3285dd31943137d6745c87dfea25cda91f8a9cc"
+        },
+        {
+          "from": "old",
+          "to": "0xCbDFB40b1A53adcf142Aa784609cFe2B9F33698D",
+          "call": "transferOwnership(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0x52bcbdc0be114bbadebf50e1598e811e71b6f191e7de98f6610650d3771fb4a6"
+        },
+        {
+          "from": "old",
+          "to": "0xcd04e14dD1d4766A7F65117780f8Fc7a27003471",
+          "call": "transferOwnership(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0x02991fb1421238c50ca040fae39aa237c06ea1447a12bf4ba64eb15782deacf7"
+        },
+        {
+          "from": "old",
+          "to": "0x89cA6deC91C737A44DA7D3efc9f6Db7b1Ff23FC6",
+          "call": "transferOwnership(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0xd9d1257b77c79e52dd44e641706f3c666dbac6b07e91a393b2f207c8111138a1"
+        },
+        {
+          "from": "old",
+          "to": "0xba8f66D2BBb87B66f42faE0F83Be14A180BF21F9",
+          "call": "transferOwnership(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0xe81d2193906b9056e9bf8c846aecbbe33fa3bb172d1ab55a4e9fb8a459ce084d"
+        },
+        {
+          "from": "old",
+          "to": "0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b",
+          "call": "transfer ETH",
+          "wei": "49642001388216000",
+          "tx": "0x9e4f5c4d10a1c342e0f9cfbea0876ccb6858f57a9504bd019d38a7eb95899da6"
+        },
+        {
+          "from": "new",
+          "to": "0x109D98d2ab039273FB07D08617FbD353Ca8747F2",
+          "call": "acceptOwnership()",
+          "args": [],
+          "tx": "0x482867de3144c233fefe36211ce2f0f579c04fa0d7fe223288c0ca70772b8e49"
+        },
+        {
+          "from": "new",
+          "to": "0xd0819B59E1E53160B783c7aB479De783BC6865a5",
+          "call": "acceptOwnership()",
+          "args": [],
+          "tx": "0x305b6c86c8e75faa8c3e02be4d68a06ed3b0524802d11ba21fe49287176b0ef7"
+        },
+        {
+          "from": "new",
+          "to": "0x0e263aaE54F5562e6841b4b536f32c2ecE0A1EEd",
+          "call": "acceptOwnership()",
+          "args": [],
+          "tx": "0x6c0a850b23916828e70bfde3a7d36ce2e0b5b5d6e45ae8fe464dc0d0fc58ed89"
+        },
+        {
+          "from": "new",
+          "to": "0xCbDFB40b1A53adcf142Aa784609cFe2B9F33698D",
+          "call": "acceptOwnership()",
+          "args": [],
+          "tx": "0x4b09d718325967d7d8ea2a6402e7c3afa835f7a9d05f78ad6f681bb69b095d9e"
+        },
+        {
+          "from": "new",
+          "to": "0xcd04e14dD1d4766A7F65117780f8Fc7a27003471",
+          "call": "acceptOwnership()",
+          "args": [],
+          "tx": "0x17a435df8762a1ab47404cd58c18eed62001c56de075bad50ba4e6ce0729bff9"
+        },
+        {
+          "from": "new",
+          "to": "0x89cA6deC91C737A44DA7D3efc9f6Db7b1Ff23FC6",
+          "call": "acceptOwnership()",
+          "args": [],
+          "tx": "0xf79c52c5b092b7e1f8cff2ad3ab23a6aeb1e0b670c6d81326991b8790d916fa2"
+        },
+        {
+          "from": "new",
+          "to": "0xba8f66D2BBb87B66f42faE0F83Be14A180BF21F9",
+          "call": "acceptOwnership()",
+          "args": [],
+          "tx": "0x28afd5ba0425b5b0018d0ed38a9c2d3c7f2d821779ef7cabb7c6399b95772827"
+        },
+        {
+          "from": "old",
+          "to": "0x9d7eAd687fA1C9aD6E1f5ce62CB94c7C9b008304",
+          "call": "transferOwnership(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0x11a3e6996dce2ed2d008ed5796ff1806772acf1d27974beb3c1105e00134cb05"
+        },
+        {
+          "from": "new",
+          "to": "0x109D98d2ab039273FB07D08617FbD353Ca8747F2",
+          "call": "setAttester(address,bool)",
+          "args": ["0xd42FA5ae8949710479954ae78D1b12Ff2e50A841", "false"],
+          "tx": "0xa58b6b699fb554fdd7cb1b0fe1dadef78eac39535569171373e4de3d66e8c3fe"
+        },
+        {
+          "from": "old keeper",
+          "to": "0x4B9e61d0c590d1e279D67eeE33Dd07e2Ad4C7632",
+          "call": "transfer ETH",
+          "wei": "15000000000000000",
+          "tx": "0xbff92149527c77e3f29fc2be68b5dc11f3770553fce8cb44db6c924d22bd8b96"
+        }
+      ]
+    },
+    "421614": {
+      "name": "Arbitrum Sepolia",
+      "transactions": [
+        {
+          "from": "old",
+          "to": "0x836aF1176812561d692eCb4f05303a03b078e903",
+          "call": "setAttester(address,bool)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b", "true"],
+          "tx": "0x376c02609eef0ab2b0313a56f4df2c920885e8cf1dfaf9131a58687ecfec7fb6"
+        },
+        {
+          "from": "old",
+          "to": "0xcc1Ee2045D9A75b3192BAE13E4A0de13B7050842",
+          "call": "setTreasury(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0x458abcdb91e4364462772b0c9e609ff344da32ca882f06892f2f3539b3ad39a3"
+        },
+        {
+          "from": "old",
+          "to": "0x61F56C5e8e3E4c260249462E5040aA5DAa45f689",
+          "call": "setCouncil(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0xf037710cf8db78dbf430df8e59f727fa741952f119a4507a93fa981ce43844e2"
+        },
+        {
+          "from": "old",
+          "to": "0x836aF1176812561d692eCb4f05303a03b078e903",
+          "call": "transferOwnership(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0x44524b2ccf44fdc40a88418420bb48a14af15c9e7abe1aafb5d00bd15bdfe00e"
+        },
+        {
+          "from": "old",
+          "to": "0x027Da33006fD6d077854D30f15C06ECB80030E47",
+          "call": "transferOwnership(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0x1392d4fb17105833952dd315599f98c8bf4b9af94b9ae7963467ab6703847cef"
+        },
+        {
+          "from": "old",
+          "to": "0xD695711DBa47e03940b76EF379E3648C020C91D9",
+          "call": "transferOwnership(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0x8b781f142cdceae193fa409a57d23c19de8ba5118078bb35cd3f0fc336baee8e"
+        },
+        {
+          "from": "old",
+          "to": "0xcc1Ee2045D9A75b3192BAE13E4A0de13B7050842",
+          "call": "transferOwnership(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0x683b3e097683689f978d72c1a284ea0bab65024b86a7a63c13295fdbefde61f4"
+        },
+        {
+          "from": "old",
+          "to": "0x61F56C5e8e3E4c260249462E5040aA5DAa45f689",
+          "call": "transferOwnership(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0xf793d4ac6dcf72a3984a932d34fa630a4dad917d0f81ec7ed904226c8e114089"
+        },
+        {
+          "from": "old",
+          "to": "0xeD9593848721E56b5f7EeAa9C1e96c05B2D910E7",
+          "call": "transferOwnership(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0xd81796266175dde160b39ae768be5b1ccd239a59acbef8abf9bc997cf616b858"
+        },
+        {
+          "from": "old",
+          "to": "0x374855e2B2a08Be72F4d9b9D1C83D7663BEBebA4",
+          "call": "transferOwnership(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0x6eb6092a3e3e651664945dd50d351b0e9dbc0e8650a280874862e82097d1cfb0"
+        },
+        {
+          "from": "old",
+          "to": "0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b",
+          "call": "transfer ETH",
+          "wei": "17385606925546030",
+          "tx": "0xb4be4118d4b1b8441ad29519ca4d43cb86af4b427d3630c81f46113eaea21ed8"
+        },
+        {
+          "from": "new",
+          "to": "0x836aF1176812561d692eCb4f05303a03b078e903",
+          "call": "acceptOwnership()",
+          "args": [],
+          "tx": "0xf5b0648e5209c31232460d7a41d7f9c6974d73216b7689bbe69d7f8c34734a13"
+        },
+        {
+          "from": "new",
+          "to": "0x027Da33006fD6d077854D30f15C06ECB80030E47",
+          "call": "acceptOwnership()",
+          "args": [],
+          "tx": "0x94a76e1d71bff8a7c728dfe261a21c4220651e59767fff737d13a93825f76747"
+        },
+        {
+          "from": "new",
+          "to": "0xD695711DBa47e03940b76EF379E3648C020C91D9",
+          "call": "acceptOwnership()",
+          "args": [],
+          "tx": "0x1f2fb0ed4cbc725157162cb0127a18e1957d1ad7322eaad3edb3ce28b65edfe4"
+        },
+        {
+          "from": "new",
+          "to": "0xcc1Ee2045D9A75b3192BAE13E4A0de13B7050842",
+          "call": "acceptOwnership()",
+          "args": [],
+          "tx": "0x7222c8445ddc1803f2d53ac81f9ebf7b7eb55609762e2ab10e005ece42963f23"
+        },
+        {
+          "from": "new",
+          "to": "0x61F56C5e8e3E4c260249462E5040aA5DAa45f689",
+          "call": "acceptOwnership()",
+          "args": [],
+          "tx": "0xe2578c84aaafdbae5957c2b16a95950b757da018ef8284611efc7010ad112812"
+        },
+        {
+          "from": "new",
+          "to": "0xeD9593848721E56b5f7EeAa9C1e96c05B2D910E7",
+          "call": "acceptOwnership()",
+          "args": [],
+          "tx": "0xf81f8c218565baa0002128790878e853df0dfd4cbaf87ad063e9d69987462d58"
+        },
+        {
+          "from": "new",
+          "to": "0x374855e2B2a08Be72F4d9b9D1C83D7663BEBebA4",
+          "call": "acceptOwnership()",
+          "args": [],
+          "tx": "0x8ad2c5422dba57e40ecbafd1cf590d58e50190f5cf6d3a8bbba1f3bde867b905"
+        },
+        {
+          "from": "old",
+          "to": "0xA832A97Ed8f2Cf53d92847025703A465F2764126",
+          "call": "transferOwnership(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0x6a0a41a42a155b88615e9d3d3bfd6f64bdd8feeba78d57336efa9572aaf7dc8a"
+        },
+        {
+          "from": "new",
+          "to": "0x836aF1176812561d692eCb4f05303a03b078e903",
+          "call": "setAttester(address,bool)",
+          "args": ["0xd42FA5ae8949710479954ae78D1b12Ff2e50A841", "false"],
+          "tx": "0x865def1be98b803c9f75ef9082334e604b60d5ef9e22f9a50a3d9da8f2e8ec6c"
+        }
+      ]
+    },
+    "11155111": {
+      "name": "Ethereum Sepolia",
+      "transactions": [
+        {
+          "from": "old",
+          "to": "0x374855e2B2a08Be72F4d9b9D1C83D7663BEBebA4",
+          "call": "setAttester(address,bool)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b", "true"],
+          "tx": "0x8055370bc43fd040d08851b722056211f66ef1535c225d9188c645733c28606c"
+        },
+        {
+          "from": "old",
+          "to": "0x61F56C5e8e3E4c260249462E5040aA5DAa45f689",
+          "call": "setTreasury(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0x2faa2c30096f406b0b41d73e7ee152349fefec3f91885872bf30a01cac2643fc"
+        },
+        {
+          "from": "old",
+          "to": "0xEAcc211aBe784f16daC594cB2228E9a1166035e1",
+          "call": "setCouncil(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0xeb3e21d6597f7c5db617b69837b7241f6bf3bcdd5957daad3a78ebdc21d16f8d"
+        },
+        {
+          "from": "old",
+          "to": "0x374855e2B2a08Be72F4d9b9D1C83D7663BEBebA4",
+          "call": "transferOwnership(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0x07bb725edc90e2370029817ed33f1d6ab208be479da1d7a0521425c963cdbffa"
+        },
+        {
+          "from": "old",
+          "to": "0xcc1Ee2045D9A75b3192BAE13E4A0de13B7050842",
+          "call": "transferOwnership(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0x775dc68b1cbf56ab467190f3f183dc4eefab0f6340fb9003402b3bc1a5359c99"
+        },
+        {
+          "from": "old",
+          "to": "0x86b6677994DEE899d4b7D16Df78A802eEf3DF9a8",
+          "call": "transferOwnership(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0x50d9ff9aa7233bcf5a4bf8a0c810ab3e9b3bc2cbf3ae1e4d185c732c37a8bc85"
+        },
+        {
+          "from": "old",
+          "to": "0x61F56C5e8e3E4c260249462E5040aA5DAa45f689",
+          "call": "transferOwnership(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0xaed0861920f0f490b74558fe885a8fad42d9eed77f7a47a8367b7384fee7783e"
+        },
+        {
+          "from": "old",
+          "to": "0xEAcc211aBe784f16daC594cB2228E9a1166035e1",
+          "call": "transferOwnership(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0x0805c460d9fd90dd9f42887c628976d1f9b8367ba49a8ed4547fece2cf67f3bc"
+        },
+        {
+          "from": "old",
+          "to": "0x027Da33006fD6d077854D30f15C06ECB80030E47",
+          "call": "transferOwnership(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0x0d0ca56e773c5911a9868d2314d6ff014f87fee81d15c4021ac2085f1bad17aa"
+        },
+        {
+          "from": "old",
+          "to": "0xF0f77618dc5EE72B560Ab266cF4bc28F01d4FC0C",
+          "call": "transferOwnership(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0x3a1c077133bac1c172bd6f78c01bb1d2fe35dc3149e84e92d643d7bfc3c11ad6"
+        },
+        {
+          "from": "old",
+          "to": "0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b",
+          "call": "transfer ETH",
+          "wei": "4106413238547931",
+          "tx": "0x8f2fe0b11ef6b29cb6d54bab22bca3cc4461ac7198241a3fc0dcc58956e618f8"
+        },
+        {
+          "from": "new",
+          "to": "0x374855e2B2a08Be72F4d9b9D1C83D7663BEBebA4",
+          "call": "acceptOwnership()",
+          "args": [],
+          "tx": "0xe1a6d1b7134669a78b69496ab1904bedc7b6f0731b73a35608b76fd8f9e425a7"
+        },
+        {
+          "from": "new",
+          "to": "0xcc1Ee2045D9A75b3192BAE13E4A0de13B7050842",
+          "call": "acceptOwnership()",
+          "args": [],
+          "tx": "0x6b6ea287214d384217029269256fd20925535359ffb437a59415e56156be2248"
+        },
+        {
+          "from": "new",
+          "to": "0x86b6677994DEE899d4b7D16Df78A802eEf3DF9a8",
+          "call": "acceptOwnership()",
+          "args": [],
+          "tx": "0x494b7ccbe7cbced3bc4da0fb0ff55659052f35500543f344ef8b64489e5544d0"
+        },
+        {
+          "from": "new",
+          "to": "0x61F56C5e8e3E4c260249462E5040aA5DAa45f689",
+          "call": "acceptOwnership()",
+          "args": [],
+          "tx": "0x801bb8e313d1ce7ea83164893f0b1edca680f0dc1b5bcdf56d34ee1498d6e767"
+        },
+        {
+          "from": "new",
+          "to": "0xEAcc211aBe784f16daC594cB2228E9a1166035e1",
+          "call": "acceptOwnership()",
+          "args": [],
+          "tx": "0x337cc0e61e9f28242658d15c45b2a6d1903b4a97f813f9394914d67854da6bb6"
+        },
+        {
+          "from": "new",
+          "to": "0x027Da33006fD6d077854D30f15C06ECB80030E47",
+          "call": "acceptOwnership()",
+          "args": [],
+          "tx": "0x72b50dceef37ca098060d48a08213805d54e5ebc281234ff86012bef81184fc2"
+        },
+        {
+          "from": "new",
+          "to": "0xF0f77618dc5EE72B560Ab266cF4bc28F01d4FC0C",
+          "call": "acceptOwnership()",
+          "args": [],
+          "tx": "0x0e9e43fdb88f6f0c03a48b6afb9e8b4425e260bb0374c7afcfd89ddd6bc57b71"
+        },
+        {
+          "from": "old",
+          "to": "0x8aADe81092D5E019ab523f65Af663843f2c2fcf4",
+          "call": "transferOwnership(address)",
+          "args": ["0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b"],
+          "tx": "0xc63b405a7063453402bb72ba60eafc166c0bd5c97f77d4e52a8a2699a55a5278"
+        },
+        {
+          "from": "new",
+          "to": "0x374855e2B2a08Be72F4d9b9D1C83D7663BEBebA4",
+          "call": "setAttester(address,bool)",
+          "args": ["0xd42FA5ae8949710479954ae78D1b12Ff2e50A841", "false"],
+          "tx": "0xda29473b3de5340842c95266935b2550c2ba1d2c0eb35ec0a9fcf674599eafe0"
+        }
+      ]
+    }
+  },
+  "verified": "After the rotation, on each chain: owner() of the registry, bond, claims engine, cover manager, dispute module, vault factory, pool and oracle is the new deployer; treasury and council are the new deployer; isAttester(new) is true and isAttester(old) is false. Attesters are checked only when a score is posted, so scores already posted stay valid."
+}
