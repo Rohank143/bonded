@@ -132,6 +132,11 @@ export interface RefreshJob {
   dir: string;
   /** `skip`: already complete on the current library; `rate`: missing or failed. */
   action: "skip" | "rate";
+  /**
+   * Skipped because the board already holds a current rating the registry confirms, rather than
+   * because the run has one: there is nothing new to publish for it.
+   */
+  onBoard?: true;
   /** Why: what the folder holds now. */
   reason: string;
   estimateUsd: number;
@@ -151,10 +156,67 @@ export function refreshRunDir(ratingsDir: string, run?: string): string {
   return join(ratingsDir, run ?? `refresh-v${ATTACK_LIBRARY_VERSION}`);
 }
 
+/** Whether a board entry was rated on the current attack library and has been posted. */
+export function isCurrentOnBoard(e: LeaderboardEntry): boolean {
+  return e.libraryVersion === ATTACK_LIBRARY_VERSION && Boolean(e.onchain?.tx);
+}
+
+/**
+ * The slugs of current board entries whose registry score is the entry's (same report hash and
+ * score), read with `readScore`. A failed read throws: guessing "not verified" would re-rate, and
+ * spend on, an entry that may be fine.
+ */
+export async function verifiedOnChain(
+  entries: readonly LeaderboardEntry[],
+  readScore: (
+    chain: "robinhoodTestnet",
+    agentId: string,
+  ) => Promise<{ reportHash: string; score: number } | null>,
+): Promise<Set<string>> {
+  const verified = new Set<string>();
+  for (const e of entries) {
+    if (!isCurrentOnBoard(e) || e.onchain?.chain !== "robinhoodTestnet") continue;
+    let s: Awaited<ReturnType<typeof readScore>>;
+    try {
+      s = await readScore("robinhoodTestnet", e.onchain.agentId);
+    } catch (error) {
+      throw new Error(
+        `${e.slug}: couldn't read agent ${e.onchain.agentId}'s score from the registry (${error instanceof Error ? error.message : String(error)}); try again`,
+        { cause: error },
+      );
+    }
+    if (s && s.reportHash.toLowerCase() === e.reportHash.toLowerCase() && s.score === e.score)
+      verified.add(e.slug);
+  }
+  return verified;
+}
+
+/** The entries in `only` (all when omitted), in board order. Unknown slugs throw. */
+export function pickEntries(
+  entries: readonly LeaderboardEntry[],
+  only?: readonly string[],
+): readonly LeaderboardEntry[] {
+  const unknown = only?.filter((slug) => !entries.some((e) => e.slug === slug)) ?? [];
+  if (unknown.length) throw new Error(`not on the leaderboard: ${unknown.join(", ")}`);
+  return only ? entries.filter((e) => only.includes(e.slug)) : entries;
+}
+
+/**
+ * A held-out set is needed only when the plan rates something: a refresh with every entry
+ * current runs on a machine without one. Throws when a rating needs one and none was found.
+ */
+export function checkHeldOut(plan: RefreshPlan, heldOut: string | null, noHeldOut: boolean): void {
+  if (heldOut === null && !noHeldOut && plan.jobs.some((j) => j.action === "rate"))
+    throw new Error(
+      "no held-out set found in ~/.config/bonded/held-out: pass --held-out <dir>, or --no-held-out",
+    );
+}
+
 /**
  * Plans a refresh: every entry (or those in `only`, in board order), each skipped if its folder
- * in the run is complete and rated otherwise. Unknown slugs in `only` and entries with no
- * re-rate rule throw before anything runs.
+ * in the run is complete, or if it is in `verified` (already rated on the current library and
+ * confirmed on chain), and rated otherwise. Unknown slugs in `only` and entries with no re-rate
+ * rule throw before anything runs.
  */
 export function planRefresh(options: {
   entries: readonly LeaderboardEntry[];
@@ -162,11 +224,11 @@ export function planRefresh(options: {
   only?: readonly string[];
   estimateUsd?: number;
   repeats?: number;
+  /** Slugs from `verifiedOnChain`; omit to re-rate regardless of the board (a named run). */
+  verified?: ReadonlySet<string>;
 }): RefreshPlan {
-  const { entries, runDir } = options;
-  const unknown = options.only?.filter((slug) => !entries.some((e) => e.slug === slug)) ?? [];
-  if (unknown.length) throw new Error(`not on the leaderboard: ${unknown.join(", ")}`);
-  const picked = options.only ? entries.filter((e) => options.only!.includes(e.slug)) : entries;
+  const { runDir } = options;
+  const picked = pickEntries(options.entries, options.only);
   const perRating =
     (options.estimateUsd ?? REFRESH_DEFAULTS.estimateUsd) *
     ((options.repeats ?? REFRESH_DEFAULTS.repeats) / REFRESH_DEFAULTS.repeats);
@@ -177,6 +239,16 @@ export function planRefresh(options: {
     const estimateUsd = target.brain === "llm" ? perRating : 0;
     if (state.status === "complete")
       return { entry, target, dir, action: "skip", reason: "complete", estimateUsd: 0 };
+    if (options.verified?.has(entry.slug) && isCurrentOnBoard(entry))
+      return {
+        entry,
+        target,
+        dir,
+        action: "skip",
+        onBoard: true,
+        reason: `on the board at v${ATTACK_LIBRARY_VERSION}, verified on chain`,
+        estimateUsd: 0,
+      };
     return {
       entry,
       target,
@@ -264,6 +336,8 @@ export interface RefreshOutcome {
   /** `skipped`: already complete; `rated`: completed now; `failed`; `budget`: not started. */
   status: "skipped" | "rated" | "failed" | "budget";
   detail: string;
+  /** Skipped as already current on the board and on chain (see RefreshJob.onBoard). */
+  onBoard?: true;
   /** This invocation's attempts. */
   attempts: number;
   spentUsd: number;
@@ -379,7 +453,19 @@ export async function runRefresh(
   };
 
   for (const job of plan.jobs)
-    if (job.action === "skip") {
+    if (job.action === "skip" && job.onBoard)
+      outcomes.set(job.entry.slug, {
+        slug: job.entry.slug,
+        status: "skipped",
+        onBoard: true,
+        detail: job.reason,
+        attempts: 0,
+        spentUsd: 0,
+        previousGrade: job.entry.securityGrade,
+        ...(job.entry.securityGrade === undefined ? {} : { grade: job.entry.securityGrade }),
+        score: job.entry.score,
+      });
+    else if (job.action === "skip") {
       const state = ratingState(job.dir);
       outcomes.set(job.entry.slug, {
         slug: job.entry.slug,
@@ -414,6 +500,8 @@ export async function runRefresh(
     for (const job of plan.jobs) {
       const outcome = outcomes.get(job.entry.slug)!;
       if (outcome.status !== "skipped" && outcome.status !== "rated") continue;
+      // Already on the board and on chain: nothing new to add or post.
+      if (job.onBoard) continue;
       try {
         const result = await deps.add(job);
         if (result.posted) outcome.posted = result.posted;
@@ -482,6 +570,10 @@ export function describeOutcomes(
     lines.push(
       `  ${unfinished.length} not complete: run the same command again to retry only those` +
         (result.published ? "" : "; nothing was published"),
+    );
+  else if (result.outcomes.every((o) => o.onBoard))
+    lines.push(
+      "  nothing to do: every entry is already current on the board and verified on chain",
     );
   else if (!options.post) lines.push("  leaderboard file updated; scores not posted (--no-post)");
   else if (result.outcomes.some((o) => o.postError))

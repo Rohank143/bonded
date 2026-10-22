@@ -19,6 +19,9 @@ import {
   type RefreshDeps,
   type RefreshJob,
   runRefresh,
+  checkHeldOut,
+  pickEntries,
+  verifiedOnChain,
 } from "../src/leaderboard-refresh.js";
 
 const entry = (slug: string, over: Partial<LeaderboardEntry> = {}): LeaderboardEntry => ({
@@ -226,6 +229,133 @@ describe("planning a refresh", () => {
       reason: "no report (the rating didn't finish)",
     });
     expect(ratingState(join(runDir, "b"))).toEqual({ status: "missing" });
+  });
+});
+
+describe("entries already current on the board", () => {
+  const hash = `0x${"ab".repeat(32)}`;
+  /** A fake registry: agent id to what scoreOf returns (or "fail" to throw). */
+  const registry =
+    (scores: Record<string, { reportHash: string; score: number } | null | "fail">) =>
+    async (_chain: "robinhoodTestnet", agentId: string) => {
+      const s = scores[agentId];
+      if (s === "fail") throw new Error("rpc down");
+      return s ?? null;
+    };
+
+  it("counts an entry verified only when the registry holds its report hash and score", async () => {
+    const entries = [
+      entry("match", { onchain: { chain: "robinhoodTestnet", agentId: "1", tx: "0x01" } }),
+      entry("other-hash", { onchain: { chain: "robinhoodTestnet", agentId: "2", tx: "0x02" } }),
+      entry("other-score", { onchain: { chain: "robinhoodTestnet", agentId: "3", tx: "0x03" } }),
+      entry("no-score", { onchain: { chain: "robinhoodTestnet", agentId: "4", tx: "0x04" } }),
+      entry("unposted", { onchain: { chain: "robinhoodTestnet", agentId: "5", tx: null } }),
+      entry("old-library", {
+        libraryVersion: undefined,
+        onchain: { chain: "robinhoodTestnet", agentId: "6", tx: "0x06" },
+      }),
+    ];
+    const verified = await verifiedOnChain(
+      entries,
+      registry({
+        "1": { reportHash: hash.toUpperCase().replace("0X", "0x"), score: 60 },
+        "2": { reportHash: `0x${"ef".repeat(32)}`, score: 60 },
+        "3": { reportHash: hash, score: 61 },
+        "4": null,
+        // Never read: not posted, or rated on an older library.
+        "5": "fail",
+        "6": "fail",
+      }),
+    );
+    expect([...verified]).toEqual(["match"]);
+  });
+
+  it("stops when the registry can't be read, rather than re-rate an entry that may be current", async () => {
+    await expect(
+      verifiedOnChain([entry("a"), entry("b")], registry({ "4": "fail" })),
+    ).rejects.toThrow(/a: couldn't read agent 4's score.*rpc down/);
+  });
+
+  it("plans verified current entries as skips, and still rates the rest", () => {
+    const entries = [
+      entry("current"),
+      entry("stale", { libraryVersion: undefined }),
+      entry("unverified"),
+      entry("in-run"),
+    ];
+    writeRating(join(runDir, "in-run"));
+    const plan = planRefresh({
+      entries,
+      runDir,
+      verified: new Set(["current", "stale", "in-run"]),
+    });
+    expect(plan.jobs.map((j) => [j.entry.slug, j.action, j.onBoard ?? false])).toEqual([
+      ["current", "skip", true],
+      // A stale entry is re-rated even if somehow listed as verified.
+      ["stale", "rate", false],
+      ["unverified", "rate", false],
+      // A complete rating in the run wins: it is newer and still has to be published.
+      ["in-run", "skip", false],
+    ]);
+    expect(plan.jobs[0]!.reason).toBe(
+      `on the board at v${ATTACK_LIBRARY_VERSION}, verified on chain`,
+    );
+    expect(plan.estimateUsd).toBeCloseTo(2 * 0.45);
+    // Without the verified set (a named run), every entry is rated.
+    expect(planRefresh({ entries, runDir }).jobs[0]!.action).toBe("rate");
+  });
+
+  it("rates and publishes nothing when every entry is current", async () => {
+    const entries = [entry("a"), entry("b", { securityGrade: 17, score: 83 }), scripted];
+    const plan = planRefresh({ entries, runDir, verified: new Set(["a", "b", scripted.slug]) });
+    const { deps, calls, added } = fakeDeps({});
+    const result = await runRefresh(plan, { settings }, deps);
+    expect(calls).toEqual([]);
+    expect(added).toEqual([]);
+    expect(result.spentUsd).toBe(0);
+    expect(result.outcomes.map((o) => [o.slug, o.status, o.onBoard, o.grade, o.score])).toEqual([
+      ["a", "skipped", true, 70, 60],
+      ["b", "skipped", true, 17, 83],
+      [scripted.slug, "skipped", true, 70, 60],
+    ]);
+    expect(describeOutcomes(result, { post: true }).join("\n")).toContain(
+      "nothing to do: every entry is already current on the board and verified on chain",
+    );
+  });
+
+  it("needs a held-out set only when the plan rates something", () => {
+    const current = planRefresh({ entries: [entry("a")], runDir, verified: new Set(["a"]) });
+    expect(() => checkHeldOut(current, null, false)).not.toThrow();
+    const stale = planRefresh({ entries: [entry("a")], runDir });
+    expect(() => checkHeldOut(stale, null, false)).toThrow(/no held-out set found/);
+    expect(() => checkHeldOut(stale, null, true)).not.toThrow();
+    expect(() => checkHeldOut(stale, "/held-out", false)).not.toThrow();
+  });
+
+  it("reads the registry only for the entries --only selects", async () => {
+    const entries = [
+      entry("a"),
+      entry("b", { onchain: { chain: "robinhoodTestnet", agentId: "9", tx: "0x09" } }),
+    ];
+    const read: string[] = [];
+    const verified = await verifiedOnChain(pickEntries(entries, ["a"]), async (_c, agentId) => {
+      read.push(agentId);
+      return { reportHash: `0x${"ab".repeat(32)}`, score: 60 };
+    });
+    expect(read).toEqual(["4"]);
+    expect([...verified]).toEqual(["a"]);
+    expect(() => pickEntries(entries, ["zzz"])).toThrow(/not on the leaderboard: zzz/);
+  });
+
+  it("publishes only the entries it re-rated", async () => {
+    const entries = [entry("current"), entry("stale", { libraryVersion: undefined })];
+    const plan = planRefresh({ entries, runDir, verified: new Set(["current"]) });
+    const { deps, calls, added } = fakeDeps({});
+    const result = await runRefresh(plan, { settings, maxUsd: 1 }, deps);
+    expect(calls.map((c) => c.slug)).toEqual(["stale"]);
+    expect(added).toEqual(["stale"]);
+    expect(result.published).toBe(true);
+    expect(describeOutcomes(result, { post: true }).join("\n")).not.toContain("nothing to do");
   });
 });
 
