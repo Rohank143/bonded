@@ -79,7 +79,7 @@ An internal audit note ([docs/AUDIT.md](docs/AUDIT.md)) covers 16 handler-based 
 
 ## Deployments
 
-Owner, attester and council on every testnet: `0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b` (a single key for now; a multisig is a mainnet prerequisite). Deployed Oct 20, 2026; the key was rotated on Oct 22, 2026 after Railway's security incident ([evidence](docs/progress/evidence/key-rotation-2026-10-22.json)). Full address lists: [contracts/evm/deployments](contracts/evm/deployments/README.md) and [contracts/solana/deployments](contracts/solana/deployments/devnet.json).
+Owner, attester, dispute council and cover treasury on every EVM testnet: `0x6eB99ec2A4b5b7379E07a53352B41D132BE5443b` (a single key for now; a multisig is a mainnet prerequisite). Deployed Oct 20, 2026; the key was rotated on Oct 22, 2026 after Railway's security incident ([evidence](docs/progress/evidence/key-rotation-2026-10-22.json)). Full address lists: [contracts/evm/deployments](contracts/evm/deployments/README.md) and [contracts/solana/deployments](contracts/solana/deployments/devnet.json).
 
 | Contract | Robinhood Chain testnet (46630) | Arbitrum Sepolia (421614) | Ethereum Sepolia (11155111) |
 |---|---|---|---|
