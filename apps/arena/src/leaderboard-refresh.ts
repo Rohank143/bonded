@@ -191,6 +191,27 @@ export async function verifiedOnChain(
   return verified;
 }
 
+/** The entries in `only` (all when omitted), in board order. Unknown slugs throw. */
+export function pickEntries(
+  entries: readonly LeaderboardEntry[],
+  only?: readonly string[],
+): readonly LeaderboardEntry[] {
+  const unknown = only?.filter((slug) => !entries.some((e) => e.slug === slug)) ?? [];
+  if (unknown.length) throw new Error(`not on the leaderboard: ${unknown.join(", ")}`);
+  return only ? entries.filter((e) => only.includes(e.slug)) : entries;
+}
+
+/**
+ * A held-out set is needed only when the plan rates something: a refresh with every entry
+ * current runs on a machine without one. Throws when a rating needs one and none was found.
+ */
+export function checkHeldOut(plan: RefreshPlan, heldOut: string | null, noHeldOut: boolean): void {
+  if (heldOut === null && !noHeldOut && plan.jobs.some((j) => j.action === "rate"))
+    throw new Error(
+      "no held-out set found in ~/.config/bonded/held-out: pass --held-out <dir>, or --no-held-out",
+    );
+}
+
 /**
  * Plans a refresh: every entry (or those in `only`, in board order), each skipped if its folder
  * in the run is complete, or if it is in `verified` (already rated on the current library and
@@ -206,10 +227,8 @@ export function planRefresh(options: {
   /** Slugs from `verifiedOnChain`; omit to re-rate regardless of the board (a named run). */
   verified?: ReadonlySet<string>;
 }): RefreshPlan {
-  const { entries, runDir } = options;
-  const unknown = options.only?.filter((slug) => !entries.some((e) => e.slug === slug)) ?? [];
-  if (unknown.length) throw new Error(`not on the leaderboard: ${unknown.join(", ")}`);
-  const picked = options.only ? entries.filter((e) => options.only!.includes(e.slug)) : entries;
+  const { runDir } = options;
+  const picked = pickEntries(options.entries, options.only);
   const perRating =
     (options.estimateUsd ?? REFRESH_DEFAULTS.estimateUsd) *
     ((options.repeats ?? REFRESH_DEFAULTS.repeats) / REFRESH_DEFAULTS.repeats);

@@ -131,8 +131,8 @@ and a cost estimate without running anything; `--no-post` stops after updating t
 An entry the board already lists on the current attack library is skipped too, when the
 registry on Robinhood Chain testnet holds its score (the same report hash and insurance score):
 it is not re-rated or posted again, so a refresh right after a library bump re-rates only what the
-bump made stale. If the registry can't be read, the refresh stops rather than re-rate entries that
-may be current. A named run (`--run <name>`) skips this check and re-rates every entry.
+bump made stale (and a refresh with nothing to rate needs no held-out set). If the registry can't be read, the refresh stops rather than re-rate entries that
+may be current. Only the entries a refresh covers (all, or `--only`) are read. A named run (`--run <name>`) skips this check: a new name re-rates every entry, and running the same name again still skips what that run already completed.
 
 Each rating is its own `arena rate` process on its own local chain, logged to `<slug>.log` next to
 its folder. A model-driven rating took 70–90 minutes in the Oct 19–20 re-rating, so the default

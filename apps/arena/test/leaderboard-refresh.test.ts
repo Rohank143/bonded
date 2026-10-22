@@ -19,6 +19,8 @@ import {
   type RefreshDeps,
   type RefreshJob,
   runRefresh,
+  checkHeldOut,
+  pickEntries,
   verifiedOnChain,
 } from "../src/leaderboard-refresh.js";
 
@@ -319,6 +321,30 @@ describe("entries already current on the board", () => {
     expect(describeOutcomes(result, { post: true }).join("\n")).toContain(
       "nothing to do: every entry is already current on the board and verified on chain",
     );
+  });
+
+  it("needs a held-out set only when the plan rates something", () => {
+    const current = planRefresh({ entries: [entry("a")], runDir, verified: new Set(["a"]) });
+    expect(() => checkHeldOut(current, null, false)).not.toThrow();
+    const stale = planRefresh({ entries: [entry("a")], runDir });
+    expect(() => checkHeldOut(stale, null, false)).toThrow(/no held-out set found/);
+    expect(() => checkHeldOut(stale, null, true)).not.toThrow();
+    expect(() => checkHeldOut(stale, "/held-out", false)).not.toThrow();
+  });
+
+  it("reads the registry only for the entries --only selects", async () => {
+    const entries = [
+      entry("a"),
+      entry("b", { onchain: { chain: "robinhoodTestnet", agentId: "9", tx: "0x09" } }),
+    ];
+    const read: string[] = [];
+    const verified = await verifiedOnChain(pickEntries(entries, ["a"]), async (_c, agentId) => {
+      read.push(agentId);
+      return { reportHash: `0x${"ab".repeat(32)}`, score: 60 };
+    });
+    expect(read).toEqual(["4"]);
+    expect([...verified]).toEqual(["a"]);
+    expect(() => pickEntries(entries, ["zzz"])).toThrow(/not on the leaderboard: zzz/);
   });
 
   it("publishes only the entries it re-rated", async () => {

@@ -8,10 +8,12 @@ import { type LeaderboardEntry } from "@bondedhq/shared";
 import { readEvmScore } from "./crosspost.js";
 import { addRating } from "./leaderboard-add.js";
 import {
+  checkHeldOut,
   defaultHeldOutDir,
   describeOutcomes,
   describePlan,
   metaOf,
+  pickEntries,
   planRefresh,
   RATINGS_DIR,
   REFRESH_DEFAULTS,
@@ -161,10 +163,6 @@ async function refresh(
     : values["held-out"]
       ? fromCaller(values["held-out"])
       : (defaultHeldOutDir() ?? null);
-  if (heldOut === null && !values["no-held-out"])
-    throw new Error(
-      "no held-out set found in ~/.config/bonded/held-out: pass --held-out <dir>, or --no-held-out",
-    );
   const settings = {
     repeats: count(values.repeats ?? String(REFRESH_DEFAULTS.repeats), "--repeats"),
     episodeTimeoutS: count(
@@ -175,18 +173,22 @@ async function refresh(
   };
   const maxUsd = values["max-usd"] === undefined ? undefined : usd(values["max-usd"], "--max-usd");
   const entries = readLeaderboard(file);
+  const only = values.only?.split(",").map((s) => s.trim());
   const plan = planRefresh({
     entries,
     runDir: refreshRunDir(RATINGS_DIR, values.run),
-    ...(values.only ? { only: values.only.split(",").map((s) => s.trim()) } : {}),
+    ...(only ? { only } : {}),
     ...(values["estimate-usd"]
       ? { estimateUsd: usd(values["estimate-usd"], "--estimate-usd") }
       : {}),
     repeats: settings.repeats,
-    // The default run skips entries already rated on this library and confirmed on chain; a
-    // named run re-rates them.
-    ...(values.run ? {} : { verified: await verifiedOnChain(entries, readEvmScore) }),
+    // The default run skips entries already rated on this library and confirmed on chain (only
+    // the selected ones are read); a named run re-rates them.
+    ...(values.run
+      ? {}
+      : { verified: await verifiedOnChain(pickEntries(entries, only), readEvmScore) }),
   });
+  checkHeldOut(plan, heldOut, values["no-held-out"]);
   for (const line of describePlan(plan, settings, maxUsd)) console.log(line);
   if (values["dry-run"]) return 0;
   console.log("");
