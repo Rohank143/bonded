@@ -46,6 +46,7 @@
     "leaderboard": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena leaderboard",
     "heldout:generate": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena heldout",
     "heldout:upload": "pnpm build && node apps/api/scripts/held-out-upload.mjs",
+    "secrets:reencrypt": "pnpm build && node apps/api/scripts/reencrypt-secrets.mjs",
     "sentinel:shortcuts": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena sentinel-shortcuts",
     "sentinel:consistency": "turbo run build --filter=@bonded/arena --output-logs=errors-only && pnpm --filter @bonded/arena sentinel-consistency",
     "docs:dev": "pnpm --filter @bonded/docs dev",

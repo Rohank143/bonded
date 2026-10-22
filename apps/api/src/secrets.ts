@@ -72,20 +72,20 @@ export class SecretBox {
 }
 
 /**
- * The secret box from AGENT_URL_SECRET_KEY (32 bytes as 64 hex characters, or base64), or
- * undefined when it isn't set: Agent URL mode and webhooks are then refused. A malformed key
- * stops the service at start, naming the variable but not its value.
+ * The secret box from AGENT_URL_SECRET_KEY, or the variable `name` (32 bytes as 64 hex
+ * characters, or base64), or undefined when it isn't set: Agent URL mode and webhooks are then
+ * refused. A malformed key stops the service at start, naming the variable but not its value.
  */
 export function secretBoxFromEnv(
   env: Record<string, string | undefined> = process.env,
+  name = "AGENT_URL_SECRET_KEY",
 ): SecretBox | undefined {
-  const value = env.AGENT_URL_SECRET_KEY?.trim();
+  const value = env[name]?.trim();
   if (!value) return undefined;
   const key = /^[0-9a-fA-F]{64}$/.test(value)
     ? Buffer.from(value, "hex")
     : Buffer.from(value, "base64");
-  if (key.length !== 32)
-    throw new Error("AGENT_URL_SECRET_KEY must be 32 bytes: 64 hex characters, or base64");
+  if (key.length !== 32) throw new Error(`${name} must be 32 bytes: 64 hex characters, or base64`);
   return new SecretBox(key);
 }
 
