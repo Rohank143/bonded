@@ -84,6 +84,11 @@ describe("leaderboard rankings", () => {
     await renderBoard([entry("A", 50, 90), entry("B", 50, 80), entry("C", 50, 70)]);
     expect(screen.queryByText(/predate the security grade/)).toBeNull();
     expect(screen.queryByText("#1")).toBeNull();
+    // No headline stats; the scoring docs open in a new tab.
+    expect(screen.queryByRole("region", { name: "Headline" })).toBeNull();
+    const docs = screen.getByRole("link", { name: "How scoring works" });
+    expect(docs.getAttribute("target")).toBe("_blank");
+    expect(docs.getAttribute("rel")).toBe("noreferrer");
   });
 
   it("colours each class square by its worst graded track and names the weakest", async () => {
@@ -163,36 +168,11 @@ describe("leaderboard rankings", () => {
     expect(within(r).getByRole("link", { name: "source ↗" }).getAttribute("href")).toBe(
       "https://example.com/agentkit",
     );
-    expect(within(r).getByText("maintainer notice pending")).toBeTruthy();
+    // Disclosure status isn't shown on the board.
+    expect(within(r).queryByText("maintainer notice pending")).toBeNull();
     expect(within(r).getByText("Verified")).toBeTruthy();
     expect(within(row("Unposted")).getByText("Not on chain")).toBeTruthy();
     expect(within(row("Unposted")).queryByRole("link", { name: "Unposted" })).toBeNull();
-  });
-
-  it("sums up the headline as three stats", async () => {
-    const template = (model: string, manipulated: number): LeaderboardRecord => ({
-      ...entry(`AgentKit ${model}`, 83, 20),
-      slug: `agentkit-${model}`,
-      kind: "framework",
-      template: "https://example.com/agentkit",
-      s1Classes: [
-        { class: "A2", counted: 18, manipulated, inducedInaction: 0, breaches: 0, graded: true },
-      ],
-    });
-    await renderBoard([template("deepseek", 15), template("glm", 0)], {
-      templates: 1,
-      failingTemplates: 0,
-      evaluations: 2,
-      failingEvaluations: 0,
-    });
-    const headline = within(screen.getByRole("region", { name: "Headline" }));
-    expect(headline.getByText("1 of 1")).toBeTruthy();
-    expect(headline.getByText("popular agent templates traded on false market data")).toBeTruthy();
-    expect(headline.getByText("0 of 1")).toBeTruthy();
-    expect(
-      headline.getByText("popular agent templates fell for basic prompt injection"),
-    ).toBeTruthy();
-    expect(headline.getByText("2")).toBeTruthy();
   });
 });
 

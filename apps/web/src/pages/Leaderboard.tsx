@@ -4,7 +4,7 @@ import { ATTACK_LIBRARY_VERSION, libraryVersionStatus } from "@bondedhq/shared";
 import { api, type LeaderboardRecord } from "../lib/api";
 import { CLASSES, classResults, toneFor, trackText, type ClassResult } from "../lib/class-tracks";
 import { DOCS_DISCLOSURES, DOCS_SCORING } from "../lib/routes";
-import { batteryName, falseDataHeadline, weakestText } from "../lib/security";
+import { batteryName, weakestText } from "../lib/security";
 import {
   Badge,
   Card,
@@ -69,12 +69,6 @@ function libraryNote(e: LeaderboardRecord): string | undefined {
   }
 }
 
-/** Only the disclosure states a reader needs to know about get a tag. */
-const DISCLOSURE: Partial<Record<LeaderboardRecord["disclosure"]["status"], string>> = {
-  pending: "maintainer notice pending",
-  notified: "maintainers notified",
-};
-
 /** "A8 · market data": the class and track that set the score, or null when nothing was weak. */
 const weakest = (e: LeaderboardRecord) =>
   weakestText(e) ? `${e.worstClass} · ${batteryName(e.worstTrack, e.worstSource)}` : null;
@@ -92,23 +86,12 @@ function ChainStatus({ e }: { e: LeaderboardRecord }) {
   return null;
 }
 
-function Stat({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="panel flex items-baseline gap-3 px-5 py-3 sm:py-4">
-      <span className="font-serif text-3xl leading-none whitespace-nowrap">{value}</span>
-      <span className="text-sm leading-snug text-muted">{label}</span>
-    </div>
-  );
-}
-
 /** Rank, agent, score, class strip, insurance tier and chain status; stacks as a card on phones. */
 const ROW =
   "grid grid-cols-[28px_minmax(0,1fr)_auto] gap-x-4 gap-y-3 lg:grid-cols-[32px_minmax(0,1fr)_150px_254px_56px_112px] lg:items-center lg:gap-x-6";
 
 export function Leaderboard() {
   const board = useQuery({ queryKey: ["leaderboard"], queryFn: api.leaderboard });
-  const h = board.data?.headline;
-  const s1 = board.data ? falseDataHeadline(board.data.entries) : null;
   // Legacy insurance results cannot be compared with security grades.
   const entries = board.data
     ? [...board.data.entries].sort((a, b) => (b.securityGrade ?? -1) - (a.securityGrade ?? -1))
@@ -121,31 +104,12 @@ export function Leaderboard() {
       intro={
         <>
           Open-source trading agents and Bonded's own, ranked by how hard they are to trick.{" "}
-          <a className={linkClass} href={DOCS_SCORING}>
+          <a className={linkClass} href={DOCS_SCORING} target="_blank" rel="noreferrer">
             How scoring works
           </a>
         </>
       }
     >
-      {h && h.evaluations > 0 && (
-        <section aria-label="Headline" className="grid gap-3 md:grid-cols-3">
-          {s1 && (
-            <Stat
-              value={`${s1.fooledTemplates} of ${s1.templates}`}
-              label="popular agent templates traded on false market data"
-            />
-          )}
-          <Stat
-            value={`${h.failingTemplates} of ${h.templates}`}
-            label="popular agent templates fell for basic prompt injection"
-          />
-          <Stat
-            value={String(h.evaluations)}
-            label="template and model pairs rated, with held-out attacks"
-          />
-        </section>
-      )}
-
       <Card
         title="Rankings"
         description="Each square is an attack class, coloured by its worst result across the main library, market data and memory. Hover a square for the numbers; open a row for the full report."
@@ -190,7 +154,6 @@ export function Leaderboard() {
             <ol aria-label="Security rankings">
               {entries.map((e, i) => {
                 const note = libraryNote(e);
-                const disclosure = DISCLOSURE[e.disclosure.status];
                 return (
                   <li
                     key={e.slug}
@@ -229,12 +192,7 @@ export function Leaderboard() {
                           </a>
                         )}
                       </span>
-                      {(note || disclosure) && (
-                        <span className="mt-1.5 flex flex-wrap gap-1.5 text-[11px]">
-                          {note && <span className="text-warn">{note}</span>}
-                          {disclosure && <span className="text-muted/80">{disclosure}</span>}
-                        </span>
-                      )}
+                      {note && <span className="mt-1.5 block text-[11px] text-warn">{note}</span>}
                     </span>
                     <span className="flex flex-col items-end gap-1 text-right lg:items-start lg:text-left">
                       {e.securityGrade === undefined ? (
