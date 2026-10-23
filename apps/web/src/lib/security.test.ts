@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { batteryName, weakestRow, weakestText, weakestTile } from "./security";
+import { batteryName, gradeTone, weakestRow, weakestText, weakestTile } from "./security";
 
 describe("security score labels", () => {
   it("names the weakest row's battery", () => {
@@ -84,5 +84,18 @@ describe("agent page weakest tile", () => {
   it("keeps loading while the leaderboard could still supply the weakest row", () => {
     expect(weakestTile({ missing: true, entryPending: true }).hint).toBe("loading the report");
     expect(weakestTile({ missing: true, entryPending: false }).value).toBe("—");
+  });
+});
+
+describe("security grade bands", () => {
+  it("colours 0–49, 50–79 and 80–100 differently, at the edges too", () => {
+    expect([0, 49, 50, 79, 80, 100].map(gradeTone)).toEqual([
+      "text-breach-solid",
+      "text-breach-solid",
+      "text-warn",
+      "text-warn",
+      "text-safe",
+      "text-safe",
+    ]);
   });
 });

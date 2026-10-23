@@ -4,9 +4,8 @@ import { ATTACK_LIBRARY_VERSION, libraryVersionStatus } from "@bondedhq/shared";
 import { api, type LeaderboardRecord } from "../lib/api";
 import { CLASSES, classResults, toneFor, trackText, type ClassResult } from "../lib/class-tracks";
 import { DOCS_DISCLOSURES, DOCS_SCORING } from "../lib/routes";
-import { batteryName, weakestText } from "../lib/security";
+import { GRADE_BANDS, gradeTone } from "../lib/security";
 import {
-  Badge,
   Card,
   EmptyState,
   ErrorText,
@@ -69,26 +68,19 @@ function libraryNote(e: LeaderboardRecord): string | undefined {
   }
 }
 
-/** "A8 · market data": the class and track that set the score, or null when nothing was weak. */
-const weakest = (e: LeaderboardRecord) =>
-  weakestText(e) ? `${e.worstClass} · ${batteryName(e.worstTrack, e.worstSource)}` : null;
-
-/** Whether the on-chain score matches this entry. */
-function ChainStatus({ e }: { e: LeaderboardRecord }) {
-  if (!e.onchain?.tx) return <Badge>Not on chain</Badge>;
-  if (e.verified === true)
-    return (
-      <Badge tone="safe" dot>
-        Verified
-      </Badge>
-    );
-  if (e.verified === false) return <Badge>Re-rated since</Badge>;
-  return null;
+/**
+ * A note when the on-chain score doesn't back this entry. Verified entries say nothing: the board
+ * only lists on-chain results, so verification is the norm, not news.
+ */
+function chainNote(e: LeaderboardRecord): string | undefined {
+  if (!e.onchain?.tx) return "Not on chain yet";
+  if (e.verified === false) return "Re-rated since its on-chain score";
+  return undefined;
 }
 
-/** Rank, agent, score, class strip, insurance tier and chain status; stacks as a card on phones. */
+/** Rank, agent, score, class strip and insurance tier; stacks as a card on phones. */
 const ROW =
-  "grid grid-cols-[28px_minmax(0,1fr)_auto] gap-x-4 gap-y-3 lg:grid-cols-[32px_minmax(0,1fr)_150px_254px_56px_112px] lg:items-center lg:gap-x-6";
+  "grid grid-cols-[28px_minmax(0,1fr)_auto] gap-x-4 gap-y-3 lg:grid-cols-[32px_minmax(0,1fr)_72px_254px_56px] lg:items-center lg:gap-x-6";
 
 export function Leaderboard() {
   const board = useQuery({ queryKey: ["leaderboard"], queryFn: api.leaderboard });
@@ -114,18 +106,29 @@ export function Leaderboard() {
         title="Rankings"
         description="Each square is an attack class, coloured by its worst result across the main library, market data and memory. Hover a square for the numbers; open a row for the full report."
         actions={
-          <div className="flex flex-wrap items-center gap-3.5 text-xs text-muted">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="size-2.5 rounded bg-brand-bright/45 ring-1 ring-brand-bright/70" />{" "}
-              held
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="size-2.5 rounded bg-breach/45 ring-1 ring-breach/60" /> sometimes
-              manipulated
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="size-2.5 rounded bg-breach-solid" /> half or more
-            </span>
+          <div className="flex flex-col gap-2 text-xs text-muted">
+            <div className="flex flex-wrap items-center gap-3.5">
+              <span className="w-14">Score</span>
+              {GRADE_BANDS.map((b) => (
+                <span key={b.min} className="inline-flex items-center gap-1.5">
+                  <span className={`size-2.5 rounded-full ${b.dot}`} /> {b.label}
+                </span>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-3.5">
+              <span className="w-14">Squares</span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="size-2.5 rounded bg-brand-bright/45 ring-1 ring-brand-bright/70" />{" "}
+                held
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="size-2.5 rounded bg-breach/45 ring-1 ring-breach/60" /> sometimes
+                manipulated
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="size-2.5 rounded bg-breach-solid" /> half or more
+              </span>
+            </div>
           </div>
         }
       >
@@ -149,11 +152,10 @@ export function Leaderboard() {
                 ))}
               </span>
               <span>Cover</span>
-              <span>On chain</span>
             </div>
             <ol aria-label="Security rankings">
               {entries.map((e, i) => {
-                const note = libraryNote(e);
+                const notes = [libraryNote(e), chainNote(e)].filter(Boolean);
                 return (
                   <li
                     key={e.slug}
@@ -192,16 +194,21 @@ export function Leaderboard() {
                           </a>
                         )}
                       </span>
-                      {note && <span className="mt-1.5 block text-[11px] text-warn">{note}</span>}
+                      {notes.map((n) => (
+                        <span key={n} className="mt-1.5 block text-[11px] text-warn">
+                          {n}
+                        </span>
+                      ))}
                     </span>
-                    <span className="flex flex-col items-end gap-1 text-right lg:items-start lg:text-left">
+                    <span className="text-right lg:text-left">
                       {e.securityGrade === undefined ? (
                         <span className="text-xs text-muted">Not measured</span>
                       ) : (
-                        <span className="font-serif text-3xl leading-none">{e.securityGrade}</span>
-                      )}
-                      {weakest(e) && (
-                        <span className="text-[11px] leading-snug text-breach">{weakest(e)}</span>
+                        <span
+                          className={`font-serif text-3xl leading-none ${gradeTone(e.securityGrade)}`}
+                        >
+                          {e.securityGrade}
+                        </span>
                       )}
                     </span>
                     <span className="relative z-10 col-span-2 col-start-2 flex gap-1.5 lg:col-span-1 lg:col-start-auto">
@@ -209,14 +216,9 @@ export function Leaderboard() {
                         <Square key={r.cls} r={r} />
                       ))}
                     </span>
-                    <span className="col-span-2 col-start-2 flex items-center gap-2 lg:contents">
-                      <span className="relative z-10 flex items-center gap-2 lg:block">
-                        <span className="text-xs text-muted lg:hidden">Cover</span>
-                        <TierBadge score={e.score} />
-                      </span>
-                      <span className="flex items-center">
-                        <ChainStatus e={e} />
-                      </span>
+                    <span className="relative z-10 col-span-2 col-start-2 flex items-center gap-2 lg:col-span-1 lg:col-start-auto lg:block">
+                      <span className="text-xs text-muted lg:hidden">Cover</span>
+                      <TierBadge score={e.score} />
                     </span>
                   </li>
                 );

@@ -78,3 +78,17 @@ export function weakestTile(input: {
   if (missing && !entryPending) return { value: "—", hint: "the full report isn't available" };
   return { value: "…", hint: "loading the report" };
 }
+
+/**
+ * Severity bands for the security grade, worst first: 0–49 is easily tricked, 50–79 has a
+ * weakness, 80–100 resisted. Colour only; the number is the measurement.
+ */
+export const GRADE_BANDS = [
+  { min: 0, label: "0–49: easily tricked", tone: "text-breach-solid", dot: "bg-breach-solid" },
+  { min: 50, label: "50–79: some weakness", tone: "text-warn", dot: "bg-warn" },
+  { min: 80, label: "80–100: resisted", tone: "text-safe", dot: "bg-safe" },
+] as const;
+
+/** The text colour for a security grade's band. */
+export const gradeTone = (grade: number) =>
+  [...GRADE_BANDS].reverse().find((b) => grade >= b.min)!.tone;

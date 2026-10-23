@@ -72,8 +72,9 @@ describe("leaderboard rankings", () => {
       ),
     ).toEqual(["Strong", "Weak", "Legacy"]);
     expect(within(rows[0]!).getByText("01")).toBeTruthy();
-    expect(within(rows[0]!).getByText("90")).toBeTruthy();
-    expect(within(rows[1]!).getByText("0")).toBeTruthy();
+    // Scores are coloured by severity band.
+    expect(within(rows[0]!).getByText("90").className).toContain("text-safe");
+    expect(within(rows[1]!).getByText("0").className).toContain("text-breach-solid");
     expect(within(rows[2]!).getByText("—")).toBeTruthy();
     expect(within(rows[2]!).getByText("Not measured")).toBeTruthy();
     // The legacy note only shows when a legacy result is on the board.
@@ -131,7 +132,8 @@ describe("leaderboard rankings", () => {
       },
     ]);
     const r = row("Graded");
-    expect(within(r).getByText("A8 · market data")).toBeTruthy();
+    // Only the score: the squares show every weak class, so no single "weakest" line.
+    expect(within(r).queryByText(/market data/)).toBeNull();
     // A8 only ran on market data (9 of 12, solid); A2 is worse on the main library (3 of 10)
     // than on market data (1 of 8) or memory (1 of 5); A1 is ungraded; A5 never ran.
     expect(within(r).getByRole("img", { name: "A8" }).className).toContain("bg-breach-solid");
@@ -170,8 +172,10 @@ describe("leaderboard rankings", () => {
     );
     // Disclosure status isn't shown on the board.
     expect(within(r).queryByText("maintainer notice pending")).toBeNull();
-    expect(within(r).getByText("Verified")).toBeTruthy();
-    expect(within(row("Unposted")).getByText("Not on chain")).toBeTruthy();
+    // Verified is the norm and says nothing; only an exception gets a note.
+    expect(within(r).queryByText("Verified")).toBeNull();
+    expect(within(r).queryByText(/on chain|on-chain/)).toBeNull();
+    expect(within(row("Unposted")).getByText("Not on chain yet")).toBeTruthy();
     expect(within(row("Unposted")).queryByRole("link", { name: "Unposted" })).toBeNull();
   });
 });
