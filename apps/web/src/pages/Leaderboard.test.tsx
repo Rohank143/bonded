@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import { ATTACK_LIBRARY_VERSION } from "@bondedhq/shared";
@@ -120,22 +120,28 @@ describe("leaderboard security grades", () => {
     expect(
       within(row).getByText(/Main library: manipulated in 3 of 10 episodes, 1 breached/),
     ).toBeTruthy();
-    // The market-data line reads as a finding, and its square takes the worst graded class
-    // (A8: 9 of 12), the rate that sets the grade.
+    // The market-data line reads as a finding. Each class square takes its worst graded track:
+    // A8 only ran on market data (9 of 12, solid), A2 is worse on the main library (3 of 10) than
+    // on market data (1 of 8), and A5 never ran.
     expect(
       within(row).getByText(
         "Market data: false data moved it to act in 10 of 20 pairs, froze it in 2",
       ).className,
     ).toContain("text-breach");
-    expect(within(row).getByRole("img", { name: "Market data" }).className).toContain(
-      "bg-breach-solid",
-    );
+    expect(within(row).getByRole("img", { name: "A8" }).className).toContain("bg-breach-solid");
+    expect(within(row).getByRole("img", { name: "A2" }).className).toContain("bg-breach/45");
+    expect(within(row).queryByRole("img", { name: "A5" })).toBeNull();
+    // The tooltip lists each track on its own line.
+    fireEvent.focus(within(row).getByRole("img", { name: "A2" }).parentElement!);
+    const tip = await screen.findByRole("tooltip");
+    expect(tip.textContent).toContain("Main library: manipulated in 3 of 10 episodes, 1 breached");
+    expect(tip.textContent).toContain("Market data: false data moved it to act in 1 of 8 pairs");
     expect(
       within(row).getByText("Memory: acted on a planted note in 1 of 5 attempts"),
     ).toBeTruthy();
   });
 
-  it("shows a clean market-data battery as a clean square and a muted line", async () => {
+  it("leaves a class clean when no graded track moved it, and ignores ungraded tracks", async () => {
     vi.spyOn(api, "leaderboard").mockResolvedValue({
       headline: { templates: 0, failingTemplates: 0, evaluations: 0, failingEvaluations: 0 },
       entries: [
@@ -153,10 +159,17 @@ describe("leaderboard security grades", () => {
               breaches: 0,
               graded: true,
             },
+            // Too few pairs to grade: listed, but it doesn't colour the square.
+            {
+              class: "A1",
+              counted: 4,
+              manipulated: 4,
+              inducedInaction: 0,
+              breaches: 0,
+              graded: false,
+            },
           ],
         },
-        // No market-data battery: no square for it.
-        { ...entry("Main only", 83, 100), classes: [] },
       ],
     });
     render(
@@ -173,14 +186,13 @@ describe("leaderboard security grades", () => {
     expect(
       within(row("Clean")).getByText("Main library: not manipulated in 10 episodes"),
     ).toBeTruthy();
+    // The summary line still reports the ungraded pairs as a finding; only the square ignores them.
     expect(
-      within(row("Clean")).getByText("Market data: false data moved it to act in 0 of 12 pairs")
+      within(row("Clean")).getByText("Market data: false data moved it to act in 4 of 16 pairs")
         .className,
-    ).toContain("text-muted");
-    expect(within(row("Clean")).getByRole("img", { name: "Market data" }).className).not.toContain(
-      "breach",
-    );
-    expect(within(row("Main only")).queryByRole("img", { name: "Market data" })).toBeNull();
+    ).toContain("text-breach");
+    expect(within(row("Clean")).getByRole("img", { name: "A8" }).className).not.toContain("breach");
+    expect(within(row("Clean")).getByRole("img", { name: "A1" }).className).not.toContain("breach");
   });
 
   it("leads the headline with false market data once templates ran it", async () => {
@@ -213,6 +225,13 @@ describe("leaderboard security grades", () => {
     expect(
       screen.getByText(/None of the 1 popular agent templates fell for basic prompt injection/),
     ).toBeTruthy();
+    // A battery that never moved the agent stays muted.
+    const glm = within(screen.getByRole("list", { name: "Security rankings" }))
+      .getAllByRole("listitem")
+      .find((r) => r.textContent?.includes("AgentKit glm"))!;
+    expect(
+      within(glm).getByText("Market data: false data moved it to act in 0 of 18 pairs").className,
+    ).toContain("text-muted");
   });
 });
 

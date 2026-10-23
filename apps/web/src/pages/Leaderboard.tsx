@@ -28,62 +28,76 @@ const toneFor = (rate: number) =>
       ? "bg-breach/45 ring-1 ring-inset ring-breach/60"
       : "bg-breach-solid";
 
+/** One track's result for a class: the tooltip line and the rate it adds to the colour. */
+type Track = { text: string; hits: number; of: number; graded: boolean };
+
 /**
- * One attack class as a small square, coloured by the share of its episodes where the agent was
- * manipulated (acted on the attack, whether or not the vault then stopped it): what the security
- * grade measures. Older entries only have breaches.
+ * One attack class as a small square, coloured by its worst graded track: the share of the main
+ * library's episodes, the market-data (S1) pairs or the memory attempts where the agent was
+ * manipulated (acted on the attack, whether or not the vault then stopped it). That is what the
+ * security grade measures, so the strip shows the row that sets it. Induced inaction and
+ * ungraded tracks are listed in the tooltip but don't colour the square. Older entries only have
+ * breaches.
  */
-function Square({ cls, c }: { cls: string; c?: LeaderboardRecord["classes"][number] }) {
-  if (!c || c.episodes === 0)
+function Square({ cls, e }: { cls: string; e: LeaderboardRecord }) {
+  const c = e.classes.find((x) => x.class === cls);
+  const s1 = e.s1Classes?.find((x) => x.class === cls);
+  const memory = e.memoryClasses?.find((x) => x.class === cls);
+  const tracks: Track[] = [];
+  if (c && c.episodes > 0) {
+    const hits = c.manipulated === undefined ? c.breaches : manipulatedOf(c);
+    tracks.push({
+      text:
+        c.manipulated === undefined
+          ? `Main library: ${c.breaches} of ${c.episodes} episodes breached`
+          : `Main library: manipulated in ${hits} of ${c.episodes} episodes, ${c.breaches} breached`,
+      hits,
+      of: c.episodes,
+      graded: true,
+    });
+  }
+  if (s1 && s1.counted > 0)
+    tracks.push({
+      text:
+        `Market data: false data moved it to act in ${s1.manipulated} of ${s1.counted} pairs` +
+        (s1.inducedInaction ? `, froze it in ${s1.inducedInaction}` : ""),
+      hits: s1.manipulated,
+      of: s1.counted,
+      graded: s1.graded,
+    });
+  if (memory && memory.counted > 0)
+    tracks.push({
+      text: `Memory: acted on a planted note in ${memory.manipulated} of ${memory.counted} attempts`,
+      hits: memory.manipulated,
+      of: memory.counted,
+      graded: memory.graded,
+    });
+  if (!tracks.length)
     return (
       <Tooltip content={`${cls}: not run`}>
         <span className="block size-5 rounded-[5px] border border-dashed border-line-strong" />
       </Tooltip>
     );
-  const manipulated = manipulatedOf(c);
-  const tone = toneFor(manipulated / c.episodes);
+  const graded = tracks.filter((t) => t.graded);
+  const rate = Math.max(0, ...graded.map((t) => t.hits / t.of));
   return (
     <Tooltip
       content={
-        c.manipulated === undefined
-          ? `${cls} ${c.name}: ${c.breaches} of ${c.episodes} episodes breached`
-          : `${cls} ${c.name}: manipulated in ${manipulated} of ${c.episodes} episodes, ${c.breaches} breached`
-      }
-    >
-      <span className={`block size-5 rounded-[5px] ${tone}`} />
-    </Tooltip>
-  );
-}
-
-/**
- * The market-data (S1) battery as one square after the ten main classes, coloured by its worst
- * graded class: the rate that enters the security grade (induced inaction is reported, not graded).
- */
-function MarketDataSquare({ s1 }: { s1: NonNullable<LeaderboardRecord["s1Classes"]> }) {
-  const graded = s1.filter((c) => c.graded && c.counted > 0);
-  const counted = s1.reduce((n, c) => n + c.counted, 0);
-  const acted = s1.reduce((n, c) => n + c.manipulated, 0);
-  if (!graded.length)
-    return (
-      <Tooltip content={`Market data: too few pairs to grade (${counted} counted)`}>
-        <span className="block size-5 rounded-[5px] border border-dashed border-line-strong" />
-      </Tooltip>
-    );
-  const worst = graded.reduce((a, b) =>
-    b.manipulated / b.counted > a.manipulated / a.counted ? b : a,
-  );
-  const rate = worst.manipulated / worst.counted;
-  return (
-    <Tooltip
-      content={
-        `Market data: false data moved it to act in ${acted} of ${counted} pairs` +
-        (rate > 0 ? `; worst ${worst.class}, ${worst.manipulated} of ${worst.counted}` : "")
+        <>
+          <span className="block font-medium">{c ? `${cls} ${c.name}` : cls}</span>
+          {tracks.map((t) => (
+            <span key={t.text} className="block">
+              {t.text}
+              {t.graded ? "" : " (too few to grade)"}
+            </span>
+          ))}
+        </>
       }
     >
       <span
         role="img"
-        aria-label="Market data"
-        className={`block size-5 rounded-[5px] ${toneFor(rate)}`}
+        aria-label={cls}
+        className={`block size-5 rounded-[5px] ${graded.length ? toneFor(rate) : "border border-dashed border-line-strong"}`}
       />
     </Tooltip>
   );
@@ -230,7 +244,7 @@ export function Leaderboard() {
 
       <Card
         title="Rankings"
-        description={`The security score is set by the agent's weakest row. One square per attack class of the main library, A1 to A10, coloured by how often the agent was manipulated; hover for breaches. The S1 square is the market-data battery, coloured by its worst class. Market-data and memory results are summed up under each strip. Current attack library: v${ATTACK_LIBRARY_VERSION}; results from an older library are marked.`}
+        description={`The security score is set by the agent's weakest row. One square per attack class, A1 to A10, coloured by how often the agent was manipulated on its worst graded track (main library, market data or memory); hover for each track and for breaches. Market-data and memory results are summed up under each strip. Current attack library: v${ATTACK_LIBRARY_VERSION}; results from an older library are marked.`}
         actions={
           <div className="flex flex-wrap items-center gap-3.5 text-xs text-muted">
             <span className="inline-flex items-center gap-1.5">
@@ -252,8 +266,8 @@ export function Leaderboard() {
         {board.data?.entries.length === 0 && <EmptyState title="No ratings published yet" />}
         {entries.length > 0 && (
           <div className="-mx-5 overflow-x-auto sm:-mx-6">
-            <div className="min-w-[892px]">
-              <div className="grid grid-cols-[40px_minmax(0,1fr)_120px_300px_150px] items-end gap-6 px-5 pb-3 text-[10.5px] font-medium tracking-[0.14em] text-muted uppercase sm:px-6">
+            <div className="min-w-[860px]">
+              <div className="grid grid-cols-[40px_minmax(0,1fr)_120px_268px_150px] items-end gap-6 px-5 pb-3 text-[10.5px] font-medium tracking-[0.14em] text-muted uppercase sm:px-6">
                 <span>#</span>
                 <span>Agent</span>
                 <span>Security</span>
@@ -263,11 +277,6 @@ export function Leaderboard() {
                       {c}
                     </span>
                   ))}
-                  <span className="ml-2 border-l border-transparent pl-2">
-                    <span className="block w-5 text-center font-mono text-[9px] tracking-tighter">
-                      S1
-                    </span>
-                  </span>
                 </span>
                 <span>On chain</span>
               </div>
@@ -277,7 +286,7 @@ export function Leaderboard() {
                   return (
                     <li
                       key={e.slug}
-                      className="grid grid-cols-[40px_minmax(0,1fr)_120px_300px_150px] items-center gap-6 border-t border-line px-5 py-5 transition hover:bg-white/[0.025] sm:px-6"
+                      className="grid grid-cols-[40px_minmax(0,1fr)_120px_268px_150px] items-center gap-6 border-t border-line px-5 py-5 transition hover:bg-white/[0.025] sm:px-6"
                     >
                       <span className="font-mono text-xs text-muted">
                         {e.securityGrade === undefined ? "—" : String(i + 1).padStart(2, "0")}
@@ -335,13 +344,8 @@ export function Leaderboard() {
                       <span>
                         <span className="flex gap-1.5">
                           {CLASSES.map((c) => (
-                            <Square key={c} cls={c} c={e.classes.find((x) => x.class === c)} />
+                            <Square key={c} cls={c} e={e} />
                           ))}
-                          {e.s1Classes?.length ? (
-                            <span className="ml-2 border-l border-line pl-2">
-                              <MarketDataSquare s1={e.s1Classes} />
-                            </span>
-                          ) : null}
                         </span>
                         <span className="mt-2 block text-[11px] text-muted">
                           {!measuresManipulation(e) ? (
