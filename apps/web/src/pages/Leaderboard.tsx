@@ -20,6 +20,14 @@ import {
 
 const CLASSES = ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10"];
 
+/** A square's colour for a manipulation rate: clean, some, or half and over. */
+const toneFor = (rate: number) =>
+  rate === 0
+    ? "bg-brand-bright/45 ring-1 ring-inset ring-brand-bright/70"
+    : rate < 0.5
+      ? "bg-breach/45 ring-1 ring-inset ring-breach/60"
+      : "bg-breach-solid";
+
 /**
  * One attack class as a small square, coloured by the share of its episodes where the agent was
  * manipulated (acted on the attack, whether or not the vault then stopped it): what the security
@@ -33,13 +41,7 @@ function Square({ cls, c }: { cls: string; c?: LeaderboardRecord["classes"][numb
       </Tooltip>
     );
   const manipulated = manipulatedOf(c);
-  const rate = manipulated / c.episodes;
-  const tone =
-    rate === 0
-      ? "bg-brand-bright/45 ring-1 ring-inset ring-brand-bright/70"
-      : rate < 0.5
-        ? "bg-breach/45 ring-1 ring-inset ring-breach/60"
-        : "bg-breach-solid";
+  const tone = toneFor(manipulated / c.episodes);
   return (
     <Tooltip
       content={
@@ -49,6 +51,40 @@ function Square({ cls, c }: { cls: string; c?: LeaderboardRecord["classes"][numb
       }
     >
       <span className={`block size-5 rounded-[5px] ${tone}`} />
+    </Tooltip>
+  );
+}
+
+/**
+ * The market-data (S1) battery as one square after the ten main classes, coloured by its worst
+ * graded class: the rate that enters the security grade (induced inaction is reported, not graded).
+ */
+function MarketDataSquare({ s1 }: { s1: NonNullable<LeaderboardRecord["s1Classes"]> }) {
+  const graded = s1.filter((c) => c.graded && c.counted > 0);
+  const counted = s1.reduce((n, c) => n + c.counted, 0);
+  const acted = s1.reduce((n, c) => n + c.manipulated, 0);
+  if (!graded.length)
+    return (
+      <Tooltip content={`Market data: too few pairs to grade (${counted} counted)`}>
+        <span className="block size-5 rounded-[5px] border border-dashed border-line-strong" />
+      </Tooltip>
+    );
+  const worst = graded.reduce((a, b) =>
+    b.manipulated / b.counted > a.manipulated / a.counted ? b : a,
+  );
+  const rate = worst.manipulated / worst.counted;
+  return (
+    <Tooltip
+      content={
+        `Market data: false data moved it to act in ${acted} of ${counted} pairs` +
+        (rate > 0 ? `; worst ${worst.class}, ${worst.manipulated} of ${worst.counted}` : "")
+      }
+    >
+      <span
+        role="img"
+        aria-label="Market data"
+        className={`block size-5 rounded-[5px] ${toneFor(rate)}`}
+      />
     </Tooltip>
   );
 }
@@ -69,22 +105,30 @@ function totals(e: LeaderboardRecord) {
 const measuresManipulation = (e: LeaderboardRecord) =>
   e.classes.some((c) => c.manipulated !== undefined);
 
-/** One line per extra battery: the market-data (S1) pairs and the memory attempts, when they ran. */
-function batteryLines(e: LeaderboardRecord): string[] {
-  const lines: string[] = [];
+/**
+ * One line per extra battery: the market-data (S1) pairs and the memory attempts, when they ran.
+ * `hit` is whether the lie moved the agent at least once, so the line reads as a finding.
+ */
+function batteryLines(e: LeaderboardRecord): { text: string; hit: boolean }[] {
+  const lines: { text: string; hit: boolean }[] = [];
   if (e.s1Classes?.length) {
     const counted = e.s1Classes.reduce((n, c) => n + c.counted, 0);
     const acted = e.s1Classes.reduce((n, c) => n + c.manipulated, 0);
     const froze = e.s1Classes.reduce((n, c) => n + c.inducedInaction, 0);
-    lines.push(
-      `Market data: false data moved it to act in ${acted} of ${counted} pairs` +
+    lines.push({
+      text:
+        `Market data: false data moved it to act in ${acted} of ${counted} pairs` +
         (froze ? `, froze it in ${froze}` : ""),
-    );
+      hit: acted + froze > 0,
+    });
   }
   if (e.memoryClasses?.length) {
     const counted = e.memoryClasses.reduce((n, c) => n + c.counted, 0);
     const acted = e.memoryClasses.reduce((n, c) => n + c.manipulated, 0);
-    lines.push(`Memory: acted on a planted note in ${acted} of ${counted} attempts`);
+    lines.push({
+      text: `Memory: acted on a planted note in ${acted} of ${counted} attempts`,
+      hit: acted > 0,
+    });
   }
   return lines;
 }
@@ -186,7 +230,7 @@ export function Leaderboard() {
 
       <Card
         title="Rankings"
-        description={`The security score is set by the agent's weakest row. One square per attack class of the main library, A1 to A10, coloured by how often the agent was manipulated; hover for breaches. Market-data and memory results are summed up under each strip. Current attack library: v${ATTACK_LIBRARY_VERSION}; results from an older library are marked.`}
+        description={`The security score is set by the agent's weakest row. One square per attack class of the main library, A1 to A10, coloured by how often the agent was manipulated; hover for breaches. The S1 square is the market-data battery, coloured by its worst class. Market-data and memory results are summed up under each strip. Current attack library: v${ATTACK_LIBRARY_VERSION}; results from an older library are marked.`}
         actions={
           <div className="flex flex-wrap items-center gap-3.5 text-xs text-muted">
             <span className="inline-flex items-center gap-1.5">
@@ -208,8 +252,8 @@ export function Leaderboard() {
         {board.data?.entries.length === 0 && <EmptyState title="No ratings published yet" />}
         {entries.length > 0 && (
           <div className="-mx-5 overflow-x-auto sm:-mx-6">
-            <div className="min-w-[860px]">
-              <div className="grid grid-cols-[40px_minmax(0,1fr)_120px_268px_150px] items-end gap-6 px-5 pb-3 text-[10.5px] font-medium tracking-[0.14em] text-muted uppercase sm:px-6">
+            <div className="min-w-[892px]">
+              <div className="grid grid-cols-[40px_minmax(0,1fr)_120px_300px_150px] items-end gap-6 px-5 pb-3 text-[10.5px] font-medium tracking-[0.14em] text-muted uppercase sm:px-6">
                 <span>#</span>
                 <span>Agent</span>
                 <span>Security</span>
@@ -219,6 +263,11 @@ export function Leaderboard() {
                       {c}
                     </span>
                   ))}
+                  <span className="ml-2 border-l border-transparent pl-2">
+                    <span className="block w-5 text-center font-mono text-[9px] tracking-tighter">
+                      S1
+                    </span>
+                  </span>
                 </span>
                 <span>On chain</span>
               </div>
@@ -228,7 +277,7 @@ export function Leaderboard() {
                   return (
                     <li
                       key={e.slug}
-                      className="grid grid-cols-[40px_minmax(0,1fr)_120px_268px_150px] items-center gap-6 border-t border-line px-5 py-5 transition hover:bg-white/[0.025] sm:px-6"
+                      className="grid grid-cols-[40px_minmax(0,1fr)_120px_300px_150px] items-center gap-6 border-t border-line px-5 py-5 transition hover:bg-white/[0.025] sm:px-6"
                     >
                       <span className="font-mono text-xs text-muted">
                         {e.securityGrade === undefined ? "—" : String(i + 1).padStart(2, "0")}
@@ -288,29 +337,37 @@ export function Leaderboard() {
                           {CLASSES.map((c) => (
                             <Square key={c} cls={c} c={e.classes.find((x) => x.class === c)} />
                           ))}
+                          {e.s1Classes?.length ? (
+                            <span className="ml-2 border-l border-line pl-2">
+                              <MarketDataSquare s1={e.s1Classes} />
+                            </span>
+                          ) : null}
                         </span>
                         <span className="mt-2 block text-[11px] text-muted">
                           {!measuresManipulation(e) ? (
                             t.breaches === 0 ? (
-                              <>No breaches in {t.episodes} episodes</>
+                              <>Main library: no breaches in {t.episodes} episodes</>
                             ) : (
                               <span className="text-breach">
-                                {t.breaches} {t.breaches === 1 ? "breach" : "breaches"} in{" "}
-                                {t.episodes} episodes
+                                Main library: {t.breaches}{" "}
+                                {t.breaches === 1 ? "breach" : "breaches"} in {t.episodes} episodes
                               </span>
                             )
                           ) : t.manipulated === 0 ? (
-                            <>Not manipulated in {t.episodes} episodes</>
+                            <>Main library: not manipulated in {t.episodes} episodes</>
                           ) : (
                             <span className="text-breach">
-                              Manipulated in {t.manipulated} of {t.episodes} episodes
+                              Main library: manipulated in {t.manipulated} of {t.episodes} episodes
                               {t.breaches ? `, ${t.breaches} breached` : ""}
                             </span>
                           )}
                         </span>
                         {batteryLines(e).map((line) => (
-                          <span key={line} className="mt-1 block text-[11px] text-muted">
-                            {line}
+                          <span
+                            key={line.text}
+                            className={`mt-1 block text-[11px] ${line.hit ? "text-breach" : "text-muted"}`}
+                          >
+                            {line.text}
                           </span>
                         ))}
                       </span>

@@ -60,7 +60,7 @@ describe("leaderboard security grades", () => {
     expect(within(rows[2]!).getByText("Security not measured")).toBeTruthy();
     expect(within(rows[2]!).getByText("Insurance score 100")).toBeTruthy();
     // A legacy entry measured breaches only: no claim about manipulation.
-    expect(within(rows[2]!).getByText(/No breaches in/)).toBeTruthy();
+    expect(within(rows[2]!).getByText(/Main library: no breaches in/)).toBeTruthy();
     expect(within(rows[2]!).queryByText("100")).toBeNull();
     // Three total results do not constitute a security podium when one is legacy.
     expect(screen.queryByText("#1")).toBeNull();
@@ -117,15 +117,70 @@ describe("leaderboard security grades", () => {
     )[0]!;
     expect(within(row).getByText("Weakest: A8, market data")).toBeTruthy();
     // The strip counts manipulation, not only breaches.
-    expect(within(row).getByText(/Manipulated in 3 of 10 episodes, 1 breached/)).toBeTruthy();
+    expect(
+      within(row).getByText(/Main library: manipulated in 3 of 10 episodes, 1 breached/),
+    ).toBeTruthy();
+    // The market-data line reads as a finding, and its square takes the worst graded class
+    // (A8: 9 of 12), the rate that sets the grade.
     expect(
       within(row).getByText(
         "Market data: false data moved it to act in 10 of 20 pairs, froze it in 2",
-      ),
-    ).toBeTruthy();
+      ).className,
+    ).toContain("text-breach");
+    expect(within(row).getByRole("img", { name: "Market data" }).className).toContain(
+      "bg-breach-solid",
+    );
     expect(
       within(row).getByText("Memory: acted on a planted note in 1 of 5 attempts"),
     ).toBeTruthy();
+  });
+
+  it("shows a clean market-data battery as a clean square and a muted line", async () => {
+    vi.spyOn(api, "leaderboard").mockResolvedValue({
+      headline: { templates: 0, failingTemplates: 0, evaluations: 0, failingEvaluations: 0 },
+      entries: [
+        {
+          ...entry("Clean", 83, 100),
+          classes: [
+            { class: "A1", name: "Direct injection", episodes: 10, manipulated: 0, breaches: 0 },
+          ],
+          s1Classes: [
+            {
+              class: "A8",
+              counted: 12,
+              manipulated: 0,
+              inducedInaction: 0,
+              breaches: 0,
+              graded: true,
+            },
+          ],
+        },
+        // No market-data battery: no square for it.
+        { ...entry("Main only", 83, 100), classes: [] },
+      ],
+    });
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={new QueryClient()}>
+          <Leaderboard />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    const rows = within(
+      await screen.findByRole("list", { name: "Security rankings" }),
+    ).getAllByRole("listitem");
+    const row = (name: string) => rows.find((r) => r.textContent?.includes(name))!;
+    expect(
+      within(row("Clean")).getByText("Main library: not manipulated in 10 episodes"),
+    ).toBeTruthy();
+    expect(
+      within(row("Clean")).getByText("Market data: false data moved it to act in 0 of 12 pairs")
+        .className,
+    ).toContain("text-muted");
+    expect(within(row("Clean")).getByRole("img", { name: "Market data" }).className).not.toContain(
+      "breach",
+    );
+    expect(within(row("Main only")).queryByRole("img", { name: "Market data" })).toBeNull();
   });
 
   it("leads the headline with false market data once templates ran it", async () => {
