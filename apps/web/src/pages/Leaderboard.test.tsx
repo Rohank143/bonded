@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import { ATTACK_LIBRARY_VERSION } from "@bondedhq/shared";
@@ -60,7 +60,7 @@ describe("leaderboard security grades", () => {
     expect(within(rows[2]!).getByText("Security not measured")).toBeTruthy();
     expect(within(rows[2]!).getByText("Insurance score 100")).toBeTruthy();
     // A legacy entry measured breaches only: no claim about manipulation.
-    expect(within(rows[2]!).getByText(/No breaches in/)).toBeTruthy();
+    expect(within(rows[2]!).getByText(/Main library: no breaches in/)).toBeTruthy();
     expect(within(rows[2]!).queryByText("100")).toBeNull();
     // Three total results do not constitute a security podium when one is legacy.
     expect(screen.queryByText("#1")).toBeNull();
@@ -117,15 +117,82 @@ describe("leaderboard security grades", () => {
     )[0]!;
     expect(within(row).getByText("Weakest: A8, market data")).toBeTruthy();
     // The strip counts manipulation, not only breaches.
-    expect(within(row).getByText(/Manipulated in 3 of 10 episodes, 1 breached/)).toBeTruthy();
+    expect(
+      within(row).getByText(/Main library: manipulated in 3 of 10 episodes, 1 breached/),
+    ).toBeTruthy();
+    // The market-data line reads as a finding. Each class square takes its worst graded track:
+    // A8 only ran on market data (9 of 12, solid), A2 is worse on the main library (3 of 10) than
+    // on market data (1 of 8), and A5 never ran.
     expect(
       within(row).getByText(
         "Market data: false data moved it to act in 10 of 20 pairs, froze it in 2",
-      ),
-    ).toBeTruthy();
+      ).className,
+    ).toContain("text-breach");
+    expect(within(row).getByRole("img", { name: "A8" }).className).toContain("bg-breach-solid");
+    expect(within(row).getByRole("img", { name: "A2" }).className).toContain("bg-breach/45");
+    expect(within(row).queryByRole("img", { name: "A5" })).toBeNull();
+    // The tooltip lists each track on its own line.
+    fireEvent.focus(within(row).getByRole("img", { name: "A2" }).parentElement!);
+    const tip = await screen.findByRole("tooltip");
+    expect(tip.textContent).toContain("Main library: manipulated in 3 of 10 episodes, 1 breached");
+    expect(tip.textContent).toContain("Market data: false data moved it to act in 1 of 8 pairs");
     expect(
       within(row).getByText("Memory: acted on a planted note in 1 of 5 attempts"),
     ).toBeTruthy();
+  });
+
+  it("leaves a class clean when no graded track moved it, and ignores ungraded tracks", async () => {
+    vi.spyOn(api, "leaderboard").mockResolvedValue({
+      headline: { templates: 0, failingTemplates: 0, evaluations: 0, failingEvaluations: 0 },
+      entries: [
+        {
+          ...entry("Clean", 83, 100),
+          classes: [
+            { class: "A1", name: "Direct injection", episodes: 10, manipulated: 0, breaches: 0 },
+          ],
+          s1Classes: [
+            {
+              class: "A8",
+              counted: 12,
+              manipulated: 0,
+              inducedInaction: 0,
+              breaches: 0,
+              graded: true,
+            },
+            // Too few pairs to grade: listed, but it doesn't colour the square.
+            {
+              class: "A1",
+              counted: 4,
+              manipulated: 4,
+              inducedInaction: 0,
+              breaches: 0,
+              graded: false,
+            },
+          ],
+        },
+      ],
+    });
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={new QueryClient()}>
+          <Leaderboard />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    const rows = within(
+      await screen.findByRole("list", { name: "Security rankings" }),
+    ).getAllByRole("listitem");
+    const row = (name: string) => rows.find((r) => r.textContent?.includes(name))!;
+    expect(
+      within(row("Clean")).getByText("Main library: not manipulated in 10 episodes"),
+    ).toBeTruthy();
+    // The summary line still reports the ungraded pairs as a finding; only the square ignores them.
+    expect(
+      within(row("Clean")).getByText("Market data: false data moved it to act in 4 of 16 pairs")
+        .className,
+    ).toContain("text-breach");
+    expect(within(row("Clean")).getByRole("img", { name: "A8" }).className).not.toContain("breach");
+    expect(within(row("Clean")).getByRole("img", { name: "A1" }).className).not.toContain("breach");
   });
 
   it("leads the headline with false market data once templates ran it", async () => {
@@ -158,6 +225,13 @@ describe("leaderboard security grades", () => {
     expect(
       screen.getByText(/None of the 1 popular agent templates fell for basic prompt injection/),
     ).toBeTruthy();
+    // A battery that never moved the agent stays muted.
+    const glm = within(screen.getByRole("list", { name: "Security rankings" }))
+      .getAllByRole("listitem")
+      .find((r) => r.textContent?.includes("AgentKit glm"))!;
+    expect(
+      within(glm).getByText("Market data: false data moved it to act in 0 of 18 pairs").className,
+    ).toContain("text-muted");
   });
 });
 
