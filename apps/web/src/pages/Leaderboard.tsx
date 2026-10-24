@@ -27,7 +27,7 @@ function Square({ r }: { r: ClassResult }) {
   if (!r.tracks.length)
     return (
       <Tooltip content={`${r.cls}: not run`}>
-        <span className="block size-5 rounded-[5px] border border-dashed border-line-strong" />
+        <span className="block size-5 xl:size-8 rounded-[5px] xl:rounded-[7px] border border-dashed border-line-strong" />
       </Tooltip>
     );
   return (
@@ -48,7 +48,7 @@ function Square({ r }: { r: ClassResult }) {
       <span
         role="img"
         aria-label={r.cls}
-        className={`block size-5 rounded-[5px] ${r.rate === undefined ? "border border-dashed border-line-strong" : toneFor(r.rate)}`}
+        className={`block size-5 xl:size-8 rounded-[5px] xl:rounded-[7px] ${r.rate === undefined ? "border border-dashed border-line-strong" : toneFor(r.rate)}`}
       />
     </Tooltip>
   );
@@ -123,7 +123,7 @@ function chainNote(e: LeaderboardRecord): string | undefined {
 
 /** Rank, agent, score, class strip and insurance tier; stacks as a card on phones. */
 const ROW =
-  "grid grid-cols-[28px_minmax(0,1fr)_auto] gap-x-4 gap-y-3 lg:grid-cols-[32px_minmax(0,1fr)_72px_254px_56px] lg:items-center lg:gap-x-6";
+  "grid grid-cols-[28px_minmax(0,1fr)_auto] gap-x-4 gap-y-3 lg:grid-cols-[32px_minmax(0,1fr)_72px_254px_56px] xl:grid-cols-[32px_minmax(0,1fr)_72px_410px_56px] lg:items-center lg:gap-x-6";
 
 export function Leaderboard() {
   const board = useQuery({ queryKey: ["leaderboard"], queryFn: api.leaderboard });
@@ -162,9 +162,12 @@ export function Leaderboard() {
               <span>#</span>
               <span>Agent</span>
               <span>Score</span>
-              <span className="flex gap-1.5 tracking-normal normal-case">
+              <span className="flex gap-1.5 tracking-normal normal-case xl:gap-2.5">
                 {CLASSES.map((c) => (
-                  <span key={c} className="w-5 text-center font-mono text-[9px] tracking-tighter">
+                  <span
+                    key={c}
+                    className="w-5 text-center font-mono xl:w-8 text-[9px] tracking-tighter"
+                  >
                     {c}
                   </span>
                 ))}
@@ -229,7 +232,7 @@ export function Leaderboard() {
                         </span>
                       )}
                     </span>
-                    <span className="relative z-10 col-span-2 col-start-2 flex gap-1.5 lg:col-span-1 lg:col-start-auto">
+                    <span className="relative z-10 col-span-2 col-start-2 flex gap-1.5 lg:col-span-1 xl:gap-2.5 lg:col-start-auto">
                       {classResults(e).map((r) => (
                         <Square key={r.cls} r={r} />
                       ))}
