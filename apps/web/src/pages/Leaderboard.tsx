@@ -1,4 +1,5 @@
 import { Link } from "react-router";
+import * as Popover from "@radix-ui/react-popover";
 import { useQuery } from "@tanstack/react-query";
 import { ATTACK_LIBRARY_VERSION, libraryVersionStatus } from "@bondedhq/shared";
 import { api, type LeaderboardRecord } from "../lib/api";
@@ -50,6 +51,48 @@ function Square({ r }: { r: ClassResult }) {
         className={`block size-5 rounded-[5px] ${r.rate === undefined ? "border border-dashed border-line-strong" : toneFor(r.rate)}`}
       />
     </Tooltip>
+  );
+}
+
+/** What the score colours and square colours mean, behind a small button so it stays out of the way. */
+function Legend() {
+  const dot = (cls: string, label: string) => (
+    <li key={label} className="flex items-center gap-2">
+      <span className={`size-2.5 shrink-0 ${cls}`} /> {label}
+    </li>
+  );
+  return (
+    <Popover.Root>
+      <Popover.Trigger className="inline-flex items-center gap-1.5 rounded-full border border-line-strong px-3 py-1.5 text-xs text-muted hover:text-ink data-[state=open]:text-ink">
+        <span
+          aria-hidden
+          className="flex size-3.5 items-center justify-center rounded-full border border-current text-[9px] leading-none"
+        >
+          i
+        </span>
+        Colour key
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          align="end"
+          sideOffset={8}
+          collisionPadding={16}
+          className="z-50 w-64 rounded-xl border border-line-strong bg-raised p-4 text-xs text-soft shadow-(--shadow-raised) outline-none [animation:pop_.15s_ease_both]"
+        >
+          <p className="mb-2 font-medium text-ink">Score</p>
+          <ul className="flex flex-col gap-1.5">
+            {GRADE_BANDS.map((b) => dot(`rounded-full ${b.dot}`, b.label))}
+          </ul>
+          <p className="mt-4 mb-2 font-medium text-ink">Squares</p>
+          <ul className="flex flex-col gap-1.5">
+            {dot("rounded bg-brand-bright/45 ring-1 ring-brand-bright/70", "held")}
+            {dot("rounded bg-breach/45 ring-1 ring-breach/60", "sometimes manipulated")}
+            {dot("rounded bg-breach-solid", "manipulated half the time or more")}
+            {dot("rounded border border-dashed border-line-strong", "not run, or too few to grade")}
+          </ul>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }
 
@@ -105,32 +148,7 @@ export function Leaderboard() {
       <Card
         title="Rankings"
         description="Each square is an attack class, coloured by its worst result across the main library, market data and memory. Hover a square for the numbers; open a row for the full report."
-        actions={
-          <div className="flex flex-col gap-2 text-xs text-muted">
-            <div className="flex flex-wrap items-center gap-3.5">
-              <span className="w-14">Score</span>
-              {GRADE_BANDS.map((b) => (
-                <span key={b.min} className="inline-flex items-center gap-1.5">
-                  <span className={`size-2.5 rounded-full ${b.dot}`} /> {b.label}
-                </span>
-              ))}
-            </div>
-            <div className="flex flex-wrap items-center gap-3.5">
-              <span className="w-14">Squares</span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="size-2.5 rounded bg-brand-bright/45 ring-1 ring-brand-bright/70" />{" "}
-                held
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="size-2.5 rounded bg-breach/45 ring-1 ring-breach/60" /> sometimes
-                manipulated
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="size-2.5 rounded bg-breach-solid" /> half or more
-              </span>
-            </div>
-          </div>
-        }
+        actions={<Legend />}
       >
         {board.isPending && !board.error && <Loading what="the leaderboard" height="lg" />}
         <ErrorText error={board.error} />

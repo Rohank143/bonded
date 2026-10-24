@@ -92,6 +92,15 @@ describe("leaderboard rankings", () => {
     expect(docs.getAttribute("rel")).toBe("noreferrer");
   });
 
+  it("keeps the colour key in a popover until it's opened", async () => {
+    await renderBoard([entry("A", 50, 90)]);
+    expect(screen.queryByText("80–100: resisted")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Colour key/ }));
+    const key = await screen.findByRole("dialog");
+    expect(within(key).getByText("80–100: resisted")).toBeTruthy();
+    expect(within(key).getByText("sometimes manipulated")).toBeTruthy();
+  });
+
   it("colours each class square by its worst graded track and names the weakest", async () => {
     const row = await renderBoard([
       {
