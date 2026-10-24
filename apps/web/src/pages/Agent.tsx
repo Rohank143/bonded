@@ -19,14 +19,16 @@ import { liveCheckView, teeView } from "../lib/tee";
 import { isRpcUnavailable } from "../lib/errors";
 import { apiLookups, isRegistered } from "../lib/agent";
 import { moduleCoverNote, useAgents } from "../lib/chain";
-import { tierMeaning } from "../lib/glossary";
 import { OwnerTools } from "../components/owner-tools";
 import { CoverWithoutTradesWarning, HealthPanel, VaultTrading } from "../components/health-panel";
 import { UseYourVault } from "../components/framework-questions";
 import { byoaApi } from "../lib/byoa-api";
 import { BreachEvidenceList, TopFixes } from "../components/report-actions";
 import { BatteryTables } from "../components/battery-tables";
-import { manipulatedOf, weakestRow, weakestTile } from "../lib/security";
+import { ClassTrackTable } from "../components/class-track-table";
+import { classResults, gradeResults, weakestSentence } from "../lib/class-tracks";
+import { Square } from "../components/class-squares";
+import { gradeBand, manipulatedOf } from "../lib/security";
 import { evidenceOf, topFixes } from "../lib/report-actions";
 import { ModuleCover } from "../components/module-cover";
 import { BindingLine } from "../components/connect-agent";
@@ -155,15 +157,25 @@ export function Agent() {
   // not the vault then stopped it): what the Bonded Score measures. Older reports: breaches.
   const weak = report?.classes.filter((c) => manipulatedOf(c) > 0) ?? [];
   const grade = report?.susceptibility;
+  // Graded market-data and memory rows that moved it: the same classes through another channel,
+  // and they set the score as much as the main library does.
+  const batteryWeak = grade?.classes.filter((r) => r.track === "s1" && r.manipulated > 0) ?? [];
+  const weakLines = [
+    ...weak.map(
+      (c) =>
+        `${c.class}, main library: manipulated in ${manipulatedOf(c)} of ${c.episodes} episodes, ${c.breaches} breached`,
+    ),
+    ...batteryWeak.map(
+      (r) =>
+        `${r.class}, ${r.source === "memory" ? "memory" : "market data"}: manipulated in ${r.manipulated} of ${r.episodes}`,
+    ),
+  ];
+  const weakClasses = [
+    ...new Set([...weak.map((c) => c.class), ...batteryWeak.map((r) => r.class)]),
+  ];
   const entry = board.data?.entries.find(
     (e) => a && e.reportHash.toLowerCase() === a.reportHash.toLowerCase(),
   );
-  const weakest = weakestTile({
-    ...(report ? { report } : {}),
-    ...(entry ? { entry } : {}),
-    missing: run.isError || score.isError,
-    entryPending: board.isPending,
-  });
   // Ratings that count only exercised trials (operator-run agents) report them per class.
   const exercisedShown = Boolean(report?.classes.some((c) => c.exercised !== undefined));
   const untested = new Set(untestedClasses(report));
@@ -171,10 +183,16 @@ export function Agent() {
     ? "grid grid-cols-[44px_minmax(0,1fr)_minmax(0,2fr)_64px_112px] items-center gap-3.5"
     : "grid grid-cols-[44px_minmax(0,1fr)_minmax(0,2fr)_74px] items-center gap-3.5";
   const tone = rated && a ? tierTone(a.score) : "neutral";
+  // Per-class results for the score panel's strip: the hosted report's grade, else the
+  // leaderboard entry for the same rating.
+  const results = grade ? gradeResults(grade) : entry ? classResults(entry) : null;
+  const weakCount = results?.filter((r) => r.rate).length ?? 0;
+  const weakestLine = results && weakestSentence(results);
+  const band = gradeBand(a?.securityScore ?? 0);
   const glow =
-    tone === "brand"
-      ? "rgb(127 160 255 / .14)"
-      : tone === "warn"
+    band.min >= 80
+      ? "rgb(110 231 183 / .12)"
+      : band.min >= 50
         ? "rgb(255 179 71 / .12)"
         : "rgb(255 122 69 / .12)";
 
@@ -182,7 +200,7 @@ export function Agent() {
     <Page
       title={`Agent ${id}`}
       back={back}
-      intro="Its latest safety score, read from the on-chain registry: the headline Bonded Score is how well it resisted manipulation. Cover for its vault is priced from the insurance score underneath, and every agent is scored on the same scale."
+      intro="Its latest rating, read from the on-chain registry. The Bonded Score shows how hard it is to trick; the insurance score prices cover for its vault."
       actions={
         <>
           {vault && (
@@ -201,7 +219,9 @@ export function Agent() {
         {rated &&
           (fresh?.result ? (
             <Badge tone="safe" dot>
-              Score valid
+              <span title={a ? `Signed ${when(a.issuedAt)}` : undefined}>
+                Score valid{a ? ` until ${when(a.expiresAt)}` : ""}
+              </span>
             </Badge>
           ) : (
             <Badge tone="warn" dot>
@@ -226,28 +246,42 @@ export function Agent() {
       {rated && a ? (
         <section className="grid gap-4 lg:grid-cols-2">
           <div
-            className="panel flex flex-wrap items-center gap-7 p-6"
+            className="panel flex flex-wrap items-center gap-x-8 gap-y-6 p-6 sm:p-7"
             style={{
               backgroundImage: `radial-gradient(ellipse at 20% 0%, ${glow}, transparent 60%)`,
             }}
           >
             <ScoreRing score={a.securityScore} />
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-[1_1_240px]">
               <p className="eyebrow">Bonded Score</p>
-              <p className="mt-1 text-sm text-muted">
-                how well the agent resisted manipulation — any trick it fell for pulls this down
+              <p className={`mt-1 font-serif text-3xl ${band.tone}`}>{band.verdict}</p>
+              <p className="mt-2 max-w-md text-sm leading-relaxed text-soft">
+                {weakestLine ? (
+                  <>
+                    {weakestLine}{" "}
+                    {weakCount > 0 && (
+                      <span className="text-muted">That result sets the score.</span>
+                    )}
+                  </>
+                ) : (
+                  "How hard it is to trick: 100 means no attack moved it."
+                )}
               </p>
-              {grade && weakestRow(grade) && (
-                <p className="mt-2 text-sm text-soft">{weakestRow(grade)}</p>
+              {results && (
+                <div className="mt-5">
+                  <div className="flex gap-1.5">
+                    {results.map((r) => (
+                      <Square key={r.cls} r={r} size="size-6" />
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs text-muted">
+                    {weakCount
+                      ? `${weakCount} of ${results.filter((r) => r.tracks.length).length} classes weak`
+                      : "No weak classes"}{" "}
+                    · hover a square for its numbers
+                  </p>
+                </div>
               )}
-              <p className="mt-2 leading-relaxed text-soft">Insurance tier: {tierMeaning(tier!)}</p>
-              <p className="mt-2.5 text-sm text-muted">
-                Signed {when(a.issuedAt)} · valid until {when(a.expiresAt)}
-              </p>
-              <p className="mt-2.5 text-sm text-muted">
-                Every agent faces the same attacks on the same scale, so this score is built to be
-                the bar for agent safety: a number a platform can require and a builder can aim for.
-              </p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -266,7 +300,6 @@ export function Agent() {
               value={bond?.result !== undefined ? `$${usd(bond.result, 0)}` : "…"}
               hint="pays first on a claim"
             />
-            <Tile label="Weakest" value={weakest.value} hint={weakest.hint} />
             <Tile
               label={<Term term="tee">Key custody</Term>}
               value={tee.inTee ? "TEE" : "Operator"}
@@ -308,24 +341,20 @@ export function Agent() {
                 </span>
               }
             >
-              {weak.length > 0 && (
+              {weakLines.length > 0 && (
                 <div className="mb-5 flex gap-3.5 rounded-2xl border border-breach/35 bg-breach-soft p-4">
                   <span className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-breach/20 font-bold text-breach">
                     !
                   </span>
                   <span>
                     <strong className="block">
-                      {weak.length === 1 ? "One weakness" : `${weak.length} weaknesses`}:{" "}
-                      {weak.map((c) => c.name.toLowerCase()).join(", ")}
+                      {weakClasses.length === 1
+                        ? "One weak class"
+                        : `${weakClasses.length} weak classes`}
+                      : {weakClasses.join(", ")}
                     </strong>
                     <span className="mt-1 block text-sm text-soft">
-                      {weak
-                        .map(
-                          (c) =>
-                            `${c.class}: manipulated in ${manipulatedOf(c)} of ${c.episodes} episodes, ${c.breaches} breached`,
-                        )
-                        .join(". ")}
-                      . Every other class of the attack library held.
+                      {weakLines.join(". ")}. Every other graded class and track held.
                     </span>
                   </span>
                 </div>
@@ -424,8 +453,19 @@ export function Agent() {
               )}
             </Card>
           ) : rated ? (
-            <Card title="Attack report">
-              {run.isError || score.isError ? (
+            <Card
+              title="Attack report"
+              actions={
+                entry && (run.isError || score.isError) ? (
+                  <span className="text-sm text-muted">From the published leaderboard rating</span>
+                ) : undefined
+              }
+            >
+              {entry && (run.isError || score.isError) ? (
+                // Rated outside the hosted service: the API has no full report, but the
+                // leaderboard entry for this rating carries every class on every track.
+                <ClassTrackTable results={classResults(entry)} />
+              ) : run.isError || score.isError ? (
                 <p className="text-sm text-muted">The full report isn't available right now.</p>
               ) : (
                 <Loading what="the attack report" height="lg" />

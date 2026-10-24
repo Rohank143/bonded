@@ -27,15 +27,32 @@ const entry = (name: string, score: number, securityGrade?: number): Leaderboard
   verified: null,
 });
 
+const NO_HEADLINE = { templates: 0, failingTemplates: 0, evaluations: 0, failingEvaluations: 0 };
+
+async function renderBoard(entries: LeaderboardRecord[], headline = NO_HEADLINE) {
+  vi.spyOn(api, "leaderboard").mockResolvedValue({ headline, entries });
+  render(
+    <MemoryRouter>
+      <QueryClientProvider client={new QueryClient()}>
+        <Leaderboard />
+      </QueryClientProvider>
+    </MemoryRouter>,
+  );
+  const rows = within(await screen.findByRole("list", { name: "Security rankings" })).getAllByRole(
+    "listitem",
+  );
+  return (name: string) => rows.find((r) => r.textContent?.includes(name))!;
+}
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
 
-describe("leaderboard security grades", () => {
+describe("leaderboard rankings", () => {
   it("ranks security grades, including zero, and leaves legacy insurance results unranked", async () => {
     vi.spyOn(api, "leaderboard").mockResolvedValue({
-      headline: { templates: 0, failingTemplates: 0, evaluations: 0, failingEvaluations: 0 },
+      headline: NO_HEADLINE,
       entries: [entry("Legacy", 100), entry("Weak", 99, 0), entry("Strong", 40, 90)],
     });
     render(
@@ -54,221 +71,137 @@ describe("leaderboard security grades", () => {
         ["Strong", "Weak", "Legacy"].find((name) => row.textContent?.includes(name)),
       ),
     ).toEqual(["Strong", "Weak", "Legacy"]);
-    expect(within(rows[0]!).getByText("90")).toBeTruthy();
-    expect(within(rows[1]!).getByText("0")).toBeTruthy();
+    expect(within(rows[0]!).getByText("01")).toBeTruthy();
+    // Scores are coloured by severity band.
+    expect(within(rows[0]!).getByText("90").className).toContain("text-safe");
+    expect(within(rows[1]!).getByText("0").className).toContain("text-breach-solid");
     expect(within(rows[2]!).getByText("—")).toBeTruthy();
-    expect(within(rows[2]!).getByText("Security not measured")).toBeTruthy();
-    expect(within(rows[2]!).getByText("Insurance score 100")).toBeTruthy();
-    // A legacy entry measured breaches only: no claim about manipulation.
-    expect(within(rows[2]!).getByText(/Main library: no breaches in/)).toBeTruthy();
-    expect(within(rows[2]!).queryByText("100")).toBeNull();
-    // Three total results do not constitute a security podium when one is legacy.
+    expect(within(rows[2]!).getByText("Not measured")).toBeTruthy();
+    // The legacy note only shows when a legacy result is on the board.
+    expect(screen.getByText(/predate the security grade and are unranked/)).toBeTruthy();
+  });
+
+  it("leaves out the legacy note and the podium when there's nothing to explain", async () => {
+    await renderBoard([entry("A", 50, 90), entry("B", 50, 80), entry("C", 50, 70)]);
+    expect(screen.queryByText(/predate the security grade/)).toBeNull();
     expect(screen.queryByText("#1")).toBeNull();
+    // No headline stats; the scoring docs open in a new tab.
+    expect(screen.queryByRole("region", { name: "Headline" })).toBeNull();
+    const docs = screen.getByRole("link", { name: "How scoring works" });
+    expect(docs.getAttribute("target")).toBe("_blank");
+    expect(docs.getAttribute("rel")).toBe("noreferrer");
   });
 
-  it("names the weakest row's battery and sums up the market-data and memory batteries", async () => {
-    vi.spyOn(api, "leaderboard").mockResolvedValue({
-      headline: { templates: 0, failingTemplates: 0, evaluations: 0, failingEvaluations: 0 },
-      entries: [
-        {
-          ...entry("Graded", 81, 25),
-          worstClass: "A8",
-          worstTrack: "s1",
-          classes: [
-            {
-              class: "A2",
-              name: "Injection via content",
-              episodes: 10,
-              manipulated: 3,
-              breaches: 1,
-            },
-          ],
-          s1Classes: [
-            {
-              class: "A8",
-              counted: 12,
-              manipulated: 9,
-              inducedInaction: 2,
-              breaches: 4,
-              graded: true,
-            },
-            {
-              class: "A2",
-              counted: 8,
-              manipulated: 1,
-              inducedInaction: 0,
-              breaches: 0,
-              graded: true,
-            },
-          ],
-          memoryClasses: [{ class: "A2", counted: 5, manipulated: 1, graded: true }],
-        },
-      ],
-    });
-    render(
-      <MemoryRouter>
-        <QueryClientProvider client={new QueryClient()}>
-          <Leaderboard />
-        </QueryClientProvider>
-      </MemoryRouter>,
-    );
-    const row = within(await screen.findByRole("list", { name: "Security rankings" })).getAllByRole(
-      "listitem",
-    )[0]!;
-    expect(within(row).getByText("Weakest: A8, market data")).toBeTruthy();
-    // The strip counts manipulation, not only breaches.
-    expect(
-      within(row).getByText(/Main library: manipulated in 3 of 10 episodes, 1 breached/),
-    ).toBeTruthy();
-    // The market-data line reads as a finding. Each class square takes its worst graded track:
-    // A8 only ran on market data (9 of 12, solid), A2 is worse on the main library (3 of 10) than
-    // on market data (1 of 8), and A5 never ran.
-    expect(
-      within(row).getByText(
-        "Market data: false data moved it to act in 10 of 20 pairs, froze it in 2",
-      ).className,
-    ).toContain("text-breach");
-    expect(within(row).getByRole("img", { name: "A8" }).className).toContain("bg-breach-solid");
-    expect(within(row).getByRole("img", { name: "A2" }).className).toContain("bg-breach/45");
-    expect(within(row).queryByRole("img", { name: "A5" })).toBeNull();
+  it("keeps the colour key in a popover until it's opened", async () => {
+    await renderBoard([entry("A", 50, 90)]);
+    expect(screen.queryByText("80–100: resisted")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Colour key/ }));
+    const key = await screen.findByRole("dialog");
+    expect(within(key).getByText("80–100: resisted")).toBeTruthy();
+    expect(within(key).getByText("sometimes manipulated")).toBeTruthy();
+  });
+
+  it("colours each class square by its worst graded track and names the weakest", async () => {
+    const row = await renderBoard([
+      {
+        ...entry("Graded", 81, 25),
+        worstClass: "A8",
+        worstTrack: "s1",
+        classes: [
+          { class: "A2", name: "Injection via content", episodes: 10, manipulated: 3, breaches: 1 },
+        ],
+        s1Classes: [
+          {
+            class: "A8",
+            counted: 12,
+            manipulated: 9,
+            inducedInaction: 2,
+            breaches: 4,
+            graded: true,
+          },
+          {
+            class: "A2",
+            counted: 8,
+            manipulated: 1,
+            inducedInaction: 0,
+            breaches: 0,
+            graded: true,
+          },
+          // Too few pairs to grade: listed, but it doesn't colour the square.
+          {
+            class: "A1",
+            counted: 4,
+            manipulated: 4,
+            inducedInaction: 0,
+            breaches: 0,
+            graded: false,
+          },
+        ],
+        memoryClasses: [{ class: "A2", counted: 5, manipulated: 1, graded: true }],
+      },
+    ]);
+    const r = row("Graded");
+    // Only the score: the squares show every weak class, so no single "weakest" line.
+    expect(within(r).queryByText(/market data/)).toBeNull();
+    // A8 only ran on market data (9 of 12, solid); A2 is worse on the main library (3 of 10)
+    // than on market data (1 of 8) or memory (1 of 5); A1 is ungraded; A5 never ran.
+    expect(within(r).getByRole("img", { name: "A8" }).className).toContain("bg-breach-solid");
+    expect(within(r).getByRole("img", { name: "A2" }).className).toContain("bg-breach/45");
+    expect(within(r).getByRole("img", { name: "A1" }).className).not.toContain("breach");
+    expect(within(r).queryByRole("img", { name: "A5" })).toBeNull();
     // The tooltip lists each track on its own line.
-    fireEvent.focus(within(row).getByRole("img", { name: "A2" }).parentElement!);
-    const tip = await screen.findByRole("tooltip");
-    expect(tip.textContent).toContain("Main library: manipulated in 3 of 10 episodes, 1 breached");
-    expect(tip.textContent).toContain("Market data: false data moved it to act in 1 of 8 pairs");
-    expect(
-      within(row).getByText("Memory: acted on a planted note in 1 of 5 attempts"),
-    ).toBeTruthy();
+    fireEvent.focus(within(r).getByRole("img", { name: "A2" }).parentElement!);
+    const tip = (await screen.findByRole("tooltip")).textContent;
+    expect(tip).toContain("Main library: manipulated in 3 of 10 episodes, 1 breached");
+    expect(tip).toContain("Market data: false data moved it to act in 1 of 8 pairs");
+    expect(tip).toContain("Memory: acted on a planted note in 1 of 5 attempts");
   });
 
-  it("leaves a class clean when no graded track moved it, and ignores ungraded tracks", async () => {
-    vi.spyOn(api, "leaderboard").mockResolvedValue({
-      headline: { templates: 0, failingTemplates: 0, evaluations: 0, failingEvaluations: 0 },
-      entries: [
-        {
-          ...entry("Clean", 83, 100),
-          classes: [
-            { class: "A1", name: "Direct injection", episodes: 10, manipulated: 0, breaches: 0 },
-          ],
-          s1Classes: [
-            {
-              class: "A8",
-              counted: 12,
-              manipulated: 0,
-              inducedInaction: 0,
-              breaches: 0,
-              graded: true,
-            },
-            // Too few pairs to grade: listed, but it doesn't colour the square.
-            {
-              class: "A1",
-              counted: 4,
-              manipulated: 4,
-              inducedInaction: 0,
-              breaches: 0,
-              graded: false,
-            },
-          ],
-        },
-      ],
-    });
-    render(
-      <MemoryRouter>
-        <QueryClientProvider client={new QueryClient()}>
-          <Leaderboard />
-        </QueryClientProvider>
-      </MemoryRouter>,
+  it("links the row to the agent's page and shows the model, source and chain status", async () => {
+    const row = await renderBoard([
+      {
+        ...entry("AgentKit chatbot", 83, 33),
+        kind: "framework",
+        framework: "Coinbase AgentKit",
+        model: "deepseek/deepseek-v4.1-flash",
+        template: "https://example.com/agentkit",
+        disclosure: { status: "pending" },
+        onchain: { chain: "robinhood-testnet", agentId: "4", tx: "0x" + "1".repeat(64) },
+        verified: true,
+      },
+      { ...entry("Unposted", 83, 50), verified: null },
+    ]);
+    const r = row("AgentKit chatbot");
+    expect(within(r).getByRole("link", { name: "AgentKit chatbot" }).getAttribute("href")).toBe(
+      "/agents/4",
     );
-    const rows = within(
-      await screen.findByRole("list", { name: "Security rankings" }),
-    ).getAllByRole("listitem");
-    const row = (name: string) => rows.find((r) => r.textContent?.includes(name))!;
-    expect(
-      within(row("Clean")).getByText("Main library: not manipulated in 10 episodes"),
-    ).toBeTruthy();
-    // The summary line still reports the ungraded pairs as a finding; only the square ignores them.
-    expect(
-      within(row("Clean")).getByText("Market data: false data moved it to act in 4 of 16 pairs")
-        .className,
-    ).toContain("text-breach");
-    expect(within(row("Clean")).getByRole("img", { name: "A8" }).className).not.toContain("breach");
-    expect(within(row("Clean")).getByRole("img", { name: "A1" }).className).not.toContain("breach");
-  });
-
-  it("leads the headline with false market data once templates ran it", async () => {
-    const template = (model: string, manipulated: number): LeaderboardRecord => ({
-      ...entry(`AgentKit ${model}`, 83, 20),
-      slug: `agentkit-${model}`,
-      kind: "framework",
-      template: "https://example.com/agentkit",
-      s1Classes: [
-        { class: "A2", counted: 18, manipulated, inducedInaction: 0, breaches: 0, graded: true },
-      ],
-    });
-    vi.spyOn(api, "leaderboard").mockResolvedValue({
-      headline: { templates: 1, failingTemplates: 0, evaluations: 2, failingEvaluations: 0 },
-      entries: [template("deepseek", 15), template("glm", 0)],
-    });
-    render(
-      <MemoryRouter>
-        <QueryClientProvider client={new QueryClient()}>
-          <Leaderboard />
-        </QueryClientProvider>
-      </MemoryRouter>,
+    expect(within(r).getByText("deepseek-v4.1-flash · Coinbase AgentKit")).toBeTruthy();
+    expect(within(r).getByRole("link", { name: "source ↗" }).getAttribute("href")).toBe(
+      "https://example.com/agentkit",
     );
-    expect(
-      await screen.findByText("1 of 1 popular agent templates traded on false market data."),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(/moved 1 of 2 template and model pairs to trade on the lie/),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(/None of the 1 popular agent templates fell for basic prompt injection/),
-    ).toBeTruthy();
-    // A battery that never moved the agent stays muted.
-    const glm = within(screen.getByRole("list", { name: "Security rankings" }))
-      .getAllByRole("listitem")
-      .find((r) => r.textContent?.includes("AgentKit glm"))!;
-    expect(
-      within(glm).getByText("Market data: false data moved it to act in 0 of 18 pairs").className,
-    ).toContain("text-muted");
+    // Disclosure status isn't shown on the board.
+    expect(within(r).queryByText("maintainer notice pending")).toBeNull();
+    // Verified is the norm and says nothing; only an exception gets a note.
+    expect(within(r).queryByText("Verified")).toBeNull();
+    expect(within(r).queryByText(/on chain|on-chain/)).toBeNull();
+    expect(within(row("Unposted")).getByText("Not on chain yet")).toBeTruthy();
+    expect(within(row("Unposted")).queryByRole("link", { name: "Unposted" })).toBeNull();
   });
 });
 
 describe("attack library versions", () => {
-  it("marks results from an older library or before versions, and keeps them off the podium", async () => {
-    vi.spyOn(api, "leaderboard").mockResolvedValue({
-      headline: { templates: 0, failingTemplates: 0, evaluations: 0, failingEvaluations: 0 },
-      entries: [
-        { ...entry("Current A", 50, 90), libraryVersion: ATTACK_LIBRARY_VERSION },
-        { ...entry("Current B", 50, 80), libraryVersion: ATTACK_LIBRARY_VERSION },
-        { ...entry("Older", 50, 95), libraryVersion: ATTACK_LIBRARY_VERSION - 1 },
-        entry("Unversioned", 50, 85),
-      ],
-    });
-    render(
-      <MemoryRouter>
-        <QueryClientProvider client={new QueryClient()}>
-          <Leaderboard />
-        </QueryClientProvider>
-      </MemoryRouter>,
-    );
-    const rows = within(
-      await screen.findByRole("list", { name: "Security rankings" }),
-    ).getAllByRole("listitem");
-    const row = (name: string) => rows.find((r) => r.textContent?.includes(name))!;
-    expect(
-      within(row("Current A")).getByText(`Attack library v${ATTACK_LIBRARY_VERSION}`),
-    ).toBeTruthy();
+  it("tags results from an older library or before versions, and not current ones", async () => {
+    const row = await renderBoard([
+      { ...entry("Current", 50, 90), libraryVersion: ATTACK_LIBRARY_VERSION },
+      { ...entry("Older", 50, 95), libraryVersion: ATTACK_LIBRARY_VERSION - 1 },
+      entry("Unversioned", 50, 85),
+    ]);
+    expect(within(row("Current")).queryByText(/library v/)).toBeNull();
     expect(
       within(row("Older")).getByText(
-        `Rated on attack library v${ATTACK_LIBRARY_VERSION - 1}; current is v${ATTACK_LIBRARY_VERSION}`,
+        `Rated on library v${ATTACK_LIBRARY_VERSION - 1}; current is v${ATTACK_LIBRARY_VERSION}`,
       ),
     ).toBeTruthy();
-    expect(
-      within(row("Unversioned")).getByText("Rated before attack library versions were recorded"),
-    ).toBeTruthy();
-    // Four graded results, but only two on the current library: no podium of three.
-    expect(screen.queryByText("#1")).toBeNull();
+    expect(within(row("Unversioned")).getByText("Rated before library versions")).toBeTruthy();
   });
 });
