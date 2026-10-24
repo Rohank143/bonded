@@ -26,8 +26,9 @@ import { byoaApi } from "../lib/byoa-api";
 import { BreachEvidenceList, TopFixes } from "../components/report-actions";
 import { BatteryTables } from "../components/battery-tables";
 import { ClassTrackTable } from "../components/class-track-table";
-import { classResults } from "../lib/class-tracks";
-import { gradeBand, manipulatedOf, weakestTile } from "../lib/security";
+import { classResults, gradeResults, weakestSentence } from "../lib/class-tracks";
+import { Square } from "../components/class-squares";
+import { gradeBand, manipulatedOf } from "../lib/security";
 import { evidenceOf, topFixes } from "../lib/report-actions";
 import { ModuleCover } from "../components/module-cover";
 import { BindingLine } from "../components/connect-agent";
@@ -175,12 +176,6 @@ export function Agent() {
   const entry = board.data?.entries.find(
     (e) => a && e.reportHash.toLowerCase() === a.reportHash.toLowerCase(),
   );
-  const weakest = weakestTile({
-    ...(report ? { report } : {}),
-    ...(entry ? { entry } : {}),
-    missing: run.isError || score.isError,
-    entryPending: board.isPending,
-  });
   // Ratings that count only exercised trials (operator-run agents) report them per class.
   const exercisedShown = Boolean(report?.classes.some((c) => c.exercised !== undefined));
   const untested = new Set(untestedClasses(report));
@@ -188,10 +183,16 @@ export function Agent() {
     ? "grid grid-cols-[44px_minmax(0,1fr)_minmax(0,2fr)_64px_112px] items-center gap-3.5"
     : "grid grid-cols-[44px_minmax(0,1fr)_minmax(0,2fr)_74px] items-center gap-3.5";
   const tone = rated && a ? tierTone(a.score) : "neutral";
+  // Per-class results for the score panel's strip: the hosted report's grade, else the
+  // leaderboard entry for the same rating.
+  const results = grade ? gradeResults(grade) : entry ? classResults(entry) : null;
+  const weakCount = results?.filter((r) => r.rate).length ?? 0;
+  const weakestLine = results && weakestSentence(results);
+  const band = gradeBand(a?.securityScore ?? 0);
   const glow =
-    tone === "brand"
-      ? "rgb(127 160 255 / .14)"
-      : tone === "warn"
+    band.min >= 80
+      ? "rgb(110 231 183 / .12)"
+      : band.min >= 50
         ? "rgb(255 179 71 / .12)"
         : "rgb(255 122 69 / .12)";
 
@@ -199,7 +200,7 @@ export function Agent() {
     <Page
       title={`Agent ${id}`}
       back={back}
-      intro="Its latest safety score, read from the on-chain registry: the headline Bonded Score is how well it resisted manipulation. Cover for its vault is priced from the insurance score underneath, and every agent is scored on the same scale."
+      intro="Its latest rating, read from the on-chain registry. The Bonded Score shows how hard it is to trick; the insurance score prices cover for its vault."
       actions={
         <>
           {vault && (
@@ -218,7 +219,9 @@ export function Agent() {
         {rated &&
           (fresh?.result ? (
             <Badge tone="safe" dot>
-              Score valid
+              <span title={a ? `Signed ${when(a.issuedAt)}` : undefined}>
+                Score valid{a ? ` until ${when(a.expiresAt)}` : ""}
+              </span>
             </Badge>
           ) : (
             <Badge tone="warn" dot>
@@ -243,23 +246,42 @@ export function Agent() {
       {rated && a ? (
         <section className="grid gap-4 lg:grid-cols-2">
           <div
-            className="panel flex flex-wrap items-center gap-7 p-6"
+            className="panel flex flex-wrap items-center gap-x-8 gap-y-6 p-6 sm:p-7"
             style={{
               backgroundImage: `radial-gradient(ellipse at 20% 0%, ${glow}, transparent 60%)`,
             }}
           >
             <ScoreRing score={a.securityScore} />
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-[1_1_240px]">
               <p className="eyebrow">Bonded Score</p>
-              <p className={`mt-1.5 font-serif text-3xl ${gradeBand(a.securityScore).tone}`}>
-                {gradeBand(a.securityScore).verdict}
+              <p className={`mt-1 font-serif text-3xl ${band.tone}`}>{band.verdict}</p>
+              <p className="mt-2 max-w-md text-sm leading-relaxed text-soft">
+                {weakestLine ? (
+                  <>
+                    {weakestLine}{" "}
+                    {weakCount > 0 && (
+                      <span className="text-muted">That result sets the score.</span>
+                    )}
+                  </>
+                ) : (
+                  "How hard it is to trick: 100 means no attack moved it."
+                )}
               </p>
-              <p className="mt-1.5 text-sm text-muted">
-                Any trick it fell for in the Arena lowers this.
-              </p>
-              <p className="mt-3 text-xs text-muted" title={`Signed ${when(a.issuedAt)}`}>
-                Valid until {when(a.expiresAt)}
-              </p>
+              {results && (
+                <div className="mt-5">
+                  <div className="flex gap-1.5">
+                    {results.map((r) => (
+                      <Square key={r.cls} r={r} size="size-6" />
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs text-muted">
+                    {weakCount
+                      ? `${weakCount} of ${results.filter((r) => r.tracks.length).length} classes weak`
+                      : "No weak classes"}{" "}
+                    · hover a square for its numbers
+                  </p>
+                </div>
+              )}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -278,7 +300,6 @@ export function Agent() {
               value={bond?.result !== undefined ? `$${usd(bond.result, 0)}` : "…"}
               hint="pays first on a claim"
             />
-            <Tile label="Weakest" value={weakest.value} hint={weakest.hint} />
             <Tile
               label={<Term term="tee">Key custody</Term>}
               value={tee.inTee ? "TEE" : "Operator"}

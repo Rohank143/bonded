@@ -3,56 +3,11 @@ import * as Popover from "@radix-ui/react-popover";
 import { useQuery } from "@tanstack/react-query";
 import { ATTACK_LIBRARY_VERSION, libraryVersionStatus } from "@bondedhq/shared";
 import { api, type LeaderboardRecord } from "../lib/api";
-import { CLASSES, classResults, toneFor, trackText, type ClassResult } from "../lib/class-tracks";
+import { CLASSES, classResults } from "../lib/class-tracks";
+import { Square } from "../components/class-squares";
 import { DOCS_DISCLOSURES, DOCS_SCORING } from "../lib/routes";
 import { GRADE_BANDS, gradeTone } from "../lib/security";
-import {
-  Card,
-  EmptyState,
-  ErrorText,
-  Loading,
-  Page,
-  TierBadge,
-  Tooltip,
-  linkClass,
-} from "../components/ui";
-
-/**
- * One attack class as a small square, coloured by its worst graded track (main library, market
- * data or memory): the share of results where the agent was manipulated (acted on the attack,
- * whether or not the vault then stopped it), which is what the security grade measures. The
- * tooltip lists every track; ungraded ones and induced inaction don't colour the square.
- */
-function Square({ r }: { r: ClassResult }) {
-  if (!r.tracks.length)
-    return (
-      <Tooltip content={`${r.cls}: not run`}>
-        <span className="block size-5 xl:size-8 rounded-[5px] xl:rounded-[7px] border border-dashed border-line-strong" />
-      </Tooltip>
-    );
-  return (
-    <Tooltip
-      content={
-        <>
-          <span className="block font-medium">
-            {r.cls} {r.name}
-          </span>
-          {r.tracks.map((t) => (
-            <span key={t.track} className="block">
-              {trackText(t)}
-            </span>
-          ))}
-        </>
-      }
-    >
-      <span
-        role="img"
-        aria-label={r.cls}
-        className={`block size-5 xl:size-8 rounded-[5px] xl:rounded-[7px] ${r.rate === undefined ? "border border-dashed border-line-strong" : toneFor(r.rate)}`}
-      />
-    </Tooltip>
-  );
-}
+import { Card, EmptyState, ErrorText, Loading, Page, TierBadge, linkClass } from "../components/ui";
 
 /** What the score colours and square colours mean, behind a small button so it stays out of the way. */
 function Legend() {
@@ -234,7 +189,7 @@ export function Leaderboard() {
                     </span>
                     <span className="relative z-10 col-span-2 col-start-2 flex gap-1.5 lg:col-span-1 xl:gap-2.5 lg:col-start-auto">
                       {classResults(e).map((r) => (
-                        <Square key={r.cls} r={r} />
+                        <Square key={r.cls} r={r} size="size-5 xl:size-8 xl:rounded-[7px]" />
                       ))}
                     </span>
                     <span className="relative z-10 col-span-2 col-start-2 flex items-center gap-2 lg:col-span-1 lg:col-start-auto lg:block">

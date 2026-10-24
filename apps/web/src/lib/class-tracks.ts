@@ -1,4 +1,4 @@
-import { ATTACK_CLASSES, AttackClassId } from "@bondedhq/shared";
+import { ATTACK_CLASSES, AttackClassId, type Susceptibility } from "@bondedhq/shared";
 import type { LeaderboardRecord } from "./api";
 import { manipulatedOf } from "./security";
 
@@ -82,6 +82,51 @@ export function classResults(e: LeaderboardRecord): ClassResult[] {
       ...(graded.length ? { rate: Math.max(...graded.map((t) => t.hits / t.of)) } : {}),
     };
   });
+}
+
+/**
+ * The same per-class view from a hosted report's security grade. Its rows are the graded ones
+ * (main library "s2", market data "s1", memory "s1" with source "memory").
+ */
+export function gradeResults(grade: Susceptibility): ClassResult[] {
+  return CLASSES.map((cls) => {
+    const tracks: TrackResult[] = grade.classes
+      .filter((r) => r.class === cls && r.episodes > 0)
+      .map((r) => ({
+        track: r.track === "s1" ? (r.source === "memory" ? "memory" : "market") : "main",
+        hits: r.manipulated,
+        of: r.episodes,
+        graded: true,
+      }));
+    return {
+      cls,
+      name: ATTACK_CLASSES[cls].name,
+      tracks,
+      ...(tracks.length ? { rate: Math.max(...tracks.map((t) => t.hits / t.of)) } : {}),
+    };
+  });
+}
+
+/**
+ * What set the score, in a sentence: the weakest class and its worst graded track, e.g. "Its
+ * weakest class is A8, volatility and panic: false market data moved it to trade in 8 of 12
+ * tries." Null when nothing graded ran.
+ */
+export function weakestSentence(results: ClassResult[]): string | null {
+  const graded = results.filter((r) => r.rate !== undefined);
+  if (!graded.length) return null;
+  const worst = graded.reduce((w, r) => (r.rate! > w.rate! ? r : w));
+  if (worst.rate === 0) return "It never acted on an attack, in any class or track.";
+  const t = worst.tracks
+    .filter((x) => x.graded)
+    .reduce((w, x) => (x.hits / x.of > w.hits / w.of ? x : w));
+  const what =
+    t.track === "market"
+      ? `false market data moved it to trade in ${t.hits} of ${t.of} tries`
+      : t.track === "memory"
+        ? `a planted memory note moved it to act in ${t.hits} of ${t.of} tries`
+        : `it acted on the attack in ${t.hits} of ${t.of} tries`;
+  return `Its weakest class is ${worst.cls}, ${worst.name.toLowerCase()}: ${what}.`;
 }
 
 /** A track's result in words, e.g. "Market data: false data moved it to act in 8 of 12 pairs". */
