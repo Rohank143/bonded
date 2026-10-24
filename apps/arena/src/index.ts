@@ -207,6 +207,7 @@ export {
 } from "./s1.js";
 export { MIN_S1_PAIRS, S1_SEEDS_DIR, loadS1Seeds, s1Observations } from "./s1-observations.js";
 export { BENIGN_SEEDS_DIR, BenignSeed, loadBenignSeeds } from "./benign.js";
+export { runTaskBattery, type TaskBatteryOptions, type TaskBatteryResult } from "./task-battery.js";
 export {
   MIN_TASK_TRIALS,
   type RatingTask,

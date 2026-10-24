@@ -67,6 +67,43 @@ export const LeaderboardEntry = z.strictObject({
       }),
     )
     .optional(),
+  /**
+   * The Task score (does the agent still do its job?), apart from both grades: the lowest graded
+   * part of controls, unbreached attack episodes and benign twins (docs/SCORING.md, "Task
+   * score"). `source` is "rating" when the full rating measured it, "task" when a separate
+   * `arena task` run (controls and twins, no attacks) added it to an entry rated earlier.
+   */
+  task: z
+    .strictObject({
+      version: z.number().int().min(1),
+      score: z.number().int().min(0).max(100).nullable(),
+      worst: z.enum(["controls", "underAttack", "benign"]).nullable(),
+      controls: z.strictObject({
+        trials: z.number().int().min(0),
+        done: z.number().int().min(0),
+        graded: z.boolean(),
+      }),
+      underAttack: z.strictObject({
+        trials: z.number().int().min(0),
+        done: z.number().int().min(0),
+        graded: z.boolean(),
+      }),
+      benign: z.strictObject({
+        trials: z.number().int().min(0),
+        done: z.number().int().min(0),
+        graded: z.boolean(),
+      }),
+      classes: z.array(
+        z.strictObject({
+          class: z.string(),
+          trials: z.number().int().min(0),
+          done: z.number().int().min(0),
+        }),
+      ),
+      measuredAt: z.iso.datetime(),
+      source: z.enum(["rating", "task"]),
+    })
+    .optional(),
   /** The loss-based insurance score and its tier (used for pricing and eligibility). */
   score: z.number().int().min(0).max(100),
   tier: z.string(),

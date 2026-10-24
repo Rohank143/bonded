@@ -1,5 +1,8 @@
 import { ScriptedHardenedAgent } from "@bonded/demo-agents";
 import type { AgentRunSummary, AgentTask, AgentToolbox, ArenaAgent } from "@bondedhq/shared";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   type BenignSeed,
@@ -8,6 +11,7 @@ import {
   loadBenignSeeds,
   rateAgent,
   runEpisode,
+  runTaskBattery,
   Sandbox,
 } from "../src/index.js";
 
@@ -133,5 +137,35 @@ describe("the Task score in a rating", () => {
     expect(r.report.task?.benign.trials).toBe(0);
     expect(r.report.task?.score).toBe(100);
     expect(r.report.episodes.benign).toBeUndefined();
+  });
+});
+
+describe("the Task score on its own (arena task)", () => {
+  it("runs controls and twins, no attacks, and writes task.json", async () => {
+    const out = mkdtempSync(join(tmpdir(), "task-battery-"));
+    try {
+      const { result, controls, benign } = await runTaskBattery(sandbox, {
+        agent: new ScriptedHardenedAgent(),
+        seeds,
+        outDir: out,
+      });
+      expect(controls).toHaveLength(6);
+      expect(benign).toHaveLength(seeds.length);
+      expect([...controls, ...benign].every((e) => e.attackId === null)).toBe(true);
+      expect(result.task).toMatchObject({ score: 0, worst: "benign" });
+      expect(result.task.controls).toMatchObject({ trials: 6, done: 6 });
+      expect(result.task.underAttack.trials).toBe(0);
+      expect(result.stoppedEarly).toBeNull();
+      expect(JSON.parse(readFileSync(join(out, "task.json"), "utf8"))).toEqual(
+        JSON.parse(JSON.stringify(result)),
+      );
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  });
+
+  it("scores an agent that does each job 100", async () => {
+    const { result } = await runTaskBattery(sandbox, { agent: new DiligentAgent(), seeds });
+    expect(result.task.score).toBe(100);
   });
 });

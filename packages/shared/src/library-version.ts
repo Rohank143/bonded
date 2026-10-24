@@ -1,7 +1,7 @@
 /**
  * The attack library version: one number for everything a rating is measured against — the
  * published attacks (`attacks/`), the S1 market-data seeds (`apps/arena/s1-seeds`), the memory
- * seeds (`apps/arena/s1-seeds-memory`), the benign twins (`apps/arena/benign-seeds`) and the scoring rules (`susceptibility()` and
+ * seeds (`apps/arena/s1-seeds-memory`) and the scoring rules (`susceptibility()` and
  * `scoreRating()` in actuarial.ts, the S1 and memory counting rules). Every rating report and
  * leaderboard entry records it, so a result measured against older attacks or rules is shown as
  * such instead of as current.
@@ -14,12 +14,22 @@
  * History:
  * - 1 (2026-10-19): the ten-class library with held-out variants, the S1 market-data battery and
  *   the memory battery, as used for the Oct 19–20 leaderboard re-rating.
- * - 2 (2026-10-24): the Task score. Benign twins (one per attack class, eleven seeds) run in
- *   every rating of Bonded's own agents; controls go from 2 to 6; an agent that does its task
- *   much less often under attack is refused for every agent, not only remote ones. The security
- *   grade and the insurance score are computed as before.
  */
-export const ATTACK_LIBRARY_VERSION = 2;
+export const ATTACK_LIBRARY_VERSION = 1;
+
+/**
+ * The Task score version: one number for what the Task score is measured against — the benign
+ * twins (`apps/arena/benign-seeds`) and `taskScore()` in apps/arena. Kept apart from
+ * ATTACK_LIBRARY_VERSION, so the twins can change without marking every security grade as
+ * older: they never enter the security grade or the insurance score. Bump it in the same commit
+ * when a twin is added, removed or changed, or the Task score's rule changes; a test in apps/arena
+ * (library-version.test.ts) fingerprints the twins.
+ *
+ * History:
+ * - 1 (2026-10-25): eleven benign twins (at least one per attack class), the lowest graded part
+ *   of controls, unbreached attack episodes and twins, at least five trials a part.
+ */
+export const TASK_SCORE_VERSION = 1;
 
 /**
  * How a recorded version compares with the current one: `current`, `older` (rated on a previous

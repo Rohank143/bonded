@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { Attestation, Leaderboard, LeaderboardEntry } from "@bondedhq/shared";
 import { keccak256, stringToBytes } from "viem";
 import type { RatingReport } from "./rate.js";
+import type { RatingTask } from "./task-score.js";
 
 /** The published leaderboard (served by GET /leaderboard). */
 export const LEADERBOARD_FILE = fileURLToPath(
@@ -70,6 +71,7 @@ export function entryFromRating(
       : {}),
     ...(report.s1?.length ? { s1Classes: s1Classes(report.s1) } : {}),
     ...(report.memory?.seeds.length ? { memoryClasses: memoryClasses(report.memory.seeds) } : {}),
+    ...(report.task ? { task: entryTask(report.task, report.startedAt, "rating") } : {}),
     score: report.scoring.score,
     tier: report.scoring.tier,
     expectedLossBps: report.scoring.expectedLossBps,
@@ -89,6 +91,31 @@ export function entryFromRating(
     })),
     reportHash,
   });
+}
+
+/** The leaderboard's Task score block, from a Task score and when and how it was measured. */
+export function entryTask(
+  task: RatingTask,
+  measuredAt: string,
+  source: "rating" | "task",
+): NonNullable<LeaderboardEntry["task"]> {
+  const part = (p: RatingTask["controls"]) => ({
+    trials: p.trials,
+    done: p.done,
+    graded: p.graded,
+  });
+  return {
+    version: task.version,
+    score: task.score,
+    worst: task.worst,
+    controls: part(task.controls),
+    underAttack: part(task.underAttack),
+    benign: part(task.benign),
+    // Class level only: the leaderboard publishes no seeds.
+    classes: task.classes.map((c) => ({ class: c.class, trials: c.trials, done: c.done })),
+    measuredAt,
+    source,
+  };
 }
 
 /** The S1 battery's per-seed rows at class level (the leaderboard publishes no seeds). */

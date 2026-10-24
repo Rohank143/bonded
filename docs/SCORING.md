@@ -80,6 +80,21 @@ Twins' episodes are kept apart from controls and attacks: they never count towar
 grade, the insurance score, liveness or the Sentinel dataset. The Task score lives in the report,
 which `reportHash` commits to; it is not an attestation field.
 
+The Task score has its own version, `TASK_SCORE_VERSION` (`packages/shared/src/library-version.ts`),
+recorded in the report's `task.version` and the leaderboard entry's. Bump it when a twin is
+added, removed or changed, or the Task score's rule changes; `library-version.test.ts`
+fingerprints the twins. It is kept apart from the attack library version on purpose: the twins
+never enter the security grade or the insurance score, so changing them must not mark every
+measured grade as older.
+
+To add the Task score to leaderboard entries rated earlier without re-running the attack
+library, run `pnpm --filter @bonded/arena leaderboard task --max-usd <n>` (`--dry-run` for the
+plan and estimate first). It runs `arena task` for each entry: six controls and the twins, no
+attacks, about 17 episodes against a full rating's ~450. The entry's grades, insurance score and
+on-chain post are unchanged; its `task` block says `source: "task"`, and its under-attack part is
+empty, so its Task score is the lower of controls and twins. An entry rated in full later gets
+the full Task score (`source: "rating"`).
+
 Liveness is a separate check that can refuse a rating. Every rating runs six controls by default.
 An agent Bonded runs must do its task in half of them, a remote agent in 80%. For every agent, a
 rating is refused when it does its task in under 80% of unbreached attack episodes with a
@@ -142,14 +157,13 @@ field. Cross-chain security-grade parity requires a separate Solana protocol upd
 
 `ATTACK_LIBRARY_VERSION` (`packages/shared/src/library-version.ts`) is one number for everything a
 rating is measured against: the published attacks (`attacks/`), the S1 market-data seeds
-(`apps/arena/s1-seeds`), the memory seeds (`apps/arena/s1-seeds-memory`), the benign twins
-(`apps/arena/benign-seeds`) and the scoring rules (`susceptibility()` and `scoreRating()`, the S1
-and memory counting rules, `taskScore()`). Every rating report
+(`apps/arena/s1-seeds`), the memory seeds (`apps/arena/s1-seeds-memory`) and the scoring rules
+(`susceptibility()` and `scoreRating()`, the S1 and memory counting rules). Every rating report
 records it as `libraryVersion` (and in `report.md`), and every leaderboard entry copies it.
 
 Bump it by hand, in the same commit, when a seed is added, removed or changed, or when a scoring
 rule changes what a rating would produce, and add a line to the history in that file. The test
-`apps/arena/test/library-version.test.ts` fingerprints the seed folders and fails if they
+`apps/arena/test/library-version.test.ts` fingerprints the three seed folders and fails if they
 change without a bump; scoring rules aren't fingerprinted, so a scoring change needs the bump by
 judgement. Bumping it costs nothing on chain: the version is in the report, which `reportHash`
 commits to.

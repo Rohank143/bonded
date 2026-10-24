@@ -51,6 +51,7 @@ import { loadMemorySeeds } from "./memory-observations.js";
 import { rateAgent } from "./rate.js";
 import { loadS1Seeds } from "./s1-observations.js";
 import { loadBenignSeeds } from "./benign.js";
+import { runTaskBattery } from "./task-battery.js";
 import { sentinelInfo } from "./sentinel-info.js";
 import { cascadeFromPolicy } from "./sentinel-policy.js";
 import { attestTeeAgent } from "./tee.js";
@@ -63,6 +64,9 @@ const USAGE = `Usage:
   pnpm --filter @bonded/arena arena rate [options]   full rating: score, report, attestation
   pnpm --filter @bonded/arena arena controls [options]  benign episodes only, for Sentinel's
                                                        false-alarm test (no score)
+  pnpm --filter @bonded/arena arena task [options]   the Task score alone: controls and benign
+                                                     twins, no attacks (not signed). For an agent
+                                                     whose security grade was measured already
   pnpm --filter @bonded/arena arena check [options]  connection check for your own agent: one
                                                      benign episode, live, with what went wrong
                                                      (no score). Takes the remote agent options
@@ -202,6 +206,7 @@ async function main(): Promise<number> {
     (command !== "run" &&
       command !== "rate" &&
       command !== "controls" &&
+      command !== "task" &&
       command !== "check" &&
       !values.list)
   ) {
@@ -220,7 +225,8 @@ async function main(): Promise<number> {
 
   if (command === "check") values.agent = "remote";
   const remote = values.agent === "remote";
-  if (remote && command === "controls") throw new Error("--agent remote works with run and rate");
+  if (remote && (command === "controls" || command === "task"))
+    throw new Error("--agent remote works with run and rate");
   if (values["agent-url"] && !remote) throw new Error("--agent-url needs --agent remote");
   // Local defaults, or exactly what a hosted rating of an operator-run agent runs.
   const settings = rateSettings(
@@ -300,6 +306,34 @@ async function main(): Promise<number> {
       );
       if (result.code) console.log(`  code hash ${result.code.hash} (${result.code.source})`);
       return result.passed ? 0 : 1;
+    }
+    if (command === "task") {
+      const outDir = values.out ?? `ratings/task-${agent.name.replaceAll("/", "_")}`;
+      const { result } = await runTaskBattery(sandbox, {
+        agent,
+        seeds: loadBenignSeeds(),
+        runs: settings.benignRuns || 1,
+        controls: settings.controls,
+        ...(vault ? { vault } : {}),
+        ...(values["max-usd"] ? { maxUsd: Number(values["max-usd"]) } : {}),
+        ...ownAgentTimeout(values, settings, remote),
+        ...(fallbackPrice ? { fallbackPrice } : {}),
+        outDir,
+        onEpisode: (r, i, total) =>
+          console.log(
+            `[${i + 1}/${total}] ${(r.benignId ?? "control").padEnd(34)} task ${r.taskCompleted ? "done" : "not done"}`,
+          ),
+      });
+      const t = result.task;
+      console.log(
+        `
+${agent.name}: Task score ${t.score === null ? "not measured" : `${t.score}/100 (set by ${t.worst})`}` +
+          `: controls ${t.controls.done}/${t.controls.trials}, benign twins ${t.benign.done}/${t.benign.trials}`,
+      );
+      console.log(`  spend $${result.spend.spentUsd.toFixed(4)}`);
+      if (result.stoppedEarly) console.log(`  stopped early: ${result.stoppedEarly}`);
+      console.log(`  task.json   ${join(outDir, "task.json")}`);
+      return result.stoppedEarly ? 1 : 0;
     }
     if (command === "controls") {
       const outDir = values.out ?? `ratings/controls-${agent.name.replaceAll("/", "_")}`;

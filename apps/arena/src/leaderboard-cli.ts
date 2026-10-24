@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { appendFileSync, mkdirSync, openSync, closeSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { type LeaderboardEntry } from "@bondedhq/shared";
+import { type LeaderboardEntry, TASK_SCORE_VERSION } from "@bondedhq/shared";
 import { readEvmScore } from "./crosspost.js";
 import { addRating } from "./leaderboard-add.js";
 import {
@@ -21,11 +21,13 @@ import {
   runRefresh,
   verifiedOnChain,
 } from "./leaderboard-refresh.js";
-import { LEADERBOARD_FILE, readLeaderboard } from "./leaderboard.js";
+import { LEADERBOARD_FILE, readLeaderboard, writeLeaderboard } from "./leaderboard.js";
+import { planTask, runTaskRefresh, TASK_DEFAULTS } from "./leaderboard-task.js";
 
 const USAGE = `Usage:
   pnpm leaderboard add --rating <dir> --slug <slug> --name <name> --framework <name> [options]
   pnpm leaderboard refresh [options]
+  pnpm leaderboard task [options]
 
 add: adds a rating (the folder arena rate wrote) to config/leaderboard.json at class level, and
 with --post registers the agent on Robinhood Chain testnet and posts its score there.
@@ -61,6 +63,19 @@ apps/arena/ratings/refresh-v<library version>/<slug>.
   --estimate-usd <n>   cost estimate per model-driven rating (default: ${REFRESH_DEFAULTS.estimateUsd})
   --no-post            update the leaderboard file only; don't post on chain
   --publish-partial    publish the complete entries even if some failed
+
+task: adds the Task score (docs/SCORING.md, "Task score") to entries rated already, by running
+only six controls and the benign twins for each (\`arena task\`), never the attack library. Grades,
+scores and on-chain posts stay as they are. An entry already on the current Task score version is
+skipped; a finished run is reused, so running it again measures only what failed. Results go in
+apps/arena/ratings/task-v<Task score version>/<slug>.
+
+  --dry-run            print the plan and cost estimate; run nothing
+  --only <slug,...>    just these entries
+  --force              measure entries whose Task score is current, too
+  --max-usd <n>        total model spend cap (required when a model-driven entry needs one)
+  --per-rating-max-usd <n>  one entry's cap (default: ${TASK_DEFAULTS.perEntryMaxUsd})
+  --episode-timeout <s>  each episode's limit (default: ${TASK_DEFAULTS.episodeTimeoutS})
 
 Both:
   --attester-env <v>   .env variable holding the attester key (default: DEPLOYER_PRIVATE_KEY)
@@ -98,11 +113,13 @@ async function main(): Promise<number> {
       "estimate-usd": { type: "string" },
       "no-post": { type: "boolean", default: false },
       "publish-partial": { type: "boolean", default: false },
+      force: { type: "boolean", default: false },
       help: { type: "boolean", default: false },
     },
   });
   const file = values.file ? fromCaller(values.file) : LEADERBOARD_FILE;
   if (!values.help && positionals[0] === "refresh") return refresh(values, file);
+  if (!values.help && positionals[0] === "task") return task(values, file);
   if (
     values.help ||
     positionals[0] !== "add" ||
@@ -249,6 +266,86 @@ async function refresh(
     result.published &&
     result.outcomes.every((o) => (o.status === "rated" || o.status === "skipped") && !o.postError);
   return done ? 0 : 1;
+}
+
+/** `pnpm leaderboard task` (see USAGE). */
+async function task(
+  values: {
+    "dry-run": boolean;
+    only?: string;
+    force: boolean;
+    "max-usd"?: string;
+    "per-rating-max-usd"?: string;
+    "episode-timeout"?: string;
+  },
+  file: string,
+): Promise<number> {
+  const episodeTimeoutS = count(
+    values["episode-timeout"] ?? String(TASK_DEFAULTS.episodeTimeoutS),
+    "--episode-timeout",
+  );
+  const maxUsd = values["max-usd"] === undefined ? undefined : usd(values["max-usd"], "--max-usd");
+  const entries = readLeaderboard(file);
+  const only = values.only?.split(",").map((s) => s.trim());
+  const plan = planTask({
+    entries,
+    runDir: join(RATINGS_DIR, `task-v${TASK_SCORE_VERSION}`),
+    ...(only ? { only } : {}),
+    force: values.force,
+  });
+  for (const s of plan.skipped) console.log(`${s.slug}: skipped (${s.reason})`);
+  for (const j of plan.jobs)
+    console.log(
+      `${j.entry.slug}: ${j.target.agent}${j.target.model ? ` with ${j.target.model}` : ""}`,
+    );
+  console.log(
+    `${plan.jobs.length} to measure, about $${plan.estimateUsd.toFixed(2)} in model spend` +
+      (maxUsd === undefined ? "" : ` (cap $${maxUsd.toFixed(2)})`),
+  );
+  if (values["dry-run"] || plan.jobs.length === 0) return 0;
+  mkdirSync(plan.runDir, { recursive: true });
+  const cli = fileURLToPath(new URL("./cli.js", import.meta.url));
+  const result = await runTaskRefresh(
+    plan,
+    entries,
+    {
+      episodeTimeoutS,
+      ...(maxUsd === undefined ? {} : { maxUsd }),
+      ...(values["per-rating-max-usd"]
+        ? { perEntryMaxUsd: usd(values["per-rating-max-usd"], "--per-rating-max-usd") }
+        : {}),
+    },
+    {
+      // Each run is its own `arena task` process (its own local chain), logged next to its folder.
+      run: (job, args) => {
+        const log = `${job.dir}.log`;
+        appendFileSync(log, `\n=== ${new Date().toISOString()}: arena ${args.join(" ")}\n`);
+        const fd = openSync(log, "a");
+        return new Promise<number>((done, fail) => {
+          const child = spawn(process.execPath, [cli, ...args], {
+            cwd: dirname(dirname(cli)),
+            stdio: ["ignore", fd, fd],
+          });
+          child.on("error", fail);
+          child.on("exit", (code, signal) => {
+            closeSync(fd);
+            done(code ?? (signal ? 128 : 1));
+          });
+        });
+      },
+      log: (line) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${line}`),
+    },
+  );
+  writeLeaderboard(result.entries, file);
+  for (const o of result.outcomes)
+    console.log(
+      `${o.slug}: ${o.status}` +
+        (o.status === "failed"
+          ? ` (${o.reason})`
+          : `, Task score ${o.score ?? "not measured"}, $${o.spentUsd.toFixed(4)}`),
+    );
+  console.log(`-> ${file}`);
+  return result.outcomes.every((o) => o.status !== "failed") ? 0 : 1;
 }
 
 function count(text: string, flag: string): number {

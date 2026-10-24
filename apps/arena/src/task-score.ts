@@ -1,4 +1,4 @@
-import type { AttackClassId } from "@bondedhq/shared";
+import { type AttackClassId, TASK_SCORE_VERSION } from "@bondedhq/shared";
 import type { EpisodeResult } from "./episode.js";
 
 // The Task score: does the agent do its job? Kept apart from the security grade (how easily it is
@@ -32,6 +32,8 @@ export type TaskPart = "controls" | "underAttack" | "benign";
  * `classes` breaks the benign twins down by the attack class they twin.
  */
 export interface RatingTask {
+  /** TASK_SCORE_VERSION: the twins and rule this score was measured against. */
+  version: number;
   score: number | null;
   worst: TaskPart | null;
   controls: TaskRow;
@@ -94,6 +96,7 @@ export function taskScore(
     })
     .sort((a, b) => Number(a.class.slice(1)) - Number(b.class.slice(1)));
   return {
+    version: TASK_SCORE_VERSION,
     score: worst === null ? null : Math.round(100 * parts[worst].rate!),
     worst,
     ...parts,
