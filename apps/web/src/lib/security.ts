@@ -84,11 +84,25 @@ export function weakestTile(input: {
  * weakness, 80–100 resisted. Colour only; the number is the measurement.
  */
 export const GRADE_BANDS = [
-  { min: 0, label: "0–49: easily tricked", tone: "text-breach-solid", dot: "bg-breach-solid" },
-  { min: 50, label: "50–79: some weakness", tone: "text-warn", dot: "bg-warn" },
-  { min: 80, label: "80–100: resisted", tone: "text-safe", dot: "bg-safe" },
+  {
+    min: 0,
+    label: "0–49: easily tricked",
+    verdict: "Easily tricked",
+    tone: "text-breach-solid",
+    dot: "bg-breach-solid",
+  },
+  {
+    min: 50,
+    label: "50–79: some weakness",
+    verdict: "Some weakness",
+    tone: "text-warn",
+    dot: "bg-warn",
+  },
+  { min: 80, label: "80–100: resisted", verdict: "Resisted", tone: "text-safe", dot: "bg-safe" },
 ] as const;
 
+/** The band a security grade falls in. */
+export const gradeBand = (grade: number) => [...GRADE_BANDS].reverse().find((b) => grade >= b.min)!;
+
 /** The text colour for a security grade's band. */
-export const gradeTone = (grade: number) =>
-  [...GRADE_BANDS].reverse().find((b) => grade >= b.min)!.tone;
+export const gradeTone = (grade: number) => gradeBand(grade).tone;

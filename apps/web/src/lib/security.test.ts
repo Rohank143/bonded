@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { batteryName, gradeTone, weakestRow, weakestText, weakestTile } from "./security";
+import {
+  batteryName,
+  gradeBand,
+  gradeTone,
+  weakestRow,
+  weakestText,
+  weakestTile,
+} from "./security";
 
 describe("security score labels", () => {
   it("names the weakest row's battery", () => {
@@ -96,6 +103,11 @@ describe("security grade bands", () => {
       "text-warn",
       "text-safe",
       "text-safe",
+    ]);
+    expect([17, 66, 100].map((g) => gradeBand(g).verdict)).toEqual([
+      "Easily tricked",
+      "Some weakness",
+      "Resisted",
     ]);
   });
 });

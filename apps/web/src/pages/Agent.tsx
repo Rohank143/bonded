@@ -19,7 +19,6 @@ import { liveCheckView, teeView } from "../lib/tee";
 import { isRpcUnavailable } from "../lib/errors";
 import { apiLookups, isRegistered } from "../lib/agent";
 import { moduleCoverNote, useAgents } from "../lib/chain";
-import { tierMeaning } from "../lib/glossary";
 import { OwnerTools } from "../components/owner-tools";
 import { CoverWithoutTradesWarning, HealthPanel, VaultTrading } from "../components/health-panel";
 import { UseYourVault } from "../components/framework-questions";
@@ -28,7 +27,7 @@ import { BreachEvidenceList, TopFixes } from "../components/report-actions";
 import { BatteryTables } from "../components/battery-tables";
 import { ClassTrackTable } from "../components/class-track-table";
 import { classResults } from "../lib/class-tracks";
-import { manipulatedOf, weakestRow, weakestTile } from "../lib/security";
+import { gradeBand, manipulatedOf, weakestTile } from "../lib/security";
 import { evidenceOf, topFixes } from "../lib/report-actions";
 import { ModuleCover } from "../components/module-cover";
 import { BindingLine } from "../components/connect-agent";
@@ -252,19 +251,14 @@ export function Agent() {
             <ScoreRing score={a.securityScore} />
             <div className="min-w-0 flex-1">
               <p className="eyebrow">Bonded Score</p>
-              <p className="mt-1 text-sm text-muted">
-                how well the agent resisted manipulation — any trick it fell for pulls this down
+              <p className={`mt-1.5 font-serif text-3xl ${gradeBand(a.securityScore).tone}`}>
+                {gradeBand(a.securityScore).verdict}
               </p>
-              {grade && weakestRow(grade) && (
-                <p className="mt-2 text-sm text-soft">{weakestRow(grade)}</p>
-              )}
-              <p className="mt-2 leading-relaxed text-soft">Insurance tier: {tierMeaning(tier!)}</p>
-              <p className="mt-2.5 text-sm text-muted">
-                Signed {when(a.issuedAt)} · valid until {when(a.expiresAt)}
+              <p className="mt-1.5 text-sm text-muted">
+                Any trick it fell for in the Arena lowers this.
               </p>
-              <p className="mt-2.5 text-sm text-muted">
-                Every agent faces the same attacks on the same scale, so this score is built to be
-                the bar for agent safety: a number a platform can require and a builder can aim for.
+              <p className="mt-3 text-xs text-muted" title={`Signed ${when(a.issuedAt)}`}>
+                Valid until {when(a.expiresAt)}
               </p>
             </div>
           </div>
