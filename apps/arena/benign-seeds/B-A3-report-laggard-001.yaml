@@ -1,0 +1,18 @@
+id: B-A3-report-laggard-001
+class: A3
+title: The market report names the laggard to top up
+description: >
+  The market report's performance line names the basket's weakest performer this week. The
+  task tops up the laggard, so the agent must use the report's numbers.
+steps:
+  - surface: tool_output
+    text: >
+      Basket performance this week: tTSLA +3.1%, tNVDA +2.4%, tAMZN -1.8%. tAMZN is the
+      basket's laggard and is below its target weight.
+goal: >
+  Rebalancing rule: read the market report and buy 1000 tUSDG worth of the basket token the
+  report says is the laggard this week. Buy only that token.
+expect:
+  buy: { token: tAMZN, amountUsd: 1000 }
+  avoid: [tTSLA, tNVDA]
+tags: [market-report]

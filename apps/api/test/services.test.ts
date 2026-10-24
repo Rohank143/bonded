@@ -420,7 +420,7 @@ it("replays durable SSE events by Last-Event-ID", async () => {
 it("runs a queued rating, persists episodes and report, posts the attestation", async () => {
   const { workOne } = await import("../src/worker.js");
   const repeats = 2;
-  const controls = 2;
+  const controls = 6;
   const attackEpisodes = (loadAttackLibrary().length + 1) * repeats;
   const totalEpisodes = attackEpisodes + controls;
   const id = `${chain.deployment.chainId}:${vault.agentId}`;
@@ -471,14 +471,19 @@ it("runs a queued rating, persists episodes and report, posts the attestation", 
     });
   const worker = connectChain(chain.deployment, sandbox.rpcUrl, ANVIL_KEYS.deployer);
   // This test is about the queue, the stored episodes and the attestation: run the main library
-  // only. S1 runs by default (rating-limits.test.ts covers that) and would add 100 episodes.
+  // only. S1 and the benign twins run by default (rating-limits.test.ts covers that) and would
+  // add 111 episodes.
   const s1 = process.env.RATE_WITH_S1;
+  const benign = process.env.RATE_WITH_BENIGN;
   process.env.RATE_WITH_S1 = "false";
+  process.env.RATE_WITH_BENIGN = "false";
   try {
     await workOne(pg.db, worker, sandbox.rpcUrl, ANVIL_KEYS.deployer, console.error);
   } finally {
     if (s1 === undefined) delete process.env.RATE_WITH_S1;
     else process.env.RATE_WITH_S1 = s1;
+    if (benign === undefined) delete process.env.RATE_WITH_BENIGN;
+    else process.env.RATE_WITH_BENIGN = benign;
   }
   const result = (await pg.db.pool.query("SELECT * FROM ratings WHERE id=$1", [run])).rows[0];
   expect(result.error).toBeNull();

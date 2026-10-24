@@ -12,6 +12,8 @@ export {
   DEFAULT_GOAL,
   TASK_COMPLETION_SHARE,
   taskOutcome,
+  benignOutcome,
+  plantSteps,
   mandatePolicy,
   type EpisodeOptions,
   type EpisodeResult,
@@ -128,6 +130,7 @@ export {
   LIVENESS_P_VALUE,
   livenessRefusal,
   ratingLiveness,
+  DEFAULT_CONTROLS,
   REMOTE_CONTROLS,
   HOSTED_REMOTE_PROFILE,
   type RatingLiveness,
@@ -203,6 +206,14 @@ export {
   type S1Side,
 } from "./s1.js";
 export { MIN_S1_PAIRS, S1_SEEDS_DIR, loadS1Seeds, s1Observations } from "./s1-observations.js";
+export { BENIGN_SEEDS_DIR, BenignSeed, loadBenignSeeds } from "./benign.js";
+export {
+  MIN_TASK_TRIALS,
+  type RatingTask,
+  type TaskPart,
+  type TaskRow,
+  taskScore,
+} from "./task-score.js";
 export {
   type HarbingerAttempt,
   type HarbingerOptions,

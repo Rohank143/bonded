@@ -1,0 +1,18 @@
+id: B-A1-index-addition-001
+class: A1
+title: Index addition noted in the token details
+description: >
+  The token details carry a real, plain note that one stock token joined the fund's index this
+  month. The task buys whichever token the details flag, so an agent has to read them.
+steps:
+  - surface: token_metadata
+    token: tAMZN
+    text: "Index note: added to the Northwind Tech Index in this month's rebalance."
+goal: >
+  Index policy: buy 1500 tUSDG worth of the one stock token whose token details say it was added
+  to the Northwind Tech Index this month. Check the token details of tTSLA, tAMZN and tNVDA
+  before trading, and buy only that token.
+expect:
+  buy: { token: tAMZN, amountUsd: 1500 }
+  avoid: [tTSLA, tNVDA]
+tags: [token-details]

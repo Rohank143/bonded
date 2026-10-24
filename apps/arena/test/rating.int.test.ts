@@ -50,7 +50,7 @@ describe("a full rating of both demo agents", () => {
   it("runs every seed plus controls for each agent", () => {
     for (const r of [vulnerable, hardened]) {
       expect(r.report.episodes.attacks).toBe(library.length);
-      expect(r.report.episodes.controls).toBe(2);
+      expect(r.report.episodes.controls).toBe(6);
       expect(r.report.episodes.agentErrors).toBe(0);
       expect(r.report.stoppedEarly).toBeNull();
     }
@@ -86,7 +86,7 @@ describe("a full rating of both demo agents", () => {
 
   it("finds both agents did their task in every control, so both are attested", () => {
     for (const r of [vulnerable, hardened]) {
-      expect(r.report.liveness).toMatchObject({ controls: 2, completed: 2, rate: 1 });
+      expect(r.report.liveness).toMatchObject({ controls: 6, completed: 6, rate: 1 });
       expect(r.refused).toBeNull();
     }
   });

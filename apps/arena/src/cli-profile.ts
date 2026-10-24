@@ -1,4 +1,4 @@
-import { HOSTED_REMOTE_PROFILE, type RatingOptions } from "./rate.js";
+import { DEFAULT_CONTROLS, HOSTED_REMOTE_PROFILE, type RatingOptions } from "./rate.js";
 
 /** Which settings `pnpm arena rate` uses: its own local ones, or a hosted rating's. */
 export type RateProfile = "local" | "hosted";
@@ -18,6 +18,11 @@ export interface RateSettings {
    * rating, whose time budget plans only the main library for now.
    */
   s1Pairs: number;
+  /**
+   * Runs of each benign twin (benign.ts), for the Task score; 0 skips them. On by default for
+   * Bonded's own agents, off for a remote agent, whose hosted episode plan doesn't count them yet.
+   */
+  benignRuns: number;
   exercise?: RatingOptions["exercise"];
   attackLiveness?: RatingOptions["attackLiveness"];
 }
@@ -29,9 +34,17 @@ export interface RateFlags {
   "episode-timeout"?: string;
   "held-out-fresh"?: string;
   "s1-pairs"?: string;
+  "benign-runs"?: string;
 }
 
-const LOCAL = { repeats: 1, controls: 2, episodeTimeoutS: 240, heldOutPerClass: 1, s1Pairs: 2 };
+const LOCAL = {
+  repeats: 1,
+  controls: DEFAULT_CONTROLS,
+  episodeTimeoutS: 240,
+  heldOutPerClass: 1,
+  s1Pairs: 2,
+  benignRuns: 1,
+};
 
 /**
  * Resolves `--profile` and the flags it covers. "local" (the default) keeps the CLI's own
@@ -62,6 +75,7 @@ export function rateSettings(
       episodeTimeoutMs: h.episodeTimeoutMs,
       heldOutPerClass: h.heldOutPerClass,
       s1Pairs: 0,
+      benignRuns: 0,
       exercise: h.exercise,
       attackLiveness: h.attackLiveness,
     };
@@ -73,6 +87,15 @@ export function rateSettings(
   );
   if (context.remote && s1Pairs > 0)
     throw new Error("--s1-pairs must be 0 for remote agents; remote ratings currently run S2 only");
+  const benignRuns = count(
+    flags["benign-runs"] ?? String(context.remote ? 0 : LOCAL.benignRuns),
+    "--benign-runs",
+    true,
+  );
+  if (context.remote && benignRuns > 0)
+    throw new Error(
+      "--benign-runs must be 0 for remote agents; remote ratings don't run benign twins yet",
+    );
   return {
     profile: "local",
     repeats: count(flags.repeats ?? String(LOCAL.repeats), "--repeats"),
@@ -88,6 +111,7 @@ export function rateSettings(
       true,
     ),
     s1Pairs,
+    benignRuns,
   };
 }
 
@@ -107,7 +131,7 @@ export function ownAgentTimeout(
 /** The profile in a line, for the CLI to print before it rates. */
 export function describeProfile(s: RateSettings): string {
   if (s.profile === "local")
-    return `Profile: local (${s.repeats} ${s.repeats === 1 ? "run" : "runs"} of each attack, ${s.controls} controls, ${s.episodeTimeoutMs / 1000} s episodes, ${s.s1Pairs ? `S1 market-data battery at ${s.s1Pairs} ${s.s1Pairs === 1 ? "pair" : "pairs"} a seed` : "no S1 battery"}). Use --profile hosted to rate as the hosted service does.`;
+    return `Profile: local (${s.repeats} ${s.repeats === 1 ? "run" : "runs"} of each attack, ${s.controls} controls, ${s.episodeTimeoutMs / 1000} s episodes, ${s.s1Pairs ? `S1 market-data battery at ${s.s1Pairs} ${s.s1Pairs === 1 ? "pair" : "pairs"} a seed` : "no S1 battery"}, ${s.benignRuns ? `benign twins ${s.benignRuns === 1 ? "once" : `${s.benignRuns} times`} each` : "no benign twins"}). Use --profile hosted to rate as the hosted service does.`;
   return (
     `Profile: hosted (${s.repeats} runs of each attack, ${s.episodeTimeoutMs / 1000} s episodes, ${s.controls} controls, ` +
     `${s.heldOutPerClass} held-out ${s.heldOutPerClass === 1 ? "variant" : "variants"} per class, only exposed trials count, ` +

@@ -9,11 +9,12 @@ describe("arena rate --profile", () => {
     expect(rateSettings(undefined, {}, rate)).toEqual({
       profile: "local",
       repeats: 1,
-      controls: 2,
+      controls: 6,
       episodeTimeoutMs: 240_000,
       heldOutPerClass: 1,
-      // A remote agent skips S1 by default, as a hosted rating does.
+      // A remote agent skips S1 and the benign twins by default, as a hosted rating does.
       s1Pairs: 0,
+      benignRuns: 0,
     });
     expect(
       rateSettings("local", { repeats: "5", controls: "0", "episode-timeout": "30" }, rate),
@@ -37,6 +38,19 @@ describe("arena rate --profile", () => {
     expect(describeProfile(rateSettings(undefined, {}, rate))).toMatch(/no S1 battery/);
   });
 
+  it("runs the benign twins once by default for Bonded's own agents, overridable", () => {
+    const own = { remote: false, command: "rate" };
+    expect(rateSettings(undefined, {}, own).benignRuns).toBe(1);
+    expect(rateSettings(undefined, { "benign-runs": "0" }, own).benignRuns).toBe(0);
+    expect(rateSettings(undefined, { "benign-runs": "3" }, own).benignRuns).toBe(3);
+    expect(() => rateSettings(undefined, { "benign-runs": "1" }, rate)).toThrow(
+      /don't run benign twins yet/,
+    );
+    expect(() => rateSettings(undefined, { "benign-runs": "x" }, own)).toThrow(/--benign-runs/);
+    expect(describeProfile(rateSettings(undefined, {}, own))).toMatch(/benign twins once each/);
+    expect(describeProfile(rateSettings(undefined, {}, rate))).toMatch(/no benign twins/);
+  });
+
   it("reports the effective timeout for built-in ratings and accepts an override", () => {
     const own = { remote: false, command: "rate" };
     expect(rateSettings(undefined, {}, own).episodeTimeoutMs).toBe(300_000);
@@ -53,6 +67,7 @@ describe("arena rate --profile", () => {
       episodeTimeoutMs: 90_000,
       heldOutPerClass: 1,
       s1Pairs: 0,
+      benignRuns: 0,
       exercise: "exposed",
       attackLiveness: "refuse",
     });

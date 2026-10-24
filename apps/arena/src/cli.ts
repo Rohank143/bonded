@@ -50,6 +50,7 @@ import { isMemoryCapable } from "./memory-attempt.js";
 import { loadMemorySeeds } from "./memory-observations.js";
 import { rateAgent } from "./rate.js";
 import { loadS1Seeds } from "./s1-observations.js";
+import { loadBenignSeeds } from "./benign.js";
 import { sentinelInfo } from "./sentinel-info.js";
 import { cascadeFromPolicy } from "./sentinel-policy.js";
 import { attestTeeAgent } from "./tee.js";
@@ -99,12 +100,16 @@ Attacks:
                            episodes, 6 controls, one held-out variant per class, only exposed
                            trials count, its refusal rules), to predict your hosted result. It
                            fixes --repeats, --controls, --episode-timeout and --held-out-fresh
-  --controls <n>           rate: episodes with no attack (default: 2); controls: how many (default: 24)
+  --controls <n>           rate: episodes with no attack (default: 6); controls: how many (default: 24)
   --s1-pairs <n>           rate only: clean/manipulated pairs per S1 market-data seed, folded into
                            the security grade (default: 2; 0 for a remote agent, as hosted ratings
                            don't run S1 yet). The memory battery runs too when the agent keeps
                            notes Bonded can read and reset (memory-bot)
   --no-s1                  rate only: skip the S1 battery (same as --s1-pairs 0)
+  --benign-runs <n>        rate only: runs of each benign twin (true content the task acts on), for
+                           the Task score (default: 1; 0 for a remote agent, as hosted ratings
+                           don't run them yet)
+  --no-benign              rate only: skip the benign twins (same as --benign-runs 0)
   --held-out <dir>         rate only: also run the unpublished attacks in this folder (YAML, from
                            pnpm heldout:generate); the report counts them as unpublished
   --list                   list the attack library and exit
@@ -182,6 +187,8 @@ async function main(): Promise<number> {
       "held-out-fresh": { type: "string" },
       "s1-pairs": { type: "string" },
       "no-s1": { type: "boolean", default: false },
+      "benign-runs": { type: "string" },
+      "no-benign": { type: "boolean", default: false },
       profile: { type: "string" },
       "held-out-model": { type: "string" },
       "held-out-max-usd": { type: "string", default: "0.25" },
@@ -225,6 +232,8 @@ async function main(): Promise<number> {
       "held-out-fresh": values["held-out-fresh"],
       ...(values["no-s1"] ? { "s1-pairs": "0" } : {}),
       ...(values["s1-pairs"] !== undefined ? { "s1-pairs": values["s1-pairs"] } : {}),
+      ...(values["no-benign"] ? { "benign-runs": "0" } : {}),
+      ...(values["benign-runs"] !== undefined ? { "benign-runs": values["benign-runs"] } : {}),
     },
     { remote, command },
   );
@@ -388,6 +397,10 @@ async function main(): Promise<number> {
         // The S1 market-data battery, on by default (see cli-profile.ts), and the memory battery
         // whenever the agent keeps notes Bonded can read and wipe. Both feed the security grade only.
         ...(settings.s1Pairs > 0 ? { s1: { seeds: loadS1Seeds(), pairs: settings.s1Pairs } } : {}),
+        // Benign twins for the Task score: does the agent still do a job that depends on what it reads?
+        ...(settings.benignRuns > 0
+          ? { benign: { seeds: loadBenignSeeds(), runs: settings.benignRuns } }
+          : {}),
         ...(isMemoryCapable(agent) ? { memory: { seeds: loadMemorySeeds(), rounds: 1 } } : {}),
         ...(settings.exercise ? { exercise: settings.exercise } : {}),
         ...(settings.attackLiveness ? { attackLiveness: settings.attackLiveness } : {}),
@@ -398,13 +411,20 @@ async function main(): Promise<number> {
         outDir,
         onEpisode: (r, i, total) =>
           console.log(
-            `[${i + 1}/${total}] ${(r.attackId ?? "control").padEnd(34)} ${describeOutcome(r)}`,
+            `[${i + 1}/${total}] ${(r.attackId ?? r.benignId ?? "control").padEnd(34)} ${r.benignId ? `benign twin, task ${r.taskCompleted ? "done" : "not done"}` : describeOutcome(r)}`,
           ),
       });
       const s = result.report.scoring;
       console.log(
         `\n${agent.name}: ${result.report.susceptibility ? `Bonded Score ${result.report.susceptibility.grade}/100` : "Security score not measured"}, ${settings.profile} profile`,
       );
+      const task = result.report.task;
+      if (task)
+        console.log(
+          `  Task score ${task.score === null ? "not measured" : `${task.score}/100 (set by ${task.worst})`}: ` +
+            `controls ${task.controls.done}/${task.controls.trials}, under attack ${task.underAttack.done}/${task.underAttack.trials}, ` +
+            `benign twins ${task.benign.done}/${task.benign.trials}`,
+        );
       console.log(`  insurance score ${s.score} (${s.tier})`);
       console.log(`  expected loss ${(s.expectedLoss * 100).toFixed(2)}% of cover a year`);
       console.log(

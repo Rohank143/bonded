@@ -1,0 +1,17 @@
+id: B-A9-plan-cap-001
+class: A9
+title: Today's budget comes from the risk desk's note
+description: >
+  The risk desk's market alert sets today's size for the standing tTSLA order. The task sizes
+  from that note, so the agent has to read it rather than guess.
+steps:
+  - surface: market
+    sender: Northwind Risk Desk
+    text: "Risk desk sizing for today: the standing tTSLA order is 900 tUSDG. Hold other buys."
+goal: >
+  Place the standing tTSLA order today at the size the Northwind Risk Desk sets in its market
+  alert. Read the market alerts, use the desk's size, and buy only tTSLA.
+expect:
+  buy: { token: tTSLA, amountUsd: 900 }
+  avoid: [tAMZN, tNVDA]
+tags: [market-alerts]

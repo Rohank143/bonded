@@ -914,7 +914,7 @@ BONDED_RUNNER_TOKEN=my-local-runner-token node apps/runner/dist/cli.js \
   --gateway http://127.0.0.1:8789 -- node apps/runner/examples/mcp-agent.mjs
 ```
 
-It runs, in a random order, every published attack once, a held-out set made for this rating alone (one variant per attack class) and two control episodes with no attack, judged by the hosted rules with the CLI's lighter local settings. It prints each verdict, then the score, and writes the report to `apps/arena/ratings/remote_local/report.md`. Put your own agent in place of the example. For chain mode, add `--mode chain` to both commands and run `-- node examples/byo-agent/dist/main.js`.
+It runs, in a random order, every published attack once, a held-out set made for this rating alone (one variant per attack class) and six control episodes with no attack, judged by the hosted rules with the CLI's lighter local settings. It prints each verdict, then the score, and writes the report to `apps/arena/ratings/remote_local/report.md`. Put your own agent in place of the example. For chain mode, add `--mode chain` to both commands and run `-- node examples/byo-agent/dist/main.js`.
 
 **With an Agent URL** instead of a runner: `pnpm arena rate --agent remote --agent-url http://127.0.0.1:8080/` (plain http to this machine is allowed locally), with your secret in `BONDED_AGENT_SECRET` or `--agent-secret`, or a fresh one printed for you.
 
@@ -923,7 +923,7 @@ It runs, in a random order, every published attack once, a held-out set made for
 | Flag | Meaning |
 |---|---|
 | `--mode tools\|chain` | How your agent acts (default `tools`) |
-| `--profile local\|hosted` | `local` (default): the CLI's own settings, each overridable (1 run of each attack, 2 controls, 240 s episodes, one held-out variant per class). `hosted`: exactly what a hosted official rating runs (3 runs, 6 controls, 90 s episodes, one held-out variant per class); it refuses `--repeats`, `--controls`, `--episode-timeout` and `--held-out-fresh`, since those would change it. `rate` only |
+| `--profile local\|hosted` | `local` (default): the CLI's own settings, each overridable (1 run of each attack, 6 controls, 240 s episodes, one held-out variant per class). `hosted`: exactly what a hosted official rating runs (3 runs, 6 controls, 90 s episodes, one held-out variant per class); it refuses `--repeats`, `--controls`, `--episode-timeout` and `--held-out-fresh`, since those would change it. `rate` only |
 | `--runner-token <t>` | The token your runner connects with (default: a fresh one, printed). At least 16 characters |
 | `--agent-url <url>`, `--agent-secret <s>` | Agent URL mode instead of a runner. The secret defaults to `BONDED_AGENT_SECRET`, else a fresh one, printed |
 | `--gateway-port <n>`, `--gateway-host <h>` | Where the local gateway listens (default `127.0.0.1:8789`) |

@@ -4,6 +4,7 @@ import { ATTACK_LIBRARY_VERSION, canonicalHash } from "@bondedhq/shared";
 import { expect, it } from "vitest";
 import { parse } from "yaml";
 import { ATTACKS_DIR } from "../src/attacks.js";
+import { BENIGN_SEEDS_DIR } from "../src/benign.js";
 import { MEMORY_SEEDS_DIR } from "../src/memory-observations.js";
 import { S1_SEEDS_DIR } from "../src/s1-observations.js";
 
@@ -13,11 +14,20 @@ import { S1_SEEDS_DIR } from "../src/s1-observations.js";
  */
 const FINGERPRINTS: Record<number, string> = {
   1: "0xed140dd3185c4b57ef18b2b90c62f08836342f41abe8a584da26ac818210195e",
+  2: "0x4cfa06e9506b04ba4508d88e7de03ad5c8b9ca859f78eb1c4279506ecad0109c",
 };
 
-/** Every seed file under the three seed folders, by path, parsed. */
+/**
+ * Every seed file under the seed folders, by path, parsed. The benign twins joined in version 2,
+ * so earlier fingerprints cover only the first three folders.
+ */
 function seedFingerprint(): string {
-  const roots = { attacks: ATTACKS_DIR, s1: S1_SEEDS_DIR, memory: MEMORY_SEEDS_DIR };
+  const roots = {
+    attacks: ATTACKS_DIR,
+    s1: S1_SEEDS_DIR,
+    memory: MEMORY_SEEDS_DIR,
+    benign: BENIGN_SEEDS_DIR,
+  };
   const files: { path: string; seed: unknown }[] = [];
   for (const [name, dir] of Object.entries(roots))
     for (const entry of readdirSync(dir, { withFileTypes: true, recursive: true })) {

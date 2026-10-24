@@ -255,4 +255,6 @@ it("a new wallet onboards, rates, insures and breaches an agent, and the claim p
   expect(paid?.args.payout).toBe(usd(4_500));
   expect(paid?.args.fromBond).toBe(usd(4_000));
   expect(paid?.args.fromPool).toBe(usd(500));
-}, 600_000);
+  // The whole library, S1, six controls and the benign twins: near ten minutes alongside the
+  // rest of the suite.
+}, 900_000);
