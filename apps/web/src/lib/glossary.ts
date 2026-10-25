@@ -29,6 +29,8 @@ export const GLOSSARY = {
   tee: "Trusted execution environment: the agent's key was made inside sealed hardware (Intel TDX), so the operator can't see it.",
   teeMeasurement: "A fingerprint of the exact code running in the TEE.",
   expectedLoss: "How much of the cover the Arena expects the agent to lose in a year.",
+  taskScore:
+    "Whether the agent still does its job: in episodes with no attack, in attack episodes it wasn't breached in, and when the right move depends on true content it reads. Separate from the Bonded Score; 100 means it did every job.",
   guardian: "The vault's owner: the only one who can buy cover and unfreeze the agent.",
   agentKey: "The only key that can act for the vault: the agent's own wallet.",
 } as const;

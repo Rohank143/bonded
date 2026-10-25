@@ -28,7 +28,8 @@ import { BatteryTables } from "../components/battery-tables";
 import { ClassTrackTable } from "../components/class-track-table";
 import { classResults, gradeResults, weakestSentence } from "../lib/class-tracks";
 import { Square } from "../components/class-squares";
-import { gradeBand, manipulatedOf } from "../lib/security";
+import { gradeBand, gradeTone, manipulatedOf } from "../lib/security";
+import { taskLine, taskWorstLine } from "../lib/task-score";
 import { evidenceOf, topFixes } from "../lib/report-actions";
 import { ModuleCover } from "../components/module-cover";
 import { BindingLine } from "../components/connect-agent";
@@ -187,6 +188,8 @@ export function Agent() {
   // leaderboard entry for the same rating.
   const results = grade ? gradeResults(grade) : entry ? classResults(entry) : null;
   const weakCount = results?.filter((r) => r.rate).length ?? 0;
+  // The Task score: the hosted report's, else the leaderboard entry's for the same rating.
+  const task = report?.task ?? entry?.task;
   const weakestLine = results && weakestSentence(results);
   const band = gradeBand(a?.securityScore ?? 0);
   const glow =
@@ -285,6 +288,30 @@ export function Agent() {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
+            <div className="panel col-span-2 min-w-0 p-5">
+              <p className="eyebrow">
+                <Term term="taskScore">Task score</Term>
+              </p>
+              {task && task.score !== null ? (
+                <>
+                  <p
+                    className={`mt-2.5 text-[28px] font-bold tracking-tight ${gradeTone(task.score)}`}
+                  >
+                    {task.score}
+                  </p>
+                  <p className="mt-1 text-xs text-muted">
+                    {taskLine(task)} {taskWorstLine(task)}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="mt-2.5 text-[28px] font-bold tracking-tight text-muted">—</p>
+                  <p className="mt-1 text-xs text-muted">
+                    Not measured for this rating: it ran before the Task score existed.
+                  </p>
+                </>
+              )}
+            </div>
             <Tile
               label="Insurance score"
               value={`${a.score} · ${tier}`}

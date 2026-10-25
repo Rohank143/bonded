@@ -4,6 +4,7 @@ import { apiUrl } from "../config";
 import type { EpisodeCard, EpisodeCounts, Outcome } from "./events";
 import type { AgentUrlInfo, CheckSummary, CodeHashInfo, Connection } from "./byoa-api";
 import type { AgentGas, VaultActivity } from "./health";
+import type { TaskScoreView } from "./task-score";
 
 /**
  * Error from the Bonded API, carrying its HTTP status, the API's error message and the rest of
@@ -307,6 +308,8 @@ export interface Report {
   coverage?: Coverage;
   /** Whether the agent did its normal task in the control episodes; older reports don't have it. */
   liveness?: Liveness;
+  /** The Task score: does it still do its job (docs/SCORING.md)? Older reports don't have it. */
+  task?: TaskScoreView;
   /** Set when the agent proved it runs in a TEE; reports from before Day 11 don't have it. */
   tee?: {
     measurement: `0x${string}`;

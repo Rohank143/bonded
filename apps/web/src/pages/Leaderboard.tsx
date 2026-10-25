@@ -7,6 +7,7 @@ import { CLASSES, classResults } from "../lib/class-tracks";
 import { Square } from "../components/class-squares";
 import { DOCS_DISCLOSURES, DOCS_SCORING } from "../lib/routes";
 import { GRADE_BANDS, gradeTone } from "../lib/security";
+import { taskLine, taskWorstLine } from "../lib/task-score";
 import { Card, EmptyState, ErrorText, Loading, Page, TierBadge, linkClass } from "../components/ui";
 
 /** What the score colours and square colours mean, behind a small button so it stays out of the way. */
@@ -76,9 +77,36 @@ function chainNote(e: LeaderboardRecord): string | undefined {
   return undefined;
 }
 
-/** Rank, agent, score, class strip and insurance tier; stacks as a card on phones. */
+/** Rank, agent, score, class strip, Task score and insurance tier; stacks as a card on phones. */
 const ROW =
-  "grid grid-cols-[28px_minmax(0,1fr)_auto] gap-x-4 gap-y-3 lg:grid-cols-[32px_minmax(0,1fr)_72px_254px_56px] xl:grid-cols-[32px_minmax(0,1fr)_72px_410px_56px] lg:items-center lg:gap-x-6";
+  "grid grid-cols-[28px_minmax(0,1fr)_auto] gap-x-4 gap-y-3 lg:grid-cols-[32px_minmax(0,1fr)_72px_254px_48px_56px] xl:grid-cols-[32px_minmax(0,1fr)_72px_410px_56px_56px] lg:items-center lg:gap-x-6";
+
+/** The entry's Task score, with how it was measured in its tooltip; a dash when it has none. */
+function TaskCell({ e }: { e: LeaderboardRecord }) {
+  const task = e.task;
+  if (!task || task.score === null)
+    return (
+      <span className="text-xs text-muted" title="Task score not measured">
+        —
+      </span>
+    );
+  const how = [
+    taskLine(task),
+    taskWorstLine(task),
+    task.source === "task" ? "Measured after its rating, without attacks." : undefined,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    <span
+      title={how}
+      aria-label={`Task score ${task.score}. ${how}`}
+      className={`font-mono text-sm ${gradeTone(task.score)}`}
+    >
+      {task.score}
+    </span>
+  );
+}
 
 export function Leaderboard() {
   const board = useQuery({ queryKey: ["leaderboard"], queryFn: api.leaderboard });
@@ -127,6 +155,7 @@ export function Leaderboard() {
                   </span>
                 ))}
               </span>
+              <span>Task</span>
               <span>Cover</span>
             </div>
             <ol aria-label="Security rankings">
@@ -193,6 +222,10 @@ export function Leaderboard() {
                       ))}
                     </span>
                     <span className="relative z-10 col-span-2 col-start-2 flex items-center gap-2 lg:col-span-1 lg:col-start-auto lg:block">
+                      <span className="text-xs text-muted lg:hidden">Task score</span>
+                      <TaskCell e={e} />
+                    </span>
+                    <span className="relative z-10 col-span-2 col-start-2 flex items-center gap-2 lg:col-span-1 lg:col-start-auto lg:block">
                       <span className="text-xs text-muted lg:hidden">Cover</span>
                       <TierBadge score={e.score} />
                     </span>
@@ -208,6 +241,10 @@ export function Leaderboard() {
             only measures loss after containment.
           </p>
         )}
+        <p className="mt-4 text-xs text-muted">
+          Task is the Task score: whether the agent still does its job when the right move depends
+          on what it reads. It is separate from the score, which never counts it.
+        </p>
       </Card>
 
       <details className="panel p-5 sm:p-6">
@@ -228,6 +265,13 @@ export function Leaderboard() {
             attempts the mandate blocked still count. The cover tier is separate: it prices what a
             breach costs once the vault contains it. Results can differ with other models or
             settings.
+          </li>
+          <li>
+            The Task score checks the other side: an agent that ignores everything it reads is never
+            tricked, but it can't do a job that depends on what it reads either. It runs real
+            versions of each attack class's content (a real order from the portfolio manager, a real
+            trading halt) and counts whether the agent did the job, alongside ordinary episodes with
+            no attack. It is set by the lowest of those parts.
           </li>
           <li>
             Every rating records the attack library version it ran against (now v

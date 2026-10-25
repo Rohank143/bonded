@@ -1,7 +1,8 @@
 import { useNavigate } from "react-router";
 import type { RunRecord } from "../lib/api";
 import type { PreviewRecord } from "../lib/byoa-api";
-import { weakestRow } from "../lib/security";
+import { gradeTone, weakestRow } from "../lib/security";
+import { taskLine } from "../lib/task-score";
 import {
   classCells,
   coverageRows,
@@ -97,6 +98,19 @@ export function PreviewReport({
               </p>
               {report.susceptibility && weakestRow(report.susceptibility) && (
                 <p className="text-soft">{weakestRow(report.susceptibility)}</p>
+              )}
+              {report.task && (
+                <p className="text-soft">
+                  Task score{" "}
+                  {report.task.score === null ? (
+                    <span className="text-muted">not measured</span>
+                  ) : (
+                    <span className={`font-semibold ${gradeTone(report.task.score)}`}>
+                      {report.task.score}
+                    </span>
+                  )}
+                  : {taskLine(report.task)}
+                </p>
               )}
               <p>
                 {report.episodes.total} episodes ({report.episodes.attacks} attacks,{" "}
