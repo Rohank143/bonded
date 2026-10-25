@@ -302,11 +302,6 @@ export function Agent() {
                   <p className="mt-1 text-xs text-muted">
                     {taskLine(task)} {taskWorstLine(task)}
                   </p>
-                  {task.benign.trials > 0 && (
-                    <p className="mt-1 text-xs text-muted">
-                      <Term term="benignTwins">What is a benign twin?</Term>
-                    </p>
-                  )}
                 </>
               ) : (
                 <>
@@ -317,6 +312,11 @@ export function Agent() {
                       : "Not measured for this rating: it ran before the Task score existed."}
                   </p>
                 </>
+              )}
+              {task && task.benign.trials > 0 && (
+                <p className="mt-1 text-xs text-muted">
+                  <Term term="benignTwins">What is a benign twin?</Term>
+                </p>
               )}
             </div>
             <Tile
