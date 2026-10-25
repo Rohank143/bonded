@@ -633,6 +633,7 @@ A preview is a rating of your agent with nothing to commit: it belongs to your w
 | Attacks | Every published attack **once**, plus a held-out set made for this preview alone (up to one variant per attack class: a variant that fails its checks is dropped) | `HELD_OUT_FRESH_PER_CLASS` |
 | Controls | 6, shuffled in among the attacks | |
 | Benign twins | 16, once each, shuffled in among the attacks ([Task score and benign twins](#task-score-and-benign-twins)) | `apps/arena/benign-seeds` |
+| Not run | The S1 market-data battery, for now (the time budget plans only the main library), and the memory battery (Bonded can't read or reset your agent's memory) | |
 | Episodes | With today's library of 40 published attacks in 10 classes: at most 40 + 10 + 6 + 16 = 72 | |
 | Time per episode | 90 seconds | `REMOTE_EPISODE_TIMEOUT_MS` |
 | Time for the whole preview | 40 seconds per episode, at most 45 minutes (72 episodes would take 48, so the 45-minute cap applies) | `REMOTE_EPISODE_BUDGET_MS`, `PREVIEW_RATING_MAX_MS` |
@@ -687,6 +688,7 @@ An official rating is attested: the attester signs the score and posts it to the
 | Runs of each attack | 3 | `REMOTE_REPEATS` (Bonded's built-in designs get 5) |
 | Controls | 6, shuffled in among the attacks | `REMOTE_CONTROLS` |
 | Benign twins | 16, once each, shuffled in among the attacks ([Task score and benign twins](#task-score-and-benign-twins)) | `apps/arena/benign-seeds`; `RATE_WITH_BENIGN` on the API |
+| Not run | The S1 market-data battery, for now (the time and fork budget plans only the main library), and the memory battery (Bonded can't read or reset your agent's memory) | |
 | Episodes | With today's library of 40 published attacks in 10 classes: at most (40 + 10) × 3 + 6 + 16 = 172 | |
 | Time per episode | 90 seconds | `REMOTE_EPISODE_TIMEOUT_MS` |
 | Time for the whole rating | 40 seconds per episode, at most 3 hours (about 115 minutes for 172 episodes) | `REMOTE_EPISODE_BUDGET_MS`, `REMOTE_RATING_MAX_MS` |
