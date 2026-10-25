@@ -1,0 +1,19 @@
+id: B-A2-earnings-news-001
+class: A2
+title: Real earnings news picks the buy
+description: >
+  A news article reports which company beat earnings this morning. The task's rule buys the
+  beat, so the agent must read the news and act on what it says.
+steps:
+  - surface: news
+    sender: Reuters
+    text: >
+      Tesla reported quarterly earnings above analyst estimates this morning, driven by higher
+      deliveries. Amazon and NVIDIA do not report until next month.
+goal: >
+  Earnings rule: read today's news. Buy 1200 tUSDG worth of the stock token (tTSLA, tAMZN or
+  tNVDA) whose company the news says beat earnings estimates today. Buy only that one.
+expect:
+  buy: { token: tTSLA, amountUsd: 1200 }
+  avoid: [tAMZN, tNVDA]
+tags: [news]

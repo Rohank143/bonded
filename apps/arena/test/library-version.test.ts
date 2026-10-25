@@ -1,9 +1,10 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { ATTACK_LIBRARY_VERSION, canonicalHash } from "@bondedhq/shared";
+import { ATTACK_LIBRARY_VERSION, canonicalHash, TASK_SCORE_VERSION } from "@bondedhq/shared";
 import { expect, it } from "vitest";
 import { parse } from "yaml";
 import { ATTACKS_DIR } from "../src/attacks.js";
+import { BENIGN_SEEDS_DIR } from "../src/benign.js";
 import { MEMORY_SEEDS_DIR } from "../src/memory-observations.js";
 import { S1_SEEDS_DIR } from "../src/s1-observations.js";
 
@@ -15,9 +16,14 @@ const FINGERPRINTS: Record<number, string> = {
   1: "0xed140dd3185c4b57ef18b2b90c62f08836342f41abe8a584da26ac818210195e",
 };
 
-/** Every seed file under the three seed folders, by path, parsed. */
-function seedFingerprint(): string {
-  const roots = { attacks: ATTACKS_DIR, s1: S1_SEEDS_DIR, memory: MEMORY_SEEDS_DIR };
+/** The benign twins each Task score version was published with (TASK_SCORE_VERSION). */
+const TASK_FINGERPRINTS: Record<number, string> = {
+  1: "0x7669c441c2e3e2756da8ad07a0f5311bd7cf2167ddb6b7096f4dfbeda083e32d",
+  2: "0x258cc54e65d1bfaf1d6c2378910794ca53acb3bd9cbb8619762251a9c9030025",
+};
+
+/** Every seed file under the given folders, by path, parsed. */
+function fingerprint(roots: Record<string, string>): string {
   const files: { path: string; seed: unknown }[] = [];
   for (const [name, dir] of Object.entries(roots))
     for (const entry of readdirSync(dir, { withFileTypes: true, recursive: true })) {
@@ -30,6 +36,11 @@ function seedFingerprint(): string {
     }
   files.sort((a, b) => a.path.localeCompare(b.path));
   return canonicalHash(files);
+}
+
+/** The attack library's three seed folders. */
+function seedFingerprint(): string {
+  return fingerprint({ attacks: ATTACKS_DIR, s1: S1_SEEDS_DIR, memory: MEMORY_SEEDS_DIR });
 }
 
 it("bumps the attack library version whenever a seed changes", () => {
@@ -50,4 +61,17 @@ it("never reuses a version for different seeds", () => {
   const values = Object.values(FINGERPRINTS);
   expect(new Set(values).size).toBe(values.length);
   expect(Math.max(...Object.keys(FINGERPRINTS).map(Number))).toBe(ATTACK_LIBRARY_VERSION);
+});
+
+it("bumps the Task score version whenever a benign twin changes", () => {
+  const actual = fingerprint({ benign: BENIGN_SEEDS_DIR });
+  expect(
+    actual,
+    `The benign twins changed since Task score version ${TASK_SCORE_VERSION}. Bump TASK_SCORE_VERSION ` +
+      "in packages/shared/src/library-version.ts (note what changed in its history), then add " +
+      `${TASK_SCORE_VERSION + 1}: "${actual}" to TASK_FINGERPRINTS here.`,
+  ).toBe(TASK_FINGERPRINTS[TASK_SCORE_VERSION]);
+  const values = Object.values(TASK_FINGERPRINTS);
+  expect(new Set(values).size).toBe(values.length);
+  expect(Math.max(...Object.keys(TASK_FINGERPRINTS).map(Number))).toBe(TASK_SCORE_VERSION);
 });

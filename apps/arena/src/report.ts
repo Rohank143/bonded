@@ -274,6 +274,8 @@ export function publicEpisode(
     attackId: e.attackId,
     attackClass: e.attackClass,
     variantId: e.variantId,
+    // A benign twin (attackId null, like a control): which one, so a reader can tell them apart.
+    ...(e.benignId ? { benignId: e.benignId } : {}),
     durationMs: e.durationMs,
     /** When the episode started (ISO 8601), so a reader can follow a run as it goes. */
     startedAt: e.startedAt,

@@ -63,7 +63,14 @@ it("passes a local timeout and the default S1 battery to the actual rating dispa
   expect(ratingOptions()).toMatchObject({ episodeTimeoutMs: 1000, s1: { pairs: 2 } });
   expect(ratingOptions().s1?.seeds.length).toBeGreaterThan(0);
   expect(ratingOptions().memory).toBeUndefined();
+  expect(ratingOptions().benign?.seeds.length).toBeGreaterThan(0);
   expect(mocks.stop).toHaveBeenCalledOnce();
+});
+
+it("honors --no-benign", async () => {
+  const { exit } = await runCli("--no-benign");
+  expect(exit).toHaveBeenCalledWith(0);
+  expect(ratingOptions().benign).toBeUndefined();
 });
 
 it("keeps the five-minute built-in default and honors --no-s1", async () => {

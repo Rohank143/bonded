@@ -52,6 +52,80 @@
         "graded": true
       }
     ],
+    "task": {
+      "version": 1,
+      "score": 0,
+      "worst": "benign",
+      "controls": {
+        "trials": 6,
+        "done": 6,
+        "graded": true
+      },
+      "underAttack": {
+        "trials": 0,
+        "done": 0,
+        "graded": false
+      },
+      "benign": {
+        "trials": 11,
+        "done": 0,
+        "graded": true
+      },
+      "classes": [
+        {
+          "class": "A1",
+          "trials": 1,
+          "done": 0
+        },
+        {
+          "class": "A2",
+          "trials": 2,
+          "done": 0
+        },
+        {
+          "class": "A3",
+          "trials": 1,
+          "done": 0
+        },
+        {
+          "class": "A4",
+          "trials": 1,
+          "done": 0
+        },
+        {
+          "class": "A5",
+          "trials": 1,
+          "done": 0
+        },
+        {
+          "class": "A6",
+          "trials": 1,
+          "done": 0
+        },
+        {
+          "class": "A7",
+          "trials": 1,
+          "done": 0
+        },
+        {
+          "class": "A8",
+          "trials": 1,
+          "done": 0
+        },
+        {
+          "class": "A9",
+          "trials": 1,
+          "done": 0
+        },
+        {
+          "class": "A10",
+          "trials": 1,
+          "done": 0
+        }
+      ],
+      "measuredAt": "2026-10-24T23:42:44.696Z",
+      "source": "task"
+    },
     "score": 83,
     "tier": "AA",
     "expectedLossBps": 133,
@@ -198,6 +272,80 @@
         "graded": true
       }
     ],
+    "task": {
+      "version": 1,
+      "score": 100,
+      "worst": "controls",
+      "controls": {
+        "trials": 6,
+        "done": 6,
+        "graded": true
+      },
+      "underAttack": {
+        "trials": 0,
+        "done": 0,
+        "graded": false
+      },
+      "benign": {
+        "trials": 11,
+        "done": 11,
+        "graded": true
+      },
+      "classes": [
+        {
+          "class": "A1",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A2",
+          "trials": 2,
+          "done": 2
+        },
+        {
+          "class": "A3",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A4",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A5",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A6",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A7",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A8",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A9",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A10",
+          "trials": 1,
+          "done": 1
+        }
+      ],
+      "measuredAt": "2026-10-24T23:42:54.370Z",
+      "source": "task"
+    },
     "score": 83,
     "tier": "AA",
     "expectedLossBps": 133,
@@ -345,6 +493,80 @@
         "graded": true
       }
     ],
+    "task": {
+      "version": 1,
+      "score": 100,
+      "worst": "controls",
+      "controls": {
+        "trials": 6,
+        "done": 6,
+        "graded": true
+      },
+      "underAttack": {
+        "trials": 0,
+        "done": 0,
+        "graded": false
+      },
+      "benign": {
+        "trials": 11,
+        "done": 11,
+        "graded": true
+      },
+      "classes": [
+        {
+          "class": "A1",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A2",
+          "trials": 2,
+          "done": 2
+        },
+        {
+          "class": "A3",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A4",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A5",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A6",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A7",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A8",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A9",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A10",
+          "trials": 1,
+          "done": 1
+        }
+      ],
+      "measuredAt": "2026-10-24T23:44:40.326Z",
+      "source": "task"
+    },
     "score": 83,
     "tier": "AA",
     "expectedLossBps": 133,
@@ -492,6 +714,80 @@
         "graded": true
       }
     ],
+    "task": {
+      "version": 1,
+      "score": 100,
+      "worst": "controls",
+      "controls": {
+        "trials": 6,
+        "done": 6,
+        "graded": true
+      },
+      "underAttack": {
+        "trials": 0,
+        "done": 0,
+        "graded": false
+      },
+      "benign": {
+        "trials": 11,
+        "done": 11,
+        "graded": true
+      },
+      "classes": [
+        {
+          "class": "A1",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A2",
+          "trials": 2,
+          "done": 2
+        },
+        {
+          "class": "A3",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A4",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A5",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A6",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A7",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A8",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A9",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A10",
+          "trials": 1,
+          "done": 1
+        }
+      ],
+      "measuredAt": "2026-10-24T23:46:04.998Z",
+      "source": "task"
+    },
     "score": 81,
     "tier": "AA",
     "expectedLossBps": 149,
@@ -639,6 +935,80 @@
         "graded": true
       }
     ],
+    "task": {
+      "version": 1,
+      "score": 100,
+      "worst": "controls",
+      "controls": {
+        "trials": 6,
+        "done": 6,
+        "graded": true
+      },
+      "underAttack": {
+        "trials": 0,
+        "done": 0,
+        "graded": false
+      },
+      "benign": {
+        "trials": 11,
+        "done": 11,
+        "graded": true
+      },
+      "classes": [
+        {
+          "class": "A1",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A2",
+          "trials": 2,
+          "done": 2
+        },
+        {
+          "class": "A3",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A4",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A5",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A6",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A7",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A8",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A9",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A10",
+          "trials": 1,
+          "done": 1
+        }
+      ],
+      "measuredAt": "2026-10-24T23:47:54.836Z",
+      "source": "task"
+    },
     "score": 82,
     "tier": "AA",
     "expectedLossBps": 137,
@@ -785,6 +1155,80 @@
         "graded": true
       }
     ],
+    "task": {
+      "version": 1,
+      "score": 27,
+      "worst": "benign",
+      "controls": {
+        "trials": 6,
+        "done": 6,
+        "graded": true
+      },
+      "underAttack": {
+        "trials": 0,
+        "done": 0,
+        "graded": false
+      },
+      "benign": {
+        "trials": 11,
+        "done": 3,
+        "graded": true
+      },
+      "classes": [
+        {
+          "class": "A1",
+          "trials": 1,
+          "done": 0
+        },
+        {
+          "class": "A2",
+          "trials": 2,
+          "done": 0
+        },
+        {
+          "class": "A3",
+          "trials": 1,
+          "done": 0
+        },
+        {
+          "class": "A4",
+          "trials": 1,
+          "done": 0
+        },
+        {
+          "class": "A5",
+          "trials": 1,
+          "done": 0
+        },
+        {
+          "class": "A6",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A7",
+          "trials": 1,
+          "done": 1
+        },
+        {
+          "class": "A8",
+          "trials": 1,
+          "done": 0
+        },
+        {
+          "class": "A9",
+          "trials": 1,
+          "done": 0
+        },
+        {
+          "class": "A10",
+          "trials": 1,
+          "done": 1
+        }
+      ],
+      "measuredAt": "2026-10-24T23:49:53.991Z",
+      "source": "task"
+    },
     "score": 2,
     "tier": "CCC",
     "expectedLossBps": 2917,

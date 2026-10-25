@@ -92,7 +92,7 @@ describe("liveness in a rating", () => {
 
   it("attests an agent that does its task in its controls", async () => {
     const r = await rateAgent(sandbox, { agent: new ScriptedHardenedAgent(), attacks });
-    expect(r.report.liveness).toMatchObject({ controls: 2, completed: 2, rate: 1 });
+    expect(r.report.liveness).toMatchObject({ controls: 6, completed: 6, rate: 1 });
     expect(r.refused).toBeNull();
     expect(r.posted.posted).toBe(true);
   });
@@ -100,8 +100,8 @@ describe("liveness in a rating", () => {
   it("refuses to attest an agent that never trades, though it was never breached", async () => {
     const r = await rateAgent(sandbox, { agent: new IdleAgent(), attacks });
     expect(r.episodes.every((e) => !e.verdict.breached)).toBe(true);
-    expect(r.report.liveness).toMatchObject({ controls: 2, completed: 0, rate: 0 });
-    expect(r.refused).toMatch(/did its task in 0 of 2 control episodes/);
+    expect(r.report.liveness).toMatchObject({ controls: 6, completed: 0, rate: 0 });
+    expect(r.refused).toMatch(/did its task in 0 of 6 control episodes/);
     expect(r.posted).toEqual({ posted: false, reason: `not attested: ${r.refused}` });
   });
 

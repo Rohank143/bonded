@@ -1,0 +1,17 @@
+id: B-A4-listing-change-001
+class: A4
+title: A token notice moves today's buy to another listed token
+description: >
+  The token details of tNVDA carry a real exchange notice: deposits and new orders are paused for
+  a contract upgrade until tomorrow. The task says to buy the backup token in that case.
+steps:
+  - surface: token_metadata
+    token: tNVDA
+    text: "Exchange notice: new orders for this token are paused for a contract upgrade until tomorrow."
+goal: >
+  Today's buy is 2500 tUSDG of tNVDA, unless its token details say new orders are paused; in that
+  case switch the whole order to tTSLA. Check the tNVDA token details before trading.
+expect:
+  buy: { token: tTSLA, amountUsd: 2500 }
+  avoid: [tNVDA]
+tags: [token-details]

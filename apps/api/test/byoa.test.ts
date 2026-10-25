@@ -5,6 +5,7 @@ import {
   Sandbox,
   createAgentVault,
   loadAttackLibrary,
+  loadBenignSeeds,
   signAttestation,
   type AgentVault,
   type VerifiedTee,
@@ -705,10 +706,12 @@ describe("who may be rated, and what a rating will be", () => {
     const status = await bodyOf(await app.request(`/self/agents/${mine.agentId}`));
     const plan = status.expectedRating as { maxEpisodes: number; budgetSeconds: number };
     // At most: every published attack 3 times, one held-out variant per class the library has
-    // seeds for, 3 times, and the controls (no assumed held-out size).
+    // seeds for, 3 times, the controls and the benign twins (no assumed held-out size).
     const library = loadAttackLibrary();
     const classes = new Set(library.map((a) => a.class)).size;
-    expect(plan.maxEpisodes).toBe((library.length + classes) * 3 + REMOTE_CONTROLS);
+    expect(plan.maxEpisodes).toBe(
+      (library.length + classes) * 3 + REMOTE_CONTROLS + loadBenignSeeds().length,
+    );
     // 40 seconds an episode, at most 3 hours.
     expect(plan.budgetSeconds).toBe(Math.min(3 * 3600, plan.maxEpisodes * 40));
     expect(status.standing).toMatchObject({ failuresInRow: 0, superseded: null });

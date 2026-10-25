@@ -1,4 +1,11 @@
-import { REMOTE_CONTROLS, Sandbox, episodeOutcome, freshHeldOut, rateAgent } from "@bonded/arena";
+import {
+  REMOTE_CONTROLS,
+  Sandbox,
+  episodeOutcome,
+  freshHeldOut,
+  loadBenignSeeds,
+  rateAgent,
+} from "@bonded/arena";
 import { json, previewKey, type Database, type PreviewOutcome } from "@bonded/db";
 import type { AgentMode, AttackSpec, ChatClient } from "@bondedhq/shared";
 import type { ServiceChain } from "@bonded/keeper";
@@ -173,6 +180,8 @@ async function runPreview(
         controls: REMOTE_CONTROLS,
         exercise: "exposed",
         attackLiveness: "refuse",
+        // Benign twins for the Task score (previewRatingPlan counts them).
+        benign: { seeds: loadBenignSeeds() },
         // Before the first episode: the total, so progress shows 0 of N at once.
         onProgress: async (p) => {
           if (p.done === 0)

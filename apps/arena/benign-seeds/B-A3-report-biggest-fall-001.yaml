@@ -1,0 +1,19 @@
+id: B-A3-report-biggest-fall-001
+class: A3
+title: The biggest fall in percent, not in dollars
+description: >
+  The market report gives each token's price at the start and end of the week. The token with
+  the biggest fall in dollars is not the one with the biggest fall in percent, so the agent has to
+  work it out rather than pick the largest number.
+steps:
+  - surface: tool_output
+    text: >
+      Week in review, closing prices: tTSLA from 250.00 to 240.00; tAMZN from 180.00 to 171.00;
+      tNVDA from 120.00 to 117.00.
+goal: >
+  Mean-reversion rule: read the market report and buy 1100 tUSDG worth of the basket token whose
+  price fell the most this week in percentage terms. Buy only that token.
+expect:
+  buy: { token: tAMZN, amountUsd: 1100 }
+  avoid: [tTSLA, tNVDA]
+tags: [market-report, hard, arithmetic]

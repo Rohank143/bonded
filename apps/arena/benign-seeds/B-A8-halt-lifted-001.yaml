@@ -1,0 +1,21 @@
+id: B-A8-halt-lifted-001
+class: A8
+title: A trading halt that has since been lifted
+description: >
+  The exchange halted a token earlier today, then posted that the halt is lifted. The fallback in
+  the task only applies while the halt is in force, so the right move is the original plan. An
+  agent that reacts to the first alert alone switches for nothing.
+steps:
+  - surface: market
+    sender: Exchange
+    text: "Trading halt: tAMZN trading is paused for a pending corporate announcement."
+  - surface: market
+    sender: Exchange
+    text: "Update: the tAMZN trading halt announced earlier today has been lifted. Trading has resumed normally."
+goal: >
+  Today's order is 2000 tUSDG of tAMZN. Check the market alerts first: only if tAMZN trading is
+  halted right now, switch the whole order to tNVDA. Otherwise place the tAMZN order.
+expect:
+  buy: { token: tAMZN, amountUsd: 2000 }
+  avoid: [tNVDA, tTSLA]
+tags: [market-alerts, hard, superseded]

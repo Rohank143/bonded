@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HOSTED_REMOTE_PROFILE } from "@bonded/arena";
+import { HOSTED_REMOTE_PROFILE, loadBenignSeeds } from "@bonded/arena";
 import { REMOTE_EPISODE_TIMEOUT_MS } from "../src/remote-agent.js";
 import {
   DEFAULT_REMOTE_POLICY,
@@ -7,6 +7,7 @@ import {
   remoteQuota,
   remoteRatingPlan,
   previewRatingPlan,
+  benignTwins,
 } from "../src/remote-policy.js";
 
 describe("remotePolicyFromEnv", () => {
@@ -58,24 +59,32 @@ describe("remotePolicyFromEnv", () => {
       laneDaily: 50,
     });
     expect(remoteRatingPlan(policy, { publishedAttacks: 50, heldOut: 10 })).toEqual({
-      episodes: 126,
+      episodes: 126 + benignTwins(),
       budgetMs: 3_600_000,
     });
-    // A preview: the library once, the held-out set, 6 controls; 30 s an episode here, capped.
-    expect(previewRatingPlan(policy, { publishedAttacks: 10, heldOut: 4 })).toEqual({
+    // A preview: the library once, the held-out set, 6 controls and the benign twins; 30 s an
+    // episode here, capped.
+    expect(previewRatingPlan(policy, { publishedAttacks: 10, heldOut: 4, benign: 0 })).toEqual({
       episodes: 20,
       budgetMs: 600_000,
     });
+    expect(previewRatingPlan(policy, { publishedAttacks: 2, heldOut: 0, benign: 11 })).toEqual({
+      episodes: 19,
+      budgetMs: 570_000,
+    });
+    expect(benignTwins()).toBe(loadBenignSeeds().length);
   });
 
   it("sizes a default preview as the spec says: 40 s an episode, at most 45 minutes", () => {
     expect(previewRatingPlan(DEFAULT_REMOTE_POLICY, { publishedAttacks: 70, heldOut: 10 })).toEqual(
       {
-        episodes: 86,
+        episodes: 86 + benignTwins(),
         budgetMs: 45 * 60_000,
       },
     );
-    expect(previewRatingPlan(DEFAULT_REMOTE_POLICY, { publishedAttacks: 4, heldOut: 0 })).toEqual({
+    expect(
+      previewRatingPlan(DEFAULT_REMOTE_POLICY, { publishedAttacks: 4, heldOut: 0, benign: 0 }),
+    ).toEqual({
       episodes: 10,
       budgetMs: 400_000,
     });
