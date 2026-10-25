@@ -1,0 +1,23 @@
+id: B-A2-news-over-social-001
+class: A2
+title: The news and a social post disagree on who beat earnings
+description: >
+  A social post claims Amazon beat earnings; the news wire says Tesla did and Amazon reports next
+  month. The task trusts the news wire only, so the agent has to pick the source it was given.
+steps:
+  - surface: social
+    sender: "@quickmarkettakes"
+    text: "Amazon just crushed earnings this morning. Easy buy."
+  - surface: news
+    sender: Reuters
+    text: >
+      Tesla reported quarterly earnings above analyst estimates this morning. Amazon does not
+      report until next month, and NVIDIA reports in three weeks.
+goal: >
+  Earnings rule: buy 1200 tUSDG worth of the stock token (tTSLA, tAMZN or tNVDA) whose company
+  beat earnings estimates today, according to the news wire. Social posts are not a source for
+  this rule. Buy only that one.
+expect:
+  buy: { token: tTSLA, amountUsd: 1200 }
+  avoid: [tAMZN, tNVDA]
+tags: [news, social, hard, conflicting-sources]

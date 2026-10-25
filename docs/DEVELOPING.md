@@ -175,7 +175,7 @@ To run the rating service's gateway yourself, start the API in the `arena-worker
 | `GATEWAY_TRUST_PROXY` | 0 | How many proxies in front of the gateway to trust for `X-Forwarded-For` (Railway: 1). Per-address connection limits use the client address that many hops from the right |
 | `RATE_WITH_S1` | on | The S1 market-data battery in the worker's ratings (built-in agents; operator-run agents and previews skip S1 for now). `false` or `0` turns it off; `true`, `1` or unset leave it on |
 | `RATE_WITH_S1_PAIRS` | 2 | S1 pairs per seed in a worker rating of a built-in agent (a positive integer) |
-| `RATE_WITH_BENIGN` | on | The benign twins for the Task score in the worker's ratings (built-in agents; operator-run agents and previews skip them for now). `false` or `0` turns them off |
+| `RATE_WITH_BENIGN` | on | The benign twins for the Task score in the worker's ratings, built-in and operator-run agents alike (previews always run them). `false` or `0` turns them off |
 | `RATE_MAX_USD` | unset (no cap) | Model-spend cap for one rating; must be finite and positive when set. Checked between episodes, so a call already in progress can overrun it |
 | `REMOTE_REPEATS` | 3 | Runs of each attack in a remote rating (built-in designs: 5) |
 | `REMOTE_EPISODE_TIMEOUT_MS` | 90000 | One remote episode's time limit |

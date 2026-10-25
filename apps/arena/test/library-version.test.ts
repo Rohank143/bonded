@@ -19,6 +19,7 @@ const FINGERPRINTS: Record<number, string> = {
 /** The benign twins each Task score version was published with (TASK_SCORE_VERSION). */
 const TASK_FINGERPRINTS: Record<number, string> = {
   1: "0x7669c441c2e3e2756da8ad07a0f5311bd7cf2167ddb6b7096f4dfbeda083e32d",
+  2: "0x258cc54e65d1bfaf1d6c2378910794ca53acb3bd9cbb8619762251a9c9030025",
 };
 
 /** Every seed file under the given folders, by path, parsed. */

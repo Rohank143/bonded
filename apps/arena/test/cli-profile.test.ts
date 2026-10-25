@@ -12,9 +12,9 @@ describe("arena rate --profile", () => {
       controls: 6,
       episodeTimeoutMs: 240_000,
       heldOutPerClass: 1,
-      // A remote agent skips S1 and the benign twins by default, as a hosted rating does.
+      // A remote agent skips S1 by default and runs the benign twins, as a hosted rating does.
       s1Pairs: 0,
-      benignRuns: 0,
+      benignRuns: 1,
     });
     expect(
       rateSettings("local", { repeats: "5", controls: "0", "episode-timeout": "30" }, rate),
@@ -38,17 +38,19 @@ describe("arena rate --profile", () => {
     expect(describeProfile(rateSettings(undefined, {}, rate))).toMatch(/no S1 battery/);
   });
 
-  it("runs the benign twins once by default for Bonded's own agents, overridable", () => {
+  it("runs the benign twins once by default for every agent, overridable", () => {
     const own = { remote: false, command: "rate" };
     expect(rateSettings(undefined, {}, own).benignRuns).toBe(1);
     expect(rateSettings(undefined, { "benign-runs": "0" }, own).benignRuns).toBe(0);
     expect(rateSettings(undefined, { "benign-runs": "3" }, own).benignRuns).toBe(3);
-    expect(() => rateSettings(undefined, { "benign-runs": "1" }, rate)).toThrow(
-      /don't run benign twins yet/,
-    );
+    expect(rateSettings(undefined, {}, rate).benignRuns).toBe(1);
+    expect(rateSettings(undefined, { "benign-runs": "0" }, rate).benignRuns).toBe(0);
     expect(() => rateSettings(undefined, { "benign-runs": "x" }, own)).toThrow(/--benign-runs/);
     expect(describeProfile(rateSettings(undefined, {}, own))).toMatch(/benign twins once each/);
-    expect(describeProfile(rateSettings(undefined, {}, rate))).toMatch(/no benign twins/);
+    expect(describeProfile(rateSettings(undefined, { "benign-runs": "0" }, own))).toMatch(
+      /no benign twins/,
+    );
+    expect(describeProfile(rateSettings("hosted", {}, rate))).toMatch(/benign twins once each/);
   });
 
   it("reports the effective timeout for built-in ratings and accepts an override", () => {
@@ -67,7 +69,7 @@ describe("arena rate --profile", () => {
       episodeTimeoutMs: 90_000,
       heldOutPerClass: 1,
       s1Pairs: 0,
-      benignRuns: 0,
+      benignRuns: 1,
       exercise: "exposed",
       attackLiveness: "refuse",
     });

@@ -430,6 +430,8 @@ export const HOSTED_REMOTE_PROFILE = {
   exercise: "exposed",
   /** Refused when the agent does its task too rarely in controls, or much less under attack. */
   attackLiveness: "refuse",
+  /** Runs of each benign twin, for the Task score. */
+  benignRuns: 1,
 } as const satisfies {
   repeats: number;
   episodeTimeoutMs: number;
@@ -437,6 +439,7 @@ export const HOSTED_REMOTE_PROFILE = {
   heldOutPerClass: number;
   exercise: RatingOptions["exercise"];
   attackLiveness: RatingOptions["attackLiveness"];
+  benignRuns: number;
 };
 
 /** Why a rating can't be attested on liveness grounds, or null when it can. */

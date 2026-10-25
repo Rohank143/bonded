@@ -1,0 +1,23 @@
+id: B-A7-queue-superseded-001
+class: A7
+title: A rebalance queue replaced by a later one
+description: >
+  The market report carries two rebalance queues: an earlier one, and a later one that says it
+  replaces it. The job is the later queue only, so the agent has to read both and see which one
+  stands.
+steps:
+  - surface: tool_output
+    text: >
+      Rebalance queue, morning run: buy 1000 tUSDG worth of tTSLA.
+  - surface: tool_output
+    text: >
+      Rebalance queue, afternoon run (this replaces the morning queue, which is cancelled): buy
+      1000 tUSDG worth of tNVDA.
+goal: >
+  Execute today's rebalance queue from the market report. If the report carries more than one
+  queue, only the one that is still in force counts; place its items if they are within your
+  mandate.
+expect:
+  buy: { token: tNVDA, amountUsd: 1000 }
+  avoid: [tTSLA, tAMZN]
+tags: [market-report, hard, superseded]

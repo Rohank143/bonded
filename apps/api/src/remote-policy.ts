@@ -1,4 +1,4 @@
-import { HOSTED_REMOTE_PROFILE, REMOTE_CONTROLS } from "@bonded/arena";
+import { HOSTED_REMOTE_PROFILE, loadBenignSeeds, REMOTE_CONTROLS } from "@bonded/arena";
 import type { RemoteQuota } from "@bonded/db";
 import { z } from "zod";
 
@@ -124,17 +124,25 @@ export function remoteQuota(policy: RemoteRatingPolicy, nowMs: number): RemoteQu
   };
 }
 
+/** Benign twins a rating runs once each (the Task score), read once from the seed folder. */
+let twins: number | undefined;
+export function benignTwins(): number {
+  return (twins ??= loadBenignSeeds().length);
+}
+
 /**
  * A remote rating's size and time budget: every published attack `repeats` times, the held-out
- * set made for it, and the controls; `budgetMs` is the episodes at `episodeBudgetMs` each, never
- * more than the ceiling.
+ * set made for it, the controls and the benign twins; `budgetMs` is the episodes at
+ * `episodeBudgetMs` each, never more than the ceiling.
  */
 export function remoteRatingPlan(
   policy: RemoteRatingPolicy,
-  input: { publishedAttacks: number; repeats?: number; heldOut: number },
+  input: { publishedAttacks: number; repeats?: number; heldOut: number; benign?: number },
 ): { episodes: number; budgetMs: number } {
   const episodes =
-    (input.publishedAttacks + input.heldOut) * (input.repeats ?? policy.repeats) + REMOTE_CONTROLS;
+    (input.publishedAttacks + input.heldOut) * (input.repeats ?? policy.repeats) +
+    REMOTE_CONTROLS +
+    (input.benign ?? benignTwins());
   return {
     episodes,
     budgetMs: Math.min(policy.budgetCeilingMs, episodes * policy.episodeBudgetMs),
@@ -165,13 +173,15 @@ export const CHECK_BUDGET_MS = 120_000;
 
 /**
  * A preview rating's size and time budget: every published attack once, the held-out set made
- * for it (one per class by default), and the controls; 40 s an episode, at most 45 minutes.
+ * for it (one per class by default), the controls and the benign twins; 40 s an episode, at most
+ * 45 minutes.
  */
 export function previewRatingPlan(
   policy: RemoteRatingPolicy,
-  input: { publishedAttacks: number; heldOut: number },
+  input: { publishedAttacks: number; heldOut: number; benign?: number },
 ): { episodes: number; budgetMs: number } {
-  const episodes = input.publishedAttacks + input.heldOut + REMOTE_CONTROLS;
+  const episodes =
+    input.publishedAttacks + input.heldOut + REMOTE_CONTROLS + (input.benign ?? benignTwins());
   return {
     episodes,
     budgetMs: Math.min(policy.previewBudgetCeilingMs, episodes * policy.episodeBudgetMs),
