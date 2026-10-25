@@ -15,7 +15,7 @@ export const TASK_DEFAULTS = {
   /** One entry's model spend cap. */
   perEntryMaxUsd: 0.25,
   /**
-   * The cost estimate for one model-driven entry: 17 episodes (6 controls, 11 twins), against
+   * The cost estimate for one model-driven entry: 22 episodes (6 controls, 16 twins), against
    * $0.33–0.41 for a full rating's ~450 on the same Flash models (Oct 19–20 re-rating).
    */
   estimateUsd: 0.05,

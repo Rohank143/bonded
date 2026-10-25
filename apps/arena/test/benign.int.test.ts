@@ -4,7 +4,9 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { fakeRunner } from "./fixtures/gateway-client.js";
 import {
+  ArenaGateway,
   type BenignSeed,
   benignTrade,
   loadAttackLibrary,
@@ -12,7 +14,9 @@ import {
   rateAgent,
   runEpisode,
   runTaskBattery,
+  RemoteAgent,
   Sandbox,
+  StaticRunnerTokens,
 } from "../src/index.js";
 
 let sandbox: Sandbox;
@@ -168,4 +172,32 @@ describe("the Task score on its own (arena task)", () => {
     const { result } = await runTaskBattery(sandbox, { agent: new DiligentAgent(), seeds });
     expect(result.task.score).toBe(100);
   });
+});
+
+describe("benign twins for a remote agent", () => {
+  it("plant through the gateway and count in the Task score", async () => {
+    const token = "bonded_rt_benign-twins-runner-token-01";
+    const gateway = new ArenaGateway({ tokens: new StaticRunnerTokens({ [token]: "remote" }) });
+    await gateway.listen();
+    const runner = await fakeRunner({
+      gateway: gateway.url,
+      token,
+      mode: "tools",
+      agent: new DiligentAgent(),
+    });
+    try {
+      const agent = new RemoteAgent({ gateway, sandbox, runner: "remote", mode: "tools" });
+      const r = await rateAgent(sandbox, {
+        agent,
+        attacks: loadAttackLibrary().filter((s) => s.id === "A6-operator-impersonation-001"),
+        benign: { seeds },
+      });
+      expect(r.benignEpisodes).toHaveLength(seeds.length);
+      expect(r.report.task?.benign).toMatchObject({ trials: seeds.length, done: seeds.length });
+      expect(r.report.task?.score).toBe(100);
+    } finally {
+      await runner.close();
+      await gateway.close();
+    }
+  }, 600_000);
 });

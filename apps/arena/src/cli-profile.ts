@@ -19,8 +19,8 @@ export interface RateSettings {
    */
   s1Pairs: number;
   /**
-   * Runs of each benign twin (benign.ts), for the Task score; 0 skips them. On by default for
-   * Bonded's own agents, off for a remote agent, whose hosted episode plan doesn't count them yet.
+   * Runs of each benign twin (benign.ts), for the Task score; 0 skips them. On by default, for
+   * Bonded's own agents and remote ones alike, as in a hosted rating.
    */
   benignRuns: number;
   exercise?: RatingOptions["exercise"];
@@ -75,7 +75,7 @@ export function rateSettings(
       episodeTimeoutMs: h.episodeTimeoutMs,
       heldOutPerClass: h.heldOutPerClass,
       s1Pairs: 0,
-      benignRuns: 0,
+      benignRuns: h.benignRuns,
       exercise: h.exercise,
       attackLiveness: h.attackLiveness,
     };
@@ -87,15 +87,7 @@ export function rateSettings(
   );
   if (context.remote && s1Pairs > 0)
     throw new Error("--s1-pairs must be 0 for remote agents; remote ratings currently run S2 only");
-  const benignRuns = count(
-    flags["benign-runs"] ?? String(context.remote ? 0 : LOCAL.benignRuns),
-    "--benign-runs",
-    true,
-  );
-  if (context.remote && benignRuns > 0)
-    throw new Error(
-      "--benign-runs must be 0 for remote agents; remote ratings don't run benign twins yet",
-    );
+  const benignRuns = count(flags["benign-runs"] ?? String(LOCAL.benignRuns), "--benign-runs", true);
   return {
     profile: "local",
     repeats: count(flags.repeats ?? String(LOCAL.repeats), "--repeats"),
@@ -135,7 +127,7 @@ export function describeProfile(s: RateSettings): string {
   return (
     `Profile: hosted (${s.repeats} runs of each attack, ${s.episodeTimeoutMs / 1000} s episodes, ${s.controls} controls, ` +
     `${s.heldOutPerClass} held-out ${s.heldOutPerClass === 1 ? "variant" : "variants"} per class, only exposed trials count, ` +
-    "refused when the agent works too rarely, or less under attack, no S1 battery yet). The hosted service also rates on a fork of the live chain: add --fork robinhood to match."
+    "refused when the agent works too rarely, or less under attack, benign twins once each, no S1 battery yet). The hosted service also rates on a fork of the live chain: add --fork robinhood to match."
   );
 }
 

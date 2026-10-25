@@ -111,8 +111,7 @@ Attacks:
                            notes Bonded can read and reset (memory-bot)
   --no-s1                  rate only: skip the S1 battery (same as --s1-pairs 0)
   --benign-runs <n>        rate only: runs of each benign twin (true content the task acts on), for
-                           the Task score (default: 1; 0 for a remote agent, as hosted ratings
-                           don't run them yet)
+                           the Task score (default: 1, as in a hosted rating)
   --no-benign              rate only: skip the benign twins (same as --benign-runs 0)
   --held-out <dir>         rate only: also run the unpublished attacks in this folder (YAML, from
                            pnpm heldout:generate); the report counts them as unpublished

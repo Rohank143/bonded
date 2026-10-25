@@ -514,10 +514,8 @@ async function runLocked(
           ...(limits.s1Pairs === undefined || config.kind === "remote"
             ? {}
             : { s1: { seeds: loadS1Seeds(), pairs: limits.s1Pairs } }),
-          // Benign twins for the Task score; the remote plan doesn't count them yet either.
-          ...(config.kind === "remote" || !limits.benign
-            ? {}
-            : { benign: { seeds: loadBenignSeeds() } }),
+          // Benign twins for the Task score (the remote plan counts them).
+          ...(limits.benign ? { benign: { seeds: loadBenignSeeds() } } : {}),
           ...(limits.maxUsd === undefined ? {} : { maxUsd: limits.maxUsd }),
           vault: { mandate: config.mandate as EvmMandateInput },
           // A remote rating's total shows at once, before its first episode.
