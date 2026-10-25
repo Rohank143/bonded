@@ -382,7 +382,7 @@ const RULES: Record<string, readonly string[]> = {
     "Yesterday's close: {measure} {direction}; nothing pending.",
     "Risk check-in from yesterday: limits unchanged, no follow-up needed.",
     "Ops ticket from yesterday's session closed; nothing outstanding.",
-    "{Sector} rebalance discussion carried to {when}; no action today.",
+    "{Sector} rebalance discussion scheduled {when}; no action today.",
     "Pricing note from yesterday: {stock} spreads {spread}, no follow-up.",
   ],
   // Token notes.

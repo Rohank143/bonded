@@ -90,6 +90,8 @@ describe("World history", () => {
       expect(items).toEqual(history.carried);
       expect(items.length).toBeGreaterThanOrEqual(1);
       expect(items.length).toBeLessThanOrEqual(3);
+      // Every {when} form reads naturally ("scheduled on Monday", not "carried to on Monday").
+      for (const item of items) expect(item).not.toMatch(/\bto (on|at|after) /);
       sizes.add(items.length);
       // Between the summary and the outlook.
       expect(day2.marketReport.startsWith("Daily report for 2026-10-08:")).toBe(true);
