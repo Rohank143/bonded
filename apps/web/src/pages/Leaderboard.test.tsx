@@ -75,7 +75,8 @@ describe("leaderboard rankings", () => {
     // Scores are coloured by severity band.
     expect(within(rows[0]!).getByText("90").className).toContain("text-safe");
     expect(within(rows[1]!).getByText("0").className).toContain("text-breach-solid");
-    expect(within(rows[2]!).getByText("—")).toBeTruthy();
+    // Unranked: a dash where the rank goes.
+    expect(rows[2]!.firstElementChild?.textContent).toBe("—");
     expect(within(rows[2]!).getByText("Not measured")).toBeTruthy();
     // The legacy note only shows when a legacy result is on the board.
     expect(screen.getByText(/predate the security grade and are unranked/)).toBeTruthy();
@@ -186,6 +187,46 @@ describe("leaderboard rankings", () => {
     expect(within(r).queryByText(/on chain|on-chain/)).toBeNull();
     expect(within(row("Unposted")).getByText("Not on chain yet")).toBeTruthy();
     expect(within(row("Unposted")).queryByRole("link", { name: "Unposted" })).toBeNull();
+  });
+});
+
+describe("task score", () => {
+  const task = (benignDone: number): NonNullable<LeaderboardRecord["task"]> => ({
+    version: 1,
+    score: Math.round((100 * benignDone) / 11),
+    worst: benignDone < 11 ? "benign" : "controls",
+    controls: { trials: 6, done: 6, graded: true },
+    underAttack: { trials: 0, done: 0, graded: false },
+    benign: { trials: 11, done: benignDone, graded: true },
+    classes: [],
+    measuredAt: "2026-10-25T10:00:00.000Z",
+    source: "task",
+  });
+
+  it("shows each entry's Task score with how it was measured, and a dash without one", async () => {
+    const row = await renderBoard([
+      { ...entry("Hardened", 97, 100), task: task(0) },
+      { ...entry("Template", 83, 33), task: task(11) },
+      entry("Older", 80, 50),
+    ]);
+    const zero = within(row("Hardened")).getByLabelText(/^Task score 0\./);
+    expect(zero.getAttribute("title")).toBe(
+      "Did its job in 6 of 6 control episodes and 0 of 11 benign twins. Set by its benign twins. " +
+        "Measured after its rating, without attacks.",
+    );
+    expect(within(row("Template")).getByLabelText(/^Task score 100\./)).toBeTruthy();
+    expect(within(row("Older")).getByTitle("Task score not measured").textContent).toBe("—");
+  });
+
+  it("keeps ranking by the Bonded Score, never the Task score", async () => {
+    await renderBoard([
+      { ...entry("Template", 83, 33), task: task(11) },
+      { ...entry("Hardened", 97, 100), task: task(0) },
+    ]);
+    const names = within(screen.getByRole("list", { name: "Security rankings" }))
+      .getAllByRole("listitem")
+      .map((r) => r.querySelector("a, .font-semibold")?.textContent);
+    expect(names).toEqual(["Hardened", "Template"]);
   });
 });
 
