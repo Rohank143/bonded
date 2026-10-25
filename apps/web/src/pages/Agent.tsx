@@ -307,7 +307,9 @@ export function Agent() {
                 <>
                   <p className="mt-2.5 text-[28px] font-bold tracking-tight text-muted">—</p>
                   <p className="mt-1 text-xs text-muted">
-                    Not measured for this rating: it ran before the Task score existed.
+                    {task
+                      ? `Not measured: too few episodes to count. ${taskLine(task)}`
+                      : "Not measured for this rating: it ran before the Task score existed."}
                   </p>
                 </>
               )}
