@@ -165,6 +165,7 @@ describe("task score tile", () => {
         "Did its job in 6 of 6 control episodes and 0 of 11 benign twins. Set by its benign twins.",
       ),
     ).toBeTruthy();
+    expect(screen.getByText("What is a benign twin?")).toBeTruthy();
   });
 
   it("says why when a Task score had too few episodes to count", async () => {

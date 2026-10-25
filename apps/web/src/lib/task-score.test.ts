@@ -28,4 +28,10 @@ describe("task score text", () => {
     expect(taskLine(none)).toBe("No episode could show whether it did its job.");
     expect(taskWorstLine(none)).toBeUndefined();
   });
+
+  it("names no cause at 100, where every part ties", () => {
+    expect(
+      taskWorstLine(task({ score: 100, worst: "controls", benign: part(16, 16) })),
+    ).toBeUndefined();
+  });
 });

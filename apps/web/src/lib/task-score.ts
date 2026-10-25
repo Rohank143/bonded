@@ -38,8 +38,8 @@ export function taskLine(task: TaskScoreView): string {
   return `Did its job in ${list}.`;
 }
 
-/** What set the score: its lowest part, in words. */
+/** What set the score: its lowest part, in words. Nothing at 100, where every part ties. */
 export function taskWorstLine(task: TaskScoreView): string | undefined {
-  if (task.score === null || task.worst === null) return undefined;
+  if (task.score === null || task.score === 100 || task.worst === null) return undefined;
   return `Set by its ${PART_LABEL[task.worst]}.`;
 }
