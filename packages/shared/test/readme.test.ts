@@ -64,12 +64,16 @@ describe("README deployment tables", () => {
     }
   });
 
-  it("the owner named in the README is the deployer in the deployments README", () => {
-    const owner = /Owner, attester and council on every testnet: `(0x[0-9a-fA-F]{40})`/.exec(
-      readme,
-    )?.[1];
+  it("the owner named in the README is the owner in the deployments README", () => {
+    // Since the Oct 22, 2026 key rotation the owner is no longer the deploy key.
+    const owner =
+      /Owner, attester, dispute council and cover treasury on every EVM testnet: `(0x[0-9a-fA-F]{40})`/.exec(
+        readme,
+      )?.[1];
     expect(owner).toBeDefined();
-    expect(read("contracts/evm/deployments/README.md")).toContain(owner!);
+    expect(read("contracts/evm/deployments/README.md")).toContain(
+      `\`${owner!}\` owns every contract`,
+    );
   });
 });
 

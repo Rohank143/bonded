@@ -23,7 +23,11 @@ import { workOne } from "../src/worker.js";
 import { workCheckOne } from "../src/check-worker.js";
 import { workPreviewOne } from "../src/preview-worker.js";
 import { ratedAgent } from "../src/sentinel.js";
-import { DEFAULT_REMOTE_POLICY, type RemoteRatingPolicy } from "../src/remote-policy.js";
+import {
+  DEFAULT_REMOTE_POLICY,
+  benignTwins,
+  type RemoteRatingPolicy,
+} from "../src/remote-policy.js";
 import { SecretBox } from "../src/secrets.js";
 import {
   CHECKS_UNAVAILABLE,
@@ -702,7 +706,9 @@ describe("the preview worker", () => {
     const page = await bodyOf(await get(`/previews/${preview.id}`, session));
     const rating = page.rating as Record<string, unknown>;
     expect(["done", "failed"]).toContain(rating.status);
-    expect(rating.progress).toMatchObject({ done: 7, total: 7 });
+    // One attack, 6 controls and the benign twins.
+    const episodes = 7 + benignTwins();
+    expect(rating.progress).toMatchObject({ done: episodes, total: episodes });
     expect(rating.codeHash).toBe(hash(0x5150));
     const report = await bodyOf(await get(`/previews/${preview.id}/report`, session));
     expect(report).toMatchObject({
@@ -730,7 +736,11 @@ describe("the preview worker", () => {
     // Progress: counts and an ETA, and the end.
     const progress = await sse(await get(`/ratings/${runId}/progress`, session));
     expect(progress).toHaveLength(1);
-    expect(progress[0]!.data).toMatchObject({ done: 7, total: 7, etaSeconds: null });
+    expect(progress[0]!.data).toMatchObject({
+      done: episodes,
+      total: episodes,
+      etaSeconds: null,
+    });
     expect(["done", "failed"]).toContain(progress[0]!.data.status);
   }, 240_000);
 
@@ -1698,7 +1708,8 @@ describe("setting up, a new secret, and preview status without polling", () => {
       (done.rating as { progress: { startedAt: string; done: number } }).progress,
     ).toMatchObject({
       startedAt: rating.rows[0]!.progress.startedAt,
-      done: 7,
+      // One attack, 6 controls and the benign twins.
+      done: 7 + benignTwins(),
     });
     // Its status as a stream (a stream token, as an EventSource would use): the state, then the end.
     const token = (
@@ -1712,7 +1723,7 @@ describe("setting up, a new secret, and preview status without polling", () => {
     expect(events).toHaveLength(1);
     expect(events[0]!.data).toMatchObject({
       ratingId: runId,
-      progress: { done: 7, total: 7 },
+      progress: { done: 7 + benignTwins(), total: 7 + benignTwins() },
     });
     expect(["done", "refused", "failed"]).toContain(events[0]!.data.status);
   }, 240_000);
