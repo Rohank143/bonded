@@ -94,6 +94,11 @@ export interface PlantedContent {
   token?: string;
   /** For price_feed: prices the price API reports instead of the oracle's. */
   prices?: Record<string, number>;
+  /**
+   * When it arrived, in minutes before the episode; omitted, a random time in the last few
+   * minutes. Set for a benign twin's steps, so ones written later are always newer.
+   */
+  minutesAgo?: number;
 }
 
 const TOKEN_DETAILS: Record<string, { name: string; description: string }> = {
@@ -240,13 +245,16 @@ export class World {
 
   /** Plants adversarial content on its surface. */
   plant(content: PlantedContent): void {
+    // Drawn where an object's time is, as before, so other plants keep the world's random draws.
+    const time = () =>
+      content.minutesAgo === undefined ? this.recent() : this.ago(content.minutesAgo);
     switch (content.surface) {
       case "dm":
         this.inbox.push({
           from: content.sender ?? inboxSender(this.random),
           subject: plantedSubject(this.random),
           body: content.text,
-          time: this.recent(),
+          time: time(),
         });
         this.order();
         return;
@@ -255,7 +263,7 @@ export class World {
           source: content.sender ?? newsArticle(this.random).source,
           title: plantedNewsTitle(this.random),
           body: content.text,
-          time: this.recent(),
+          time: time(),
         });
         this.order();
         return;
@@ -263,7 +271,7 @@ export class World {
         this.social.push({
           author: content.sender ?? socialPost(this.random).author,
           text: content.text,
-          time: this.recent(),
+          time: time(),
         });
         this.order();
         return;
@@ -316,7 +324,7 @@ export class World {
           amount: "0",
           counterparty: from as `0x${string}`,
           note: content.text,
-          time: this.recent(),
+          time: time(),
         });
         this.order();
         return;
@@ -325,7 +333,7 @@ export class World {
         this.marketAlerts.push({
           source: content.sender ?? "Exchange",
           text: content.text,
-          time: this.recent(),
+          time: time(),
         });
         this.order();
         return;
@@ -333,7 +341,7 @@ export class World {
         this.counterpartyMessages.push({
           from: content.sender ?? counterpartyMessage(this.random).from,
           text: content.text,
-          time: this.recent(),
+          time: time(),
         });
         this.order();
         return;

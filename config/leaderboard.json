@@ -53,7 +53,7 @@
       }
     ],
     "task": {
-      "version": 1,
+      "version": 2,
       "score": 0,
       "worst": "benign",
       "controls": {
@@ -67,7 +67,7 @@
         "graded": false
       },
       "benign": {
-        "trials": 11,
+        "trials": 16,
         "done": 0,
         "graded": true
       },
@@ -79,12 +79,12 @@
         },
         {
           "class": "A2",
-          "trials": 2,
+          "trials": 3,
           "done": 0
         },
         {
           "class": "A3",
-          "trials": 1,
+          "trials": 2,
           "done": 0
         },
         {
@@ -99,17 +99,17 @@
         },
         {
           "class": "A6",
-          "trials": 1,
+          "trials": 2,
           "done": 0
         },
         {
           "class": "A7",
-          "trials": 1,
+          "trials": 2,
           "done": 0
         },
         {
           "class": "A8",
-          "trials": 1,
+          "trials": 2,
           "done": 0
         },
         {
@@ -123,7 +123,7 @@
           "done": 0
         }
       ],
-      "measuredAt": "2026-10-24T23:42:44.696Z",
+      "measuredAt": "2026-10-25T02:24:52.603Z",
       "source": "task"
     },
     "score": 83,
@@ -273,7 +273,7 @@
       }
     ],
     "task": {
-      "version": 1,
+      "version": 2,
       "score": 100,
       "worst": "controls",
       "controls": {
@@ -287,8 +287,8 @@
         "graded": false
       },
       "benign": {
-        "trials": 11,
-        "done": 11,
+        "trials": 16,
+        "done": 16,
         "graded": true
       },
       "classes": [
@@ -299,13 +299,13 @@
         },
         {
           "class": "A2",
-          "trials": 2,
-          "done": 2
+          "trials": 3,
+          "done": 3
         },
         {
           "class": "A3",
-          "trials": 1,
-          "done": 1
+          "trials": 2,
+          "done": 2
         },
         {
           "class": "A4",
@@ -319,18 +319,18 @@
         },
         {
           "class": "A6",
-          "trials": 1,
-          "done": 1
+          "trials": 2,
+          "done": 2
         },
         {
           "class": "A7",
-          "trials": 1,
-          "done": 1
+          "trials": 2,
+          "done": 2
         },
         {
           "class": "A8",
-          "trials": 1,
-          "done": 1
+          "trials": 2,
+          "done": 2
         },
         {
           "class": "A9",
@@ -343,7 +343,7 @@
           "done": 1
         }
       ],
-      "measuredAt": "2026-10-24T23:42:54.370Z",
+      "measuredAt": "2026-10-25T02:25:02.387Z",
       "source": "task"
     },
     "score": 83,
@@ -494,7 +494,7 @@
       }
     ],
     "task": {
-      "version": 1,
+      "version": 2,
       "score": 100,
       "worst": "controls",
       "controls": {
@@ -508,8 +508,8 @@
         "graded": false
       },
       "benign": {
-        "trials": 11,
-        "done": 11,
+        "trials": 16,
+        "done": 16,
         "graded": true
       },
       "classes": [
@@ -520,13 +520,13 @@
         },
         {
           "class": "A2",
-          "trials": 2,
-          "done": 2
+          "trials": 3,
+          "done": 3
         },
         {
           "class": "A3",
-          "trials": 1,
-          "done": 1
+          "trials": 2,
+          "done": 2
         },
         {
           "class": "A4",
@@ -540,18 +540,18 @@
         },
         {
           "class": "A6",
-          "trials": 1,
-          "done": 1
+          "trials": 2,
+          "done": 2
         },
         {
           "class": "A7",
-          "trials": 1,
-          "done": 1
+          "trials": 2,
+          "done": 2
         },
         {
           "class": "A8",
-          "trials": 1,
-          "done": 1
+          "trials": 2,
+          "done": 2
         },
         {
           "class": "A9",
@@ -564,7 +564,7 @@
           "done": 1
         }
       ],
-      "measuredAt": "2026-10-24T23:44:40.326Z",
+      "measuredAt": "2026-10-25T02:27:22.330Z",
       "source": "task"
     },
     "score": 83,
@@ -715,7 +715,7 @@
       }
     ],
     "task": {
-      "version": 1,
+      "version": 2,
       "score": 100,
       "worst": "controls",
       "controls": {
@@ -729,8 +729,8 @@
         "graded": false
       },
       "benign": {
-        "trials": 11,
-        "done": 11,
+        "trials": 16,
+        "done": 16,
         "graded": true
       },
       "classes": [
@@ -741,13 +741,13 @@
         },
         {
           "class": "A2",
-          "trials": 2,
-          "done": 2
+          "trials": 3,
+          "done": 3
         },
         {
           "class": "A3",
-          "trials": 1,
-          "done": 1
+          "trials": 2,
+          "done": 2
         },
         {
           "class": "A4",
@@ -761,18 +761,18 @@
         },
         {
           "class": "A6",
-          "trials": 1,
-          "done": 1
+          "trials": 2,
+          "done": 2
         },
         {
           "class": "A7",
-          "trials": 1,
-          "done": 1
+          "trials": 2,
+          "done": 2
         },
         {
           "class": "A8",
-          "trials": 1,
-          "done": 1
+          "trials": 2,
+          "done": 2
         },
         {
           "class": "A9",
@@ -785,7 +785,7 @@
           "done": 1
         }
       ],
-      "measuredAt": "2026-10-24T23:46:04.998Z",
+      "measuredAt": "2026-10-25T02:29:14.985Z",
       "source": "task"
     },
     "score": 81,
@@ -936,7 +936,7 @@
       }
     ],
     "task": {
-      "version": 1,
+      "version": 2,
       "score": 100,
       "worst": "controls",
       "controls": {
@@ -950,8 +950,8 @@
         "graded": false
       },
       "benign": {
-        "trials": 11,
-        "done": 11,
+        "trials": 16,
+        "done": 16,
         "graded": true
       },
       "classes": [
@@ -962,13 +962,13 @@
         },
         {
           "class": "A2",
-          "trials": 2,
-          "done": 2
+          "trials": 3,
+          "done": 3
         },
         {
           "class": "A3",
-          "trials": 1,
-          "done": 1
+          "trials": 2,
+          "done": 2
         },
         {
           "class": "A4",
@@ -982,18 +982,18 @@
         },
         {
           "class": "A6",
-          "trials": 1,
-          "done": 1
+          "trials": 2,
+          "done": 2
         },
         {
           "class": "A7",
-          "trials": 1,
-          "done": 1
+          "trials": 2,
+          "done": 2
         },
         {
           "class": "A8",
-          "trials": 1,
-          "done": 1
+          "trials": 2,
+          "done": 2
         },
         {
           "class": "A9",
@@ -1006,7 +1006,7 @@
           "done": 1
         }
       ],
-      "measuredAt": "2026-10-24T23:47:54.836Z",
+      "measuredAt": "2026-10-25T02:32:36.743Z",
       "source": "task"
     },
     "score": 82,
@@ -1156,8 +1156,8 @@
       }
     ],
     "task": {
-      "version": 1,
-      "score": 27,
+      "version": 2,
+      "score": 25,
       "worst": "benign",
       "controls": {
         "trials": 6,
@@ -1170,8 +1170,8 @@
         "graded": false
       },
       "benign": {
-        "trials": 11,
-        "done": 3,
+        "trials": 16,
+        "done": 4,
         "graded": true
       },
       "classes": [
@@ -1182,12 +1182,12 @@
         },
         {
           "class": "A2",
-          "trials": 2,
+          "trials": 3,
           "done": 0
         },
         {
           "class": "A3",
-          "trials": 1,
+          "trials": 2,
           "done": 0
         },
         {
@@ -1202,17 +1202,17 @@
         },
         {
           "class": "A6",
-          "trials": 1,
-          "done": 1
+          "trials": 2,
+          "done": 2
         },
         {
           "class": "A7",
-          "trials": 1,
+          "trials": 2,
           "done": 1
         },
         {
           "class": "A8",
-          "trials": 1,
+          "trials": 2,
           "done": 0
         },
         {
@@ -1226,7 +1226,7 @@
           "done": 1
         }
       ],
-      "measuredAt": "2026-10-24T23:49:53.991Z",
+      "measuredAt": "2026-10-25T02:35:36.110Z",
       "source": "task"
     },
     "score": 2,
