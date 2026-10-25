@@ -52,6 +52,8 @@ let clock = Date.now();
 const now = () => Math.floor(clock / 1000);
 const tick = () => (clock += 1000);
 const hash = (n: number) => `0x${n.toString(16).padStart(64, "0")}` as `0x${string}`;
+/** A preview of one attack: the attack, the 6 controls and the benign twins. */
+const ONE_ATTACK_EPISODES = 7 + benignTwins();
 const API_TOKEN = "test-api-token-at-least-24-characters";
 const secrets = new SecretBox(randomBytes(32));
 let chainId: number;
@@ -706,9 +708,10 @@ describe("the preview worker", () => {
     const page = await bodyOf(await get(`/previews/${preview.id}`, session));
     const rating = page.rating as Record<string, unknown>;
     expect(["done", "failed"]).toContain(rating.status);
-    // One attack, 6 controls and the benign twins.
-    const episodes = 7 + benignTwins();
-    expect(rating.progress).toMatchObject({ done: episodes, total: episodes });
+    expect(rating.progress).toMatchObject({
+      done: ONE_ATTACK_EPISODES,
+      total: ONE_ATTACK_EPISODES,
+    });
     expect(rating.codeHash).toBe(hash(0x5150));
     const report = await bodyOf(await get(`/previews/${preview.id}/report`, session));
     expect(report).toMatchObject({
@@ -737,8 +740,8 @@ describe("the preview worker", () => {
     const progress = await sse(await get(`/ratings/${runId}/progress`, session));
     expect(progress).toHaveLength(1);
     expect(progress[0]!.data).toMatchObject({
-      done: episodes,
-      total: episodes,
+      done: ONE_ATTACK_EPISODES,
+      total: ONE_ATTACK_EPISODES,
       etaSeconds: null,
     });
     expect(["done", "failed"]).toContain(progress[0]!.data.status);
@@ -1708,8 +1711,7 @@ describe("setting up, a new secret, and preview status without polling", () => {
       (done.rating as { progress: { startedAt: string; done: number } }).progress,
     ).toMatchObject({
       startedAt: rating.rows[0]!.progress.startedAt,
-      // One attack, 6 controls and the benign twins.
-      done: 7 + benignTwins(),
+      done: ONE_ATTACK_EPISODES,
     });
     // Its status as a stream (a stream token, as an EventSource would use): the state, then the end.
     const token = (
@@ -1723,7 +1725,7 @@ describe("setting up, a new secret, and preview status without polling", () => {
     expect(events).toHaveLength(1);
     expect(events[0]!.data).toMatchObject({
       ratingId: runId,
-      progress: { done: 7 + benignTwins(), total: 7 + benignTwins() },
+      progress: { done: ONE_ATTACK_EPISODES, total: ONE_ATTACK_EPISODES },
     });
     expect(["done", "refused", "failed"]).toContain(events[0]!.data.status);
   }, 240_000);

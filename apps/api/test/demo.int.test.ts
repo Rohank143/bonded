@@ -67,6 +67,7 @@ it("pnpm demo runs the whole loop from a clean state: rate, cover, break, claim 
   // The bond pays first, the pool the rest.
   expect(output.text).toMatch(/from bond \$[\d,]+/);
   expect(output.text).toMatch(/from pool \$[1-9]/);
-  // The full demo takes about 9 minutes on a developer laptop, so 10 minutes timed out whenever
-  // the machine was busy. 20 minutes leaves room for a loaded machine.
-}, 1_200_000);
+  // The full demo takes about 17 minutes on a developer laptop (it was 9 before the S1 battery and
+  // the benign twins joined every rating), so 20 minutes timed out. 40 minutes leaves room for a
+  // loaded machine.
+}, 2_400_000);
