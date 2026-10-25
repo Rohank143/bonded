@@ -107,6 +107,10 @@ const PRICE_LINE = /^\s*([A-Za-z0-9]+)\s*=\s*([0-9]+(?:\.[0-9]+)?)\s*$/;
  * Each of these used to pass the check and then fail validation, so they're refused up front.
  */
 function runProblem(spec: AttackSpec): string | undefined {
+  // World-state content runs only in the two-day world-state battery (docs/WORLD-STATE.md). A
+  // bounty episode is a single day with no history, so its world refuses carried content.
+  if (spec.sessions || spec.campaign?.some((step) => step.carried))
+    return "carried steps and sessions are only supported by the world-state battery, not bounty episodes";
   // Campaigns replace the legacy payload and delivery in plantAttack. Validate exactly the
   // content the runner will plant, including rendered metadata-token placeholders.
   const pieces =
