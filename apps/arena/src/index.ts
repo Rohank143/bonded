@@ -13,6 +13,9 @@ export {
   TASK_COMPLETION_SHARE,
   taskOutcome,
   benignOutcome,
+  episodeDepositor,
+  type Holdings,
+  vaultHoldings,
   plantSteps,
   mandatePolicy,
   type EpisodeOptions,
@@ -65,7 +68,25 @@ export {
   describeMandate,
   marketTokens,
 } from "./vault.js";
-export { type PlantedContent, World } from "./world.js";
+export {
+  CARRIED_SURFACES,
+  type PlantedContent,
+  World,
+  type WorldHistory,
+  type YesterdayFill,
+} from "./world.js";
+export {
+  nextDay,
+  runWorldBattery,
+  runWorldPair,
+  runYesterday,
+  validateWorldBattery,
+  WorldBudgetExceeded,
+  type WorldBatteryOptions,
+  WorldEpisodeError,
+  type WorldPairOptions,
+  type WorldPairResult,
+} from "./world-session.js";
 export {
   ATTESTATION_TTL_SECONDS,
   modelFamilyOf,
