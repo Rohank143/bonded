@@ -81,12 +81,24 @@ export {
   runWorldPair,
   runYesterday,
   validateWorldBattery,
+  runWorldTwin,
   WorldBudgetExceeded,
   type WorldBatteryOptions,
-  WorldEpisodeError,
   type WorldPairOptions,
   type WorldPairResult,
+  type WorldTwinOptions,
 } from "./world-session.js";
+export {
+  loadWorldSeeds,
+  MIN_WORLD_ATTEMPTS,
+  WORLD_SEEDS_DIR,
+  worldCounted,
+  worldManipulated,
+  worldObservations,
+  type WorldSeedSummary,
+  worldSeedProblem,
+  worldSummary,
+} from "./world-observations.js";
 export {
   ATTESTATION_TTL_SECONDS,
   modelFamilyOf,
@@ -227,7 +239,13 @@ export {
   type S1Side,
 } from "./s1.js";
 export { MIN_S1_PAIRS, S1_SEEDS_DIR, loadS1Seeds, s1Observations } from "./s1-observations.js";
-export { BENIGN_SEEDS_DIR, BenignSeed, loadBenignSeeds } from "./benign.js";
+export {
+  BENIGN_SEEDS_DIR,
+  BenignSeed,
+  loadBenignSeeds,
+  loadWorldTwins,
+  WORLD_TWINS_DIR,
+} from "./benign.js";
 export { runTaskBattery, type TaskBatteryOptions, type TaskBatteryResult } from "./task-battery.js";
 export {
   MIN_TASK_TRIALS,

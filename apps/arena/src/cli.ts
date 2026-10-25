@@ -48,9 +48,10 @@ import {
 import { FileHeldOutLedger, freshHeldOut } from "./held-out-fresh.js";
 import { isMemoryCapable } from "./memory-attempt.js";
 import { loadMemorySeeds } from "./memory-observations.js";
+import { loadWorldSeeds } from "./world-observations.js";
 import { rateAgent } from "./rate.js";
 import { loadS1Seeds } from "./s1-observations.js";
-import { loadBenignSeeds } from "./benign.js";
+import { loadBenignSeeds, loadWorldTwins } from "./benign.js";
 import { runTaskBattery } from "./task-battery.js";
 import { sentinelInfo } from "./sentinel-info.js";
 import { cascadeFromPolicy } from "./sentinel-policy.js";
@@ -113,6 +114,11 @@ Attacks:
   --benign-runs <n>        rate only: runs of each benign twin (true content the task acts on), for
                            the Task score (default: 1, as in a hosted rating)
   --no-benign              rate only: skip the benign twins (same as --benign-runs 0)
+  --world-rounds <n>       rate only: attempts per world-state seed (two-day episodes with false
+                           claims about yesterday, docs/WORLD-STATE.md), folded into the security
+                           grade; its twins join the benign twins (default: 3; 0 for a remote agent,
+                           as hosted ratings don't run it yet)
+  --no-world               rate only: skip the world-state battery (same as --world-rounds 0)
   --held-out <dir>         rate only: also run the unpublished attacks in this folder (YAML, from
                            pnpm heldout:generate); the report counts them as unpublished
   --list                   list the attack library and exit
@@ -192,6 +198,8 @@ async function main(): Promise<number> {
       "no-s1": { type: "boolean", default: false },
       "benign-runs": { type: "string" },
       "no-benign": { type: "boolean", default: false },
+      "world-rounds": { type: "string" },
+      "no-world": { type: "boolean", default: false },
       profile: { type: "string" },
       "held-out-model": { type: "string" },
       "held-out-max-usd": { type: "string", default: "0.25" },
@@ -239,6 +247,8 @@ async function main(): Promise<number> {
       ...(values["s1-pairs"] !== undefined ? { "s1-pairs": values["s1-pairs"] } : {}),
       ...(values["no-benign"] ? { "benign-runs": "0" } : {}),
       ...(values["benign-runs"] !== undefined ? { "benign-runs": values["benign-runs"] } : {}),
+      ...(values["no-world"] ? { "world-rounds": "0" } : {}),
+      ...(values["world-rounds"] !== undefined ? { "world-rounds": values["world-rounds"] } : {}),
     },
     { remote, command },
   );
@@ -435,6 +445,17 @@ ${agent.name}: Task score ${t.score === null ? "not measured" : `${t.score}/100 
           ? { benign: { seeds: loadBenignSeeds(), runs: settings.benignRuns } }
           : {}),
         ...(isMemoryCapable(agent) ? { memory: { seeds: loadMemorySeeds(), rounds: 1 } } : {}),
+        // The world-state battery (two days on one vault, false claims about yesterday), on by
+        // default for Bonded's own agents. Its twins run when the benign twins do.
+        ...(settings.worldRounds > 0
+          ? {
+              worldState: {
+                seeds: loadWorldSeeds(),
+                twins: settings.benignRuns > 0 ? loadWorldTwins() : [],
+                rounds: settings.worldRounds,
+              },
+            }
+          : {}),
         ...(settings.exercise ? { exercise: settings.exercise } : {}),
         ...(settings.attackLiveness ? { attackLiveness: settings.attackLiveness } : {}),
         ...(vault ? { vault } : {}),

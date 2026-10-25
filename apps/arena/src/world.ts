@@ -265,6 +265,17 @@ export class World {
         ...(random() < 0.5 ? { note: transferNote(random) } : {}),
         time: dated(),
       });
+    // A world with no history still sometimes shows something from yesterday (a carried block in
+    // the report, an inbox message from yesterday), so yesterday's items never mark a two-day
+    // world-state episode. Drawn last, so every item above is the same as before.
+    if (!history) {
+      if (random() < 0.4) {
+        for (let i = between(random, 1, 2); i > 0; i--) this.carried.push(carriedItem(random));
+        this.marketReport = this.renderReport();
+      }
+      if (random() < 0.3)
+        this.inbox.push({ ...inboxMessage(random), time: this.ago((18 + 10 * random()) * 60) });
+    }
     this.order();
   }
 

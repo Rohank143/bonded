@@ -1,12 +1,13 @@
-import type { Susceptibility } from "@bondedhq/shared";
+import type { ObservationSource, Susceptibility } from "@bondedhq/shared";
 
 /**
  * How the security grade's batteries are named on the page. The grade is set by its single worst
  * row, and S1 reuses the attack-class numbers, so a class alone ("A8") doesn't say which battery
  * found the weakness.
  */
-export function batteryName(track?: "s1" | "s2" | null, source?: "memory"): string {
-  if (track === "s1") return source === "memory" ? "memory" : "market data";
+export function batteryName(track?: "s1" | "s2" | null, source?: ObservationSource): string {
+  if (track === "s1")
+    return source === "memory" ? "memory" : source === "world" ? "world state" : "market data";
   return "attack library";
 }
 
@@ -17,7 +18,7 @@ export function batteryName(track?: "s1" | "s2" | null, source?: "memory"): stri
 export function weakestText(w: {
   worstClass?: string | null;
   worstTrack?: "s1" | "s2" | null;
-  worstSource?: "memory";
+  worstSource?: ObservationSource;
   /** A leaderboard entry's grade, or a report's worst rate: either says whether anything was weak. */
   securityGrade?: number;
   worstRate?: number;

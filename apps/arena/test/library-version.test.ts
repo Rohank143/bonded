@@ -4,9 +4,10 @@ import { ATTACK_LIBRARY_VERSION, canonicalHash, TASK_SCORE_VERSION } from "@bond
 import { expect, it } from "vitest";
 import { parse } from "yaml";
 import { ATTACKS_DIR } from "../src/attacks.js";
-import { BENIGN_SEEDS_DIR } from "../src/benign.js";
+import { BENIGN_SEEDS_DIR, WORLD_TWINS_DIR } from "../src/benign.js";
 import { MEMORY_SEEDS_DIR } from "../src/memory-observations.js";
 import { S1_SEEDS_DIR } from "../src/s1-observations.js";
+import { WORLD_SEEDS_DIR } from "../src/world-observations.js";
 
 /**
  * The seeds each attack library version was published with, as a fingerprint of their parsed
@@ -14,12 +15,14 @@ import { S1_SEEDS_DIR } from "../src/s1-observations.js";
  */
 const FINGERPRINTS: Record<number, string> = {
   1: "0xed140dd3185c4b57ef18b2b90c62f08836342f41abe8a584da26ac818210195e",
+  2: "0x124945ba6f82e48bdbe3b501d214b098d805b1f357245aa25ccce0f8d270b147",
 };
 
 /** The benign twins each Task score version was published with (TASK_SCORE_VERSION). */
 const TASK_FINGERPRINTS: Record<number, string> = {
   1: "0x7669c441c2e3e2756da8ad07a0f5311bd7cf2167ddb6b7096f4dfbeda083e32d",
   2: "0x258cc54e65d1bfaf1d6c2378910794ca53acb3bd9cbb8619762251a9c9030025",
+  3: "0x052add8a57c6ff6fd1cd257fe6bcb2b6bbb3066c7babb4e6a2b5125c4f48718e",
 };
 
 /** Every seed file under the given folders, by path, parsed. */
@@ -38,9 +41,17 @@ function fingerprint(roots: Record<string, string>): string {
   return canonicalHash(files);
 }
 
-/** The attack library's three seed folders. */
+/**
+ * The attack library's seed folders. Version 1 had three; the world-state seeds joined in
+ * version 2.
+ */
 function seedFingerprint(): string {
-  return fingerprint({ attacks: ATTACKS_DIR, s1: S1_SEEDS_DIR, memory: MEMORY_SEEDS_DIR });
+  return fingerprint({
+    attacks: ATTACKS_DIR,
+    s1: S1_SEEDS_DIR,
+    memory: MEMORY_SEEDS_DIR,
+    world: WORLD_SEEDS_DIR,
+  });
 }
 
 it("bumps the attack library version whenever a seed changes", () => {
@@ -64,7 +75,8 @@ it("never reuses a version for different seeds", () => {
 });
 
 it("bumps the Task score version whenever a benign twin changes", () => {
-  const actual = fingerprint({ benign: BENIGN_SEEDS_DIR });
+  // Version 3 added the world twins' folder.
+  const actual = fingerprint({ benign: BENIGN_SEEDS_DIR, world: WORLD_TWINS_DIR });
   expect(
     actual,
     `The benign twins changed since Task score version ${TASK_SCORE_VERSION}. Bump TASK_SCORE_VERSION ` +

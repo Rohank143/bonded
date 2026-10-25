@@ -142,6 +142,21 @@ export const CampaignStep = z.object({
    * inbox, a market step into yesterday's alerts, a tx_history step into yesterday's transfers.
    */
   carried: z.boolean().optional(),
+  /**
+   * For a carried step of a world-state seed: what the claim contradicts, so an agent that checks
+   * can tell it's false. The seed check verifies it against the seed's own yesterday
+   * (apps/arena/src/world-observations.ts):
+   * - `holdings`: the claim says yesterday bought this token, but yesterday's trades didn't, so
+   *   the vault doesn't hold it;
+   * - `mandate`: the claim asks for what the mandate forbids: `destination` a transfer or
+   *   approval to an outside address, `limit` a trade over the per-trade limit.
+   */
+  contradicts: z
+    .union([
+      z.strictObject({ holdings: z.string().min(1).max(32) }),
+      z.strictObject({ mandate: z.enum(["destination", "limit"]) }),
+    ])
+    .optional(),
 });
 export type CampaignStep = z.infer<typeof CampaignStep>;
 

@@ -23,6 +23,12 @@ export interface RateSettings {
    * Bonded's own agents and remote ones alike, as in a hosted rating.
    */
   benignRuns: number;
+  /**
+   * Attempts per world-state seed (docs/WORLD-STATE.md), folded into the security grade; 0 skips
+   * the battery. On by default for Bonded's own agents, off for a remote agent, as in a hosted
+   * rating, whose time budget doesn't plan it yet.
+   */
+  worldRounds: number;
   exercise?: RatingOptions["exercise"];
   attackLiveness?: RatingOptions["attackLiveness"];
 }
@@ -35,6 +41,7 @@ export interface RateFlags {
   "held-out-fresh"?: string;
   "s1-pairs"?: string;
   "benign-runs"?: string;
+  "world-rounds"?: string;
 }
 
 const LOCAL = {
@@ -44,6 +51,7 @@ const LOCAL = {
   heldOutPerClass: 1,
   s1Pairs: 2,
   benignRuns: 1,
+  worldRounds: 3,
 };
 
 /**
@@ -76,6 +84,7 @@ export function rateSettings(
       heldOutPerClass: h.heldOutPerClass,
       s1Pairs: 0,
       benignRuns: h.benignRuns,
+      worldRounds: 0,
       exercise: h.exercise,
       attackLiveness: h.attackLiveness,
     };
@@ -88,6 +97,11 @@ export function rateSettings(
   if (context.remote && s1Pairs > 0)
     throw new Error("--s1-pairs must be 0 for remote agents; remote ratings currently run S2 only");
   const benignRuns = count(flags["benign-runs"] ?? String(LOCAL.benignRuns), "--benign-runs", true);
+  const worldRounds = count(
+    flags["world-rounds"] ?? String(context.remote ? 0 : LOCAL.worldRounds),
+    "--world-rounds",
+    true,
+  );
   return {
     profile: "local",
     repeats: count(flags.repeats ?? String(LOCAL.repeats), "--repeats"),
@@ -104,6 +118,7 @@ export function rateSettings(
     ),
     s1Pairs,
     benignRuns,
+    worldRounds,
   };
 }
 
@@ -123,11 +138,11 @@ export function ownAgentTimeout(
 /** The profile in a line, for the CLI to print before it rates. */
 export function describeProfile(s: RateSettings): string {
   if (s.profile === "local")
-    return `Profile: local (${s.repeats} ${s.repeats === 1 ? "run" : "runs"} of each attack, ${s.controls} controls, ${s.episodeTimeoutMs / 1000} s episodes, ${s.s1Pairs ? `S1 market-data battery at ${s.s1Pairs} ${s.s1Pairs === 1 ? "pair" : "pairs"} a seed` : "no S1 battery"}, ${s.benignRuns ? `benign twins ${s.benignRuns === 1 ? "once" : `${s.benignRuns} times`} each` : "no benign twins"}). Use --profile hosted to rate as the hosted service does.`;
+    return `Profile: local (${s.repeats} ${s.repeats === 1 ? "run" : "runs"} of each attack, ${s.controls} controls, ${s.episodeTimeoutMs / 1000} s episodes, ${s.s1Pairs ? `S1 market-data battery at ${s.s1Pairs} ${s.s1Pairs === 1 ? "pair" : "pairs"} a seed` : "no S1 battery"}, ${s.benignRuns ? `benign twins ${s.benignRuns === 1 ? "once" : `${s.benignRuns} times`} each` : "no benign twins"}, ${s.worldRounds ? `world-state battery at ${s.worldRounds} ${s.worldRounds === 1 ? "attempt" : "attempts"} a seed` : "no world-state battery"}). Use --profile hosted to rate as the hosted service does.`;
   return (
     `Profile: hosted (${s.repeats} runs of each attack, ${s.episodeTimeoutMs / 1000} s episodes, ${s.controls} controls, ` +
     `${s.heldOutPerClass} held-out ${s.heldOutPerClass === 1 ? "variant" : "variants"} per class, only exposed trials count, ` +
-    "refused when the agent works too rarely, or less under attack, benign twins once each, no S1 battery yet). The hosted service also rates on a fork of the live chain: add --fork robinhood to match."
+    "refused when the agent works too rarely, or less under attack, benign twins once each, no S1 or world-state battery yet). The hosted service also rates on a fork of the live chain: add --fork robinhood to match."
   );
 }
 

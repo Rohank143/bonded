@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { AttackClassId, CampaignStep } from "@bondedhq/shared";
+import { AttackClassId, CampaignStep, WorldSessions } from "@bondedhq/shared";
 import { parse } from "yaml";
 import { z } from "zod";
 import { benignTrade } from "./goal-trade.js";
@@ -17,6 +17,13 @@ import { benignTrade } from "./goal-trade.js";
  * into the Task score (task-score.ts), never into the security grade or the insurance score.
  */
 export const BENIGN_SEEDS_DIR = fileURLToPath(new URL("../benign-seeds", import.meta.url));
+
+/**
+ * World twins (apps/arena/world-twins): benign twins that run over two days on one vault
+ * (world-session.ts, runWorldTwin), with true content carried from yesterday. Kept apart from
+ * benign-seeds, whose twins run as single-day episodes that refuse carried content.
+ */
+export const WORLD_TWINS_DIR = fileURLToPath(new URL("../world-twins", import.meta.url));
 
 /** The stock tokens a benign twin may buy: every one is in the demo mandate. */
 const STOCK = z.enum(["tTSLA", "tAMZN", "tNVDA"]);
@@ -39,14 +46,29 @@ export const BenignSeed = z
      * order the content replaced, or the options it ruled out).
      */
     expect: z.object({
-      buy: z.object({ token: STOCK, amountUsd: z.number().positive().max(5_000) }),
+      buy: z.object({
+        token: STOCK,
+        amountUsd: z.number().positive().max(5_000),
+        /**
+         * The most the buy may be, in USD at the oracle, when the content sets a size the agent
+         * must not exceed (a cap lowered today): buying yesterday's larger size then fails.
+         */
+        maxUsd: z.number().positive().max(5_000).optional(),
+      }),
       avoid: z.array(STOCK).default([]),
     }),
+    /** A world twin's yesterday (WORLD_TWINS_DIR): the trades Bonded makes on day 1. */
+    sessions: WorldSessions.optional(),
     tags: z.array(z.string()).default([]),
   })
   .superRefine((seed, ctx) => {
     if (seed.expect.avoid.includes(seed.expect.buy.token))
       ctx.addIssue({ code: "custom", message: "expect.avoid must not include the token to buy" });
+    const { amountUsd, maxUsd } = seed.expect.buy;
+    if (maxUsd !== undefined && maxUsd < amountUsd)
+      ctx.addIssue({ code: "custom", message: "expect.buy.maxUsd must be at least amountUsd" });
+    if (seed.steps.some((step) => step.carried) && !seed.sessions)
+      ctx.addIssue({ code: "custom", message: "carried steps need sessions.yesterday" });
     // The goal must not name the right order itself: an agent that never reads would pass.
     const standing = benignTrade(seed.goal);
     if (standing && standing.tokenOut.toLowerCase() === seed.expect.buy.token.toLowerCase())
@@ -57,8 +79,26 @@ export const BenignSeed = z
   });
 export type BenignSeed = z.infer<typeof BenignSeed>;
 
-/** Loads and validates every benign twin. Throws on any invalid file or duplicate id. */
+/**
+ * Loads and validates every single-day benign twin. Throws on any invalid file, a duplicate id, or
+ * a world twin (one with sessions), which belongs in WORLD_TWINS_DIR.
+ */
 export function loadBenignSeeds(dir: string = BENIGN_SEEDS_DIR): BenignSeed[] {
+  const seeds = loadTwins(dir);
+  const world = seeds.find((s) => s.sessions);
+  if (world) throw new Error(`${world.id}: a twin with sessions is a world twin (world-twins/)`);
+  return seeds;
+}
+
+/** Loads and validates every world twin: each has a yesterday (sessions). */
+export function loadWorldTwins(dir: string = WORLD_TWINS_DIR): BenignSeed[] {
+  const seeds = loadTwins(dir);
+  const single = seeds.find((s) => !s.sessions);
+  if (single) throw new Error(`${single.id}: a world twin needs sessions.yesterday`);
+  return seeds;
+}
+
+function loadTwins(dir: string): BenignSeed[] {
   const seeds: BenignSeed[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true, recursive: true })) {
     if (!entry.isFile() || !/\.ya?ml$/.test(entry.name)) continue;

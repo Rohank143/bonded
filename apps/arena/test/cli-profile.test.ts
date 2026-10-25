@@ -12,9 +12,11 @@ describe("arena rate --profile", () => {
       controls: 6,
       episodeTimeoutMs: 240_000,
       heldOutPerClass: 1,
-      // A remote agent skips S1 by default and runs the benign twins, as a hosted rating does.
+      // A remote agent skips S1 and the world-state battery by default and runs the benign twins,
+      // as a hosted rating does.
       s1Pairs: 0,
       benignRuns: 1,
+      worldRounds: 0,
     });
     expect(
       rateSettings("local", { repeats: "5", controls: "0", "episode-timeout": "30" }, rate),
@@ -53,6 +55,21 @@ describe("arena rate --profile", () => {
     expect(describeProfile(rateSettings("hosted", {}, rate))).toMatch(/benign twins once each/);
   });
 
+  it("runs the world-state battery by default for Bonded's own agents, overridable", () => {
+    const own = { remote: false, command: "rate" };
+    expect(rateSettings(undefined, {}, own).worldRounds).toBe(3);
+    expect(rateSettings(undefined, { "world-rounds": "0" }, own).worldRounds).toBe(0);
+    expect(rateSettings(undefined, { "world-rounds": "5" }, own).worldRounds).toBe(5);
+    expect(rateSettings(undefined, {}, rate).worldRounds).toBe(0);
+    expect(rateSettings(undefined, { "world-rounds": "1" }, rate).worldRounds).toBe(1);
+    expect(rateSettings("hosted", {}, rate).worldRounds).toBe(0);
+    expect(() => rateSettings(undefined, { "world-rounds": "-1" }, own)).toThrow(/--world-rounds/);
+    expect(describeProfile(rateSettings(undefined, {}, own))).toMatch(
+      /world-state battery at 3 attempts a seed/,
+    );
+    expect(describeProfile(rateSettings(undefined, {}, rate))).toMatch(/no world-state battery/);
+  });
+
   it("reports the effective timeout for built-in ratings and accepts an override", () => {
     const own = { remote: false, command: "rate" };
     expect(rateSettings(undefined, {}, own).episodeTimeoutMs).toBe(300_000);
@@ -70,6 +87,7 @@ describe("arena rate --profile", () => {
       heldOutPerClass: 1,
       s1Pairs: 0,
       benignRuns: 1,
+      worldRounds: 0,
       exercise: "exposed",
       attackLiveness: "refuse",
     });

@@ -70,7 +70,10 @@ export function entryFromRating(
         }
       : {}),
     ...(report.s1?.length ? { s1Classes: s1Classes(report.s1) } : {}),
-    ...(report.memory?.seeds.length ? { memoryClasses: memoryClasses(report.memory.seeds) } : {}),
+    ...(report.memory?.seeds.length ? { memoryClasses: batteryClasses(report.memory.seeds) } : {}),
+    ...(report.worldState?.seeds.length
+      ? { worldClasses: batteryClasses(report.worldState.seeds) }
+      : {}),
     ...(report.task ? { task: entryTask(report.task, report.startedAt, "rating") } : {}),
     score: report.scoring.score,
     tier: report.scoring.tier,
@@ -142,9 +145,9 @@ function s1Classes(
   return [...by.values()].sort((a, b) => a.class.localeCompare(b.class));
 }
 
-/** The memory battery's per-seed rows at class level. */
-function memoryClasses(
-  rows: NonNullable<RatingReport["memory"]>["seeds"],
+/** The memory or world-state battery's per-seed rows at class level. */
+function batteryClasses(
+  rows: readonly { class: string; countedAttempts: number; manipulated: number; graded: boolean }[],
 ): NonNullable<LeaderboardEntry["memoryClasses"]> {
   const by = new Map<string, NonNullable<LeaderboardEntry["memoryClasses"]>[number]>();
   for (const r of rows) {
