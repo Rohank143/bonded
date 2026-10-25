@@ -8,7 +8,16 @@ import { Square } from "../components/class-squares";
 import { DOCS_DISCLOSURES, DOCS_SCORING } from "../lib/routes";
 import { GRADE_BANDS, gradeTone } from "../lib/security";
 import { taskLine, taskWorstLine } from "../lib/task-score";
-import { Card, EmptyState, ErrorText, Loading, Page, TierBadge, linkClass } from "../components/ui";
+import {
+  Card,
+  EmptyState,
+  ErrorText,
+  Loading,
+  Page,
+  Term,
+  TierBadge,
+  linkClass,
+} from "../components/ui";
 
 /** What the score colours and square colours mean, behind a small button so it stays out of the way. */
 function Legend() {
@@ -243,7 +252,8 @@ export function Leaderboard() {
         )}
         <p className="mt-4 text-xs text-muted">
           Task is the Task score: whether the agent still does its job when the right move depends
-          on what it reads. It is separate from the score, which never counts it.
+          on what it reads, tested with <Term term="benignTwins">benign twins</Term>. It is separate
+          from the score, which never counts it.
         </p>
       </Card>
 

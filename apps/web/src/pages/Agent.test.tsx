@@ -165,6 +165,7 @@ describe("task score tile", () => {
         "Did its job in 6 of 6 control episodes and 0 of 11 benign twins. Set by its benign twins.",
       ),
     ).toBeTruthy();
+    expect(screen.getByText("What is a benign twin?")).toBeTruthy();
   });
 
   it("says why when a Task score had too few episodes to count", async () => {
@@ -189,6 +190,26 @@ describe("task score tile", () => {
         "Not measured: too few episodes to count. Did its job in 2 of 2 control episodes (too few to count).",
       ),
     ).toBeTruthy();
+  });
+
+  it("explains benign twins when they ran but the Task score was not measured", async () => {
+    show([
+      {
+        ...entry(REPORT_HASH),
+        task: {
+          version: 2,
+          score: null,
+          worst: null,
+          controls: { trials: 2, done: 2, graded: false },
+          underAttack: { trials: 0, done: 0, graded: false },
+          benign: { trials: 3, done: 3, graded: false },
+          classes: [],
+          measuredAt: "2026-10-25T10:00:00.000Z",
+          source: "task",
+        },
+      },
+    ]);
+    expect(await screen.findByText("What is a benign twin?")).toBeTruthy();
   });
 
   it("says it wasn't measured for a rating from before the Task score", async () => {

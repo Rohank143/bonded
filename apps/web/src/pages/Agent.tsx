@@ -313,6 +313,11 @@ export function Agent() {
                   </p>
                 </>
               )}
+              {task && task.benign.trials > 0 && (
+                <p className="mt-1 text-xs text-muted">
+                  <Term term="benignTwins">What is a benign twin?</Term>
+                </p>
+              )}
             </div>
             <Tile
               label="Insurance score"

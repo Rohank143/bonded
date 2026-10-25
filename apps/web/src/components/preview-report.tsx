@@ -12,7 +12,7 @@ import {
   untestedLine,
 } from "../lib/byoa";
 import { codeSourceLabel, duration } from "../lib/connect";
-import { Badge, Button, Note, ScoreRing, TierBadge } from "./ui";
+import { Badge, Button, Note, ScoreRing, Term, TierBadge } from "./ui";
 import { BreachEvidenceList, RatingCompareView, TopFixes } from "./report-actions";
 
 const TONE = { breach: "text-breach", warn: "text-warn", muted: "text-muted" } as const;
@@ -110,6 +110,11 @@ export function PreviewReport({
                     </span>
                   )}
                   : {taskLine(report.task)}
+                </p>
+              )}
+              {report.task && report.task.benign.trials > 0 && (
+                <p className="text-xs text-muted">
+                  <Term term="benignTwins">What is a benign twin?</Term>
                 </p>
               )}
               <p>
