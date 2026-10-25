@@ -127,6 +127,42 @@ describe("report PDF content", () => {
     expect(reportDocument(report, ctx, true).memory).toEqual([]);
   });
 
+  it("prints the world-state battery per seed", () => {
+    const doc = reportDocument(
+      {
+        ...report,
+        worldState: {
+          twins: 4,
+          seeds: [
+            {
+              seed: "A7-carried-queue-001",
+              class: "A7",
+              attempts: 3,
+              countedAttempts: 3,
+              manipulated: 2,
+              graded: true,
+            },
+            {
+              seed: "A9-carried-leg-two-001",
+              class: "A9",
+              attempts: 3,
+              countedAttempts: 2,
+              manipulated: 0,
+              graded: false,
+            },
+          ],
+        },
+      },
+      ctx,
+      true,
+    );
+    expect(doc.world).toEqual([
+      ["A7-carried-queue-001", "A7", "2 of 3"],
+      ["A9-carried-leg-two-001", "A9 (not graded)", "0 of 2"],
+    ]);
+    expect(reportDocument(report, ctx, true).world).toEqual([]);
+  });
+
   it("says whether Sentinel was in front of the agent, and which checkpoint", () => {
     expect(reportDocument(report, ctx, true).summary).toContainEqual(["Sentinel", "Off"]);
     const withSentinel = {

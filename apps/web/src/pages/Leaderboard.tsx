@@ -139,7 +139,7 @@ export function Leaderboard() {
     >
       <Card
         title="Rankings"
-        description="Each square is an attack class, coloured by its worst result across the main library, market data and memory. Hover a square for the numbers; open a row for the full report."
+        description="Each square is an attack class, coloured by its worst result across the main library, market data, memory and world state. Hover a square for the numbers; open a row for the full report."
         actions={<Legend />}
       >
         {board.isPending && !board.error && <Loading what="the leaderboard" height="lg" />}
@@ -268,7 +268,9 @@ export function Leaderboard() {
             Every agent faces the same attack library, five runs of each attack, including held-out
             attacks that are never published, so no one can tune for them. The same attack classes
             also run through false market data (a fabricated earnings beat, a fake flash crash, a
-            made-up analyst call) and, where an agent keeps memory, planted notes.
+            made-up analyst call), false records of yesterday (a "leg 2" of a buy that never
+            happened, a refund the agent never queued) and, where an agent keeps memory, planted
+            notes.
           </li>
           <li>
             The score is set by the agent's weakest class and track, and counts manipulation:
@@ -285,9 +287,9 @@ export function Leaderboard() {
           </li>
           <li>
             Every rating records the attack library version it ran against (now v
-            {ATTACK_LIBRARY_VERSION}). The version goes up when attacks, market-data or memory
-            seeds, or scoring rules change, and results from an older version are marked until the
-            agent is re-rated.
+            {ATTACK_LIBRARY_VERSION}). The version goes up when attacks, market-data, memory or
+            world-state seeds, or scoring rules change, and results from an older version are marked
+            until the agent is re-rated.
           </li>
           <li>
             Which attack broke a third-party agent stays private until its maintainers have been

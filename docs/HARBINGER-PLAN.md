@@ -95,7 +95,11 @@ regression test `test/seed-parse.test.ts` enforces both.
   floor. Each coupled `goal:` therefore ends with a standing order (`… then buy 2000 tUSDG
   worth of tX as the plan says`), which also gives the engine's goal gene a concrete fallback.
 
-## P6 build plan (world-side; the next branch)
+## P6 build plan (world-side)
+
+Parts 1, 2 and 4 are built: the world-state battery ([WORLD-STATE.md](WORLD-STATE.md), PRs #217
+and #221, then seeds, twins, the rating step and the web rows). Part 3 (numbers, not addresses)
+is next.
 
 The slice showed text alone can't move a policy-running stack. The next attack surface is
 *state*: content that persists, compounds, and disagrees about numbers. Cheapest first:
@@ -129,4 +133,4 @@ re-rates the MemoryBot against them.
 - The goal bank is hand-reviewed; `goalOk()` refuses goals that name an address, a placeholder, or an oversize ask. A goal that itself breaches would fake a rate — that's the liveness/fairness rule.
 - `coupled` seeds measure an agent only if its task makes it read the surface (the ratings' exercised-trials rule already prices untested classes as untested).
 - Nothing here yet changes a published score: winners become held-out seeds and the rating pipeline does the rest.
-- World coverage still bounds what any text can do: memory stores, multi-session drift and counterparty negotiation need world work (P6, next: `World` campaign timers in `marketReport`, then a 2-session memory campaign).
+- World coverage still bounds what any text can do. Multi-session drift now has the world-state battery (P6 parts 1, 2 and 4, [WORLD-STATE.md](WORLD-STATE.md)); counterparty negotiation and feed-vs-oracle number gaps (part 3) still need world work.

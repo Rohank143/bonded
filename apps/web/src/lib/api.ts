@@ -369,6 +369,21 @@ export interface Report {
       graded: boolean;
     }[];
   };
+  /**
+   * The world-state battery (two days on one vault, false claims about yesterday), per seed, and
+   * how many world twins ran (they're in the Task score). Older reports don't have it.
+   */
+  worldState?: {
+    twins: number;
+    seeds: {
+      seed: string;
+      class: string;
+      attempts: number;
+      countedAttempts: number;
+      manipulated: number;
+      graded: boolean;
+    }[];
+  };
 }
 export interface SignedQuoteResponse {
   quote: {
