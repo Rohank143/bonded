@@ -35,7 +35,7 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { createApi } from "../src/index.js";
 import { gatewayAgents } from "../src/remote-agent.js";
-import { DEFAULT_REMOTE_POLICY } from "../src/remote-policy.js";
+import { DEFAULT_REMOTE_POLICY, benignTwins } from "../src/remote-policy.js";
 import { DbRunnerAuth, RunnerPresenceWriter } from "../src/runners.js";
 import { workOne } from "../src/worker.js";
 import { postgres } from "./postgres.js";
@@ -397,7 +397,8 @@ it("stops a remote rating at the agent's first failure, for good, and shows the 
   const run = await json(await app.request(`/arena/runs/${runId}`));
   expect(run.status).toBe("failed");
   // The system's own reason; what the runner said is kept apart.
-  expect(run.error).toBe("stopped: the agent failed in episode 1 of 8");
+  // Of the two attacks, the 6 controls and the benign twins.
+  expect(run.error).toBe(`stopped: the agent failed in episode 1 of ${8 + benignTwins()}`);
   // Failed for good: no retry is queued.
   expect(
     (await pg.db.pool.query("SELECT status FROM jobs WHERE id=$1", [runId])).rows[0].status,
@@ -423,7 +424,12 @@ it("stops a remote rating past its time budget", async () => {
     selectAttacks: (attacks) => attacks.filter((a) => a.id === "A6-operator-impersonation-001"),
   });
   const run = await json(await app.request(`/arena/runs/${runId}`));
-  expect(run.error).toMatch(/^stopped: the rating ran past its 1-second budget after 1 of 7/);
+  // Of the one attack, the 6 controls and the benign twins.
+  expect(run.error).toMatch(
+    new RegExp(
+      `^stopped: the rating ran past its 1-second budget after 1 of ${7 + benignTwins()} `,
+    ),
+  );
   // Charged to the agent only if the agent took most of the time; otherwise it is retried.
   if (/the agent took/.test(String(run.error))) expect(run.status).toBe("failed");
   else expect(run.status).toBe("queued");

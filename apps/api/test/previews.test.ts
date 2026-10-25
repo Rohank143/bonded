@@ -23,7 +23,11 @@ import { workOne } from "../src/worker.js";
 import { workCheckOne } from "../src/check-worker.js";
 import { workPreviewOne } from "../src/preview-worker.js";
 import { ratedAgent } from "../src/sentinel.js";
-import { DEFAULT_REMOTE_POLICY, type RemoteRatingPolicy } from "../src/remote-policy.js";
+import {
+  DEFAULT_REMOTE_POLICY,
+  benignTwins,
+  type RemoteRatingPolicy,
+} from "../src/remote-policy.js";
 import { SecretBox } from "../src/secrets.js";
 import {
   CHECKS_UNAVAILABLE,
@@ -48,6 +52,8 @@ let clock = Date.now();
 const now = () => Math.floor(clock / 1000);
 const tick = () => (clock += 1000);
 const hash = (n: number) => `0x${n.toString(16).padStart(64, "0")}` as `0x${string}`;
+/** A preview of one attack: the attack, the 6 controls and the benign twins. */
+const ONE_ATTACK_EPISODES = 7 + benignTwins();
 const API_TOKEN = "test-api-token-at-least-24-characters";
 const secrets = new SecretBox(randomBytes(32));
 let chainId: number;
@@ -702,7 +708,10 @@ describe("the preview worker", () => {
     const page = await bodyOf(await get(`/previews/${preview.id}`, session));
     const rating = page.rating as Record<string, unknown>;
     expect(["done", "failed"]).toContain(rating.status);
-    expect(rating.progress).toMatchObject({ done: 7, total: 7 });
+    expect(rating.progress).toMatchObject({
+      done: ONE_ATTACK_EPISODES,
+      total: ONE_ATTACK_EPISODES,
+    });
     expect(rating.codeHash).toBe(hash(0x5150));
     const report = await bodyOf(await get(`/previews/${preview.id}/report`, session));
     expect(report).toMatchObject({
@@ -730,7 +739,11 @@ describe("the preview worker", () => {
     // Progress: counts and an ETA, and the end.
     const progress = await sse(await get(`/ratings/${runId}/progress`, session));
     expect(progress).toHaveLength(1);
-    expect(progress[0]!.data).toMatchObject({ done: 7, total: 7, etaSeconds: null });
+    expect(progress[0]!.data).toMatchObject({
+      done: ONE_ATTACK_EPISODES,
+      total: ONE_ATTACK_EPISODES,
+      etaSeconds: null,
+    });
     expect(["done", "failed"]).toContain(progress[0]!.data.status);
   }, 240_000);
 
@@ -1698,7 +1711,7 @@ describe("setting up, a new secret, and preview status without polling", () => {
       (done.rating as { progress: { startedAt: string; done: number } }).progress,
     ).toMatchObject({
       startedAt: rating.rows[0]!.progress.startedAt,
-      done: 7,
+      done: ONE_ATTACK_EPISODES,
     });
     // Its status as a stream (a stream token, as an EventSource would use): the state, then the end.
     const token = (
@@ -1712,7 +1725,7 @@ describe("setting up, a new secret, and preview status without polling", () => {
     expect(events).toHaveLength(1);
     expect(events[0]!.data).toMatchObject({
       ratingId: runId,
-      progress: { done: 7, total: 7 },
+      progress: { done: ONE_ATTACK_EPISODES, total: ONE_ATTACK_EPISODES },
     });
     expect(["done", "refused", "failed"]).toContain(events[0]!.data.status);
   }, 240_000);
