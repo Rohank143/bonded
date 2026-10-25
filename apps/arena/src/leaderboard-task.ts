@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { type LeaderboardEntry, TASK_SCORE_VERSION } from "@bondedhq/shared";
 import { entryTask } from "./leaderboard.js";
@@ -30,6 +30,8 @@ export interface TaskJob {
 
 export interface TaskPlan {
   runDir: string;
+  /** Measure every planned entry again, even when its previous run is complete. */
+  force: boolean;
   jobs: TaskJob[];
   /** Entries left out, and why (already current). */
   skipped: { slug: string; reason: string }[];
@@ -61,6 +63,7 @@ export function planTask(options: {
   const paid = jobs.filter((j) => j.target.brain === "llm").length;
   return {
     runDir: options.runDir,
+    force: options.force ?? false,
     jobs,
     skipped,
     estimateUsd: paid * (options.estimateUsd ?? TASK_DEFAULTS.estimateUsd),
@@ -113,7 +116,7 @@ export interface TaskOutcome {
 /**
  * Runs the plan one entry at a time, within `maxUsd` in total (required for model-driven jobs),
  * and returns the entries with their Task score set. A finished task.json from an earlier run is
- * reused, so running it again only measures what failed.
+ * reused unless forced, so running it again normally only measures what failed.
  */
 export async function runTaskRefresh(
   plan: TaskPlan,
@@ -131,7 +134,7 @@ export async function runTaskRefresh(
   let spent = 0;
   for (const job of plan.jobs) {
     const slug = job.entry.slug;
-    let result = readTaskResult(job.dir);
+    let result = plan.force ? undefined : readTaskResult(job.dir);
     let status: TaskOutcome["status"] = "reused";
     if (!result) {
       const left = options.maxUsd === undefined ? undefined : Math.max(0, options.maxUsd - spent);
@@ -149,6 +152,8 @@ export async function runTaskRefresh(
           ? undefined
           : Math.min(left, options.perEntryMaxUsd ?? TASK_DEFAULTS.perEntryMaxUsd);
       deps.log(`${slug}: measuring the Task score`);
+      // A failed rerun must not leave the previous result looking like this attempt's output.
+      rmSync(join(job.dir, "task.json"), { force: true });
       const code = await deps.run(job, taskArgs(job, options, cap));
       result = readTaskResult(job.dir);
       status = "measured";

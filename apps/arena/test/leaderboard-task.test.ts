@@ -175,6 +175,74 @@ describe("leaderboard task", () => {
     expect(outcomes.map((o) => o.status)).toEqual(["reused", "measured"]);
   });
 
+  it("forces a fresh measurement of a current entry even when its completed run is cached", async () => {
+    const current = {
+      ...llm,
+      task: entryTask(
+        taskScore(
+          times(6, () => ep(true)),
+          times(11, () => ep(false, true)),
+        ),
+        "2026-10-25T10:00:00.000Z",
+        "task",
+      ),
+    };
+    const plan = planTask({ entries: [current], runDir, force: true });
+    taskJson(plan.jobs[0]!.dir, { benignDone: false, spentUsd: 0.2 });
+    const ran: string[] = [];
+    const { entries, outcomes } = await runTaskRefresh(
+      plan,
+      [current],
+      { episodeTimeoutS: 900, maxUsd: 0.05 },
+      {
+        run: async (job, args) => {
+          ran.push(job.entry.slug);
+          expect(args[args.indexOf("--max-usd") + 1]).toBe("0.05");
+          taskJson(job.dir, { benignDone: true, spentUsd: 0.02 });
+          return 0;
+        },
+        log: () => {},
+      },
+    );
+    expect(ran).toEqual([current.slug]);
+    expect(outcomes).toEqual([
+      { slug: current.slug, status: "measured", score: 100, spentUsd: 0.02 },
+    ]);
+    expect(entries[0]).toEqual({
+      ...current,
+      task: entryTask(
+        taskScore(
+          times(6, () => ep(true)),
+          times(11, () => ep(true, true)),
+        ),
+        "2026-10-25T10:00:00.000Z",
+        "task",
+      ),
+    });
+  });
+
+  it("does not reuse or charge for the old result after a forced run fails", async () => {
+    const plan = planTask({ entries: [llm], runDir, force: true });
+    taskJson(plan.jobs[0]!.dir, { benignDone: true, spentUsd: 0.2 });
+    const { entries, outcomes } = await runTaskRefresh(
+      plan,
+      [llm],
+      { episodeTimeoutS: 900, maxUsd: 0.05 },
+      { run: async () => 1, log: () => {} },
+    );
+    expect(entries).toEqual([llm]);
+    expect(outcomes).toEqual([
+      { slug: llm.slug, status: "failed", spentUsd: 0, reason: "arena task exited with 1" },
+    ]);
+    const retry = await runTaskRefresh(
+      planTask({ entries: [llm], runDir }),
+      [llm],
+      { episodeTimeoutS: 900, maxUsd: 0.05 },
+      { run: async () => 1, log: () => {} },
+    );
+    expect(retry.outcomes[0]!.status).toBe("failed");
+  });
+
   it("needs a spending cap for a model-driven entry, and stops at it", async () => {
     const plan = planTask({ entries: [llm], runDir });
     const deps = { run: async () => 0, log: () => {} };
