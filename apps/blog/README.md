@@ -9,7 +9,7 @@ Posts live in **Sanity** (project "Bonded", `v74fgzgp`, dataset `production`), n
 1. Open the editor: **[bondedhq.sanity.studio](https://bondedhq.sanity.studio/)**, and sign in with the Bonded Sanity account.
 2. Create a **Post**: title, URL slug (generate it from the title), description (under 200 characters), publish date, tags, and a **cover image** (1600×840 works best) with its alt text. Turn on **Lead the blog index** to show it first.
 3. Write the body. Headings, quotes, lists, links, images and tables are all available.
-4. Click **Publish**. Sanity tells Vercel to rebuild the site (a webhook to a Vercel deploy hook), and the post goes live in a minute or two.
+4. Click **Publish**. Sanity tells Vercel to rebuild the site (a webhook to a Vercel deploy hook), and the post goes live in a minute or two. The web app's build is never cached (`"cache": false` in `apps/web/turbo.json`): posts aren't files in the repo, so a cached build would replay the old blog without the new post.
 
 The cover is shown on the post and in the list, and becomes the post's link-preview image (cropped to 1200×630).
 
