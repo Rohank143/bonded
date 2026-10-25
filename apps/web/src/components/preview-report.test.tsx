@@ -34,3 +34,50 @@ describe("preview score display", () => {
     }
   });
 });
+
+describe("preview task score", () => {
+  const view = () =>
+    render(
+      <MemoryRouter>
+        <PreviewReport preview={preview()} run={run} />
+      </MemoryRouter>,
+    );
+  let run = finishedRun();
+
+  it("shows the Task score from controls and attack episodes, as a preview has no twins", () => {
+    run = finishedRun();
+    run.report!.task = {
+      version: 1,
+      score: 92,
+      worst: "underAttack",
+      controls: { trials: 6, done: 6, graded: true },
+      underAttack: { trials: 48, done: 44, graded: true },
+      benign: { trials: 0, done: 0, graded: false },
+    };
+    view();
+    expect(screen.getByText("92")).toBeTruthy();
+    expect(
+      screen.getByText(
+        /Did its job in 6 of 6 control episodes and 44 of 48 unbreached attack episodes\./,
+      ),
+    ).toBeTruthy();
+  });
+
+  it("says when no part had enough episodes, and shows nothing for an older report", () => {
+    run = finishedRun();
+    run.report!.task = {
+      version: 1,
+      score: null,
+      worst: null,
+      controls: { trials: 2, done: 2, graded: false },
+      underAttack: { trials: 0, done: 0, graded: false },
+      benign: { trials: 0, done: 0, graded: false },
+    };
+    view();
+    expect(screen.getByText("not measured")).toBeTruthy();
+    cleanup();
+    run = finishedRun();
+    view();
+    expect(screen.queryByText(/Task score/)).toBeNull();
+  });
+});
