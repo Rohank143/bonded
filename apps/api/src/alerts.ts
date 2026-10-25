@@ -93,6 +93,49 @@ export class Alerter {
 }
 
 /**
+ * The error's class plus any JSON-RPC code or HTTP status found in its cause chain, e.g.
+ * "RpcRequestError, code -32090". Numbers only beside the class, so it is safe for alerts.
+ */
+export function failureKind(error: unknown): string {
+  if (!(error instanceof Error)) return "unknown error";
+  let code: number | undefined;
+  let status: number | undefined;
+  let e: unknown = error;
+  for (let depth = 0; depth < 10 && e && typeof e === "object"; depth++) {
+    const {
+      code: c,
+      status: s,
+      cause,
+    } = e as { code?: unknown; status?: unknown; cause?: unknown };
+    if (code === undefined && typeof c === "number") code = c;
+    if (status === undefined && typeof s === "number") status = s;
+    e = cause;
+  }
+  return [
+    error.name,
+    ...(code !== undefined ? [`code ${code}`] : []),
+    ...(status !== undefined ? [`HTTP ${status}`] : []),
+  ].join(", ");
+}
+
+/**
+ * A one-line description of a failed iteration for the service log: `failureKind` and the node's
+ * own error message (viem's `details`) with any URL removed and capped at 200 characters. The
+ * full message stays out: it carries the RPC URL, which can include a key, and the request body.
+ */
+export function describeFailure(error: unknown): string {
+  const kind = failureKind(error);
+  const details = (error as { details?: unknown } | undefined)?.details;
+  if (typeof details !== "string" || !details.trim()) return kind;
+  const clean = details
+    .replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, "<url>")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 200);
+  return `${kind}: ${clean}`;
+}
+
+/**
  * Counts consecutive failures of a service loop: alerts after `threshold` in a row, and once
  * more when it recovers.
  */
@@ -109,8 +152,8 @@ export class LoopHealth {
   async failed(error: unknown): Promise<void> {
     this.failures++;
     if (this.failures < this.threshold) return;
-    // The error's class name only; its message can carry the RPC URL and its key.
-    const kind = error instanceof Error ? error.name : "unknown error";
+    // The error's class and code only; its message can carry the RPC URL and its key.
+    const kind = failureKind(error);
     if (
       await this.alerter.alert(
         `loop:${this.name}`,

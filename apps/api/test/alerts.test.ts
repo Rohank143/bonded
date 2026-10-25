@@ -1,6 +1,15 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import type { ServiceChain } from "@bonded/keeper";
-import { Alerter, LoopHealth, TelegramSink, Watchdog, telegramFromEnv } from "../src/alerts.js";
+import { BaseError, HttpRequestError, RpcRequestError } from "viem";
+import {
+  Alerter,
+  LoopHealth,
+  TelegramSink,
+  Watchdog,
+  describeFailure,
+  failureKind,
+  telegramFromEnv,
+} from "../src/alerts.js";
 import { postgres } from "./postgres.js";
 
 /** A sink that records messages instead of sending them. */
@@ -90,6 +99,38 @@ it("alerts after three failures in a row, with the error's class only, and on re
   expect(sent[1]).toBe("[keeper] The EVM keeper is working again.");
   await health.succeeded(); // no second recovery message
   expect(sent).toHaveLength(2);
+});
+
+const rpcError = (message: string) =>
+  new RpcRequestError({
+    body: { jsonrpc: "2.0", id: 1, method: "eth_getLogs", params: [] },
+    error: { code: -32090, message },
+    url: "https://rpc.example/v2/KEY",
+  });
+
+it("adds the RPC code to the alert, still without the message or URL", async () => {
+  const { sent, sink } = recorder();
+  const health = new LoopHealth(new Alerter(sink, { source: "keeper" }), "The EVM keeper", 1);
+  await health.failed(rpcError("too many requests"));
+  expect(sent).toEqual([
+    "[keeper] The EVM keeper has failed 1 times in a row (RpcRequestError, code -32090). It keeps retrying.",
+  ]);
+  expect(failureKind(new HttpRequestError({ url: "https://rpc.example/KEY", status: 429 }))).toBe(
+    "HttpRequestError, HTTP 429",
+  );
+});
+
+it("logs the code and the node's message, without the URL, key or request body", () => {
+  const line = describeFailure(rpcError("rate limited, see https://rpc.example/KEY/docs"));
+  expect(line).toBe("RpcRequestError, code -32090: rate limited, see <url>");
+  expect(line).not.toContain("KEY");
+  expect(line).not.toContain("eth_getLogs");
+  // Wrapped errors (a contract call around the RPC error) keep the inner code and message.
+  const wrapped = new BaseError("call failed", { cause: rpcError("block range too large") });
+  expect(describeFailure(wrapped)).toBe("BaseError, code -32090: block range too large");
+  expect(describeFailure(new Error("fetch failed for https://rpc.example/KEY"))).toBe("Error");
+  expect(describeFailure(rpcError("x".repeat(500))).length).toBeLessThan(250);
+  expect(describeFailure("boom")).toBe("unknown error");
 });
 
 let pg: Awaited<ReturnType<typeof postgres>>;

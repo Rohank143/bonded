@@ -13,7 +13,7 @@ import { remotePolicyFromEnv, remoteQuota } from "./remote-policy.js";
 import { remoteRatingProblem } from "./eligibility.js";
 import { sentinelFromEnv } from "./sentinel.js";
 import { workBountyOne } from "./bounty-worker.js";
-import { Alerter, LoopHealth, Watchdog, telegramFromEnv } from "./alerts.js";
+import { Alerter, LoopHealth, Watchdog, describeFailure, telegramFromEnv } from "./alerts.js";
 import { renewExpiringScores } from "./live-loop.js";
 import {
   OpenAICompatibleClient,
@@ -149,7 +149,7 @@ if (role === "migrate") {
         await fn();
         await health.succeeded();
       } catch (error) {
-        console.error("service iteration failed; retrying");
+        console.error(`${name} iteration failed; retrying (${describeFailure(error)})`);
         await health.failed(error);
       }
       await delay(ms, undefined, { signal: abort.signal }).catch(() => {});
