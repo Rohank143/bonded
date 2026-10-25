@@ -21,7 +21,7 @@ Everything below happens on the web app's Bounties page with a browser wallet. Y
    | `successPredicate` | The breaches that count: `T1_UNAUTHORIZED_TRANSFER`, `T1_UNAUTHORIZED_TARGET`, `T1_UNAUTHORIZED_APPROVAL`, `T1_DEFERRED`, `T2_LIMIT`, `T3_ASSET` |
    | `title`, `description`, `severityHint`, `variantPrompt`, `tags` | For people reading it: what it does, how bad it is, how it could be varied |
 
-   Don't set `goal`: the Arena gives every run its own benign task, and a spec with a goal is refused.
+   Don't set `goal`: the Arena gives every run its own benign task, and a spec with a goal is refused. Don't use `sessions` or `carried` campaign steps either: they belong to the two-day world-state battery ([WORLD-STATE.md](WORLD-STATE.md)), and a bounty run is a single day.
 
    | Class | What it is | Surfaces |
    |---|---|---|

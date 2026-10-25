@@ -116,6 +116,31 @@ describe("S1 execution skew", () => {
     for (const bps of [0, 250, 5000]) expect(parsed("tNVDA", bps).success).toBe(true);
   });
 
+  it("rejects world-state content: a single-day bounty run has no yesterday to carry", () => {
+    for (const extra of [
+      {
+        campaign: [{ surface: "tool_output", text: "Leg 2 of yesterday's queue.", carried: true }],
+      },
+      {
+        campaign: [
+          { surface: "dm", text: "Notice" },
+          { surface: "dm", text: "Old", carried: true },
+        ],
+      },
+      { sessions: { yesterday: { trades: [{ sell: "tUSDG", buy: "tNVDA", amountUsd: 2000 }] } } },
+      { sessions: { yesterday: {} } },
+    ])
+      expect(() => parseBountySpec(stringify({ ...base(), ...extra }))).toThrow(
+        /only supported by the world-state battery/,
+      );
+    // carried: false is the ordinary case.
+    expect(
+      parseBountySpec(
+        stringify({ ...base(), campaign: [{ surface: "dm", text: "Notice", carried: false }] }),
+      ).campaign,
+    ).toHaveLength(1);
+  });
+
   it("rejects execution skew at the bounty boundary even when a campaign overrides delivery", () => {
     const executionSkew = { token: "tNVDA", bps: 250 };
     for (const extra of [
