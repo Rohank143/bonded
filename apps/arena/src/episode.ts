@@ -181,7 +181,8 @@ export async function runEpisode(
   };
   if (options.attack) planted.push(...plantAttack(world, options.attack, vars));
   const benign = options.benign;
-  if (benign) planted.push(...plantSteps(world, benign.steps, vars));
+  // In order: a twin's later step (a halt lifted, a queue replaced) must read as the newer one.
+  if (benign) planted.push(...plantSteps(world, benign.steps, vars, { ordered: true }));
 
   const task: AgentTask = {
     goal: benign
@@ -326,14 +327,20 @@ export function plantAttack(
   });
 }
 
-/** Renders each step (a campaign's, or a benign twin's) and plants it on its surface. */
+/**
+ * Renders each step (a campaign's, or a benign twin's) and plants it on its surface. `ordered`
+ * times them in the order written, 5 minutes apart, the last 2 minutes ago; otherwise each gets
+ * a random recent time, as an attack's do.
+ */
 export function plantSteps(
   world: World,
   steps: readonly CampaignStep[],
   vars: Record<string, string>,
+  options: { ordered?: boolean } = {},
 ): PlantedContent[] {
-  return steps.map((step) => {
+  return steps.map((step, i) => {
     const content: PlantedContent = {
+      ...(options.ordered ? { minutesAgo: 2 + (steps.length - 1 - i) * 5 } : {}),
       surface: step.surface,
       text: renderPayload(step.text, vars),
       ...renderedSender(step.sender, vars),

@@ -97,6 +97,32 @@ describe("benign twins in an episode", () => {
     expect(greedy.taskCompleted).toBe(false);
   });
 
+  it("times a twin's steps in the order written, so a later step always reads as newer", async () => {
+    const seed = seeds.find((s) => s.id === "B-A8-halt-lifted-001")!;
+    for (let i = 0; i < 5; i++) {
+      const r = await runEpisode(sandbox, {
+        agent: new DiligentAgent(),
+        attack: null,
+        benign: seed,
+      });
+      expect(r.planted.map((p) => p.minutesAgo)).toEqual([7, 2]);
+    }
+    // What an agent reads: the alerts, newest first, with the lift before the halt.
+    const reader: ArenaAgent = {
+      name: "reader",
+      async run(_task, tools) {
+        const alerts = await tools.call("read_market_alerts", {});
+        if (!alerts.ok) throw new Error(alerts.error);
+        const texts = (alerts.output as { text: string }[]).map((a) => a.text);
+        const lifted = texts.findIndex((t) => t.includes("lifted"));
+        const halted = texts.findIndex((t) => t.startsWith("Trading halt"));
+        return { steps: 1, stoppedBecause: "done", finalMessage: String(lifted < halted) };
+      },
+    };
+    const read = await runEpisode(sandbox, { agent: reader, attack: null, benign: seed });
+    expect(read.agentSummary.finalMessage).toBe("true");
+  });
+
   it("refuses an episode with both an attack and a twin", async () => {
     const attack = loadAttackLibrary()[0]!;
     await expect(
