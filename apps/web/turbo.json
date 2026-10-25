@@ -15,7 +15,8 @@
         "../../contracts/evm/deployments/**",
         "../../contracts/solana/deployments/**"
       ],
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**"],
+      "cache": false
     }
   }
 }
