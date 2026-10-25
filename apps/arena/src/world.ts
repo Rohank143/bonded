@@ -2,6 +2,8 @@ import type { AttackSurface } from "@bondedhq/shared";
 import type { ArenaToken } from "./vault.js";
 import {
   between,
+  carriedBlock,
+  carriedItem,
   counterpartyMessage,
   inboxMessage,
   marketAlert,
@@ -99,6 +101,41 @@ export interface PlantedContent {
    * minutes. Set for a benign twin's steps, so ones written later are always newer.
    */
   minutesAgo?: number;
+  /**
+   * Dated yesterday and carried into today (world state): a tool_output plant goes into the
+   * report's carried block, dm, market and tx_history plants among yesterday's items. Only in a
+   * world built with `history`.
+   */
+  carried?: boolean;
+}
+
+/** Surfaces carried content can go on (World.plant). */
+export const CARRIED_SURFACES = ["tool_output", "dm", "market", "tx_history"] as const;
+
+/** One of yesterday's real trades, read from the chain (world-session.ts). */
+export interface YesterdayFill {
+  sold: { token: string; amount: string };
+  bought: { token: string; amount: string };
+  /** The exchange the vault traded with. */
+  exchange: `0x${string}`;
+  /** The block time of the trade (ISO 8601). */
+  time: string;
+}
+
+/**
+ * What a world carries from yesterday (World.carryOver): yesterday's messages, alerts and the
+ * vault's transfers, already dated, and the items the market report carries. Built only from the
+ * earlier world and the vault's real trades, never from what an agent said it did.
+ */
+export interface WorldHistory {
+  /** Yesterday's world clock (ISO 8601); carried plants are dated around it. */
+  clock: string;
+  inbox: InboxMessage[];
+  marketAlerts: MarketAlert[];
+  /** The vault's transfer history up to today: its deposits and yesterday's real trades. */
+  transfers: TransferRecord[];
+  /** Items in the report's "Carried from yesterday" block. */
+  carried: string[];
 }
 
 const TOKEN_DETAILS: Record<string, { name: string; description: string }> = {
@@ -138,6 +175,10 @@ export class World {
   readonly priceNoise = new Map<string, number>();
   private readonly tokenParts = new Map<string, { base: string; note: string }>();
   private readonly reportParts: { lead: string; outlook: string };
+  /** The report after its summary and carried block: the outlook, and plants around it. */
+  private reportRest: string;
+  /** Items in the report's carried block (world state); empty in a world with no history. */
+  private readonly carried: string[];
 
   /**
    * A fresh benign world for one episode (world-content.ts): its counts, wording, times, prices
@@ -147,6 +188,9 @@ export class World {
    * @param now the world's clock: the chain's latest block time (on a fork, the live chain's
    *   time). Items are dated on it, and planted content arrives among the recent ones.
    * @param random the randomness for this world (tests can fix it).
+   * @param history what this world carries from yesterday (World.carryOver), for day 2 of a
+   *   world-state seed: its items join today's, and its transfers replace a generated funding
+   *   history.
    */
   constructor(
     tokens: ArenaToken[],
@@ -154,6 +198,7 @@ export class World {
     deposit = 50_000,
     private readonly now: Date = new Date(),
     private readonly random: Random = Math.random,
+    private readonly history?: WorldHistory,
   ) {
     // Times: a few items are minutes old, so planted content isn't simply the newest thing.
     const dated = () =>
@@ -166,7 +211,9 @@ export class World {
     this.marketAlerts = some(1, 3, marketAlert);
     this.counterpartyMessages = some(0, 2, counterpartyMessage);
     this.reportParts = marketReportParts(random, this.now.toISOString().slice(0, 10));
-    this.marketReport = `${this.reportParts.lead}${this.reportParts.outlook}`;
+    this.reportRest = this.reportParts.outlook;
+    this.carried = [...(history?.carried ?? [])];
+    this.marketReport = this.renderReport();
     this.tokenList = tokens.map((token) => {
       const details = TOKEN_DETAILS[token.symbol];
       const phrasings = TOKEN_DESCRIPTIONS[token.symbol];
@@ -186,9 +233,15 @@ export class World {
       this.priceNoise.set(token.symbol, 1 + (random() < 0.5 ? -1 : 1) * random() * spread);
     }
     // The vault's funding: one to three deposits from the depositor that add up to what it
-    // holds, over the past days. Sometimes a zero-value transfer from an unknown address, as
-    // spam on real chains (address poisoning looks like this too).
-    const parts = between(random, 1, 3);
+    // holds, over the past days (or, with history, the vault's real history so far). Sometimes a
+    // zero-value transfer from an unknown address, as spam on real chains (address poisoning
+    // looks like this too).
+    if (history) {
+      this.inbox.push(...history.inbox.map((m) => ({ ...m })));
+      this.marketAlerts.push(...history.marketAlerts.map((a) => ({ ...a })));
+      this.transfers.push(...history.transfers.map((t) => ({ ...t })));
+    }
+    const parts = history ? 0 : between(random, 1, 3);
     let left = deposit;
     for (let i = 0; i < parts; i++) {
       const amount =
@@ -238,6 +291,68 @@ export class World {
     return new Date(this.now.getTime() - Math.round(minutes * 60_000)).toISOString();
   }
 
+  /**
+   * The report: its summary, the carried block (if any), then the outlook and plants. A one-line
+   * outlook (" No action required.") ends the summary, so it comes before the carried block.
+   */
+  private renderReport(): string {
+    const { lead, outlook } = this.reportParts;
+    const block = carriedBlock(this.carried);
+    return outlook.startsWith("\n")
+      ? `${lead}${block}${this.reportRest}`
+      : `${lead}${outlook}${block}${this.reportRest.slice(outlook.length)}`;
+  }
+
+  /**
+   * When a carried plant arrived: on yesterday's clock, spread like yesterday's own items, so it
+   * isn't simply the newest (or oldest) thing from yesterday.
+   */
+  private yesterday(): string {
+    if (!this.history) throw new Error("carried content needs a world built with history");
+    const minutes = pick(this.random, [2, 5, 9, 15, 25, 40, 70, 120, 190, 300]);
+    const clock = Date.parse(this.history.clock);
+    return new Date(
+      clock - Math.round(minutes * (0.7 + 0.6 * this.random()) * 60_000),
+    ).toISOString();
+  }
+
+  /**
+   * What the next day's world carries from this one: its messages, alerts and transfers, plus
+   * the vault's real trades today as transfer rows (`fills`, read from the chain), and one to
+   * three benign items for the report's carried block. Planted content in this world carries
+   * over like the rest; world-session.ts plants nothing on day 1.
+   */
+  carryOver(fills: readonly YesterdayFill[]): WorldHistory {
+    const trades = fills.flatMap((fill): TransferRecord[] => [
+      {
+        direction: "out",
+        token: fill.sold.token,
+        amount: fill.sold.amount,
+        counterparty: fill.exchange,
+        note: "Exchange fill",
+        time: fill.time,
+      },
+      {
+        direction: "in",
+        token: fill.bought.token,
+        amount: fill.bought.amount,
+        counterparty: fill.exchange,
+        note: "Exchange fill",
+        time: fill.time,
+      },
+    ]);
+    const transfers = [...this.transfers, ...trades].sort(
+      (a, b) => Date.parse(a.time ?? "") - Date.parse(b.time ?? ""),
+    );
+    return {
+      clock: this.now.toISOString(),
+      inbox: this.inbox.map((m) => ({ ...m })),
+      marketAlerts: this.marketAlerts.map((a) => ({ ...a })),
+      transfers: transfers.map((t) => ({ ...t })),
+      carried: Array.from({ length: between(this.random, 1, 3) }, () => carriedItem(this.random)),
+    };
+  }
+
   /** When planted content arrived: within the last few minutes, among the recent benign items. */
   private recent(): string {
     return this.ago(1 + this.random() * 14);
@@ -247,7 +362,18 @@ export class World {
   plant(content: PlantedContent): void {
     // Drawn where an object's time is, as before, so other plants keep the world's random draws.
     const time = () =>
-      content.minutesAgo === undefined ? this.recent() : this.ago(content.minutesAgo);
+      content.carried
+        ? this.yesterday()
+        : content.minutesAgo === undefined
+          ? this.recent()
+          : this.ago(content.minutesAgo);
+    if (content.carried && !(CARRIED_SURFACES as readonly string[]).includes(content.surface)) {
+      throw new Error(
+        `${content.surface} content can't be carried (only tool_output, dm, market and tx_history)`,
+      );
+    }
+    if (content.carried && !this.history)
+      throw new Error("carried content needs a world built with history");
     switch (content.surface) {
       case "dm":
         this.inbox.push({
@@ -289,11 +415,21 @@ export class World {
         return;
       }
       case "tool_output":
-        // Before or after the report's outlook, when it has one.
-        this.marketReport =
-          this.reportParts.outlook.startsWith("\n") && this.random() < 0.5
-            ? `${this.reportParts.lead}\n\n${content.text}${this.reportParts.outlook}`
-            : `${this.marketReport}\n\n${content.text}`;
+        if (content.carried) {
+          // Among the carried items, at a random place.
+          this.carried.splice(
+            Math.floor(this.random() * (this.carried.length + 1)),
+            0,
+            content.text,
+          );
+        } else {
+          // Before or after the report's outlook, when it has one.
+          this.reportRest =
+            this.reportParts.outlook.startsWith("\n") && this.random() < 0.5
+              ? `\n\n${content.text}${this.reportParts.outlook}`
+              : `${this.reportRest}\n\n${content.text}`;
+        }
+        this.marketReport = this.renderReport();
         return;
       case "price_feed": {
         // Prices come from delivery.prices, or from "SYMBOL=PRICE" lines in the payload

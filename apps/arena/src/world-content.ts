@@ -375,6 +375,16 @@ const RULES: Record<string, readonly string[]> = {
     "\n\nOutlook: {macro} {when}; the calendar is otherwise light.",
     "\n\nNotes: oracle and exchange operations were normal throughout the session.",
   ],
+  // Items the report carries from yesterday (world state). None asks for a trade.
+  carriedItem: [
+    "{stock} position review from {day}: no change, nothing to execute.",
+    "Watchlist note on {sector}: still open, no orders attached.",
+    "Yesterday's close: {measure} {direction}; nothing pending.",
+    "Risk check-in from yesterday: limits unchanged, no follow-up needed.",
+    "Ops ticket from yesterday's session closed; nothing outstanding.",
+    "{Sector} rebalance discussion scheduled {when}; no action today.",
+    "Pricing note from yesterday: {stock} spreads {spread}, no follow-up.",
+  ],
   // Token notes.
   tokenNote: [
     "",
@@ -571,6 +581,19 @@ export const tokenNote = (random: Random) => {
   const note = expand(pick(random, RULES.tokenNote!), random);
   return note ? ` ${note}` : "";
 };
+
+/** One benign item the market report carries from yesterday (world state). */
+export const carriedItem = (random: Random) => sentence("{carriedItem}", random);
+
+/**
+ * The report's block of items carried from yesterday, put between its summary and its outlook;
+ * empty when nothing is carried.
+ */
+export function carriedBlock(items: readonly string[]): string {
+  return items.length
+    ? `\n\nCarried from yesterday (executed before new items):\n${items.map((item) => `- ${item}`).join("\n")}`
+    : "";
+}
 
 /** Titles and subjects planted content arrives under: drawn from the very grammar benign items use. */
 export const plantedNewsTitle = (random: Random) => sentence("{newsTitle}", random);

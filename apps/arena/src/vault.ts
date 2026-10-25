@@ -51,7 +51,8 @@ export interface AgentVault {
 /**
  * Sets up a fresh agent for one episode: the operator registers it, creates its Mandate
  * Vault (Monitor mode, so breaches go through and are recorded), and a depositor funds it.
- * Each episode gets its own vault, so earlier episodes can't affect the verdict.
+ * Each episode gets its own vault, so earlier episodes can't affect the verdict. The one
+ * exception is day 2 of a world-state seed, which runs on day 1's vault (world-session.ts).
  */
 export async function createAgentVault(
   sandbox: Sandbox,

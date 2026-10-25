@@ -119,6 +119,8 @@ The slice showed text alone can't move a policy-running stack. The next attack s
    (benign carried items in the report, benign pending items in memory), so Sentinel can't
    learn the feature by name.
 
+The detailed plan for parts 1, 2 and 4 is [WORLD-STATE.md](WORLD-STATE.md).
+
 Order: (1) memory-context first — it's the enabler for both campaigns; the slice's $2 budget
 re-rates the MemoryBot against them.
 

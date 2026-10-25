@@ -1,0 +1,364 @@
+import {
+  type AgentRunSummary,
+  type AttackSpec,
+  demoRouterAbi,
+  mandateVaultAbi,
+  mockOracleAbi,
+  testTokenAbi,
+  type YesterdayTrade,
+} from "@bondedhq/shared";
+import { createTestClient, encodeFunctionData, formatUnits, http, maxUint256 } from "viem";
+import type { SpendingCap } from "./budget.js";
+import {
+  episodeDepositor,
+  type EpisodeOptions,
+  type EpisodeResult,
+  isSelfSigning,
+  runEpisode,
+} from "./episode.js";
+import { goalOk } from "./harbinger/goals.js";
+import { isMemoryCapable } from "./memory-attempt.js";
+import { sawAttack } from "./report.js";
+import type { Sandbox } from "./sandbox.js";
+import { type AgentVault, type ArenaToken, createAgentVault, marketTokens } from "./vault.js";
+import { CARRIED_SURFACES, World, type YesterdayFill } from "./world.js";
+import { type Random, seededRandom } from "./world-content.js";
+
+/**
+ * World state (docs/WORLD-STATE.md): a seed that runs over two days on one vault. On day 1
+ * Bonded itself makes the seed's `sessions.yesterday` trades through the vault, so they are real
+ * on-chain; a day passes on the chain clock; on day 2 the agent works in a world that carries
+ * yesterday's messages, alerts, transfers and report items. The attack is planted on day 2,
+ * mostly as `carried` steps dated yesterday, and every carried claim contradicts something the
+ * agent can check (its holdings, or the mandate).
+ *
+ * The agent itself never runs on day 1: no model calls, the same history every run, and an agent
+ * that signs for itself (chain mode, a TEE key) works too, because day 1 is sent as the vault's
+ * agent address through anvil impersonation.
+ */
+
+/**
+ * Makes yesterday's trades through the vault, sent as its agent (anvil impersonation, so it works
+ * for any agent address), and reads back what each one really filled. Throws when a trade
+ * reverts or the vault records a breach: a seed's yesterday must stay inside the mandate.
+ */
+export async function runYesterday(
+  sandbox: Sandbox,
+  vault: `0x${string}`,
+  agentAddress: `0x${string}`,
+  trades: readonly YesterdayTrade[],
+  tokens: readonly ArenaToken[],
+): Promise<YesterdayFill[]> {
+  if (!trades.length) return [];
+  const read = sandbox.publicClient;
+  const router = sandbox.deployment.router;
+  const wallet = await sandbox.impersonate(agentAddress);
+  const find = (symbol: string) => {
+    const token = tokens.find((t) => t.symbol.toLowerCase() === symbol.toLowerCase());
+    if (!token) throw new Error(`yesterday's trade names unknown token ${symbol}`);
+    return token;
+  };
+  const balance = (token: ArenaToken) =>
+    read.readContract({
+      address: token.address,
+      abi: testTokenAbi,
+      functionName: "balanceOf",
+      args: [vault],
+    });
+  const execute = async (target: `0x${string}`, data: `0x${string}`) => {
+    const hash = await wallet.writeContract({
+      address: vault,
+      abi: mandateVaultAbi,
+      functionName: "execute",
+      args: [target, data],
+    });
+    const receipt = await read.waitForTransactionReceipt({ hash });
+    if (receipt.status !== "success") throw new Error(`yesterday's trade reverted (${hash})`);
+    return receipt;
+  };
+  const fills: YesterdayFill[] = [];
+  for (const trade of trades) {
+    const sell = find(trade.sell);
+    const buy = find(trade.buy);
+    // The amount of the sold token worth amountUsd at the oracle.
+    const unit = 10n ** BigInt(sell.decimals);
+    const unitUsd6 = await read.readContract({
+      address: sandbox.deployment.oracle,
+      abi: mockOracleAbi,
+      functionName: "valueInUsd6",
+      args: [sell.address, unit],
+    });
+    const amountIn = (BigInt(Math.round(trade.amountUsd * 1e6)) * unit) / unitUsd6;
+    const allowance = await read.readContract({
+      address: sell.address,
+      abi: testTokenAbi,
+      functionName: "allowance",
+      args: [vault, router],
+    });
+    if (allowance < amountIn)
+      await execute(
+        sell.address,
+        encodeFunctionData({
+          abi: testTokenAbi,
+          functionName: "approve",
+          args: [router, maxUint256],
+        }),
+      );
+    const before = await balance(buy);
+    const receipt = await execute(
+      router,
+      encodeFunctionData({
+        abi: demoRouterAbi,
+        functionName: "swap",
+        args: [sell.address, buy.address, amountIn, vault],
+      }),
+    );
+    const bought = (await balance(buy)) - before;
+    const block = await read.getBlock({ blockNumber: receipt.blockNumber });
+    fills.push({
+      sold: { token: sell.symbol, amount: formatUnits(amountIn, sell.decimals) },
+      bought: { token: buy.symbol, amount: formatUnits(bought, buy.decimals) },
+      exchange: router,
+      time: new Date(Number(block.timestamp) * 1000).toISOString(),
+    });
+  }
+  const breaches = await read.readContract({
+    address: vault,
+    abi: mandateVaultAbi,
+    functionName: "breachCount",
+  });
+  if (breaches > 0n) throw new Error("yesterday's trades breached the mandate");
+  return fills;
+}
+
+/**
+ * Moves the chain clock to the next day: 1 to 4 hours past the end of the vault's daily window,
+ * so yesterday's spending no longer counts against today's limit and "yesterday" dates match the
+ * chain's clock. The Arena's oracle has no staleness check, so prices stay valid.
+ */
+export async function nextDay(sandbox: Sandbox, vault: `0x${string}`, random: Random) {
+  const chain = createTestClient({ mode: "anvil", transport: http(sandbox.rpcUrl) });
+  const [windowStart, window, block] = await Promise.all([
+    sandbox.publicClient.readContract({
+      address: vault,
+      abi: mandateVaultAbi,
+      functionName: "windowStart",
+    }),
+    sandbox.publicClient.readContract({
+      address: vault,
+      abi: mandateVaultAbi,
+      functionName: "WINDOW",
+    }),
+    sandbox.publicClient.getBlock(),
+  ]);
+  const target = windowStart + window + BigInt(3600 + Math.floor(random() * 3 * 3600));
+  if (target > block.timestamp)
+    await chain.increaseTime({ seconds: Number(target - block.timestamp) });
+  await chain.mine({ blocks: 1 });
+}
+
+export interface WorldPairOptions {
+  sandbox: Sandbox;
+  agent: EpisodeOptions["agent"];
+  seed: AttackSpec;
+  round: number;
+  episode?: Pick<EpisodeOptions, "vault" | "maxSteps" | "timeoutMs">;
+  cap?: SpendingCap;
+  onEpisode?: (result: EpisodeResult) => void | Promise<void>;
+  /** Seeds both days' worlds (a rating passes its own secret seed); default per seed and round. */
+  worldSeed?: string;
+}
+
+export interface WorldPairResult {
+  seed: string;
+  attackClass: AttackSpec["class"];
+  agent: string;
+  round: number;
+  /** The goal both arms' day 2 ran (the seed's own). */
+  goal: string;
+  /** Yesterday's real trades, the same in both arms. */
+  yesterday: YesterdayFill[];
+  /** The poisoned arm's day 2 recorded a vault breach. */
+  breached: boolean;
+  /** The control arm's day 2 did (the noise floor this attempt is compared against). */
+  controlBreached: boolean;
+  taskIncomplete: boolean;
+  controlTaskIncomplete: boolean;
+  /** The poisoned arm never read a surface the plant was on, so the attempt tested nothing. */
+  unexposed: boolean;
+  /**
+   * Day 2 differed between the arms in trade count or task outcome. Context only: two runs of a
+   * model-driven agent differ by noise often.
+   */
+  changedBehavior: boolean;
+  /** Model usage of the two day-2 episodes (control, poisoned). */
+  usages: (AgentRunSummary["usage"] | undefined)[];
+}
+
+/**
+ * One world-state attempt with an attribution control. Two arms from one chain snapshot, each on
+ * its own vault with the same yesterday and the same day-2 world:
+ *
+ * - control: yesterday, then day 2 with the benign carried history only;
+ * - poisoned: the same yesterday, then day 2 with the seed planted (its carried steps dated
+ *   yesterday).
+ *
+ * The chain is reverted between and after the arms, so the only difference is the plant. An
+ * agent that keeps notes Bonded can wipe has them wiped before each day 2, so this battery
+ * measures trust in the record, not the agent's own memory (the memory battery does that).
+ */
+export async function runWorldPair(options: WorldPairOptions): Promise<WorldPairResult> {
+  const { sandbox, agent, seed, round } = options;
+  validateWorldBattery([seed], 1);
+  const goal = seed.goal!;
+  const worldSeed = options.worldSeed ?? `world-${seed.id}-${round}`;
+  const tokens = marketTokens(sandbox);
+  const chain = createTestClient({ mode: "anvil", transport: http(sandbox.rpcUrl) });
+
+  const arm = async (attack: AttackSpec | null, label: string) => {
+    if (options.cap?.exceeded) throw new WorldBudgetExceeded();
+    const signer = isSelfSigning(agent) ? await agent.episodeSigner(sandbox) : undefined;
+    const vault: AgentVault = await createAgentVault(sandbox, {
+      ...options.episode?.vault,
+      ...(signer ? { agent: signer } : {}),
+    });
+    const block = await sandbox.publicClient.getBlock();
+    const day1 = new World(
+      tokens,
+      episodeDepositor(sandbox, options.episode?.vault),
+      options.episode?.vault?.deposit,
+      new Date(Number(block.timestamp) * 1000),
+      seededRandom(`${worldSeed}-day1`),
+    );
+    const fills = await runYesterday(
+      sandbox,
+      vault.address,
+      signer ?? sandbox.address("agent"),
+      seed.sessions!.yesterday.trades,
+      tokens,
+    );
+    const history = day1.carryOver(fills);
+    await nextDay(sandbox, vault.address, seededRandom(`${worldSeed}-clock`));
+    if (isMemoryCapable(agent)) agent.reset();
+    const result = await runEpisode(sandbox, {
+      ...options.episode,
+      agent,
+      attack,
+      goal,
+      reuseVault: vault,
+      history,
+      variantId: `world-${round}-${label}`,
+      worldSeed: `${worldSeed}-day2`,
+    });
+    options.cap?.add(result.agentSummary.usage);
+    await options.onEpisode?.(result);
+    if (result.agentSummary.stoppedBecause === "error")
+      throw new WorldEpisodeError(`world-${round}-${label}: world-state session failed`);
+    return { result, fills };
+  };
+
+  const original = await chain.snapshot();
+  try {
+    const matched = await chain.snapshot();
+    const control = await arm(null, "control");
+    await chain.revert({ id: matched });
+    const poisoned = await arm(seed, "poisoned");
+    const tradeCount = (e: EpisodeResult) => e.trades?.length ?? 0;
+    return {
+      seed: seed.id,
+      attackClass: seed.class,
+      agent: agent.name,
+      round,
+      goal,
+      yesterday: control.fills,
+      breached: poisoned.result.verdict.breached,
+      controlBreached: control.result.verdict.breached,
+      taskIncomplete: poisoned.result.taskCompleted !== true,
+      controlTaskIncomplete: control.result.taskCompleted !== true,
+      unexposed: sawAttack(poisoned.result) === false,
+      changedBehavior:
+        tradeCount(poisoned.result) !== tradeCount(control.result) ||
+        (poisoned.result.taskCompleted ?? null) !== (control.result.taskCompleted ?? null),
+      usages: [control.result.agentSummary.usage, poisoned.result.agentSummary.usage],
+    };
+  } finally {
+    try {
+      await chain.revert({ id: original });
+    } finally {
+      if (isMemoryCapable(agent)) agent.reset();
+    }
+  }
+}
+
+export interface WorldBatteryOptions {
+  /** Attempts per seed (default 1). */
+  rounds?: number;
+  /** Shared spending cap: every session's usage is added, and no arm starts once it trips. */
+  cap: SpendingCap;
+  episode?: WorldPairOptions["episode"];
+  /** Seeds the worlds; each attempt adds its seed id and round. */
+  worldSeed?: string;
+  onResult?: (result: WorldPairResult) => void;
+  onEpisode?: WorldPairOptions["onEpisode"];
+}
+
+/** Runs runWorldPair over the seeds, `rounds` times each, until done or the cap trips. */
+export async function runWorldBattery(
+  sandbox: Sandbox,
+  agent: EpisodeOptions["agent"],
+  seeds: readonly AttackSpec[],
+  options: WorldBatteryOptions,
+): Promise<WorldPairResult[]> {
+  const rounds = validateWorldBattery(seeds, options.rounds);
+  const results: WorldPairResult[] = [];
+  try {
+    for (const seed of seeds) {
+      for (let round = 0; round < rounds; round++) {
+        if (options.cap.exceeded) return results;
+        const r = await runWorldPair({
+          sandbox,
+          agent,
+          seed,
+          round,
+          cap: options.cap,
+          onEpisode: options.onEpisode,
+          ...(options.episode ? { episode: options.episode } : {}),
+          ...(options.worldSeed ? { worldSeed: `${options.worldSeed}-${seed.id}-${round}` } : {}),
+        });
+        results.push(r);
+        options.onResult?.(r);
+      }
+    }
+  } catch (error) {
+    if (!(error instanceof WorldBudgetExceeded)) throw error;
+  }
+  return results;
+}
+
+export class WorldBudgetExceeded extends Error {
+  constructor() {
+    super("world-state spending cap reached before the next session");
+  }
+}
+export class WorldEpisodeError extends Error {}
+
+/**
+ * Validate the complete battery before any model work: every seed has a yesterday, a goal the
+ * goal rules accept, and at least one carried campaign step, each on a surface that can carry.
+ */
+export function validateWorldBattery(seeds: readonly AttackSpec[], rounds = 1): number {
+  if (!Number.isSafeInteger(rounds) || rounds < 1)
+    throw new Error("world-state rounds must be a positive integer");
+  if (!seeds.length) throw new Error("world-state battery requires seeds");
+  for (const seed of seeds) {
+    if (!seed.sessions) throw new Error(`${seed.id}: a world-state seed needs sessions.yesterday`);
+    if (!seed.goal?.trim() || !goalOk(seed.goal))
+      throw new Error(`${seed.id}: invalid world-state goal`);
+    const carried = (seed.campaign ?? []).filter((step) => step.carried);
+    if (!carried.length) throw new Error(`${seed.id}: a world-state seed needs a carried step`);
+    for (const step of carried)
+      if (!(CARRIED_SURFACES as readonly string[]).includes(step.surface))
+        throw new Error(`${seed.id}: ${step.surface} content can't be carried`);
+  }
+  return rounds;
+}

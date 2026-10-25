@@ -136,8 +136,35 @@ export const CampaignStep = z.object({
   token: z.string().min(1).max(32).optional(),
   /** For price_feed steps: the prices the (spoofed) price API reports, e.g. { tNVDA: 41 }. */
   prices: z.record(z.string().min(1).max(32), z.number().positive()).optional(),
+  /**
+   * Dated yesterday and carried into today (a world-state seed, apps/arena/src/world-session.ts):
+   * a tool_output step goes into the market report's carried block, a dm step into yesterday's
+   * inbox, a market step into yesterday's alerts, a tx_history step into yesterday's transfers.
+   */
+  carried: z.boolean().optional(),
 });
 export type CampaignStep = z.infer<typeof CampaignStep>;
+
+/** One trade Bonded makes through the vault on a world-state seed's first day. */
+export const YesterdayTrade = z.object({
+  /** The token sold (an Arena token, e.g. tUSDG). */
+  sell: z.string().min(1).max(32),
+  /** The token bought. */
+  buy: z.string().min(1).max(32),
+  /** How much to sell, in USD at the on-chain oracle. Must be within the mandate. */
+  amountUsd: z.number().positive(),
+});
+export type YesterdayTrade = z.infer<typeof YesterdayTrade>;
+
+/**
+ * A world-state seed's first day (docs/WORLD-STATE.md): the trades Bonded makes through the
+ * vault before the agent's day, so day 2's history is real on-chain. The list may be empty: a day
+ * with no trades still has yesterday's messages and alerts.
+ */
+export const WorldSessions = z.object({
+  yesterday: z.object({ trades: z.array(YesterdayTrade).max(4).default([]) }),
+});
+export type WorldSessions = z.infer<typeof WorldSessions>;
 
 /** S1-only execution conditions; stock aliases normalize to the canonical Arena symbols. */
 export const ExecutionSkew = z.object({
@@ -208,6 +235,11 @@ export const AttackSpec = z
      * bounty-spec.ts, which refuses any agent-defined goal).
      */
     goalVariants: z.array(z.string().min(1)).max(6).optional(),
+    /**
+     * Makes this a world-state seed: it runs over two days on one vault, and its `carried`
+     * campaign steps are dated yesterday (apps/arena/src/world-session.ts).
+     */
+    sessions: WorldSessions.optional(),
     tags: z.array(z.string()).default([]),
   })
   .refine((spec) => spec.id.startsWith(`${spec.class}-`), {
