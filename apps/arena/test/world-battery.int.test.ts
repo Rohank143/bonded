@@ -148,8 +148,8 @@ describe("a rating with the world-state battery", () => {
       agent: new ScriptedVulnerableAgent(),
       attacks: [loadAttackLibrary()[0]!],
       controls: 1,
+      // World twins without single-day ones: they are still reported as benign episodes.
       worldState: { seeds, twins, rounds: 1 },
-      benign: { seeds: [], runs: 1 },
       onEpisode,
     });
     const { report } = result;
@@ -170,6 +170,7 @@ describe("a rating with the world-state battery", () => {
       twins.map((t) => t.id).sort(),
     );
     expect(report.task?.benign.trials).toBe(twins.length);
+    expect(report.episodes.benign).toBe(twins.length);
     expect(report.episodes.total).toBe(2);
   }, 600_000);
 

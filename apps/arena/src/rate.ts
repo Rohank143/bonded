@@ -265,7 +265,10 @@ export interface RatingReport {
   forked: boolean;
   startedAt: string;
   durationMs: number;
-  /** `benign`: benign twins' episodes, not in `total` (older reports don't have it). */
+  /**
+   * `benign`: benign twins' episodes, single-day and world twins together, not in `total` (older
+   * reports don't have it).
+   */
   episodes: {
     total: number;
     attacks: number;
@@ -929,7 +932,8 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
       attacks: episodes.length - controlEpisodes.length,
       controls: controlEpisodes.length,
       agentErrors: episodes.filter((e) => episodeOutcome(e) === "agent_error").length,
-      ...(options.benign ? { benign: benignEpisodes.length } : {}),
+      // Single-day twins and world twins both land in benignEpisodes.
+      ...(options.benign || options.worldState?.twins ? { benign: benignEpisodes.length } : {}),
     },
     controls: {
       episodes: controlEpisodes.length,
