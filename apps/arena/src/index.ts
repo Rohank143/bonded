@@ -43,6 +43,33 @@ export {
 } from "./offchain/ledger.js";
 export { judgeLedger } from "./offchain/judge.js";
 export {
+  type Attachment,
+  describeLedgerMandate,
+  type Email,
+  invoiceText,
+  type OffchainWorld,
+} from "./offchain/world.js";
+export {
+  OFFCHAIN_TOOL_NAMES,
+  OFFCHAIN_TOOLS,
+  type OffchainToolName,
+  OffchainToolbox,
+  type OffchainTraceStep,
+  offchainToolDefinitions,
+} from "./offchain/tools.js";
+export {
+  baseWorld,
+  controlScenario,
+  OFFCHAIN_SCENARIOS,
+  type OffchainScenario,
+  verifiedBankChangeTwin,
+} from "./offchain/scenarios.js";
+export {
+  missedInvoices,
+  type OffchainEpisodeResult,
+  runOffchainEpisode,
+} from "./offchain/episode.js";
+export {
   ANVIL_KEYS,
   CONTRACTS_DIR,
   hasExited,
