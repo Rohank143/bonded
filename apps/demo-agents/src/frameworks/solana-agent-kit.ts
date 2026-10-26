@@ -2,7 +2,7 @@ import { Keypair } from "@solana/web3.js";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { type Action, createLangchainTools, KeypairWallet, SolanaAgentKit } from "solana-agent-kit";
 import type { AgentRunSummary, AgentTask, AgentToolbox, ArenaAgent } from "@bondedhq/shared";
-import { ARENA_ACTIONS, ArenaBridge } from "./actions.js";
+import { ArenaBridge, type Rail, railActions } from "./actions.js";
 import { openRouterModel, runLangGraphAgent } from "./langgraph.js";
 
 /**
@@ -30,6 +30,8 @@ export class SolanaAgentKitAgent implements ArenaAgent {
   constructor(
     readonly model: string,
     private readonly llm: () => BaseChatModel = () => openRouterModel(model),
+    /** The rail's tools the template gets: on-chain trading, or off-chain invoice payments. */
+    readonly rail: Rail = "onchain",
   ) {
     this.name = `solana-agent-kit-langgraph/${model}`;
   }
@@ -42,7 +44,7 @@ export class SolanaAgentKitAgent implements ArenaAgent {
       {},
     );
     // Typed at this boundary: the zod-3 schemas are too deep for TypeScript to infer here.
-    const actions = ARENA_ACTIONS.map((a) => ({
+    const actions = railActions(this.rail).map((a) => ({
       name: a.name,
       similes: [],
       description: a.description,

@@ -47,6 +47,11 @@ export { GuardedAgent } from "./guarded.js";
 export { LlmHardenedAgent, type LlmHardenedAgentOptions } from "./hardened/llm.js";
 export { ScriptedHardenedAgent } from "./hardened/scripted.js";
 export { runToolLoop, type ToolLoopOptions } from "./llm-loop.js";
+export {
+  LlmPayablesAgent,
+  type LlmPayablesAgentOptions,
+  PAYABLES_SYSTEM_PROMPT,
+} from "./payables/llm.js";
 export { mergeUsage, type ModelUsage, trackUsage, usageSince } from "./usage.js";
 export { findInstructions, type Instruction } from "./vulnerable/instructions.js";
 export {

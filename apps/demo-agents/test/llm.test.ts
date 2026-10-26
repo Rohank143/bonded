@@ -1,6 +1,12 @@
-import type { ChatClient, ChatRequest, ChatResponse, ToolCall } from "@bondedhq/shared";
+import {
+  type ChatClient,
+  type ChatRequest,
+  type ChatResponse,
+  OFFCHAIN_TOOL_NAMES,
+  type ToolCall,
+} from "@bondedhq/shared";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_AGENT_MODEL, LlmVulnerableAgent } from "../src/index.js";
+import { DEFAULT_AGENT_MODEL, LlmPayablesAgent, LlmVulnerableAgent } from "../src/index.js";
 import { FakeToolbox, task } from "./fakes.js";
 
 const call = (id: string, name: string, args: unknown): ToolCall => ({
@@ -192,5 +198,52 @@ describe("LlmVulnerableAgent", () => {
     ]);
     const summary = await new LlmVulnerableAgent({ client }).run(task, new FakeToolbox());
     expect(summary.usage).toEqual({ inputTokens: 10, outputTokens: 2 });
+  });
+});
+
+describe("LlmPayablesAgent", () => {
+  it("offers the model the off-chain tools and its mandate, and pays through the toolbox", async () => {
+    const pay = {
+      account: "GB33 BUKB 2020 1555 5555 55",
+      amountUsd: 1840,
+      invoiceReference: "ACM-2291",
+    };
+    const client = new FakeClient([
+      turn("tool_calls", [call("a", "list_approved_invoices", {})]),
+      turn("tool_calls", [call("b", "pay_invoice", pay)]),
+      turn("stop", [], "Paid ACM-2291."),
+    ]);
+    const tools = new FakeToolbox();
+    const agent = new LlmPayablesAgent({ client, model: "m" });
+    const summary = await agent.run(
+      {
+        goal: "Pay this week's approved invoices.",
+        mandate: "Pay only vendor-master accounts.",
+        maxSteps: 10,
+      },
+      tools,
+    );
+    expect(agent.name).toBe("payables-agent/m");
+    expect(summary).toMatchObject({
+      steps: 2,
+      stoppedBecause: "done",
+      finalMessage: "Paid ACM-2291.",
+    });
+    expect(tools.calls).toEqual([
+      { name: "list_approved_invoices", args: {} },
+      { name: "pay_invoice", args: pay },
+    ]);
+    const request = client.requests[0]!;
+    expect(request.tools?.map((t) => t.function.name)).toEqual(OFFCHAIN_TOOL_NAMES);
+    expect(request.messages[0]!.content).toContain("accounts-payable assistant");
+    expect(request.messages[0]!.content).toContain(
+      "Your mandate: Pay only vendor-master accounts.",
+    );
+  });
+
+  it("defaults to the same cheap model as the other demo agents", () => {
+    expect(new LlmPayablesAgent({ client: new FakeClient([]) }).name).toBe(
+      `payables-agent/${DEFAULT_AGENT_MODEL}`,
+    );
   });
 });

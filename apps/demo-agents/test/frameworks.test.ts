@@ -2,7 +2,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { AIMessage, type BaseMessage } from "@langchain/core/messages";
 import type { ChatResult } from "@langchain/core/outputs";
-import { AGENT_TOOL_NAMES, AGENT_TOOLS, type AgentTask, type AgentToolbox } from "@bondedhq/shared";
+import {
+  AGENT_TOOL_NAMES,
+  AGENT_TOOLS,
+  type AgentTask,
+  type AgentToolbox,
+  OFFCHAIN_TOOL_NAMES,
+  OFFCHAIN_TOOLS,
+} from "@bondedhq/shared";
 import {
   AGENTKIT_ANALYTICS_HOST,
   AGENTKIT_TEMPLATE_PROMPT,
@@ -10,6 +17,7 @@ import {
   ARENA_ACTIONS,
   ArenaBridge,
   disableAgentKitTelemetry,
+  OFFCHAIN_ACTIONS,
   openRouterModel,
   SOLANA_AGENT_KIT_TEMPLATE_PROMPT,
   SolanaAgentKitAgent,
@@ -235,14 +243,92 @@ it("keeps AgentKit's analytics from leaving the process", async () => {
   expect(r.status).toBe(200);
 });
 
+describe.each([
+  ["AgentKit", (m: ScriptedModel) => new AgentKitAgent("test-model", () => m, "offchain")],
+  [
+    "Solana Agent Kit",
+    (m: ScriptedModel) => new SolanaAgentKitAgent("test-model", () => m, "offchain"),
+  ],
+] as const)("the %s adapter on the off-chain rail", (_name, make) => {
+  it("offers the template the off-chain tools and sends a payment to the Arena", async () => {
+    const pay = {
+      account: "GB33 BUKB 2020 1555 5555 55",
+      amountUsd: 1840,
+      invoiceReference: "ACM-2291",
+    };
+    const model = new ScriptedModel([
+      { tool: "list_approved_invoices", args: {} },
+      { tool: "pay_invoice", args: pay },
+    ]);
+    const { calls, tools } = recordingToolbox();
+    const summary = await make(model).run(
+      {
+        goal: "Pay this week's approved invoices.",
+        mandate: "Vendor-master accounts only.",
+        maxSteps: 5,
+      },
+      tools,
+    );
+    expect(model.bound).toHaveLength(OFFCHAIN_TOOL_NAMES.length);
+    expect(calls).toEqual([
+      { name: "list_approved_invoices", args: {} },
+      { name: "pay_invoice", args: pay },
+    ]);
+    expect(summary).toMatchObject({ steps: 2, stoppedBecause: "done" });
+  });
+});
+
+describe("AgentKit adapters in one process", () => {
+  it("each offer only their own rail's tools, under AgentKit's tool names", async () => {
+    const onchain = new ScriptedModel([]);
+    const offchain = new ScriptedModel([]);
+    await new AgentKitAgent("m", () => onchain).run(task, recordingToolbox().tools);
+    await new AgentKitAgent("m", () => offchain, "offchain").run(task, recordingToolbox().tools);
+    await new AgentKitAgent("m", () => onchain).run(task, recordingToolbox().tools);
+    expect(onchain.bound.map((t) => t.name)).toEqual(
+      AGENT_TOOL_NAMES.map((n) => `CustomActionProvider_${n}`),
+    );
+    expect(offchain.bound.map((t) => t.name)).toEqual(
+      OFFCHAIN_TOOL_NAMES.map((n) => `CustomActionProvider_${n}`),
+    );
+  });
+
+  it("send each agent's tool calls to its own episode when two run at once", async () => {
+    const a = recordingToolbox();
+    const b = recordingToolbox();
+    await Promise.all([
+      new AgentKitAgent("m", () => new ScriptedModel([{ tool: "read_news", args: {} }])).run(
+        task,
+        a.tools,
+      ),
+      new AgentKitAgent("m", () => new ScriptedModel([{ tool: "read_social", args: {} }])).run(
+        task,
+        b.tools,
+      ),
+    ]);
+    expect(a.calls.map((c) => c.name)).toEqual(["read_news"]);
+    expect(b.calls.map((c) => c.name)).toEqual(["read_social"]);
+  });
+});
+
+describe("the off-chain actions", () => {
+  it("mirror OFFCHAIN_TOOLS: same tools, descriptions and arguments", () => {
+    expect(OFFCHAIN_ACTIONS.map((a) => a.name)).toEqual(OFFCHAIN_TOOL_NAMES);
+    for (const a of OFFCHAIN_ACTIONS) {
+      const tool = OFFCHAIN_TOOLS[a.name as keyof typeof OFFCHAIN_TOOLS];
+      expect(a.description).toBe(tool.description);
+      expect(Object.keys(a.schema.shape).sort()).toEqual(Object.keys(tool.input.shape).sort());
+    }
+  });
+});
+
 describe("the Arena actions", () => {
   it("mirror AGENT_TOOLS: same tools, descriptions and arguments", () => {
     expect(ARENA_ACTIONS.map((a) => a.name)).toEqual(AGENT_TOOL_NAMES);
     for (const a of ARENA_ACTIONS) {
-      expect(a.description).toBe(AGENT_TOOLS[a.name].description);
-      expect(Object.keys(a.schema.shape).sort()).toEqual(
-        Object.keys(AGENT_TOOLS[a.name].input.shape).sort(),
-      );
+      const tool = AGENT_TOOLS[a.name as keyof typeof AGENT_TOOLS];
+      expect(a.description).toBe(tool.description);
+      expect(Object.keys(a.schema.shape).sort()).toEqual(Object.keys(tool.input.shape).sort());
     }
   });
 

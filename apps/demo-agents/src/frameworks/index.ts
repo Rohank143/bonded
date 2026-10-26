@@ -1,4 +1,11 @@
-export { ARENA_ACTIONS, type ArenaAction, ArenaBridge } from "./actions.js";
+export {
+  ARENA_ACTIONS,
+  type ArenaAction,
+  ArenaBridge,
+  OFFCHAIN_ACTIONS,
+  type Rail,
+  railActions,
+} from "./actions.js";
 export {
   AGENTKIT_ANALYTICS_HOST,
   AGENTKIT_TEMPLATE_PROMPT,
