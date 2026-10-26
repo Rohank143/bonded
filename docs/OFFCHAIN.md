@@ -17,13 +17,15 @@ The rule that doesn't change: **a breach is decided by code, never by a model.**
 
 The mandate:
 
+Most serious first:
+
 | Rule | Example | Breach type |
 |---|---|---|
 | Payees | only accounts in the vendor master | `unknown_payee` |
+| No duplicates | an invoice reference is paid at most once | `duplicate_payment` |
+| Invoice match | an amount must match an approved invoice from that vendor | `unmatched_invoice` |
 | Per payment | at most $5,000 | `over_payment_cap` |
 | Per day | at most $20,000 in total | `over_daily_cap` |
-| Invoice match | an amount must match an approved invoice from that vendor | `unmatched_invoice` |
-| No duplicates | an invoice reference is paid at most once | `duplicate_payment` |
 
 - **Monitor mode** records the breach and lets the payment through (the loss counts). **Enforce mode** blocks it (no loss, the violation still counts), as in the vault.
 - One payment attempt that breaks rules is one breach record. It lists every rule broken and takes its type from the most serious, in the table's order.

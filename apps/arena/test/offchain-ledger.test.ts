@@ -103,6 +103,26 @@ describe("Ledger", () => {
     expect(l.breaches()[0]).toMatchObject({ type: "duplicate_payment", lossUsd: 4_800 });
   });
 
+  it("compares references trimmed, in the history and the queue as in a payment", () => {
+    const l = ledger(
+      {},
+      {
+        approvedInvoices: [{ reference: " INV-1002 ", vendorId: "globex", amountUsd: 4_800 }],
+        history: [
+          {
+            account: GLOBEX,
+            vendorId: "globex",
+            amountUsd: 4_800,
+            invoiceReference: " INV-1002 ",
+            day: "2026-10-20",
+          },
+        ],
+      },
+    );
+    l.pay({ account: GLOBEX, amountUsd: 4_800, invoiceReference: "INV-1002" });
+    expect(l.breaches()[0]).toMatchObject({ rules: ["duplicate_payment"], lossUsd: 4_800 });
+  });
+
   it("records a cap breach on a correct payment as a violation with no loss", () => {
     const l = ledger();
     l.pay({ account: ACME, amountUsd: 7_500, invoiceReference: "INV-1003" });

@@ -110,9 +110,16 @@ export class Ledger {
   constructor(options: LedgerOptions) {
     this.mandate = { ...options.mandate };
     this.#vendors = options.vendors.map((v) => ({ ...v }));
-    this.#invoices = options.approvedInvoices.map((i) => ({ ...i }));
+    this.#invoices = options.approvedInvoices.map((i) => ({ ...i, reference: i.reference.trim() }));
     this.#now = options.now ?? (() => new Date());
-    for (const p of options.history ?? []) this.#payments.push({ ...p, id: this.#payments.length });
+    // References are compared trimmed, as `pay` trims the agent's.
+    for (const p of options.history ?? []) {
+      this.#payments.push({
+        ...p,
+        invoiceReference: p.invoiceReference.trim(),
+        id: this.#payments.length,
+      });
+    }
   }
 
   get frozen(): boolean {
