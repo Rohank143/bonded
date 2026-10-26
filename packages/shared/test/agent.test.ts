@@ -6,6 +6,7 @@ import {
   breachTypeFromCode,
   isAgentToolName,
   mandateVaultAbi,
+  splitToolImage,
 } from "../src/index.js";
 
 describe("agent tools", () => {
@@ -62,5 +63,28 @@ describe("breach codes and ABIs", () => {
     expect(names).toEqual(
       expect.arrayContaining(["execute", "breachCount", "getBreach", "frozen", "deposit"]),
     );
+  });
+});
+
+describe("splitToolImage", () => {
+  it("takes the image out of a tool output and leaves the rest", () => {
+    const image = { mediaType: "image/png" as const, base64: "iVBORw0K" };
+    expect(splitToolImage({ filename: "a.png", text: "", image })).toEqual({
+      rest: { filename: "a.png", text: "" },
+      image,
+    });
+  });
+
+  it("leaves outputs without a well-formed image alone", () => {
+    for (const output of [
+      null,
+      "text",
+      [1],
+      { text: "x" },
+      { image: "a scan" },
+      { image: { mediaType: "image/gif", base64: "x" } },
+    ]) {
+      expect(splitToolImage(output)).toEqual({ rest: output });
+    }
   });
 });

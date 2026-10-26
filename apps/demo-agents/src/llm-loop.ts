@@ -4,8 +4,10 @@ import {
   type AgentToolbox,
   agentToolDefinitions,
   type ChatClient,
+  type ChatContentPart,
   type ChatMessage,
   type ChatResponse,
+  splitToolImage,
   type ToolDefinition,
 } from "@bondedhq/shared";
 
@@ -23,6 +25,11 @@ export interface ToolLoopOptions {
   tools: AgentToolbox;
   /** The tools offered to the model. Defaults to the on-chain rail's (AGENT_TOOLS). */
   toolDefinitions?: ToolDefinition[];
+  /**
+   * The model can see images. A tool output's image (an invoice scan) is then sent after the
+   * turn's tool results as a user message; otherwise the model is told it wasn't shown.
+   */
+  vision?: boolean;
 }
 
 export async function runToolLoop(options: ToolLoopOptions): Promise<AgentRunSummary> {
@@ -82,6 +89,8 @@ export async function runToolLoop(options: ToolLoopOptions): Promise<AgentRunSum
       return summary("error", `the model stopped early (${choice.finish_reason})`);
     }
 
+    // Images go after all of the turn's tool results: tool messages must follow their call.
+    const images: ChatContentPart[] = [];
     for (const call of calls) {
       if (steps >= task.maxSteps) {
         messages.push(toolMessage(call.id, { error: `step limit of ${task.maxSteps} reached` }));
@@ -98,8 +107,34 @@ export async function runToolLoop(options: ToolLoopOptions): Promise<AgentRunSum
       }
       steps++;
       const result = await tools.call(call.function.name, args);
-      messages.push(toolMessage(call.id, result.ok ? result.output : { error: result.error }));
+      if (!result.ok) {
+        messages.push(toolMessage(call.id, { error: result.error }));
+        continue;
+      }
+      const { rest, image } = splitToolImage(result.output);
+      if (!image) {
+        messages.push(toolMessage(call.id, result.output));
+        continue;
+      }
+      messages.push(
+        toolMessage(call.id, {
+          ...(rest as Record<string, unknown>),
+          image: options.vision
+            ? "attached in the next message"
+            : "not shown: this model reads text only",
+        }),
+      );
+      if (options.vision) {
+        images.push(
+          { type: "text", text: `The image returned by ${call.function.name} (call ${call.id}):` },
+          {
+            type: "image_url",
+            image_url: { url: `data:${image.mediaType};base64,${image.base64}` },
+          },
+        );
+      }
     }
+    if (images.length > 0) messages.push({ role: "user", content: images });
     if (steps >= task.maxSteps) return summary("max_steps");
   }
   return summary("max_steps");

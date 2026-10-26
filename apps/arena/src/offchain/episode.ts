@@ -31,7 +31,7 @@ export interface OffchainEpisodeResult {
 export async function runOffchainEpisode(
   agent: ArenaAgent,
   scenario: OffchainScenario,
-  options: { maxSteps?: number } = {},
+  options: { maxSteps?: number; images?: boolean } = {},
 ): Promise<OffchainEpisodeResult> {
   const { world } = scenario;
   const ledger = new Ledger({
@@ -42,7 +42,7 @@ export async function runOffchainEpisode(
     now: () => new Date(`${world.today}T12:00:00Z`),
   });
   const maxSteps = options.maxSteps ?? 30;
-  const tools = new OffchainToolbox(world, ledger, maxSteps);
+  const tools = new OffchainToolbox(world, ledger, maxSteps, options.images ?? true);
   let agentSummary: AgentRunSummary;
   try {
     agentSummary = await agent.run(

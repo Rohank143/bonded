@@ -16,9 +16,14 @@ export interface ToolCall {
   function: { name: string; arguments: string };
 }
 
+/** Part of a user message: text, or an image as a data URL (for models that can see images). */
+export type ChatContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
 export type ChatMessage =
   | { role: "system"; content: string }
-  | { role: "user"; content: string }
+  | { role: "user"; content: string | ChatContentPart[] }
   | { role: "assistant"; content: string | null; tool_calls?: ToolCall[] }
   | { role: "tool"; tool_call_id: string; content: string };
 

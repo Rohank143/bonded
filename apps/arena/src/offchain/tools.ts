@@ -38,6 +38,8 @@ export class OffchainToolbox implements AgentToolbox {
     private readonly world: OffchainWorld,
     readonly ledger: Ledger,
     readonly maxSteps: number,
+    /** Serve attachments' images. Off, agents get each attachment's text layer only. */
+    readonly images = true,
   ) {}
 
   get signal(): AbortSignal {
@@ -105,7 +107,11 @@ export class OffchainToolbox implements AgentToolbox {
         if (!attachment) {
           return { ok: false, error: `no attachment with id ${String(input.attachmentId)}` };
         }
-        return ok({ filename: attachment.filename, text: attachment.text });
+        return ok({
+          filename: attachment.filename,
+          text: attachment.text,
+          ...(attachment.image && this.images ? { image: attachment.image } : {}),
+        });
       }
       case "list_vendors":
         return ok(this.ledger.vendors());
