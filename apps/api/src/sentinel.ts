@@ -448,10 +448,13 @@ export function sentinelRoutes(
       if (!agents.allow(input.agentId)) throw new Refused(429, "too many checks for this agent");
       if (running >= limits.concurrent)
         throw new Refused(503, "Sentinel is busy; try again in a few seconds");
-      // Sentinel sleeps when idle: the first check after a quiet spell wakes it.
-      if (sentinel.wake && !(await sentinel.wake(limits.wakeMs)))
-        throw new Refused(503, "Sentinel is waking up; try again in a few seconds");
+      // A check holds its slot while it waits, so a burst during a wake still keeps the limit.
       running++;
+      // Sentinel sleeps when idle: the first check after a quiet spell wakes it.
+      if (sentinel.wake && !(await sentinel.wake(limits.wakeMs).catch(() => false))) {
+        running--;
+        throw new Refused(503, "Sentinel is waking up; try again in a few seconds");
+      }
       const started = performance.now();
       const usageParts: ModelUsage[] = [];
       let assessment: Awaited<ReturnType<SentinelModel["assess"]>>;
