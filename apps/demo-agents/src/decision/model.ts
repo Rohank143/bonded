@@ -1,4 +1,4 @@
-import { type ChatClient, llmConfigFromEnv, OpenAICompatibleClient } from "@bondedhq/shared";
+import { type ChatClient, chatClientFromEnv } from "@bondedhq/shared";
 import type { ModelUsage } from "../usage.js";
 
 /**
@@ -67,7 +67,7 @@ export class LlmDecisionModel implements DecisionModel {
   private costMissing = false;
 
   constructor(options: LlmDecisionModelOptions = {}) {
-    this.client = options.client ?? new OpenAICompatibleClient(llmConfigFromEnv());
+    this.client = options.client ?? chatClientFromEnv();
     this.model = options.model ?? DEFAULT_DECISION_MODEL;
     this.name = `llm/${this.model}`;
   }

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
-import { llmConfigFromEnv, OpenAICompatibleClient } from "@bondedhq/shared";
+import { chatClientFromEnv } from "@bondedhq/shared";
 import { loadDotEnv } from "./env.js";
 import { generateLlmContrast } from "./llm-contrast.js";
 
@@ -36,7 +36,7 @@ async function main(): Promise<number> {
   if (!(maxUsd > 0)) throw new Error("--max-usd must be a positive number");
   loadDotEnv();
   const summary = await generateLlmContrast({
-    client: new OpenAICompatibleClient(llmConfigFromEnv()),
+    client: chatClientFromEnv(),
     model: values.model,
     count,
     maxUsd,

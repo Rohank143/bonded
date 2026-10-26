@@ -26,9 +26,8 @@ import {
   type EvmMandateInput,
   isWellFormedAgentSecret,
   isWellFormedRunnerToken,
-  llmConfigFromEnv,
+  chatClientFromEnv,
   newAgentSecret,
-  OpenAICompatibleClient,
   parseSentinelQuestionSet,
 } from "@bondedhq/shared";
 import { loadAttackLibrary } from "./attacks.js";
@@ -82,7 +81,8 @@ Agent:
                            and always uses a model (--model picks it)
   --brain <scripted|llm>   scripted needs nothing; llm needs OPENROUTER_API_KEY (default: scripted)
   --model <id>             model for an llm brain or the decision agent, any OpenRouter model id
-                           (LLM_BASE_URL switches to another OpenAI-compatible endpoint)
+                           (LLM_BASE_URL switches to another OpenAI-compatible endpoint), or a
+                           Meta model such as muse-spark-1.3 (needs MODEL_API_KEY)
   --sentinel-model <id>    vulnerable or hardened: add a Sentinel guard that asks this model about each
                            write (vulnerable gets Sentinel alone, hardened gets it after its policy guard);
                            laya:<url> uses a Laya server (LAYA_API_KEY if it needs one)
@@ -404,7 +404,7 @@ ${agent.name}: Task score ${t.score === null ? "not measured" : `${t.score}/100 
               ...(values["held-out-model"]
                 ? {
                     llm: {
-                      client: new OpenAICompatibleClient(llmConfigFromEnv()),
+                      client: chatClientFromEnv(),
                       model: values["held-out-model"],
                       maxUsd: Number(values["held-out-max-usd"]),
                     },

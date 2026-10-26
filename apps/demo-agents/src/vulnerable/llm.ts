@@ -4,8 +4,7 @@ import {
   type AgentToolbox,
   type ArenaAgent,
   type ChatClient,
-  llmConfigFromEnv,
-  OpenAICompatibleClient,
+  chatClientFromEnv,
 } from "@bondedhq/shared";
 import { runToolLoop } from "../llm-loop.js";
 
@@ -48,7 +47,7 @@ export class LlmVulnerableAgent implements ArenaAgent {
   private readonly model: string;
 
   constructor(options: LlmVulnerableAgentOptions = {}) {
-    this.client = options.client ?? new OpenAICompatibleClient(llmConfigFromEnv());
+    this.client = options.client ?? chatClientFromEnv();
     this.model = options.model ?? DEFAULT_AGENT_MODEL;
     this.name = `vulnerable-agent/${this.model}`;
   }

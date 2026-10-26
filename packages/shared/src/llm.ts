@@ -10,6 +10,14 @@
 
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
+/** Meta Model API: Muse Spark, Muse Wonder and the other hosted Meta models. */
+export const META_MODEL_API_BASE_URL = "https://api.meta.ai/v1";
+
+/** Whether a model id names a model served by Meta Model API (`muse-spark-1.3`, `sam-3.1`, ...). */
+export function isMetaModel(model: string): boolean {
+  return /^(muse-|sam-)/.test(model);
+}
+
 export interface ToolCall {
   id: string;
   type: "function";
@@ -74,6 +82,53 @@ export function llmConfigFromEnv(env: Record<string, string | undefined> = proce
   return { baseUrl: (env.LLM_BASE_URL ?? OPENROUTER_BASE_URL).replace(/\/+$/, ""), apiKey };
 }
 
+/**
+ * The endpoint and key for one model. Meta's models go to Meta Model API with MODEL_API_KEY
+ * (META_MODEL_API_BASE_URL overrides the URL); every other model uses `llmConfigFromEnv`.
+ */
+export function llmConfigForModel(
+  model: string,
+  env: Record<string, string | undefined> = process.env,
+): LlmConfig {
+  if (!isMetaModel(model)) return llmConfigFromEnv(env);
+  const apiKey = env.MODEL_API_KEY;
+  if (!apiKey) throw new Error(`no Meta Model API key for ${model}: set MODEL_API_KEY`);
+  const baseUrl = env.META_MODEL_API_BASE_URL ?? META_MODEL_API_BASE_URL;
+  return { baseUrl: baseUrl.replace(/\/+$/, ""), apiKey };
+}
+
+/**
+ * A `ChatClient` that sends each request to its model's endpoint (`llmConfigForModel`), so an
+ * agent on Muse Spark and an attacker on OpenRouter can share one client. Endpoints are resolved
+ * on first use: a run that only calls Meta's models needs no OpenRouter key.
+ */
+export class RoutingChatClient implements ChatClient {
+  private readonly clients = new Map<string, OpenAICompatibleClient>();
+
+  constructor(
+    private readonly env: Record<string, string | undefined> = process.env,
+    private readonly options: OpenAICompatibleClientOptions = {},
+  ) {}
+
+  complete(request: ChatRequest, options?: { signal?: AbortSignal }): Promise<ChatResponse> {
+    const config = llmConfigForModel(request.model, this.env);
+    let client = this.clients.get(config.baseUrl);
+    if (!client) {
+      client = new OpenAICompatibleClient(config, this.options);
+      this.clients.set(config.baseUrl, client);
+    }
+    return client.complete(request, options);
+  }
+}
+
+/** The default `ChatClient`: routes each model to its endpoint, configured from the environment. */
+export function chatClientFromEnv(
+  env: Record<string, string | undefined> = process.env,
+  options: OpenAICompatibleClientOptions = {},
+): ChatClient {
+  return new RoutingChatClient(env, options);
+}
+
 /** An HTTP error from the endpoint, with its status and (truncated) body. */
 export class LlmError extends Error {
   constructor(
@@ -98,6 +153,7 @@ export interface OpenAICompatibleClientOptions {
 /** A `ChatClient` for any OpenAI-compatible chat-completions endpoint. */
 export class OpenAICompatibleClient implements ChatClient {
   private readonly isOpenRouter: boolean;
+  private readonly isMeta: boolean;
   private readonly fetch: typeof fetch;
   private readonly maxRetries: number;
   private readonly retryDelayMs: number;
@@ -107,6 +163,7 @@ export class OpenAICompatibleClient implements ChatClient {
     options: OpenAICompatibleClientOptions = {},
   ) {
     this.isOpenRouter = new URL(config.baseUrl).hostname.endsWith("openrouter.ai");
+    this.isMeta = new URL(config.baseUrl).hostname === new URL(META_MODEL_API_BASE_URL).hostname;
     this.fetch = options.fetch ?? fetch;
     this.maxRetries = options.maxRetries ?? 2;
     this.retryDelayMs = options.retryDelayMs ?? 1000;
@@ -121,10 +178,14 @@ export class OpenAICompatibleClient implements ChatClient {
     options: { signal?: AbortSignal } = {},
   ): Promise<ChatResponse> {
     // OpenRouter reports each request's cost when asked; other endpoints may reject the field.
+    // Meta Model API takes reasoning as `reasoning_effort` and has no "off": "minimal" is lowest.
     const { reasoning, ...plain } = request;
+    const metaEffort = reasoning?.enabled === false ? "minimal" : reasoning?.effort;
     const body = this.isOpenRouter
       ? { ...plain, ...(reasoning ? { reasoning } : {}), usage: { include: true } }
-      : plain;
+      : this.isMeta && metaEffort
+        ? { ...plain, reasoning_effort: metaEffort }
+        : plain;
     for (let attempt = 0; ; attempt++) {
       let response: Response;
       try {

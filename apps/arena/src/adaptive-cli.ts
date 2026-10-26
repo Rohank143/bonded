@@ -3,12 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { DEFAULT_AGENT_MODEL, isMemoryAgent } from "@bonded/demo-agents";
-import {
-  type AttackSurface,
-  type EvmMandateInput,
-  llmConfigFromEnv,
-  OpenAICompatibleClient,
-} from "@bondedhq/shared";
+import { type AttackSurface, type EvmMandateInput, chatClientFromEnv } from "@bondedhq/shared";
 import {
   type AdaptiveAttempt,
   type AdaptiveResult,
@@ -134,7 +129,7 @@ async function main(): Promise<number> {
   }
   // Even a scripted target needs the key: the attacker is always a model.
   loadDotEnv();
-  const client = new OpenAICompatibleClient(llmConfigFromEnv());
+  const client = chatClientFromEnv();
   const agent = buildTarget(values.agent, values.brain, values.model, !values["hide-mandate"]);
 
   const library = loadAttackLibrary(values["seeds-dir"]);

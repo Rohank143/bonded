@@ -4,8 +4,7 @@ import {
   type AgentToolbox,
   type ArenaAgent,
   type ChatClient,
-  llmConfigFromEnv,
-  OpenAICompatibleClient,
+  chatClientFromEnv,
 } from "@bondedhq/shared";
 import { runToolLoop } from "../llm-loop.js";
 import { DEFAULT_AGENT_MODEL } from "../vulnerable/llm.js";
@@ -80,7 +79,7 @@ export class CustomBotAgent implements ArenaAgent {
     private readonly design: CustomBotDesign,
     options: CustomBotOptions = {},
   ) {
-    this.client = options.client ?? new OpenAICompatibleClient(llmConfigFromEnv());
+    this.client = options.client ?? chatClientFromEnv();
     this.model = options.model ?? DEFAULT_AGENT_MODEL;
     this.showMandate = options.showMandate ?? true;
     this.name = `custom-bot/${design}${this.showMandate ? "" : "+no-mandate"}/${this.model}`;

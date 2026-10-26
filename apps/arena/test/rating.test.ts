@@ -86,6 +86,17 @@ describe("listedModelPrice", () => {
     expect(price?.outputPerMillion).toBeCloseTo(0.6, 9);
   });
 
+  it("uses Meta's published prices for Meta's models, without a lookup", async () => {
+    const fetch = (async () => {
+      throw new Error("Meta prices need no lookup");
+    }) as typeof globalThis.fetch;
+    expect(await listedModelPrice("muse-spark-1.3", { fetch })).toEqual({
+      inputPerMillion: 1.25,
+      outputPerMillion: 4.25,
+    });
+    expect(await listedModelPrice("muse-unknown-9", { fetch })).toBeUndefined();
+  });
+
   it("is undefined for an unlisted model, a variable or missing price, or a failed lookup", async () => {
     const listed = [
       { id: "router/auto", pricing: { prompt: "-1", completion: "-1" } },

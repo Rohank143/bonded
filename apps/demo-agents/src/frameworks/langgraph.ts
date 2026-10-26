@@ -3,7 +3,7 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { ChatOpenAI } from "@langchain/openai";
-import { type AgentRunSummary, type AgentTask, llmConfigFromEnv } from "@bondedhq/shared";
+import { type AgentRunSummary, type AgentTask, llmConfigForModel } from "@bondedhq/shared";
 
 /**
  * Both framework templates (AgentKit's LangChain chatbot, Solana Agent Kit's LangGraph example)
@@ -27,8 +27,8 @@ export const MODEL_REQUEST_TIMEOUT_MS = 90_000;
 export const MODEL_REQUEST_RETRIES = 3;
 
 /**
- * A chat model on OpenRouter (or LLM_BASE_URL), the way the templates create theirs. It keeps
- * each raw response on the message: LangChain drops the `usage.cost` OpenRouter reports, and the
+ * A chat model on its endpoint (OpenRouter, LLM_BASE_URL or, for Meta's models, Meta Model
+ * API), the way the templates create theirs. It keeps each raw response on the message: LangChain drops the `usage.cost` OpenRouter reports, and the
  * run's spend should be that cost, not an estimate from token counts. Each request has a time
  * limit and is retried when it times out or the connection drops, so one provider hiccup costs a
  * retry, not the episode. The prompt, the tools and the model's settings are the template's.
@@ -37,7 +37,7 @@ export function openRouterModel(
   model: string,
   options: { fetch?: typeof globalThis.fetch; timeoutMs?: number } = {},
 ): BaseChatModel {
-  const { baseUrl, apiKey } = llmConfigFromEnv();
+  const { baseUrl, apiKey } = llmConfigForModel(model);
   return new ChatOpenAI({
     model,
     apiKey,

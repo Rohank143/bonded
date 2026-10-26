@@ -15,12 +15,7 @@ import { sentinelFromEnv } from "./sentinel.js";
 import { workBountyOne } from "./bounty-worker.js";
 import { Alerter, LoopHealth, Watchdog, describeFailure, telegramFromEnv } from "./alerts.js";
 import { renewExpiringScores } from "./live-loop.js";
-import {
-  OpenAICompatibleClient,
-  bondedRegistryAbi,
-  UNDERWRITING_COVER_CAP_USD,
-  llmConfigFromEnv,
-} from "@bondedhq/shared";
+import { bondedRegistryAbi, UNDERWRITING_COVER_CAP_USD, chatClientFromEnv } from "@bondedhq/shared";
 import { REMOTE_EPISODE_TIMEOUT_MS, gatewayAgents } from "./remote-agent.js";
 import { DbRunnerAuth, RunnerPresenceWriter } from "./runners.js";
 import { secretBoxFromEnv } from "./secrets.js";
@@ -339,7 +334,7 @@ if (role === "migrate") {
       ...(llmKey
         ? {
             llm: {
-              client: new OpenAICompatibleClient(llmConfigFromEnv()),
+              client: chatClientFromEnv(),
               model: process.env.HELD_OUT_MODEL ?? "deepseek/deepseek-v4.1-flash",
               maxUsd: z.coerce
                 .number()

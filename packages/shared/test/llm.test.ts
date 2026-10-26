@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   agentToolDefinitions,
+  isMetaModel,
   LlmError,
+  llmConfigForModel,
   llmConfigFromEnv,
+  META_MODEL_API_BASE_URL,
   OPENROUTER_BASE_URL,
   OpenAICompatibleClient,
+  RoutingChatClient,
 } from "../src/index.js";
 
 const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
@@ -38,6 +42,49 @@ describe("llmConfigFromEnv", () => {
 
   it("fails clearly without a key", () => {
     expect(() => llmConfigFromEnv({})).toThrow(/OPENROUTER_API_KEY/);
+  });
+});
+
+describe("llmConfigForModel", () => {
+  it("sends Meta's models to Meta Model API and the rest to the default endpoint", () => {
+    const env = { MODEL_API_KEY: "meta-key", OPENROUTER_API_KEY: "or-key" };
+    expect(isMetaModel("muse-spark-1.3")).toBe(true);
+    expect(isMetaModel("sam-3.1")).toBe(true);
+    expect(isMetaModel("deepseek/deepseek-v4.1-flash")).toBe(false);
+    expect(llmConfigForModel("muse-spark-1.3", env)).toEqual({
+      baseUrl: META_MODEL_API_BASE_URL,
+      apiKey: "meta-key",
+    });
+    expect(llmConfigForModel("deepseek/deepseek-v4.1-flash", env)).toEqual({
+      baseUrl: OPENROUTER_BASE_URL,
+      apiKey: "or-key",
+    });
+  });
+
+  it("fails clearly without MODEL_API_KEY, and needs no OpenRouter key for Meta's models", () => {
+    expect(() => llmConfigForModel("muse-spark-1.3", { OPENROUTER_API_KEY: "k" })).toThrow(
+      /MODEL_API_KEY/,
+    );
+    expect(llmConfigForModel("muse-spark-1.3", { MODEL_API_KEY: "m" }).apiKey).toBe("m");
+  });
+});
+
+describe("RoutingChatClient", () => {
+  it("routes each request to its model's endpoint with that endpoint's key", async () => {
+    const { impl, calls } = fakeFetch(ok(reply), ok(reply));
+    const client = new RoutingChatClient(
+      { MODEL_API_KEY: "meta-key", OPENROUTER_API_KEY: "or-key" },
+      { fetch: impl },
+    );
+    const messages = [{ role: "user" as const, content: "x" }];
+    await client.complete({ model: "muse-spark-1.3", messages });
+    await client.complete({ model: "deepseek/deepseek-v4.1-flash", messages });
+    expect(calls.map((c) => c.url)).toEqual([
+      `${META_MODEL_API_BASE_URL}/chat/completions`,
+      `${OPENROUTER_BASE_URL}/chat/completions`,
+    ]);
+    const auth = calls.map((c) => (c.init.headers as Record<string, string>).authorization);
+    expect(auth).toEqual(["Bearer meta-key", "Bearer or-key"]);
   });
 });
 
@@ -93,6 +140,26 @@ describe("OpenAICompatibleClient", () => {
       { fetch: local.impl },
     ).complete(request);
     expect(JSON.parse(String(local.calls[0]!.init.body))).not.toHaveProperty("reasoning");
+  });
+
+  it("sends Meta Model API its reasoning_effort, with minimal for reasoning off", async () => {
+    const send = async (reasoning?: { enabled?: boolean; effort?: "low" }) => {
+      const meta = fakeFetch(ok(reply));
+      await new OpenAICompatibleClient(
+        { baseUrl: META_MODEL_API_BASE_URL, apiKey: "k" },
+        { fetch: meta.impl },
+      ).complete({
+        model: "muse-spark-1.3",
+        messages: [{ role: "user", content: "hi" }],
+        reasoning,
+      });
+      return JSON.parse(String(meta.calls[0]!.init.body));
+    };
+    const off = await send({ enabled: false });
+    expect(off.reasoning_effort).toBe("minimal");
+    expect(off).not.toHaveProperty("reasoning");
+    expect((await send({ effort: "low" })).reasoning_effort).toBe("low");
+    expect(await send()).not.toHaveProperty("reasoning_effort");
   });
 
   it("retries rate limits, server errors and dropped connections", async () => {

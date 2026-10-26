@@ -1,4 +1,4 @@
-import { type AgentRunSummary, OPENROUTER_BASE_URL } from "@bondedhq/shared";
+import { type AgentRunSummary, isMetaModel, OPENROUTER_BASE_URL } from "@bondedhq/shared";
 
 /** A model's price, USD per million tokens. */
 export interface TokenPrice {
@@ -77,14 +77,33 @@ export class SpendingCap {
 }
 
 /**
+ * Meta Model API's published prices (dev.meta.ai/docs/pricing-rate-limits, read 2026-10-26).
+ * Its responses carry no cost and its model list no prices, so the cap estimates from these.
+ * Cached input is cheaper; the full input price keeps the estimate on the high side.
+ */
+export const META_MODEL_PRICES: Record<string, TokenPrice> = {
+  "muse-spark-1.3": { inputPerMillion: 1.25, outputPerMillion: 4.25 },
+  "muse-spark-1.2": { inputPerMillion: 1.25, outputPerMillion: 4.25 },
+  "muse-spark-1.1": { inputPerMillion: 1.25, outputPerMillion: 4.25 },
+  "muse-spark-1.3-contributor": { inputPerMillion: 0.1, outputPerMillion: 0.2 },
+  "muse-spark-1.2-contributor": { inputPerMillion: 0.1, outputPerMillion: 0.2 },
+  "muse-wonder-1.0": { inputPerMillion: 4, outputPerMillion: 20 },
+};
+
+/**
  * A model's listed price from the endpoint's model list (OpenRouter's `/models`, which needs no
- * key), for a spending cap's fallback. Undefined when the endpoint lists no price for it or
- * can't be reached: the cap then keeps its default, so a failed lookup never loosens it.
+ * key), for a spending cap's fallback. Meta's models use META_MODEL_PRICES. Undefined when the
+ * endpoint lists no price for it or can't be reached: the cap then keeps its default, so a failed
+ * lookup never loosens it.
  */
 export async function listedModelPrice(
   model: string,
   options: { baseUrl?: string; fetch?: typeof globalThis.fetch; timeoutMs?: number } = {},
 ): Promise<TokenPrice | undefined> {
+  if (isMetaModel(model)) {
+    const price = META_MODEL_PRICES[model];
+    return price ? { ...price } : undefined;
+  }
   const baseUrl = (options.baseUrl ?? process.env.LLM_BASE_URL ?? OPENROUTER_BASE_URL).replace(
     /\/+$/,
     "",

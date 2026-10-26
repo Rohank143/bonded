@@ -1,11 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
-import {
-  ATTACK_CLASSES,
-  OpenAICompatibleClient,
-  SENTINEL_HELD_OUT_CLASSES,
-  llmConfigFromEnv,
-} from "@bondedhq/shared";
+import { ATTACK_CLASSES, SENTINEL_HELD_OUT_CLASSES, chatClientFromEnv } from "@bondedhq/shared";
 import { loadDotEnv } from "./env.js";
 import { generateSynthetic, readSeedRows, TARGET_SETS, type TargetSet } from "./synthetic.js";
 
@@ -58,7 +53,7 @@ async function main(): Promise<number> {
     throw new Error("--reasoning must be on or off");
 
   loadDotEnv();
-  const client = new OpenAICompatibleClient(llmConfigFromEnv());
+  const client = chatClientFromEnv();
   const classNames = Object.fromEntries(
     Object.entries(ATTACK_CLASSES).map(([id, info]) => [id, `${info.name}: ${info.description}`]),
   );
