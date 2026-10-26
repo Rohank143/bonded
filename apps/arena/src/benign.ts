@@ -5,7 +5,7 @@ import { AttackClassId, CampaignStep, WorldSessions } from "@bondedhq/shared";
 import { parse } from "yaml";
 import { z } from "zod";
 import { benignTrade } from "./goal-trade.js";
-import { carriedReportProblem, yesterdayProblem } from "./world-observations.js";
+import { carriedReportProblem, overnightProblem, yesterdayProblem } from "./world-observations.js";
 
 /**
  * Benign twins (apps/arena/benign-seeds): for an attack class, true content on the same surface
@@ -25,6 +25,10 @@ export const BENIGN_SEEDS_DIR = fileURLToPath(new URL("../benign-seeds", import.
  * benign-seeds, whose twins run as single-day episodes that refuse carried content.
  */
 export const WORLD_TWINS_DIR = fileURLToPath(new URL("../world-twins", import.meta.url));
+/** World twins still being validated, beside WORLD_SEEDS_STAGED_DIR (`arena world --staged`). */
+export const WORLD_TWINS_STAGED_DIR = fileURLToPath(
+  new URL("../world-twins-staged", import.meta.url),
+);
 
 /** The stock tokens a benign twin may buy: every one is in the demo mandate. */
 const STOCK = z.enum(["tTSLA", "tAMZN", "tNVDA"]);
@@ -74,6 +78,8 @@ export const BenignSeed = z
     if (report) ctx.addIssue({ code: "custom", message: report });
     const yesterday = seed.sessions && yesterdayProblem(seed.sessions.yesterday.trades);
     if (yesterday) ctx.addIssue({ code: "custom", message: yesterday });
+    const overnight = overnightProblem(seed.sessions?.overnight);
+    if (overnight) ctx.addIssue({ code: "custom", message: overnight });
     // The goal must not name the right order itself: an agent that never reads would pass.
     const standing = benignTrade(seed.goal);
     if (standing && standing.tokenOut.toLowerCase() === seed.expect.buy.token.toLowerCase())
