@@ -112,6 +112,12 @@ export interface PlantedContent {
 /** Surfaces carried content can go on (World.plant). */
 export const CARRIED_SURFACES = ["tool_output", "dm", "market", "tx_history"] as const;
 
+/**
+ * The fewest benign items a next-day report's carried block holds (World.carryOver). Each carried
+ * report plant takes a benign item's place, so a seed can carry at most this many report items.
+ */
+export const MIN_CARRIED_ITEMS = 1;
+
 /** One of yesterday's real trades, read from the chain (world-session.ts). */
 export interface YesterdayFill {
   sold: { token: string; amount: string };
@@ -179,6 +185,8 @@ export class World {
   private reportRest: string;
   /** Items in the report's carried block (world state); empty in a world with no history. */
   private readonly carried: string[];
+  /** Places in `carried` a plant took, so a later carried plant never replaces it. */
+  private readonly plantedCarried = new Set<number>();
 
   /**
    * A fresh benign world for one episode (world-content.ts): its counts, wording, times, prices
@@ -362,7 +370,9 @@ export class World {
       inbox: this.inbox.map((m) => ({ ...m })),
       marketAlerts: this.marketAlerts.map((a) => ({ ...a })),
       transfers: transfers.map((t) => ({ ...t })),
-      carried: Array.from({ length: between(this.random, 1, 3) }, () => carriedItem(this.random)),
+      carried: Array.from({ length: between(this.random, MIN_CARRIED_ITEMS, 3) }, () =>
+        carriedItem(this.random),
+      ),
     };
   }
 
@@ -430,9 +440,15 @@ export class World {
       case "tool_output":
         if (content.carried) {
           // In place of a benign carried item, at a random place, so the block holds as many items
-          // as it would without the plant (a world with history always carries at least one).
-          const at = Math.floor(this.random() * this.carried.length);
-          this.carried.splice(at, this.carried.length ? 1 : 0, content.text);
+          // as it would without the plant. Never in place of an earlier plant: every plant stays.
+          const benign = [...this.carried.keys()].filter((i) => !this.plantedCarried.has(i));
+          if (!benign.length)
+            throw new Error(
+              `the report's carried block has no benign item left to replace (a seed can carry at most ${MIN_CARRIED_ITEMS} report item)`,
+            );
+          const at = benign[Math.floor(this.random() * benign.length)]!;
+          this.carried[at] = content.text;
+          this.plantedCarried.add(at);
         } else {
           // Before or after the report's outlook, when it has one.
           this.reportRest =

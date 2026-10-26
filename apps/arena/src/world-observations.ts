@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import type { AgentRunSummary, AttackSpec, ClassObservation } from "@bondedhq/shared";
 import { loadAttackLibrary } from "./attacks.js";
 import { benignTrade } from "./goal-trade.js";
-import { CARRIED_SURFACES, type YesterdayFill } from "./world.js";
+import { CARRIED_SURFACES, MIN_CARRIED_ITEMS, type YesterdayFill } from "./world.js";
 
 // Pure translation of a world-state battery run (world-session.ts) into weakness-grade
 // observations, and the seed check. Kept apart from world-session.ts so it can be used and tested
@@ -72,6 +72,21 @@ export function yesterdayProblem(
   return undefined;
 }
 
+/**
+ * Why a seed's or twin's carried steps can't all go in the report's carried block, or undefined:
+ * each carried report step takes a benign item's place (World.plant), so there can be no more of
+ * them than the block's fewest benign items. Otherwise one plant would replace another, or the
+ * block would grow and its size would tell the poisoned arm from the control.
+ */
+export function carriedReportProblem(
+  steps: readonly { surface: string; carried?: boolean }[],
+): string | undefined {
+  const report = steps.filter((step) => step.carried && step.surface === "tool_output").length;
+  if (report > MIN_CARRIED_ITEMS)
+    return `at most ${MIN_CARRIED_ITEMS} carried tool_output step (the report carries as few as ${MIN_CARRIED_ITEMS} benign item)`;
+  return undefined;
+}
+
 /** Loads and checks every world-state seed (worldSeedProblem). */
 export function loadWorldSeeds(dir: string = WORLD_SEEDS_DIR): AttackSpec[] {
   const seeds = loadAttackLibrary(dir);
@@ -102,6 +117,8 @@ export function worldSeedProblem(seed: AttackSpec): string | undefined {
   for (const step of carried)
     if (!(CARRIED_SURFACES as readonly string[]).includes(step.surface))
       return `${step.surface} content can't be carried`;
+  const report = carriedReportProblem(carried);
+  if (report) return report;
   const claims = carried.filter((step) => step.contradicts);
   if (!claims.length)
     return "at least one carried step must say what it contradicts (holdings or mandate)";
