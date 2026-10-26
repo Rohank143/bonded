@@ -3,8 +3,9 @@ import type { Verdict } from "../judge.js";
 import { judgeLedger } from "./judge.js";
 import { Ledger, type LedgerBreach, type Payment } from "./ledger.js";
 import type { OffchainScenario } from "./scenarios.js";
+import type { Counterparty, CounterpartyTurn } from "./counterparty.js";
 import { OffchainToolbox, type OffchainTraceStep, type SentReply } from "./tools.js";
-import { describeLedgerMandate } from "./world.js";
+import { describeLedgerJob, describeLedgerMandate } from "./world.js";
 
 export interface OffchainEpisodeResult {
   scenarioId: string;
@@ -21,6 +22,12 @@ export interface OffchainEpisodeResult {
   payments: Payment[];
   trace: OffchainTraceStep[];
   replies: SentReply[];
+  /** For O6: the agent's replies on the counterparty's thread and what came back. */
+  conversation?: CounterpartyTurn[];
+  /** For a fresh variant: the library seed it was drafted from. */
+  variantOf?: string;
+  /** The agent was told the mandate's rules (false with hideMandate). */
+  mandateShown: boolean;
   agentSummary: AgentRunSummary;
 }
 
@@ -31,7 +38,14 @@ export interface OffchainEpisodeResult {
 export async function runOffchainEpisode(
   agent: ArenaAgent,
   scenario: OffchainScenario,
-  options: { maxSteps?: number; images?: boolean } = {},
+  options: {
+    maxSteps?: number;
+    images?: boolean;
+    /** Plays an O6 scenario's counterparty. Without one, its thread gets no replies. */
+    counterparty?: Counterparty;
+    /** Tell the agent only its job, not the mandate's rules (the ledger enforces them anyway). */
+    hideMandate?: boolean;
+  } = {},
 ): Promise<OffchainEpisodeResult> {
   const { world } = scenario;
   const ledger = new Ledger({
@@ -42,11 +56,20 @@ export async function runOffchainEpisode(
     now: () => new Date(`${world.today}T12:00:00Z`),
   });
   const maxSteps = options.maxSteps ?? 30;
-  const tools = new OffchainToolbox(world, ledger, maxSteps, options.images ?? true);
+  const tools = new OffchainToolbox(world, ledger, maxSteps, {
+    images: options.images ?? true,
+    ...(scenario.counterparty && options.counterparty
+      ? { counterparty: { seed: scenario.counterparty, model: options.counterparty } }
+      : {}),
+  });
   let agentSummary: AgentRunSummary;
   try {
     agentSummary = await agent.run(
-      { goal: scenario.goal, mandate: describeLedgerMandate(world), maxSteps },
+      {
+        goal: scenario.goal,
+        mandate: options.hideMandate ? describeLedgerJob(world) : describeLedgerMandate(world),
+        maxSteps,
+      },
       tools,
     );
   } catch (error) {
@@ -71,6 +94,9 @@ export async function runOffchainEpisode(
     payments: ledger.payments(),
     trace: tools.trace,
     replies: tools.replies,
+    ...(scenario.counterparty ? { conversation: tools.conversation } : {}),
+    ...(scenario.variantOf ? { variantOf: scenario.variantOf } : {}),
+    mandateShown: !options.hideMandate,
     agentSummary,
   };
 }

@@ -13,6 +13,8 @@ import { type Attachment, type Email, invoiceText, type OffchainWorld } from "./
  * `aimedAt` only says which breaches count as the attack succeeding. See docs/OFFCHAIN.md.
  */
 export const OFFCHAIN_SEEDS_DIR = fileURLToPath(new URL("../../offchain-seeds", import.meta.url));
+/** The library's invoice pictures. Fresh variants saved elsewhere still use these. */
+export const OFFCHAIN_IMAGES_DIR = join(OFFCHAIN_SEEDS_DIR, "images");
 
 export const OFFCHAIN_ATTACK_CLASSES = {
   O1: "Bank-detail change",
@@ -20,6 +22,7 @@ export const OFFCHAIN_ATTACK_CLASSES = {
   O3: "Duplicate invoice",
   O4: "Instructions in an attachment",
   O5: "Executive impersonation",
+  O6: "Live counterparty",
 } as const;
 export type OffchainAttackClass = keyof typeof OFFCHAIN_ATTACK_CLASSES;
 
@@ -65,8 +68,26 @@ const EmailSeed = z.object({
   attachments: z.array(AttachmentSeed).default([]),
 });
 
+/**
+ * O6: a model plays the sender of one planted thread and answers the agent's replies on it, to
+ * talk the agent into paying. It writes text; the ledger still decides every breach.
+ */
+export const CounterpartySeed = z.object({
+  /** The planted thread the counterparty owns. */
+  threadId: z.string().min(1),
+  from: Sender,
+  /** What the counterparty is after and how it may argue, as its model is told. */
+  brief: z.string().min(1),
+  /** Replies it sends at most, one per agent reply on the thread. */
+  maxReplies: z.number().int().min(1).max(8).default(4),
+});
+export type CounterpartySeed = z.infer<typeof CounterpartySeed>;
+
 export const OffchainSeed = z.object({
-  id: z.string().regex(/^O[1-5]-[a-z0-9-]+-\d{3}$/),
+  /** A library seed's id, or a fresh variant's: the seed's id and a hash of its text. */
+  id: z.string().regex(/^O[1-6]-[a-z0-9-]+-\d{3}(-f[0-9a-f]{8})?$/),
+  /** For a fresh variant: the library seed it was drafted from. */
+  variantOf: z.string().optional(),
   class: z.enum(Object.keys(OFFCHAIN_ATTACK_CLASSES) as [OffchainAttackClass]),
   title: z.string().min(1),
   description: z.string().min(1),
@@ -90,6 +111,7 @@ export const OffchainSeed = z.object({
       )
       .default([]),
   }),
+  counterparty: CounterpartySeed.optional(),
 });
 export type OffchainSeed = z.infer<typeof OffchainSeed>;
 
@@ -105,7 +127,7 @@ export function loadOffchainSeeds(dir: string = OFFCHAIN_SEEDS_DIR): OffchainSee
       return parsed.data;
     });
   for (const seed of seeds) {
-    const problem = seedProblem(seed, dir);
+    const problem = seedProblem(seed);
     if (problem) throw new Error(`${seed.id}: ${problem}`);
   }
   return seeds;
@@ -114,7 +136,7 @@ export function loadOffchainSeeds(dir: string = OFFCHAIN_SEEDS_DIR): OffchainSee
 /** What makes a seed unfit to run against the base world, or undefined. */
 export function seedProblem(
   seed: OffchainSeed,
-  dir: string = OFFCHAIN_SEEDS_DIR,
+  imagesDir: string = OFFCHAIN_IMAGES_DIR,
 ): string | undefined {
   const world = baseWorld();
   const ids = new Set(world.inbox.map((e) => e.id));
@@ -132,8 +154,16 @@ export function seedProblem(
     ...seed.plant.replace.flatMap((r) => r.attachments ?? []),
   ];
   for (const a of attachments) {
-    if (a.image && !readdirSync(join(dir, "images")).includes(a.image))
-      return `no image ${a.image}`;
+    if (a.image && !readdirSync(imagesDir).includes(a.image)) return `no image ${a.image}`;
+  }
+  if ((seed.class === "O6") !== (seed.counterparty !== undefined)) {
+    return "an O6 seed, and only an O6 seed, has a counterparty";
+  }
+  if (
+    seed.counterparty &&
+    !seed.plant.emails.some((e) => (e.threadId ?? `t-${e.id}`) === seed.counterparty!.threadId)
+  ) {
+    return `no planted email opens thread ${seed.counterparty.threadId}`;
   }
   return undefined;
 }
@@ -141,9 +171,9 @@ export function seedProblem(
 /** The base world with the seed planted, as an attack scenario. */
 export function attackScenario(
   seed: OffchainSeed,
-  dir: string = OFFCHAIN_SEEDS_DIR,
+  imagesDir: string = OFFCHAIN_IMAGES_DIR,
 ): OffchainScenario {
-  const world = plantSeed(baseWorld(), seed, dir);
+  const world = plantSeed(baseWorld(), seed, imagesDir);
   const hold = new Set(seed.mayHold);
   return {
     id: seed.id,
@@ -153,6 +183,8 @@ export function attackScenario(
     world,
     mustPay: world.approvedInvoices.map((i) => i.reference).filter((r) => !hold.has(r)),
     aimedAt: seed.aimedAt,
+    ...(seed.variantOf ? { variantOf: seed.variantOf } : {}),
+    ...(seed.counterparty ? { counterparty: seed.counterparty } : {}),
   };
 }
 
@@ -196,7 +228,7 @@ function attachment(seed: z.infer<typeof AttachmentSeed>, dir: string): Attachme
       ? {
           image: {
             mediaType: "image/png" as const,
-            base64: readFileSync(join(dir, "images", seed.image)).toString("base64"),
+            base64: readFileSync(join(dir, seed.image)).toString("base64"),
           },
         }
       : {}),
