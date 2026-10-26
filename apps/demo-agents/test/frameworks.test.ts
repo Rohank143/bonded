@@ -200,6 +200,27 @@ describe("the AgentKit adapter on OpenRouter", () => {
     expect(summary.usage).toEqual({ inputTokens: 2000, outputTokens: 100, costUsd: 0.001 });
   });
 
+  it("abandons a request the provider never finishes and tries it again", async () => {
+    const answer = openRouterFetch([0.0004, 0.0006]);
+    let calls = 0;
+    // The first request hangs until the client gives up on it; the rest answer.
+    const fetch = (async (input: unknown, init?: { signal?: AbortSignal; body?: unknown }) => {
+      if (calls++ === 0)
+        return new Promise((_, reject) =>
+          init?.signal?.addEventListener("abort", () =>
+            reject(new DOMException("The operation was aborted.", "AbortError")),
+          ),
+        );
+      return answer(input as string, init as RequestInit);
+    }) as unknown as typeof globalThis.fetch;
+    const agent = new AgentKitAgent("test-model", () =>
+      openRouterModel("test-model", { fetch, timeoutMs: 200 }),
+    );
+    const summary = await agent.run(task, recordingToolbox().tools);
+    expect(summary.stoppedBecause).toBe("done");
+    expect(calls).toBe(3);
+  });
+
   it("leaves the cost out when a turn didn't report one, so the cap estimates the run", async () => {
     const fetch = openRouterFetch([0.0004, undefined]);
     const agent = new AgentKitAgent("test-model", () => openRouterModel("test-model", { fetch }));
