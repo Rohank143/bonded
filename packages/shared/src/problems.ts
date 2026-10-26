@@ -715,7 +715,7 @@ export const PROBLEMS: readonly ProblemEntry[] = [
     "service",
     "Sentinel didn't answer.",
     "Try again in a few seconds.",
-    /sentinel (isn't running|is busy|didn't answer|took too long)/i,
+    /sentinel (isn't running|is busy|is waking up|didn't answer|took too long)/i,
   ),
   entry(
     "try-again",

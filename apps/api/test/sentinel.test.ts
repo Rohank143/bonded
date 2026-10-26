@@ -47,9 +47,11 @@ const fake: SentinelModel = {
     };
   },
 };
-// Switches for the fake service: whether its health probe answers, and whether checks fail.
+// Switches for the fake service: whether its health probe answers, whether checks fail, and
+// whether it is asleep past the check's wait.
 let up = true;
 let broken = false;
+let asleep = false;
 const service: SentinelService = {
   model: {
     ...fake,
@@ -60,6 +62,7 @@ const service: SentinelService = {
   },
   info: { model: "fake-sentinel", questions: "v3", blockThreshold: 0.7 },
   health: async () => up,
+  wake: async () => !asleep,
 };
 
 beforeAll(async () => {
@@ -252,6 +255,34 @@ it("fails a Sentinel-on rating when Sentinel isn't configured, instead of rating
   expect(String(errors[0])).toMatch(/Sentinel on, but SENTINEL_URL isn't set/);
 }, 60_000);
 
+it("doesn't start a Sentinel-on rating while Sentinel is asleep: its guard would block every trade", async () => {
+  const chainId = sandbox.deployment.chainId;
+  const agentId = other.agentId.toString();
+  const queued = await pg.db.enqueueUserRating(`${chainId}:${agentId}`, chainId, {
+    nowMs: Date.now(),
+    perAgentMs: 0,
+    dailyCap: 100,
+  });
+  expect("runId" in queued).toBe(true);
+  const errors: unknown[] = [];
+  asleep = true;
+  try {
+    expect(
+      await workOne(
+        pg.db,
+        chain,
+        sandbox.rpcUrl,
+        ANVIL_KEYS.deployer,
+        (e) => errors.push(e),
+        service,
+      ),
+    ).toBe(true);
+  } finally {
+    asleep = false;
+  }
+  expect(String(errors[0])).toMatch(/Sentinel didn't answer .* the rating will be retried/);
+}, 60_000);
+
 it("authorises the vault's current agent key, right after the guardian rotates it", async () => {
   clock += 120_000;
   const next = privateKeyToAccount(ANVIL_KEYS.depositor);
@@ -291,6 +322,16 @@ it("reports Sentinel down when its health probe fails or a check gets no answer"
   expect(await json(await app.request("/sentinel"))).toMatchObject({ available: false });
   clock += 121_000;
   expect(await json(await app.request("/sentinel"))).toMatchObject({ available: true });
+}, 60_000);
+
+it("tells an agent to retry when Sentinel is still waking up", async () => {
+  clock += 120_000;
+  asleep = true;
+  const waking = await check(benign);
+  expect(waking.status).toBe(503);
+  expect((await json(waking)).error).toMatch(/waking up/);
+  asleep = false;
+  expect((await check(benign)).status).toBe(200);
 }, 60_000);
 
 it("takes a check as large as its schema allows", async () => {

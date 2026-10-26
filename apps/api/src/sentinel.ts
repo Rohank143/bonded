@@ -1,5 +1,6 @@
 import type { Context, Hono } from "hono";
 import { readFileSync } from "node:fs";
+import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { keccak256, recoverMessageAddress, stringToBytes, type Hex } from "viem";
 import type { Database } from "@bonded/db";
@@ -50,6 +51,35 @@ export interface SentinelService {
   info: RatingSentinel;
   /** Whether the service answers its health probe (optional; without it, assumed up). */
   health?: () => Promise<boolean>;
+  /**
+   * Waits up to `timeoutMs` for the health probe to pass, probing at least once: true once it
+   * does. On Railway, Sentinel sleeps when idle and the first request wakes it in about 15 s
+   * (docs/SENTINEL.md). Optional; without it, the service is taken to be awake.
+   */
+  wake?: (timeoutMs: number) => Promise<boolean>;
+}
+
+/** How long a rating waits for a sleeping Sentinel; it usually wakes in about 15 s. */
+export const SENTINEL_WAKE_MS = 120_000;
+/** How often a rating pings Sentinel; Railway puts it to sleep after 5 minutes without traffic. */
+export const SENTINEL_PING_MS = 60_000;
+
+/**
+ * Wakes Sentinel for a rating and keeps it awake until the returned function is called. A guard
+ * that gets no answer blocks the trade (it fails closed), so a rating must never meet a sleeping
+ * Sentinel, and a rating can go longer than Railway's idle time between guarded actions.
+ */
+export async function keepSentinelAwake(
+  sentinel: SentinelService,
+  { wakeMs = SENTINEL_WAKE_MS, pingMs = SENTINEL_PING_MS } = {},
+): Promise<() => void> {
+  const wake = sentinel.wake;
+  if (!wake) return () => {};
+  if (!(await wake(wakeMs)))
+    throw new Error(`Sentinel didn't answer within ${wakeMs / 1000} s; the rating will be retried`);
+  const timer = setInterval(() => void wake(0).catch(() => false), pingMs);
+  timer.unref();
+  return () => clearInterval(timer);
 }
 
 /**
@@ -67,23 +97,31 @@ export function sentinelFromEnv(env: NodeJS.ProcessEnv = process.env): SentinelS
   }
   const repo = env.SENTINEL_MODEL_REPO?.trim();
   const revision = env.SENTINEL_MODEL_REVISION?.trim();
+  const probe = async () => {
+    const response = await fetch(`${url}/health`, {
+      signal: AbortSignal.timeout(3_000),
+    }).catch(() => undefined);
+    if (!response?.ok) return false;
+    return mode !== "cascade" || Boolean(revision && (await response.text()).includes(revision));
+  };
   let healthCache: { expires: number; result: Promise<boolean> } | undefined;
   const health = () => {
     if (!healthCache || healthCache.expires <= Date.now()) {
-      healthCache = {
-        expires: Date.now() + 30_000,
-        result: (async () => {
-          const response = await fetch(`${url}/health`, {
-            signal: AbortSignal.timeout(3_000),
-          }).catch(() => undefined);
-          if (!response?.ok) return false;
-          return (
-            mode !== "cascade" || Boolean(revision && (await response.text()).includes(revision))
-          );
-        })().catch(() => false),
-      };
+      healthCache = { expires: Date.now() + 30_000, result: probe().catch(() => false) };
     }
     return healthCache.result;
+  };
+  const wake = async (timeoutMs: number) => {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      if (await probe().catch(() => false)) {
+        // A "down" answer cached while it slept would refuse the cascade's next checks.
+        healthCache = undefined;
+        return true;
+      }
+      if (Date.now() + 2_000 > deadline) return false;
+      await delay(2_000);
+    }
   };
   const primary = new LayaSentinel({
     url,
@@ -154,6 +192,7 @@ export function sentinelFromEnv(env: NodeJS.ProcessEnv = process.env): SentinelS
     model,
     info,
     health,
+    wake,
   };
 }
 
@@ -224,6 +263,11 @@ export interface SentinelLimits {
   concurrent: number;
   /** Longest a check may take before the API gives up, in milliseconds. */
   timeoutMs: number;
+  /**
+   * Longest a check waits for a sleeping Sentinel to wake, in milliseconds. With the answer it
+   * stays inside the SDK's 15 s; a longer wake gets a 503 the agent can retry.
+   */
+  wakeMs: number;
   now?: () => number;
 }
 
@@ -232,6 +276,7 @@ export const DEFAULT_SENTINEL_LIMITS: SentinelLimits = {
   perAgent: 30,
   concurrent: 4,
   timeoutMs: 20_000,
+  wakeMs: 10_000,
 };
 
 class Refused extends Error {
@@ -403,6 +448,9 @@ export function sentinelRoutes(
       if (!agents.allow(input.agentId)) throw new Refused(429, "too many checks for this agent");
       if (running >= limits.concurrent)
         throw new Refused(503, "Sentinel is busy; try again in a few seconds");
+      // Sentinel sleeps when idle: the first check after a quiet spell wakes it.
+      if (sentinel.wake && !(await sentinel.wake(limits.wakeMs)))
+        throw new Refused(503, "Sentinel is waking up; try again in a few seconds");
       running++;
       const started = performance.now();
       const usageParts: ModelUsage[] = [];
