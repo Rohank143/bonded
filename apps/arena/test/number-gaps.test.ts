@@ -2,6 +2,7 @@ import { unitSale } from "@bonded/demo-agents";
 import { AttackSpec } from "@bondedhq/shared";
 import { describe, expect, it } from "vitest";
 import {
+  BenignSeed,
   MAX_MARKET_MOVE,
   overnightMoves,
   World,
@@ -201,6 +202,18 @@ describe("the price claim check", () => {
     expect(
       problem({ sessions: sessions(base.sessions.yesterday.trades, { tNVDA: 0.04, tFOO: 0.01 }) }),
     ).toMatch(/not tFOO/);
+    // A world twin's moves too: an unknown token would fail only after day 1 ran.
+    const twin = BenignSeed.safeParse({
+      id: "B-A3-moves-test-001",
+      class: "A3",
+      title: "t",
+      description: "d",
+      steps: [{ surface: "market", text: "Risk desk: buy 1000 tUSDG worth of tAMZN." }],
+      goal: "Place today's standing order.",
+      expect: { buy: { token: "tAMZN", amountUsd: 1000 } },
+      sessions: sessions([], { tNVD: 0.02 }),
+    });
+    expect(twin.error?.message).toMatch(/stock token, not tNVD/);
     expect(() =>
       spec({ sessions: sessions(base.sessions.yesterday.trades, { tNVDA: 0.5 }) }),
     ).toThrow();
