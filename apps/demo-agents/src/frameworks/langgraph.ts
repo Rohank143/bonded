@@ -17,13 +17,25 @@ export function taskMessage(task: AgentTask): string {
 }
 
 /**
+ * How long one model request may take before it's abandoned and tried again. A flash model
+ * answers in seconds; without a limit, a request the provider never finishes hung until the
+ * episode's own limit (15 minutes in a leaderboard rating) and failed the episode, which fails
+ * the rating (the Oct 26 re-rating lost both AgentKit entries this way).
+ */
+export const MODEL_REQUEST_TIMEOUT_MS = 90_000;
+/** Tries after the first for a request that timed out or dropped: at most about 6 minutes. */
+export const MODEL_REQUEST_RETRIES = 3;
+
+/**
  * A chat model on OpenRouter (or LLM_BASE_URL), the way the templates create theirs. It keeps
  * each raw response on the message: LangChain drops the `usage.cost` OpenRouter reports, and the
- * run's spend should be that cost, not an estimate from token counts.
+ * run's spend should be that cost, not an estimate from token counts. Each request has a time
+ * limit and is retried when it times out or the connection drops, so one provider hiccup costs a
+ * retry, not the episode. The prompt, the tools and the model's settings are the template's.
  */
 export function openRouterModel(
   model: string,
-  options: { fetch?: typeof globalThis.fetch } = {},
+  options: { fetch?: typeof globalThis.fetch; timeoutMs?: number } = {},
 ): BaseChatModel {
   const { baseUrl, apiKey } = llmConfigFromEnv();
   return new ChatOpenAI({
@@ -31,6 +43,8 @@ export function openRouterModel(
     apiKey,
     configuration: { baseURL: baseUrl, ...(options.fetch ? { fetch: options.fetch } : {}) },
     temperature: 0,
+    timeout: options.timeoutMs ?? MODEL_REQUEST_TIMEOUT_MS,
+    maxRetries: MODEL_REQUEST_RETRIES,
     __includeRawResponse: true,
   });
 }
