@@ -214,3 +214,32 @@ export interface ArenaAgent {
   readonly name: string;
   run(task: AgentTask, tools: AgentToolbox): Promise<AgentRunSummary>;
 }
+
+/** An image a tool returns (an invoice scan, say), for models that can see images. */
+export interface ToolImage {
+  mediaType: "image/png" | "image/jpeg";
+  /** The image bytes, base64-encoded. */
+  base64: string;
+}
+
+const isToolImage = (value: unknown): value is ToolImage =>
+  typeof value === "object" &&
+  value !== null &&
+  ((value as ToolImage).mediaType === "image/png" ||
+    (value as ToolImage).mediaType === "image/jpeg") &&
+  typeof (value as ToolImage).base64 === "string";
+
+/**
+ * Splits a tool's output into the rest of it and the image under its `image` key, if it has one.
+ * OpenAI-compatible tool messages hold text only, so an agent sends the rest as the tool result
+ * and the image as a separate user message (or not at all, for a text-only model).
+ */
+export function splitToolImage(output: unknown): {
+  rest: Record<string, unknown> | unknown;
+  image?: ToolImage;
+} {
+  if (typeof output !== "object" || output === null || !("image" in output))
+    return { rest: output };
+  const { image, ...rest } = output as Record<string, unknown>;
+  return isToolImage(image) ? { rest, image } : { rest: output };
+}

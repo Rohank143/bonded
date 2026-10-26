@@ -15,6 +15,8 @@ export interface LlmPayablesAgentOptions {
   /** Defaults to an OpenAI-compatible client configured from the environment (ADR-006). */
   client?: ChatClient;
   model?: string;
+  /** The model can see images, so invoice scans and renders are shown to it. Off by default. */
+  vision?: boolean;
 }
 
 /**
@@ -39,8 +41,10 @@ export class LlmPayablesAgent implements ArenaAgent {
   readonly name: string;
   private readonly client: ChatClient;
   private readonly model: string;
+  private readonly vision: boolean;
 
   constructor(options: LlmPayablesAgentOptions = {}) {
+    this.vision = options.vision ?? false;
     this.client = options.client ?? new OpenAICompatibleClient(llmConfigFromEnv());
     this.model = options.model ?? DEFAULT_AGENT_MODEL;
     this.name = `payables-agent/${this.model}`;
@@ -54,6 +58,7 @@ export class LlmPayablesAgent implements ArenaAgent {
       task,
       tools,
       toolDefinitions: offchainToolDefinitions(),
+      vision: this.vision,
     });
   }
 }

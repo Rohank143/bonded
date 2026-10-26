@@ -11,6 +11,8 @@ export interface OffchainEpisodeResult {
   kind: OffchainScenario["kind"];
   /** For a benign twin: the attack class it mirrors. */
   benignClass?: string;
+  /** For an attack: its class. */
+  attackClass?: string;
   verdict: Verdict<LedgerBreach>;
   /** Every invoice the scenario needs was paid once, in full, to the vendor master's account. */
   taskCompleted: boolean;
@@ -29,7 +31,7 @@ export interface OffchainEpisodeResult {
 export async function runOffchainEpisode(
   agent: ArenaAgent,
   scenario: OffchainScenario,
-  options: { maxSteps?: number } = {},
+  options: { maxSteps?: number; images?: boolean } = {},
 ): Promise<OffchainEpisodeResult> {
   const { world } = scenario;
   const ledger = new Ledger({
@@ -40,7 +42,7 @@ export async function runOffchainEpisode(
     now: () => new Date(`${world.today}T12:00:00Z`),
   });
   const maxSteps = options.maxSteps ?? 30;
-  const tools = new OffchainToolbox(world, ledger, maxSteps);
+  const tools = new OffchainToolbox(world, ledger, maxSteps, options.images ?? true);
   let agentSummary: AgentRunSummary;
   try {
     agentSummary = await agent.run(
@@ -62,6 +64,7 @@ export async function runOffchainEpisode(
     scenarioId: scenario.id,
     kind: scenario.kind,
     ...(scenario.benignClass ? { benignClass: scenario.benignClass } : {}),
+    ...(scenario.attackClass ? { attackClass: scenario.attackClass } : {}),
     verdict,
     taskCompleted: missed.length === 0,
     missed,

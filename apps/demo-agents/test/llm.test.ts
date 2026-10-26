@@ -241,6 +241,54 @@ describe("LlmPayablesAgent", () => {
     );
   });
 
+  it("shows an attachment's image to a vision model after the turn's tool results", async () => {
+    const image = { mediaType: "image/png", base64: "iVBORw0K" };
+    const client = new FakeClient([
+      turn("tool_calls", [
+        call("a", "view_attachment", { attachmentId: "x" }),
+        call("b", "list_vendors", {}),
+      ]),
+      turn("stop", [], "Done."),
+    ]);
+    const tools = new FakeToolbox({ view_attachment: { filename: "x.png", text: "", image } });
+    await new LlmPayablesAgent({ client, model: "m", vision: true }).run(
+      { goal: "g", mandate: "m", maxSteps: 10 },
+      tools,
+    );
+    const messages = client.requests[1]!.messages;
+    expect(messages.slice(2).map((m) => m.role)).toEqual(["assistant", "tool", "tool", "user"]);
+    expect(JSON.parse(String(messages[3]!.content))).toEqual({
+      filename: "x.png",
+      text: "",
+      image: "attached in the next message",
+    });
+    expect(messages[5]!.content).toEqual([
+      { type: "text", text: "The image returned by view_attachment (call a):" },
+      { type: "image_url", image_url: { url: "data:image/png;base64,iVBORw0K" } },
+    ]);
+  });
+
+  it("tells a text-only model the image wasn't shown, and never sends it", async () => {
+    const client = new FakeClient([
+      turn("tool_calls", [call("a", "view_attachment", { attachmentId: "x" })]),
+      turn("stop", [], "Done."),
+    ]);
+    const tools = new FakeToolbox({
+      view_attachment: {
+        filename: "x.png",
+        text: "",
+        image: { mediaType: "image/png", base64: "QUJD" },
+      },
+    });
+    await new LlmPayablesAgent({ client, model: "m" }).run(
+      { goal: "g", mandate: "m", maxSteps: 10 },
+      tools,
+    );
+    const sent = JSON.stringify(client.requests[1]!.messages);
+    expect(sent).toContain("not shown: this model reads text only");
+    expect(sent).not.toContain("QUJD");
+  });
+
   it("defaults to the same cheap model as the other demo agents", () => {
     expect(new LlmPayablesAgent({ client: new FakeClient([]) }).name).toBe(
       `payables-agent/${DEFAULT_AGENT_MODEL}`,

@@ -1,6 +1,6 @@
 # Off-chain agents: design
 
-Status: design, 2026-10-26. Steps 1 to 3 of the build order are built: the ledger, its mandate and its judge; the world, its tools, a control and one benign twin (a verified bank change), in `apps/arena/src/offchain/`; and payables-agent plus the AgentKit and Solana Agent Kit templates on the off-chain tools, in `apps/demo-agents/`.
+Status: design, 2026-10-26. Steps 1 to 4 of the build order are built: the ledger, its mandate and its judge; the world, its tools, a control and one benign twin, in `apps/arena/src/offchain/`; payables-agent and the framework templates on the off-chain tools, in `apps/demo-agents/`; and 12 attack seeds (O1 to O5, two of them images) in `apps/arena/offchain-seeds/`.
 
 Bonded rates agents that move money on chain through a Mandate Vault. Most agent spending will go through payment APIs instead: paying supplier invoices, refunds, subscriptions, purchases. This page designs the Arena's off-chain rail, so the same attacks-then-score method rates those agents too.
 

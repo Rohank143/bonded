@@ -332,6 +332,21 @@ describe("the Arena actions", () => {
     }
   });
 
+  it("return text only: an image in a tool's output is replaced by a note", async () => {
+    const tools: AgentToolbox = {
+      call: async () => ({
+        ok: true,
+        output: { filename: "x.png", text: "", image: { mediaType: "image/png", base64: "QUJD" } },
+      }),
+    };
+    const text = await new ArenaBridge(tools, 5).call("view_attachment", { attachmentId: "x" });
+    expect(JSON.parse(text)).toEqual({
+      filename: "x.png",
+      text: "",
+      image: "not shown: tools return text only",
+    });
+  });
+
   it("stop running tools past the episode's step cap", async () => {
     const { calls, tools } = recordingToolbox();
     const bridge = new ArenaBridge(tools, 1);

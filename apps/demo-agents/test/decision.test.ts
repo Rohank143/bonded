@@ -61,7 +61,9 @@ describe("LlmDecisionModel", () => {
               message: {
                 role: "assistant",
                 content: JSON.stringify({
-                  answer: r.messages[1]!.content?.includes("How does") ? "within_mandate" : "no",
+                  answer: String(r.messages[1]!.content).includes("How does")
+                    ? "within_mandate"
+                    : "no",
                   confidence: 0.9,
                 }),
               },
@@ -83,7 +85,7 @@ describe("LlmDecisionModel", () => {
   it("isolates concurrent check usage and keeps missing cost unknown", async () => {
     const client: ChatClient = {
       async complete(r) {
-        const a = r.messages[1]!.content?.includes("alpha");
+        const a = String(r.messages[1]!.content).includes("alpha");
         await new Promise((resolve) => setTimeout(resolve, a ? 5 : 0));
         return {
           choices: [
@@ -91,7 +93,9 @@ describe("LlmDecisionModel", () => {
               message: {
                 role: "assistant",
                 content: JSON.stringify({
-                  answer: r.messages[1]!.content?.includes("How does") ? "within_mandate" : "no",
+                  answer: String(r.messages[1]!.content).includes("How does")
+                    ? "within_mandate"
+                    : "no",
                   confidence: 0.9,
                 }),
               },
@@ -124,7 +128,7 @@ describe("LlmDecisionModel", () => {
                   message: {
                     role: "assistant",
                     content: JSON.stringify({
-                      answer: r.messages[1]!.content?.includes("How does")
+                      answer: String(r.messages[1]!.content).includes("How does")
                         ? "within_mandate"
                         : "no",
                       confidence: 0.9,

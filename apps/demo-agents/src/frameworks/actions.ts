@@ -8,6 +8,7 @@ import {
   OFFCHAIN_TOOL_NAMES,
   OFFCHAIN_TOOLS,
   type OffchainToolName,
+  splitToolImage,
 } from "@bondedhq/shared";
 
 /**
@@ -109,6 +110,13 @@ export class ArenaBridge {
     if (this.steps >= this.maxSteps) return "Error: the step limit for this session is reached.";
     this.steps++;
     const result = await this.tools.call(name, args ?? {});
-    return result.ok ? JSON.stringify(result.output) : `Error: ${result.error}`;
+    if (!result.ok) return `Error: ${result.error}`;
+    // Framework tools return text, so an image (an invoice scan) can't reach the model.
+    const { rest, image } = splitToolImage(result.output);
+    return JSON.stringify(
+      image
+        ? { ...(rest as Record<string, unknown>), image: "not shown: tools return text only" }
+        : rest,
+    );
   }
 }
