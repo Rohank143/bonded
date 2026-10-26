@@ -35,12 +35,8 @@ interface Field {
 function proseFields(seed: OffchainSeed): Field[] {
   const fields: Field[] = [];
   seed.plant.emails.forEach((e, i) => {
+    // Sender names stay the seed's: renaming "Daniel Park" as the finance lead is another attack.
     fields.push(
-      {
-        key: `email${i}.from`,
-        text: e.from.name,
-        set: (s, t) => (s.plant.emails[i]!.from.name = t),
-      },
       {
         key: `email${i}.subject`,
         text: e.subject,
@@ -82,7 +78,7 @@ function proseFields(seed: OffchainSeed): Field[] {
 const squash = (s: string) => s.replace(/\s+/g, "");
 const ACCOUNT = /\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]{2,4}){3,8}\b/g;
 const REFERENCE = /\b[A-Z]{2,}-[A-Z0-9-]*\d[A-Z0-9-]*\b/g;
-const DOLLARS = /\$\d[\d,]*(?:\.\d{2})?/g;
+const DOLLARS = /\$\d{1,3}(?:,\d{3})+(?:\.\d{2})?|\$\d+(?:\.\d{2})?/g;
 
 /** The accounts, invoice references and dollar amounts a seed's prose names: its payload. */
 export function payloadFacts(seed: OffchainSeed): string[] {
@@ -91,6 +87,34 @@ export function payloadFacts(seed: OffchainSeed): string[] {
     .join("\n");
   const facts = [ACCOUNT, REFERENCE, DOLLARS].flatMap((re) => prose.match(re) ?? []);
   return [...new Set(facts.map((f) => f.trim()))];
+}
+
+/**
+ * A fact as compared: an account without spaces, a reference in capitals, an amount in cents.
+ * So "$4,850" and "$4,850.00" are one fact, and "ACM-2291" isn't satisfied by "ACM-2291-B".
+ */
+function factKey(fact: string): string {
+  if (fact.startsWith("$"))
+    return `usd:${Math.round(Number(fact.slice(1).replace(/,/g, "")) * 100)}`;
+  if (new RegExp(`^${ACCOUNT.source}$`).test(fact)) return `account:${squash(fact).toUpperCase()}`;
+  return `ref:${fact.toUpperCase()}`;
+}
+
+/** Facts the seed carries outside its prose: its invoices' references, accounts and amounts. */
+function structuralFacts(seed: OffchainSeed): string[] {
+  return [
+    ...seed.plant.emails.flatMap((e) => e.attachments),
+    ...seed.plant.replace.flatMap((r) => r.attachments ?? []),
+  ].flatMap((a) => {
+    if (!a.invoice) return [];
+    const total = a.invoice.lines.reduce((sum, l) => sum + Math.round(l.amountUsd * 100), 0);
+    return [
+      a.invoice.reference,
+      a.invoice.account,
+      `$${(total / 100).toFixed(2)}`,
+      ...a.invoice.lines.map((l) => `$${l.amountUsd.toFixed(2)}`),
+    ];
+  });
 }
 
 /** The messages asking a model to rewrite one seed's prose. */
@@ -138,13 +162,13 @@ export function variantFromDraft(seed: OffchainSeed, draft: unknown): OffchainSe
       throw new VariantError(`the draft has no ${f.key}`);
     f.set(variant, text.trim());
   }
-  const prose = squash(
-    proseFields(variant)
-      .map((f) => f.text)
-      .join("\n"),
-  );
-  const lost = payloadFacts(seed).filter((fact) => !prose.includes(squash(fact)));
+  // The same payment asked for: every fact the seed's prose names, and none it doesn't carry.
+  const kept = new Set(payloadFacts(variant).map(factKey));
+  const lost = payloadFacts(seed).filter((fact) => !kept.has(factKey(fact)));
   if (lost.length) throw new VariantError(`the draft dropped ${lost.join(", ")}`);
+  const allowed = new Set([...payloadFacts(seed), ...structuralFacts(seed)].map(factKey));
+  const added = payloadFacts(variant).filter((fact) => !allowed.has(factKey(fact)));
+  if (added.length) throw new VariantError(`the draft added ${added.join(", ")}`);
   const closeness = payloadOverlap(
     fields.map((f) => f.text).join(" "),
     proseFields(variant)

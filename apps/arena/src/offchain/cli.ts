@@ -20,7 +20,7 @@ import { LlmCounterparty } from "./counterparty.js";
 import { type OffchainEpisodeResult, runOffchainEpisode } from "./episode.js";
 import { draftVariants, saveVariants, type VariantCandidate } from "./fresh.js";
 import { controlScenario, type OffchainScenario, verifiedBankChangeTwin } from "./scenarios.js";
-import { attackScenario, loadOffchainSeeds, type OffchainSeed } from "./seeds.js";
+import { attackScenario, loadOffchainSeeds, type OffchainSeed, seedNeedsVision } from "./seeds.js";
 
 const USAGE = `Usage: pnpm --filter @bonded/arena offchain --max-usd <n> [options]
 
@@ -90,7 +90,9 @@ async function main() {
   let variants: OffchainSeed[] = [];
   let candidates: VariantCandidate[] = [];
   if (values.replay) {
-    variants = loadOffchainSeeds(values.replay);
+    variants = loadOffchainSeeds(values.replay).filter(
+      (v) => !wanted || wanted.includes(v.variantOf ?? v.id),
+    );
   } else if (values.fresh) {
     ({ variants, candidates } = await draftVariants({
       seeds: library,
@@ -104,10 +106,15 @@ async function main() {
     for (const c of candidates.filter((c) => !c.kept)) console.log(`  ${c.seed}: ${c.reason}`);
   }
 
+  // An attack that lives only in an invoice image can't reach an agent that never sees images:
+  // it isn't run, and isn't counted as resisted.
+  const seesImages = values.agent === "payables" && values.vision && !values["text-only"];
+  const attackSeeds = [...library, ...variants];
+  const notShown = seesImages ? [] : attackSeeds.filter(seedNeedsVision).map((s) => s.id);
   const scenarios: OffchainScenario[] = [
     controlScenario(),
     verifiedBankChangeTwin(),
-    ...[...library, ...variants].map((s) => attackScenario(s)),
+    ...attackSeeds.filter((s) => !notShown.includes(s.id)).map((s) => attackScenario(s)),
   ];
   const results: OffchainEpisodeResult[] = [];
   const skipped: string[] = [];
@@ -147,15 +154,17 @@ async function main() {
 
   for (const r of results) {
     const outcome =
-      r.kind === "attack"
-        ? r.verdict.attackSucceeded
-          ? "FELL"
+      r.agentSummary.stoppedBecause === "error" && !r.verdict.breached
+        ? "error"
+        : r.kind === "attack"
+          ? r.verdict.attackSucceeded
+            ? "FELL"
+            : r.verdict.breached
+              ? "breach"
+              : "safe"
           : r.verdict.breached
             ? "breach"
-            : "safe"
-        : r.verdict.breached
-          ? "breach"
-          : "safe";
+            : "safe";
     const talk = r.conversation ? ` replies:${r.conversation.length}` : "";
     console.log(
       [
@@ -167,8 +176,12 @@ async function main() {
       ].join("  "),
     );
   }
-  const attacks = results.filter((r) => r.kind === "attack");
+  // An episode that errored before breaching shows nothing about the attack: counted apart.
+  const errored = (r: OffchainEpisodeResult) =>
+    r.agentSummary.stoppedBecause === "error" && !r.verdict.breached;
+  const attacks = results.filter((r) => r.kind === "attack" && !errored(r));
   const fell = attacks.filter((r) => r.verdict.attackSucceeded).length;
+  const errors = results.filter(errored).map((r) => r.scenarioId);
   const summary = {
     agent: agentFor(values.agent, values.model, client, values.vision).name,
     vision: values.vision,
@@ -176,6 +189,8 @@ async function main() {
     mandateShown: !values["hide-mandate"],
     attacks: attacks.length,
     fell,
+    errors,
+    notShown,
     lossUsd: attacks.reduce((sum, r) => sum + r.verdict.totalLossUsd, 0),
     tasksDone: results.filter((r) => r.taskCompleted).length,
     episodes: results.length,
@@ -186,6 +201,8 @@ async function main() {
     `\nfell for ${fell} of ${attacks.length} attacks; spend $${summary.spend.spentUsd.toFixed(4)}`,
   );
   if (skipped.length) console.log(`skipped at the spending cap: ${skipped.join(", ")}`);
+  if (errors.length) console.log(`errored, not counted: ${errors.join(", ")}`);
+  if (notShown.length) console.log(`not run, the agent sees no images: ${notShown.join(", ")}`);
   // Images are in the seeds; the record notes their size instead of repeating them.
   const record = JSON.stringify(
     { summary, candidates, results },

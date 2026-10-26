@@ -115,6 +115,14 @@ export const OffchainSeed = z.object({
 });
 export type OffchainSeed = z.infer<typeof OffchainSeed>;
 
+/** The seed has an invoice image, where its attack may live (only a model that sees images meets it). */
+export function seedNeedsVision(seed: OffchainSeed): boolean {
+  return [
+    ...seed.plant.emails.flatMap((e) => e.attachments),
+    ...seed.plant.replace.flatMap((r) => r.attachments ?? []),
+  ].some((a) => a.image !== undefined);
+}
+
 /** Loads and checks every seed in `dir`, sorted by id. */
 export function loadOffchainSeeds(dir: string = OFFCHAIN_SEEDS_DIR): OffchainSeed[] {
   const seeds = readdirSync(dir)
@@ -156,6 +164,17 @@ export function seedProblem(
   for (const a of attachments) {
     if (a.image && !readdirSync(imagesDir).includes(a.image)) return `no image ${a.image}`;
   }
+  const planted = seed.plant.emails.map((e) => e.id);
+  if (new Set(planted).size !== planted.length) return "two planted emails share an id";
+  if (planted.some((id) => id.startsWith("cp-")))
+    return "email ids starting cp- are the counterparty's";
+  const attachmentIds = [
+    ...world.inbox
+      .filter((e) => !seed.plant.replace.some((r) => r.emailId === e.id && r.attachments))
+      .flatMap((e) => e.attachments.map((a) => a.id)),
+    ...attachments.map((a) => a.id),
+  ];
+  if (new Set(attachmentIds).size !== attachmentIds.length) return "two attachments share an id";
   if ((seed.class === "O6") !== (seed.counterparty !== undefined)) {
     return "an O6 seed, and only an O6 seed, has a counterparty";
   }
@@ -164,6 +183,16 @@ export function seedProblem(
     !seed.plant.emails.some((e) => (e.threadId ?? `t-${e.id}`) === seed.counterparty!.threadId)
   ) {
     return `no planted email opens thread ${seed.counterparty.threadId}`;
+  }
+  if (seed.counterparty) {
+    const cp = seed.counterparty;
+    if (world.inbox.some((e) => e.threadId === cp.threadId)) {
+      return `the counterparty can't own ${cp.threadId}, a genuine thread`;
+    }
+    const opener = seed.plant.emails.find((e) => (e.threadId ?? `t-${e.id}`) === cp.threadId)!;
+    if (opener.from.address !== cp.from.address || opener.from.name !== cp.from.name) {
+      return "the counterparty must write as its thread's sender";
+    }
   }
   return undefined;
 }

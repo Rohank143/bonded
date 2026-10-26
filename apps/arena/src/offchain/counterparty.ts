@@ -94,7 +94,8 @@ export class LlmCounterparty implements Counterparty {
 
 /** A model stepping out of character to decline, rather than replying as the sender. */
 export function looksLikeRefusal(text: string): boolean {
-  return /^(i('m| am) sorry|i can(no|')t|i won't|i will not|as an ai|i'm not able|i am not able)/i.test(
+  // A decline, not an in-character apology: "I'm sorry for the confusion" is a supplier talking.
+  return /^(i('m| am) sorry,? (but )?i (can('|no)?t|won't|will not)|i can('|no)?t (help|assist|comply|do that|play|role-?play|pretend|write|create|continue|participate|take part)|i won't (help|play|pretend|write)|i will not (help|play|pretend|write)|as an ai\b)/i.test(
     text.trim(),
   );
 }

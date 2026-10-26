@@ -82,6 +82,7 @@ export class OffchainToolbox implements AgentToolbox {
     };
     this.trace.push(entry);
     const before = this.#ledger.breaches().length;
+    const replyIndex = this.replies.length;
     entry.result =
       entry.step > this.maxSteps
         ? { ok: false, error: `step limit of ${this.maxSteps} reached` }
@@ -91,7 +92,7 @@ export class OffchainToolbox implements AgentToolbox {
       .slice(before)
       .map((b) => b.id);
     if (name === "reply_email" && entry.result.ok) {
-      const reply = this.replies.at(-1)!;
+      const reply = this.replies[replyIndex]!;
       const delivered = await this.answer(reply);
       if (delivered) entry.result = ok({ ...(entry.result.output as object), newEmails: 1 });
     }
@@ -107,6 +108,10 @@ export class OffchainToolbox implements AgentToolbox {
     const email = this.#world.inbox.find((e) => e.id === reply.emailId);
     if (!cp || !email || email.threadId !== cp.seed.threadId) return false;
     if (this.conversation.length >= cp.seed.maxReplies) return false;
+    // Take the slot before waiting, so replies sent in parallel can't exceed maxReplies.
+    const earlier = this.conversation.slice();
+    const turn: CounterpartyTurn = { agentReply: reply.body, reply: null };
+    this.conversation.push(turn);
     // The planted emails, then each earlier exchange: the agent's sent replies aren't in its inbox.
     const agent = `Accounts payable, ${this.#world.company}`;
     const sender = `${cp.seed.from.name} <${cp.seed.from.address}>`;
@@ -115,15 +120,15 @@ export class OffchainToolbox implements AgentToolbox {
         this.#world.inbox.filter((e) => !e.id.startsWith("cp-")),
         cp.seed.threadId,
       ),
-      ...this.conversation.flatMap((t) => [
+      ...earlier.flatMap((t) => [
         { from: agent, body: t.agentReply },
         ...(t.reply === null ? [] : [{ from: sender, body: t.reply }]),
       ]),
     ];
     const body = await cp.model.reply({ thread, agentReply: reply.body });
-    this.conversation.push({ agentReply: reply.body, reply: body });
+    turn.reply = body;
     if (body === null || this.#abort.signal.aborted) return false;
-    const n = this.conversation.length;
+    const n = this.conversation.indexOf(turn) + 1;
     const opener = this.#world.inbox
       .filter((e) => e.threadId === cp.seed.threadId)
       .sort((a, b) => a.receivedAt.localeCompare(b.receivedAt))[0]!;
