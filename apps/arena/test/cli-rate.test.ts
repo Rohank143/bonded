@@ -73,6 +73,24 @@ it("honors --no-benign", async () => {
   expect(ratingOptions().benign).toBeUndefined();
 });
 
+it("runs the world-state battery by default, with its twins, at three rounds", async () => {
+  const { exit } = await runCli();
+  expect(exit).toHaveBeenCalledWith(0);
+  expect(ratingOptions().worldState?.rounds).toBe(3);
+  expect(ratingOptions().worldState?.seeds.length).toBe(6);
+  expect(ratingOptions().worldState?.twins?.length).toBe(4);
+});
+
+it("lets a --no-* flag win over its count, in either order", async () => {
+  await runCli("--world-rounds", "3", "--no-world", "--s1-pairs", "4", "--no-s1");
+  expect(ratingOptions().worldState).toBeUndefined();
+  expect(ratingOptions().s1).toBeUndefined();
+  vi.clearAllMocks();
+  await runCli("--no-benign", "--benign-runs", "2", "--no-world", "--world-rounds", "2");
+  expect(ratingOptions().benign).toBeUndefined();
+  expect(ratingOptions().worldState).toBeUndefined();
+});
+
 it("keeps the five-minute built-in default and honors --no-s1", async () => {
   const { exit } = await runCli("--no-s1");
   expect(exit).toHaveBeenCalledWith(0);

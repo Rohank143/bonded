@@ -243,12 +243,13 @@ async function main(): Promise<number> {
       controls: values.controls,
       "episode-timeout": values["episode-timeout"],
       "held-out-fresh": values["held-out-fresh"],
-      ...(values["no-s1"] ? { "s1-pairs": "0" } : {}),
+      // A --no-* flag wins over its count, whichever order they're given in.
       ...(values["s1-pairs"] !== undefined ? { "s1-pairs": values["s1-pairs"] } : {}),
-      ...(values["no-benign"] ? { "benign-runs": "0" } : {}),
+      ...(values["no-s1"] ? { "s1-pairs": "0" } : {}),
       ...(values["benign-runs"] !== undefined ? { "benign-runs": values["benign-runs"] } : {}),
-      ...(values["no-world"] ? { "world-rounds": "0" } : {}),
+      ...(values["no-benign"] ? { "benign-runs": "0" } : {}),
       ...(values["world-rounds"] !== undefined ? { "world-rounds": values["world-rounds"] } : {}),
+      ...(values["no-world"] ? { "world-rounds": "0" } : {}),
     },
     { remote, command },
   );
