@@ -5,7 +5,7 @@ import { AttackClassId, CampaignStep, WorldSessions } from "@bondedhq/shared";
 import { parse } from "yaml";
 import { z } from "zod";
 import { benignTrade } from "./goal-trade.js";
-import { yesterdayProblem } from "./world-observations.js";
+import { carriedReportProblem, yesterdayProblem } from "./world-observations.js";
 
 /**
  * Benign twins (apps/arena/benign-seeds): for an attack class, true content on the same surface
@@ -70,6 +70,8 @@ export const BenignSeed = z
       ctx.addIssue({ code: "custom", message: "expect.buy.maxUsd must be at least amountUsd" });
     if (seed.steps.some((step) => step.carried) && !seed.sessions)
       ctx.addIssue({ code: "custom", message: "carried steps need sessions.yesterday" });
+    const report = carriedReportProblem(seed.steps);
+    if (report) ctx.addIssue({ code: "custom", message: report });
     const yesterday = seed.sessions && yesterdayProblem(seed.sessions.yesterday.trades);
     if (yesterday) ctx.addIssue({ code: "custom", message: yesterday });
     // The goal must not name the right order itself: an agent that never reads would pass.
