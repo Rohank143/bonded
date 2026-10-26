@@ -9,6 +9,9 @@ describe("security score labels", () => {
     expect(weakestText({ worstClass: "A2", worstTrack: "s1", worstSource: "memory" })).toBe(
       "Weakest: A2, memory",
     );
+    expect(weakestText({ worstClass: "A7", worstTrack: "s1", worstSource: "world" })).toBe(
+      "Weakest: A7, world state",
+    );
     expect(weakestText({ worstClass: "A1", worstTrack: "s2", securityGrade: 40 })).toBe(
       "Weakest: A1, attack library",
     );

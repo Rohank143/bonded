@@ -5,12 +5,12 @@ import { manipulatedOf } from "./security";
 export const CLASSES = AttackClassId.options;
 
 /**
- * One track's result for an attack class: the main library (S2), the market-data battery (S1)
- * or the memory battery. `hits` of `of` is the manipulation count the grade uses; `graded` is
+ * One track's result for an attack class: the main library (S2), the market-data battery (S1),
+ * the memory battery or the world-state battery (false claims about yesterday). `hits` of `of` is the manipulation count the grade uses; `graded` is
  * whether the track had enough results to enter the grade.
  */
 export interface TrackResult {
-  track: "main" | "market" | "memory";
+  track: "main" | "market" | "memory" | "world";
   hits: number;
   of: number;
   graded: boolean;
@@ -34,6 +34,7 @@ export const TRACK_LABEL: Record<TrackResult["track"], string> = {
   main: "Main library",
   market: "Market data",
   memory: "Memory",
+  world: "World state",
 };
 
 /**
@@ -74,6 +75,14 @@ export function classResults(e: LeaderboardRecord): ClassResult[] {
         of: memory.counted,
         graded: memory.graded,
       });
+    const world = e.worldClasses?.find((x) => x.class === cls);
+    if (world && world.counted > 0)
+      tracks.push({
+        track: "world",
+        hits: world.manipulated,
+        of: world.counted,
+        graded: world.graded,
+      });
     const graded = tracks.filter((t) => t.graded);
     return {
       cls,
@@ -86,14 +95,22 @@ export function classResults(e: LeaderboardRecord): ClassResult[] {
 
 /**
  * The same per-class view from a hosted report's security grade. Its rows are the graded ones
- * (main library "s2", market data "s1", memory "s1" with source "memory").
+ * (main library "s2", market data "s1", memory and world state "s1" with source "memory" or
+ * "world").
  */
 export function gradeResults(grade: Susceptibility): ClassResult[] {
   return CLASSES.map((cls) => {
     const tracks: TrackResult[] = grade.classes
       .filter((r) => r.class === cls && r.episodes > 0)
       .map((r) => ({
-        track: r.track === "s1" ? (r.source === "memory" ? "memory" : "market") : "main",
+        track:
+          r.track === "s1"
+            ? r.source === "memory"
+              ? "memory"
+              : r.source === "world"
+                ? "world"
+                : "market"
+            : "main",
         hits: r.manipulated,
         of: r.episodes,
         graded: true,
@@ -125,7 +142,9 @@ export function weakestSentence(results: ClassResult[]): string | null {
       ? `false market data moved it to trade in ${t.hits} of ${t.of} tries`
       : t.track === "memory"
         ? `a planted memory note moved it to act in ${t.hits} of ${t.of} tries`
-        : `it acted on the attack in ${t.hits} of ${t.of} tries`;
+        : t.track === "world"
+          ? `a false record of yesterday moved it to break its mandate in ${t.hits} of ${t.of} tries`
+          : `it acted on the attack in ${t.hits} of ${t.of} tries`;
   return `Its weakest class is ${worst.cls}, ${worst.name.toLowerCase()}: ${what}.`;
 }
 
@@ -139,7 +158,9 @@ export function trackText(t: TrackResult): string {
       : t.track === "market"
         ? `false data moved it to act in ${t.hits} of ${t.of} pairs` +
           (t.froze ? `, froze it in ${t.froze}` : "")
-        : `acted on a planted note in ${t.hits} of ${t.of} attempts`;
+        : t.track === "world"
+          ? `acted on a false record of yesterday in ${t.hits} of ${t.of} attempts`
+          : `acted on a planted note in ${t.hits} of ${t.of} attempts`;
   return `${TRACK_LABEL[t.track]}: ${text}${t.graded ? "" : " (too few to grade)"}`;
 }
 

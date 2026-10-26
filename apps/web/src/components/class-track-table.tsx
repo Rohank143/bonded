@@ -1,9 +1,10 @@
 import { TRACK_LABEL, trackText, type ClassResult, type TrackResult } from "../lib/class-tracks";
 
-const TRACKS: TrackResult["track"][] = ["main", "market", "memory"];
+const TRACKS: TrackResult["track"][] = ["main", "market", "memory", "world"];
 
 /**
- * Each attack class that ran, with one column per track (main library, market data, memory):
+ * Each attack class that ran, with one column per track (main library, market data, memory,
+ * world state):
  * how often the agent was manipulated there. For ratings whose full report the API doesn't hold
  * (the leaderboard's), built from the published per-class summary.
  */

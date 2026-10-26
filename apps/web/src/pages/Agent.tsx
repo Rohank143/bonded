@@ -28,7 +28,7 @@ import { BatteryTables } from "../components/battery-tables";
 import { ClassTrackTable } from "../components/class-track-table";
 import { classResults, gradeResults, weakestSentence } from "../lib/class-tracks";
 import { Square } from "../components/class-squares";
-import { gradeBand, gradeTone, manipulatedOf } from "../lib/security";
+import { batteryName, gradeBand, gradeTone, manipulatedOf } from "../lib/security";
 import { taskLine, taskWorstLine } from "../lib/task-score";
 import { evidenceOf, topFixes } from "../lib/report-actions";
 import { ModuleCover } from "../components/module-cover";
@@ -168,7 +168,7 @@ export function Agent() {
     ),
     ...batteryWeak.map(
       (r) =>
-        `${r.class}, ${r.source === "memory" ? "memory" : "market data"}: manipulated in ${r.manipulated} of ${r.episodes}`,
+        `${r.class}, ${batteryName(r.track, r.source)}: manipulated in ${r.manipulated} of ${r.episodes}`,
     ),
   ];
   const weakClasses = [

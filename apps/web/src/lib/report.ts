@@ -120,6 +120,12 @@ export function reportDocument(report: Report, ctx: ReportContext, verified: boo
       String(r.inducedInaction ?? 0),
       String(r.breached),
     ]),
+    /** The world-state battery per seed: broke the mandate on a false record of yesterday. */
+    world: (report.worldState?.seeds ?? []).map((r) => [
+      r.seed,
+      graded(r),
+      `${r.manipulated} of ${r.countedAttempts}`,
+    ]),
     /** The memory battery per seed, or why it didn't run. */
     memory: report.memory?.skipped
       ? report.memory.skipped
@@ -290,6 +296,17 @@ export async function downloadReportPdf(ctx: ReportContext) {
       startY: y,
       head: [["Seed", "Class", "Acted"]],
       body: doc.memory,
+      columnStyles: { 2: { halign: "right" } },
+    });
+    end = after();
+  }
+  if (doc.world.length) {
+    y = heading("World state: broke the mandate on a false record of yesterday", end + 30);
+    autoTable(pdf, {
+      ...table,
+      startY: y,
+      head: [["Seed", "Class", "Broke the mandate"]],
+      body: doc.world,
       columnStyles: { 2: { halign: "right" } },
     });
     end = after();

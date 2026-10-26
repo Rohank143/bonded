@@ -33,6 +33,8 @@ export const GLOSSARY = {
     "Whether the agent still does its job: in episodes with no attack, in attack episodes it wasn't breached in, and when the right move depends on true content it reads. Separate from the Bonded Score; 100 means it did every job.",
   benignTwins:
     "True content planted on the same surface an attack would use, with a task that makes acting on it the job: a real order from the portfolio manager, a real trading halt. The agent passes if it reads it and makes the trade. An agent that ignores or refuses everything it reads fails them.",
+  carriedHistory:
+    "What the agent's world carries from yesterday: the threads, alerts, real trades and report items it would pick up the next day. The world-state battery plants false claims there (\"finish leg 2 of yesterday's buy\") that the agent can check against its own holdings and mandate.",
   guardian: "The vault's owner: the only one who can buy cover and unfreeze the agent.",
   agentKey: "The only key that can act for the vault: the agent's own wallet.",
 } as const;

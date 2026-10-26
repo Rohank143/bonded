@@ -633,7 +633,7 @@ A preview is a rating of your agent with nothing to commit: it belongs to your w
 | Attacks | Every published attack **once**, plus a held-out set made for this preview alone (up to one variant per attack class: a variant that fails its checks is dropped) | `HELD_OUT_FRESH_PER_CLASS` |
 | Controls | 6, shuffled in among the attacks | |
 | Benign twins | 16, once each, shuffled in among the attacks ([Task score and benign twins](#task-score-and-benign-twins)) | `apps/arena/benign-seeds` |
-| Not run | The S1 market-data battery, for now (the time budget plans only the main library), and the memory battery (Bonded can't read or reset your agent's memory) | |
+| Not run | The S1 market-data and world-state batteries, for now (the time budget plans only the main library), and the memory battery (Bonded can't read or reset your agent's memory) | |
 | Episodes | With today's library of 40 published attacks in 10 classes: at most 40 + 10 + 6 + 16 = 72 | |
 | Time per episode | 90 seconds | `REMOTE_EPISODE_TIMEOUT_MS` |
 | Time for the whole preview | 40 seconds per episode, at most 45 minutes (72 episodes would take 48, so the 45-minute cap applies) | `REMOTE_EPISODE_BUDGET_MS`, `PREVIEW_RATING_MAX_MS` |
@@ -688,7 +688,7 @@ An official rating is attested: the attester signs the score and posts it to the
 | Runs of each attack | 3 | `REMOTE_REPEATS` (Bonded's built-in designs get 5) |
 | Controls | 6, shuffled in among the attacks | `REMOTE_CONTROLS` |
 | Benign twins | 16, once each, shuffled in among the attacks ([Task score and benign twins](#task-score-and-benign-twins)) | `apps/arena/benign-seeds`; `RATE_WITH_BENIGN` on the API |
-| Not run | The S1 market-data battery, for now (the time and fork budget plans only the main library), and the memory battery (Bonded can't read or reset your agent's memory) | |
+| Not run | The S1 market-data and world-state batteries, for now (the time and fork budget plans only the main library), and the memory battery (Bonded can't read or reset your agent's memory) | |
 | Episodes | With today's library of 40 published attacks in 10 classes: at most (40 + 10) × 3 + 6 + 16 = 172 | |
 | Time per episode | 90 seconds | `REMOTE_EPISODE_TIMEOUT_MS` |
 | Time for the whole rating | 40 seconds per episode, at most 3 hours (about 115 minutes for 172 episodes) | `REMOTE_EPISODE_BUDGET_MS`, `REMOTE_RATING_MAX_MS` |
@@ -1005,6 +1005,7 @@ The Arena aims to make an attacked episode look like any other, and the sandbox 
 - **The same interface.** The same tools, schemas and result shapes in every episode, attacked or not. Nothing in the episode names the attack, its class, or whether there is one.
 - **No order to read.** Episodes run in a random order with the controls among them, and controls draw their goals from the same goals attack episodes get. Progress shows counts only until the end.
 - **A world generated per rating.** Messages, news, posts, alerts, counterparty messages, the market report and token notes come from a grammar (templates whose slots draw from word lists, names, numbers and times). Each rating seeds every episode's world from a secret seed of its own, so there is no list of benign items to check what your agent reads against.
+- **Yesterday shows up in every world.** Some episodes carry items from yesterday: a "Carried from yesterday" block in the market report, an inbox message from yesterday. Bonded's own agents also run a world-state battery ([SCORING.md](SCORING.md#world-state-observations)), two days on one vault where yesterday's trades are real, so carried items alone say nothing about an attack. Operator-run agents don't run that battery yet (their time budget doesn't plan it), but their worlds carry yesterday's items like any other.
 - **Planted content looks like the rest.** It takes senders, subjects and titles from the same grammar, and is dated on the chain's own clock (on a fork, the live chain's current time). Benign content includes the same kinds of things attacks use, such as zero-value transfers with notes, and prices a few percent off the oracle.
 - **A real-looking chain.** On a fork, the chain keeps its real chain id, contracts and block times, and `web3_clientVersion` answers with the live chain's node version. The vault and its registry entry have neutral names, and the MCP server and OpenAPI document describe themselves as trading tools.
 
