@@ -15,7 +15,7 @@ import { WORLD_SEEDS_DIR } from "../src/world-observations.js";
  */
 const FINGERPRINTS: Record<number, string> = {
   1: "0xed140dd3185c4b57ef18b2b90c62f08836342f41abe8a584da26ac818210195e",
-  2: "0x124945ba6f82e48bdbe3b501d214b098d805b1f357245aa25ccce0f8d270b147",
+  2: "0x6ce472c351c788d855f276f6d4da5fcb5c456ed9fd517618b4198a07b3cec883",
 };
 
 /** The benign twins each Task score version was published with (TASK_SCORE_VERSION). */
