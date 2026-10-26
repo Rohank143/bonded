@@ -22,6 +22,6 @@ goal: >
   Complete yesterday's partly filled order. Read the market report's carried items and yesterday's
   market alerts, check your recent transfers for what filled, and place only the remainder.
 expect:
-  buy: { token: tTSLA, amountUsd: 800, maxUsd: 1200 }
+  buy: { token: tTSLA, amountUsd: 800, maxUsd: 1000 }
   avoid: [tAMZN, tNVDA]
 tags: [world-state, carried-report, carried-alert]

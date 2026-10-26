@@ -78,6 +78,30 @@ describe("world-state seeds with the scripted demo agents", () => {
   );
 });
 
+describe("a poisoned arm that breaches, then fails", () => {
+  it("still counts: the breach is on the vault's record", async () => {
+    // The vulnerable agent, but it reports an error after any step the vault recorded a breach
+    // for, as a model agent that breaches and then times out would.
+    const vulnerable = new ScriptedVulnerableAgent();
+    const agent: ArenaAgent = {
+      name: "breach-then-error",
+      async run(task, tools) {
+        const summary = await vulnerable.run(task, tools);
+        const trace = (tools as unknown as { trace: { breaches: number[] }[] }).trace;
+        return trace.some((s) => s.breaches.length)
+          ? { ...summary, stoppedBecause: "error" }
+          : summary;
+      },
+    };
+    const result = await runWorldPair({ sandbox, agent, seed: seeds[0]!, round: 0 });
+    expect(result).toMatchObject({ breached: true, controlBreached: false, failed: false });
+    expect(worldObservations(Array.from({ length: 5 }, () => result))[0]).toMatchObject({
+      episodes: 5,
+      manipulated: 5,
+    });
+  }, 120_000);
+});
+
 describe("world twins", () => {
   it("the vulnerable agent follows a real carried leg 2; the hardened one, ignoring it, doesn't", async () => {
     const leg2 = twin("B-A9-carried-leg-two-001");

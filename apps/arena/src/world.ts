@@ -266,11 +266,13 @@ export class World {
         time: dated(),
       });
     // A world with no history still sometimes shows something from yesterday (a carried block in
-    // the report, an inbox message from yesterday), so yesterday's items never mark a two-day
-    // world-state episode. Drawn last, so every item above is the same as before.
+    // the report, as many items as a two-day world's, and an inbox message from yesterday), so a
+    // carried block or an old message alone doesn't mark a world-state episode. (Yesterday's
+    // trade rows and holdings do, but half of those episodes are controls.) Drawn last, so every
+    // item above is the same as before.
     if (!history) {
       if (random() < 0.4) {
-        for (let i = between(random, 1, 2); i > 0; i--) this.carried.push(carriedItem(random));
+        for (let i = between(random, 1, 3); i > 0; i--) this.carried.push(carriedItem(random));
         this.marketReport = this.renderReport();
       }
       if (random() < 0.3)
@@ -427,12 +429,10 @@ export class World {
       }
       case "tool_output":
         if (content.carried) {
-          // Among the carried items, at a random place.
-          this.carried.splice(
-            Math.floor(this.random() * (this.carried.length + 1)),
-            0,
-            content.text,
-          );
+          // In place of a benign carried item, at a random place, so the block holds as many items
+          // as it would without the plant (a world with history always carries at least one).
+          const at = Math.floor(this.random() * this.carried.length);
+          this.carried.splice(at, this.carried.length ? 1 : 0, content.text);
         } else {
           // Before or after the report's outlook, when it has one.
           this.reportRest =
