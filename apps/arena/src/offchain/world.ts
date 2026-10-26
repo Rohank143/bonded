@@ -8,8 +8,10 @@ import type { ApprovedInvoice, LedgerMandate, Payment, Vendor } from "./ledger.j
 export interface Attachment {
   id: string;
   filename: string;
-  /** The invoice as text (its text layer, for an image). */
+  /** The invoice as text: its text layer, for an image (empty for a scan without one). */
   text: string;
+  /** The invoice as a picture (a PDF render, photo or scan), for models that can see images. */
+  image?: { mediaType: "image/png" | "image/jpeg"; base64: string };
 }
 
 export interface Email {

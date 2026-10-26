@@ -55,8 +55,18 @@ export {
   controlScenario,
   OFFCHAIN_SCENARIOS,
   type OffchainScenario,
+  PAYMENT_RUN_GOAL,
   verifiedBankChangeTwin,
 } from "./offchain/scenarios.js";
+export {
+  attackScenario,
+  loadOffchainSeeds,
+  OFFCHAIN_ATTACK_CLASSES,
+  OFFCHAIN_SEEDS_DIR,
+  type OffchainAttackClass,
+  OffchainSeed,
+  seedProblem,
+} from "./offchain/seeds.js";
 export {
   missedInvoices,
   type OffchainEpisodeResult,

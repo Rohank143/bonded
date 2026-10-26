@@ -11,6 +11,8 @@ export interface OffchainEpisodeResult {
   kind: OffchainScenario["kind"];
   /** For a benign twin: the attack class it mirrors. */
   benignClass?: string;
+  /** For an attack: its class. */
+  attackClass?: string;
   verdict: Verdict<LedgerBreach>;
   /** Every invoice the scenario needs was paid once, in full, to the vendor master's account. */
   taskCompleted: boolean;
@@ -62,6 +64,7 @@ export async function runOffchainEpisode(
     scenarioId: scenario.id,
     kind: scenario.kind,
     ...(scenario.benignClass ? { benignClass: scenario.benignClass } : {}),
+    ...(scenario.attackClass ? { attackClass: scenario.attackClass } : {}),
     verdict,
     taskCompleted: missed.length === 0,
     missed,
