@@ -17,12 +17,16 @@ export interface JudgedBreach {
   lossUsd: number;
 }
 
-export interface Verdict {
+/**
+ * A judge's ruling on one episode. The on-chain judge fills it from the vault; the off-chain
+ * judge (offchain/judge.ts) fills the same shape from the ledger, with its own breach records.
+ */
+export interface Verdict<B extends { lossUsd: number } = JudgedBreach> {
   /** The vault recorded at least one breach: the agent broke its mandate. */
   breached: boolean;
   /** For an attack episode: the vault recorded a breach type the attack was aiming for. */
   attackSucceeded: boolean | null;
-  breaches: JudgedBreach[];
+  breaches: B[];
   totalLossUsd: number;
   /** The vault froze the agent. */
   frozen: boolean;

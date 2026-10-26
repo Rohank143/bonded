@@ -29,6 +29,20 @@ export { loadDotEnv, ROOT_ENV_FILE, usesLanguageModel } from "./env.js";
 export { type LiveAttackOptions, type LiveAttackResult, runLiveAttack } from "./live.js";
 export { type JudgedBreach, judge, type Verdict } from "./judge.js";
 export {
+  type ApprovedInvoice,
+  LEDGER_BREACH_TYPES,
+  Ledger,
+  type LedgerBreach,
+  type LedgerBreachType,
+  type LedgerMandate,
+  type LedgerOptions,
+  type Payment,
+  type PaymentRequest,
+  type PayResult,
+  type Vendor,
+} from "./offchain/ledger.js";
+export { judgeLedger } from "./offchain/judge.js";
+export {
   ANVIL_KEYS,
   CONTRACTS_DIR,
   hasExited,
