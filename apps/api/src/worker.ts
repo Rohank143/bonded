@@ -33,7 +33,12 @@ import { getAbiItem, hashTypedData, type Hex } from "viem";
 import { attestationTypedData, bondedDomain } from "@bondedhq/shared";
 import type { ServiceChain } from "@bonded/keeper";
 import { ratingLibrary } from "./library.js";
-import { ratedAgent, sentinelCodeHash, type SentinelService } from "./sentinel.js";
+import {
+  keepSentinelAwake,
+  ratedAgent,
+  sentinelCodeHash,
+  type SentinelService,
+} from "./sentinel.js";
 import {
   GATEWAY_UNAVAILABLE,
   RatingRefused,
@@ -258,6 +263,8 @@ async function runLocked(
       leaseError = e;
     });
   }, 15000);
+  // Stops keeping Sentinel awake, once a Sentinel-on rating has woken it.
+  let letSentinelSleep: (() => void) | undefined;
   const check = async () => {
     if (leaseError) throw leaseError;
     await db.renew(job);
@@ -440,6 +447,9 @@ async function runLocked(
           ? selected.filter((a) => !library.unpublished.has(a.id))
           : selected;
       const limits = ratingLimits(process.env);
+      // Sentinel sleeps when idle, and a guard that gets no answer blocks the trade: wake it
+      // before the first episode and keep it awake until the rating ends.
+      if (withSentinel && sentinel) letSentinelSleep = await keepSentinelAwake(sentinel);
       const sandbox = await Sandbox.start({ forkUrl: rpcUrl, forkDeployment: chain.deployment });
       try {
         const agent: ArenaAgent =
@@ -745,6 +755,7 @@ async function runLocked(
       );
   } finally {
     clearInterval(heartbeat);
+    letSentinelSleep?.();
   }
   return true;
 }

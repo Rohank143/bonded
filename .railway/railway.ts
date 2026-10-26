@@ -56,6 +56,11 @@ export default defineRailway(() => {
       // The container uses a little over 2 GB after loading and more while checking; Railway
       // bills memory used, not this cap.
       limitOverride: { containers: { cpu: 2, memoryBytes: 4 * 1024 ** 3 } },
+      // Sleeps after 5 to 10 minutes without traffic, and isn't billed while asleep: awake all
+      // month, its 2 GB was about $20 of the project's $25 to $30. A request on the private
+      // network wakes it in about 15 s; the API and the worker wait for that (wake in
+      // apps/api/src/sentinel.ts), and a Sentinel-on rating keeps it awake to the end.
+      sleepApplication: true,
     },
     // No networking block: its private address comes from the service name. Railway keeps a
     // privateNetworkEndpoint only for databases, so setting one here showed as a change in
@@ -64,6 +69,8 @@ export default defineRailway(() => {
     env: {
       PORT: "8000",
       LAYA_THREADS: "2",
+      // Nothing outbound while idle, so it can sleep (any outbound traffic keeps it awake).
+      HF_HUB_DISABLE_TELEMETRY: "1",
       SENTINEL_MODEL_REPO: "ddboy19912/bonded-sentinel-laya",
       // Fine-tune v5, two questions: callers must ask the v3 question set (manipulated,
       // injection_in_inputs). Promoted with one recorded exception to gate 2
