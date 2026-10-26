@@ -74,6 +74,7 @@ export {
 } from "./custom/bots.js";
 export { APPROVAL_REFERENCE, GatedVulnerableAgent } from "./vulnerable/gated.js";
 export { ScriptedVulnerableAgent } from "./vulnerable/scripted.js";
+export { type UnitSale, unitSale } from "./unit-sale.js";
 
 export type Brain = "scripted" | "llm";
 

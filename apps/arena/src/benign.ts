@@ -25,6 +25,10 @@ export const BENIGN_SEEDS_DIR = fileURLToPath(new URL("../benign-seeds", import.
  * benign-seeds, whose twins run as single-day episodes that refuse carried content.
  */
 export const WORLD_TWINS_DIR = fileURLToPath(new URL("../world-twins", import.meta.url));
+/** World twins still being validated, beside WORLD_SEEDS_STAGED_DIR (`arena world --staged`). */
+export const WORLD_TWINS_STAGED_DIR = fileURLToPath(
+  new URL("../world-twins-staged", import.meta.url),
+);
 
 /** The stock tokens a benign twin may buy: every one is in the demo mandate. */
 const STOCK = z.enum(["tTSLA", "tAMZN", "tNVDA"]);

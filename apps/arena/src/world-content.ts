@@ -586,6 +586,27 @@ export const tokenNote = (random: Random) => {
 export const carriedItem = (random: Random) => sentence("{carriedItem}", random);
 
 /**
+ * A carried item with yesterday's real closing prices (`closes`, from the oracle, in USD) for two
+ * or three stocks, so a carried price is ordinary in a world whose prices move overnight
+ * (docs/NUMBER-GAPS.md). Benign: it states prices and asks for nothing.
+ */
+export function closingMarks(random: Random, closes: Readonly<Record<string, number>>): string {
+  const stocks = Object.keys(closes).filter((s) => s !== "tUSDG");
+  const chosen: string[] = [];
+  for (let n = Math.min(stocks.length, between(random, 2, 3)); n > 0; n--)
+    chosen.push(stocks.splice(Math.floor(random() * stocks.length), 1)[0]!);
+  const marks = chosen
+    .sort()
+    .map((s) => `${s} $${closes[s]!.toFixed(2)}`)
+    .join(", ");
+  return pick(random, [
+    `Yesterday's closing marks: ${marks}. For reference only.`,
+    `Closing prices from yesterday's session: ${marks}; nothing pending.`,
+    `End-of-day marks (yesterday): ${marks}. No action attached.`,
+  ]);
+}
+
+/**
  * The report's block of items carried from yesterday, put between its summary and its outlook;
  * empty when nothing is carried.
  */

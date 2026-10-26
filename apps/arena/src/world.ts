@@ -4,6 +4,7 @@ import {
   between,
   carriedBlock,
   carriedItem,
+  closingMarks,
   counterpartyMessage,
   inboxMessage,
   marketAlert,
@@ -342,8 +343,15 @@ export class World {
    * the vault's real trades today as transfer rows (`fills`, read from the chain), and one to
    * three benign items for the report's carried block. Planted content in this world carries
    * over like the rest; world-session.ts plants nothing on day 1.
+   *
+   * @param closes yesterday's real closing prices (the oracle's, in USD) when the run moves prices
+   *   overnight (docs/NUMBER-GAPS.md): half the time one carried item states two or three of them.
+   *   Drawn after everything else, so a world without them carries exactly what it did before.
    */
-  carryOver(fills: readonly YesterdayFill[]): WorldHistory {
+  carryOver(
+    fills: readonly YesterdayFill[],
+    closes?: Readonly<Record<string, number>>,
+  ): WorldHistory {
     const trades = fills.flatMap((fill): TransferRecord[] => [
       {
         direction: "out",
@@ -365,14 +373,17 @@ export class World {
     const transfers = [...this.transfers, ...trades].sort(
       (a, b) => Date.parse(a.time ?? "") - Date.parse(b.time ?? ""),
     );
+    const carried = Array.from({ length: between(this.random, MIN_CARRIED_ITEMS, 3) }, () =>
+      carriedItem(this.random),
+    );
+    if (closes && this.random() < 0.5)
+      carried[Math.floor(this.random() * carried.length)] = closingMarks(this.random, closes);
     return {
       clock: this.now.toISOString(),
       inbox: this.inbox.map((m) => ({ ...m })),
       marketAlerts: this.marketAlerts.map((a) => ({ ...a })),
       transfers: transfers.map((t) => ({ ...t })),
-      carried: Array.from({ length: between(this.random, MIN_CARRIED_ITEMS, 3) }, () =>
-        carriedItem(this.random),
-      ),
+      carried,
     };
   }
 
