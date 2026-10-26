@@ -165,7 +165,8 @@ export function Rows({
 }) {
   const scale = (v: number) => `${Math.max(0, Math.min(100, (v / max) * 100))}%`;
   return (
-    <div className="grid grid-cols-[minmax(6.5rem,9rem)_1fr] gap-x-3 gap-y-2.5 text-xs">
+    // The right padding leaves room for a value label past the end of a full-length bar.
+    <div className="grid grid-cols-[minmax(6.5rem,9rem)_1fr] gap-x-3 gap-y-2.5 pr-12 text-xs">
       {rows.map((r) => (
         <div key={r.key} className="contents">
           <div className="truncate self-center text-soft">{r.label}</div>
