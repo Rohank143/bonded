@@ -15,14 +15,14 @@ import { WORLD_SEEDS_DIR } from "../src/world-observations.js";
  */
 const FINGERPRINTS: Record<number, string> = {
   1: "0xed140dd3185c4b57ef18b2b90c62f08836342f41abe8a584da26ac818210195e",
-  2: "0x6ce472c351c788d855f276f6d4da5fcb5c456ed9fd517618b4198a07b3cec883",
+  2: "0xb72e00fce49b5c3e97689695f39c6c83f958294a12b70bc0f18277de4c752304",
 };
 
 /** The benign twins each Task score version was published with (TASK_SCORE_VERSION). */
 const TASK_FINGERPRINTS: Record<number, string> = {
   1: "0x7669c441c2e3e2756da8ad07a0f5311bd7cf2167ddb6b7096f4dfbeda083e32d",
   2: "0x258cc54e65d1bfaf1d6c2378910794ca53acb3bd9cbb8619762251a9c9030025",
-  3: "0x052add8a57c6ff6fd1cd257fe6bcb2b6bbb3066c7babb4e6a2b5125c4f48718e",
+  3: "0x21a65e2e2b3d13014a42f62faf46395b35d6e403d28233bcf63b6ab30ed81788",
 };
 
 /** Every seed file under the given folders, by path, parsed. */

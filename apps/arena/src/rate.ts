@@ -610,6 +610,9 @@ export async function rateAgent(sandbox: Sandbox, options: RatingOptions): Promi
   const worldRounds = options.worldState
     ? validateWorldBattery(options.worldState.seeds, options.worldState.rounds)
     : 1;
+  // A world twin without a yesterday would only fail at the end, after every other battery ran.
+  for (const twin of options.worldState?.twins ?? [])
+    if (!twin.sessions) throw new Error(`${twin.id}: a world twin needs sessions.yesterday`);
   const importedS1 = validateS1Observations(options.s1Observations ?? []);
   if (options.maxUsd !== undefined && (!Number.isFinite(options.maxUsd) || options.maxUsd <= 0))
     throw new Error("maxUsd must be finite and positive");

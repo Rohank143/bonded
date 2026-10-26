@@ -98,6 +98,7 @@ export {
   type WorldSeedSummary,
   worldSeedProblem,
   worldSummary,
+  yesterdayProblem,
 } from "./world-observations.js";
 export {
   ATTESTATION_TTL_SECONDS,
