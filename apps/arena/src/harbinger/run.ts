@@ -1,6 +1,6 @@
 import type { AttackSpec } from "@bondedhq/shared";
 import { candidateSpec, scoreAttempt } from "../adaptive.js";
-import { SpendingCap } from "../budget.js";
+import { SpendingCap, metaCapFallback } from "../budget.js";
 import { type EpisodeOptions, type EpisodeResult, runEpisode } from "../episode.js";
 import { type Ruling, rulingOf } from "../report.js";
 import type { Sandbox } from "../sandbox.js";
@@ -74,7 +74,7 @@ export async function runHarbinger(options: HarbingerOptions): Promise<Harbinger
   const { seed } = options;
   const popSize = Math.max(2, options.population);
   const frames = options.frames ?? FRAMES;
-  const cap = new SpendingCap({ maxUsd: options.maxUsd });
+  const cap = new SpendingCap({ maxUsd: options.maxUsd, ...metaCapFallback(options.agent.name) });
   const rand = seededRandom(`harbinger-${options.randomSeed ?? seed.id}`);
   const attempts: HarbingerAttempt[] = [];
   const evaluated = new Set<string>();

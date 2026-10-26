@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { llmConfigFromEnv, OpenAICompatibleClient } from "@bondedhq/shared";
+import { chatClientFromEnv } from "@bondedhq/shared";
 import { stringify } from "yaml";
 import { loadAttackLibrary } from "./attacks.js";
 import { loadDotEnv } from "./env.js";
@@ -55,7 +55,7 @@ async function main(): Promise<number> {
   const sandbox = await Sandbox.start();
   try {
     const result = await generateHeldOut({
-      client: new OpenAICompatibleClient(llmConfigFromEnv()),
+      client: chatClientFromEnv(),
       model: values.model,
       sandbox,
       library,

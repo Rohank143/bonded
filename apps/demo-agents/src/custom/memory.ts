@@ -4,8 +4,7 @@ import {
   type AgentToolbox,
   type ArenaAgent,
   type ChatClient,
-  llmConfigFromEnv,
-  OpenAICompatibleClient,
+  chatClientForModel,
 } from "@bondedhq/shared";
 import { runToolLoop } from "../llm-loop.js";
 import { mergeUsage } from "../usage.js";
@@ -55,8 +54,8 @@ export class MemoryBotAgent implements MemoryAgent {
   private notes: string[] = [];
 
   constructor(options: MemoryBotOptions = {}) {
-    this.client = options.client ?? new OpenAICompatibleClient(llmConfigFromEnv());
     this.model = options.model ?? DEFAULT_AGENT_MODEL;
+    this.client = options.client ?? chatClientForModel(this.model);
     this.showMandate = options.showMandate ?? false;
     this.name = `memory-bot${this.showMandate ? "" : "+no-mandate"}/${this.model}`;
   }

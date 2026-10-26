@@ -7,7 +7,7 @@ import {
   type AgentToolName,
   type ChatClient,
 } from "@bondedhq/shared";
-import { SpendingCap } from "./budget.js";
+import { SpendingCap, metaCapFallback } from "./budget.js";
 import type { SentinelRow } from "./dataset.js";
 
 /**
@@ -470,7 +470,7 @@ export async function generateSynthetic(options: GenerateOptions): Promise<Gener
       `${options.out} already has ${leaked.length} row(s) from excluded classes (${[...excluded].join(", ")}), ` +
         `for example ${leaked[0]!.id}. Write this run to a new --out file.`,
     );
-  const cap = new SpendingCap({ maxUsd: options.maxUsd });
+  const cap = new SpendingCap({ maxUsd: options.maxUsd, ...metaCapFallback(options.model) });
   const summary: GenerateSummary = {
     written: 0,
     skippedExisting: 0,

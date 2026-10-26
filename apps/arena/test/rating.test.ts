@@ -1,4 +1,4 @@
-import { fallbackForModels } from "../src/budget.js";
+import { fallbackForModels, metaCapFallback } from "../src/budget.js";
 import { budgetModels } from "../src/budget-models.js";
 import { describe, expect, it } from "vitest";
 import {
@@ -84,6 +84,38 @@ describe("listedModelPrice", () => {
     const price = await listedModelPrice("deepseek/deepseek-v4.1-flash", { baseUrl, fetch });
     expect(price?.inputPerMillion).toBeCloseTo(0.15, 9);
     expect(price?.outputPerMillion).toBeCloseTo(0.6, 9);
+  });
+
+  it("uses Meta's published prices for Meta's models, without a lookup", async () => {
+    let lookups = 0;
+    const fetch = (async () => {
+      lookups++;
+      throw new Error("Meta prices need no lookup");
+    }) as typeof globalThis.fetch;
+    expect(await listedModelPrice("muse-spark-1.3", { fetch })).toEqual({
+      inputPerMillion: 1.25,
+      outputPerMillion: 4.25,
+    });
+    // An id the table doesn't list gets the dearest Meta price, so it never loosens a cap.
+    expect(await listedModelPrice("muse-unknown-9", { fetch })).toEqual({
+      inputPerMillion: 4,
+      outputPerMillion: 20,
+    });
+    expect(lookups).toBe(0);
+  });
+
+  it("prices Meta usage at Meta's rates in caps that only know the models' names", () => {
+    expect(metaCapFallback("deepseek/deepseek-v4.1-flash", undefined)).toEqual({});
+    expect(metaCapFallback("vulnerable-agent/muse-wonder-1.0", "deepseek/x")).toEqual({
+      fallbackPrice: { inputPerMillion: 4, outputPerMillion: 20 },
+    });
+    // Never below the default: contributor pricing is cheaper than the default estimate.
+    expect(metaCapFallback("muse-spark-1.3-contributor")).toEqual({
+      fallbackPrice: DEFAULT_FALLBACK_PRICE,
+    });
+    const cap = new SpendingCap({ maxUsd: 5, ...metaCapFallback("muse-wonder-1.0") });
+    cap.add({ inputTokens: 1_000_000, outputTokens: 200_000 });
+    expect(cap.summary().spentUsd).toBeCloseTo(8, 9);
   });
 
   it("is undefined for an unlisted model, a variable or missing price, or a failed lookup", async () => {

@@ -6,7 +6,7 @@ import {
   LlmDecisionModel,
 } from "@bonded/demo-agents";
 import {
-  llmConfigFromEnv,
+  llmConfigForModel,
   OpenAICompatibleClient,
   sentinelCascadePolicySchema,
   sentinelCascadePolicyHash,
@@ -34,7 +34,7 @@ export function cascadePolicyInfo(path: string): RatingSentinel {
 
 export function cascadeFromPolicy(url: string, path: string) {
   const p = sentinelCascadePolicySchema.parse(JSON.parse(readFileSync(path, "utf8")));
-  const config = llmConfigFromEnv();
+  const config = llmConfigForModel(p.fallback.model);
   if (config.baseUrl !== p.fallback.baseUrl.replace(/\/+$/, ""))
     throw new Error("LLM endpoint differs from the frozen policy");
   const laya = new LayaSentinel({ url, apiKey: process.env.LAYA_API_KEY, questions: "v3" });

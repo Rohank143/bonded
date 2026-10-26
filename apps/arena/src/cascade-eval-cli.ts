@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 import { DecisionModelSentinel, LayaSentinel, LlmDecisionModel } from "@bonded/demo-agents";
 import {
-  llmConfigFromEnv,
+  llmConfigForModel,
   OpenAICompatibleClient,
   sentinelCascadePolicySchema,
   sentinelCascadePolicyHash,
@@ -131,11 +131,11 @@ async function main() {
         }),
         fallback: {
           model: values.llm ?? "",
-          baseUrl: llmConfigFromEnv().baseUrl,
+          baseUrl: llmConfigForModel(values.llm ?? "").baseUrl,
           questions: "v1" as const,
         },
       };
-  const config = llmConfigFromEnv();
+  const config = llmConfigForModel(identity.fallback.model);
   if (!identity.fallback.model || identity.fallback.baseUrl.replace(/\/+$/, "") !== config.baseUrl)
     throw new Error("fallback model and endpoint must match the frozen identity");
   // The server's health response must name the pinned revision; never label unknown weights.
