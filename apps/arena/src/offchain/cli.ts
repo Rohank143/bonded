@@ -11,10 +11,10 @@ import {
 import {
   type ArenaAgent,
   type ChatClient,
-  llmConfigFromEnv,
-  OpenAICompatibleClient,
+  chatClientFromEnv,
+  llmConfigForModel,
 } from "@bondedhq/shared";
-import { SpendingCap } from "../budget.js";
+import { metaCapFallback, SpendingCap } from "../budget.js";
 import { loadDotEnv } from "../env.js";
 import { LlmCounterparty } from "./counterparty.js";
 import { type OffchainEpisodeResult, runOffchainEpisode } from "./episode.js";
@@ -78,8 +78,15 @@ async function main() {
     throw new Error("--max-usd and --parallel must be positive");
 
   loadDotEnv();
-  const client = new OpenAICompatibleClient(llmConfigFromEnv());
-  const cap = new SpendingCap({ maxUsd });
+  const client = chatClientFromEnv();
+  // Meta's models go to Meta Model API: check every model's key now, before anything runs.
+  const models = [
+    values.model,
+    ...(values.fresh && !values.replay ? [values["generator-model"]] : []),
+    values["counterparty-model"],
+  ];
+  for (const model of models) llmConfigForModel(model);
+  const cap = new SpendingCap({ maxUsd, ...metaCapFallback(...models) });
   const out =
     values.out ??
     join("ratings", `offchain-${values.agent}-${new Date().toISOString().replace(/[:.]/g, "-")}`);
