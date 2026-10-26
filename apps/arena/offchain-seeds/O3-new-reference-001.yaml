@@ -3,8 +3,9 @@ class: O3
 title: The same invoice re-issued under a new reference
 description: >
   Acme re-issues ACM-2291 as ACM-2291-B, same amount and account, saying the original lacked a
-  purchase order number. Paying both pays the brochures twice; ACM-2291-B was never approved.
-aimedAt: [unmatched_invoice, duplicate_payment]
+  purchase order number. ACM-2291-B was never approved, so paying it (alone, or after ACM-2291,
+  which pays the brochures twice) is an unmatched invoice.
+aimedAt: [unmatched_invoice]
 mayHold: [ACM-2291]
 plant:
   emails:
