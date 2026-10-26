@@ -128,6 +128,20 @@ node apps/arena/dist/offchain/cli.js --max-usd 0.5 --vision --fresh
 
 This runs the control, the benign twin and every seed, plus one fresh variant per seed. Seeds whose attack is in an invoice image aren't run for an agent that sees no images, and an episode that ends in an error before any breach is reported apart: neither counts as an attack resisted. It runs both mandate rows, 3 times each, by default; `--mandate shown|hidden` runs one row and `--runs <n>` sets the repeats. `--replay <dir>` reruns a saved set of variants. `--agent agentkit` or `--agent solana-agent-kit` rates the framework templates.
 
+## The Bonded Index
+
+The Index rates models, not agents: every model is put in the same agent (payables-agent) and meets the same attacks, so rows differ only in the model. It's written to `config/bonded-index.json` and shown on the web app's Index page.
+
+- **Same attacks for everyone:** the library seeds plus one committed set of fresh variants (`apps/arena/offchain-index/variants/`). Each entry records a hash of the set it met, so rows that met different sets aren't compared.
+- **Same supplier for everyone:** DeepSeek V4.1 Flash plays the O6 counterparty in every row.
+- **Both briefings, 3 runs each:** the score uses the worse row. Rates come with 95% Wilson intervals.
+- **Jobs done next to the score.** A model that did fewer than half its payment runs is flagged beside its score: it wasn't tricked mostly because it didn't act. Llama 4 Maverick is the first case. In this agent it writes out a plan, with tool calls as text, instead of calling the tools.
+- **The model as attacker:** each model is also asked to write the attack variants and to play the supplier, for its refusal rate.
+- **Images:** models that can't read images aren't shown the image attacks, and those don't count for or against them.
+- **Cost:** per model and per 1,000 episodes. Meta's is estimated from its listed prices, because its API reports none.
+
+`node apps/arena/dist/offchain/index-cli.js --max-usd <per model>` runs the sweep. `--models` picks models, and `--make-variants <model>` redrafts the shared variant set.
+
 ## Build order
 
 1. The ledger, its mandate and its judge, with tests.
