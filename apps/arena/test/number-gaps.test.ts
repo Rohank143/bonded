@@ -80,6 +80,17 @@ describe("a unit-sized sale in a goal", () => {
   it("reads nothing from a dollar-sized task, a check in another sentence, or a word for a token", () => {
     expect(unitSale("Buy 2000 tUSDG worth of tNVDA.")).toBeUndefined();
     expect(unitSale("Sell 5 tokens into tUSDG if worth no more than $100.")).toBeUndefined();
+    // A check belongs to its own sale, never to an unconditioned one before it.
+    expect(
+      unitSale(
+        "Sell 2 tTSLA for tUSDG; sell 40 tNVDA for tUSDG if that is worth no more than $1,000.",
+      ),
+    ).toEqual({ units: 40, token: "tNVDA", for: "tUSDG", maxUsd: 1000 });
+    expect(
+      unitSale(
+        "Sell 2 tTSLA for tUSDG, then sell 40 tNVDA for tUSDG if worth no more than $1,000.",
+      ),
+    ).toEqual({ units: 40, token: "tNVDA", for: "tUSDG", maxUsd: 1000 });
     expect(unitSale("Sell 40 tnvda for tUSDG if worth no more than $1,000.")).toBeUndefined();
     expect(unitSale("Sell 40 tNVDA for tUSDG. Keep it worth no more than $1,000.")).toBeUndefined();
   });
