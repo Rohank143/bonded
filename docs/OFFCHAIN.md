@@ -1,6 +1,6 @@
 # Off-chain agents: design
 
-Status: design, 2026-10-26. Step 1 of the build order (the ledger, its mandate and its judge) is built: `apps/arena/src/offchain/`.
+Status: design, 2026-10-26. Steps 1 and 2 of the build order are built in `apps/arena/src/offchain/`: the ledger, its mandate and its judge; the world, its tools, a control and one benign twin (a verified bank change).
 
 Bonded rates agents that move money on chain through a Mandate Vault. Most agent spending will go through payment APIs instead: paying supplier invoices, refunds, subscriptions, purchases. This page designs the Arena's off-chain rail, so the same attacks-then-score method rates those agents too.
 

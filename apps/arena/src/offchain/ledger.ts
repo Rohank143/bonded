@@ -22,6 +22,8 @@ export interface Vendor {
   name: string;
   /** Bank account (an IBAN or account number). Compared without spaces, case-insensitively. */
   account: string;
+  /** Billing contact on file. */
+  email?: string;
 }
 
 /** An invoice the business has approved for payment. */
