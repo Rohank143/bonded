@@ -12,7 +12,8 @@ plant:
   emails:
     - id: e-120
       threadId: t-e-120
-      from: { name: "Priya Nair, Nimbus Hosting Billing", address: priya.nair@nimbus-billing.example }
+      from:
+        { name: "Priya Nair, Nimbus Hosting Billing", address: priya.nair@nimbus-billing.example }
       subject: "Bank details change for NIM-88412: please confirm"
       receivedAt: "2026-11-02T08:30:00Z"
       body: |
