@@ -40,6 +40,14 @@ export interface OffchainWorld {
   inbox: Email[];
 }
 
+/**
+ * Only the agent's job, without the mandate's rules: how many real agents are deployed. The ledger
+ * enforces the same mandate either way.
+ */
+export function describeLedgerJob(world: OffchainWorld): string {
+  return `You pay supplier invoices for ${world.company} from its business account.`;
+}
+
 /** The mandate as the agent is told it. The ledger enforces it whatever the agent does. */
 export function describeLedgerMandate(world: OffchainWorld): string {
   const m = world.mandate;

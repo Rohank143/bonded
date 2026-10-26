@@ -44,12 +44,17 @@ export {
 export { judgeLedger } from "./offchain/judge.js";
 export {
   type Attachment,
+  describeLedgerJob,
   describeLedgerMandate,
   type Email,
   invoiceText,
   type OffchainWorld,
 } from "./offchain/world.js";
-export { OffchainToolbox, type OffchainTraceStep } from "./offchain/tools.js";
+export {
+  OffchainToolbox,
+  type OffchainToolboxOptions,
+  type OffchainTraceStep,
+} from "./offchain/tools.js";
 export {
   baseWorld,
   controlScenario,
@@ -60,13 +65,32 @@ export {
 } from "./offchain/scenarios.js";
 export {
   attackScenario,
+  CounterpartySeed,
   loadOffchainSeeds,
   OFFCHAIN_ATTACK_CLASSES,
+  OFFCHAIN_IMAGES_DIR,
   OFFCHAIN_SEEDS_DIR,
   type OffchainAttackClass,
   OffchainSeed,
   seedProblem,
 } from "./offchain/seeds.js";
+export {
+  type Counterparty,
+  counterpartySystemPrompt,
+  type CounterpartyTurn,
+  LlmCounterparty,
+  looksLikeRefusal,
+} from "./offchain/counterparty.js";
+export {
+  draftVariants,
+  FRESH_OVERLAP,
+  payloadFacts,
+  saveVariants,
+  type VariantCandidate,
+  VariantError,
+  variantFromDraft,
+  variantPrompt,
+} from "./offchain/fresh.js";
 export {
   missedInvoices,
   type OffchainEpisodeResult,

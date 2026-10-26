@@ -4,15 +4,14 @@ import {
   type AgentToolbox,
   type ArenaAgent,
   type ChatClient,
-  llmConfigFromEnv,
+  chatClientForModel,
   offchainToolDefinitions,
-  OpenAICompatibleClient,
 } from "@bondedhq/shared";
 import { runToolLoop } from "../llm-loop.js";
 import { DEFAULT_AGENT_MODEL } from "../vulnerable/llm.js";
 
 export interface LlmPayablesAgentOptions {
-  /** Defaults to an OpenAI-compatible client configured from the environment (ADR-006). */
+  /** Defaults to the routing client for the model (Meta's models go to Meta Model API). */
   client?: ChatClient;
   model?: string;
   /** The model can see images, so invoice scans and renders are shown to it. Off by default. */
@@ -45,8 +44,8 @@ export class LlmPayablesAgent implements ArenaAgent {
 
   constructor(options: LlmPayablesAgentOptions = {}) {
     this.vision = options.vision ?? false;
-    this.client = options.client ?? new OpenAICompatibleClient(llmConfigFromEnv());
     this.model = options.model ?? DEFAULT_AGENT_MODEL;
+    this.client = options.client ?? chatClientForModel(this.model);
     this.name = `payables-agent/${this.model}`;
   }
 

@@ -5,7 +5,9 @@ import {
   type ToolResult,
 } from "@bondedhq/shared";
 import { z } from "zod";
+import { type Counterparty, type CounterpartyTurn, threadOf } from "./counterparty.js";
 import type { Ledger, LedgerBreachType } from "./ledger.js";
+import type { CounterpartySeed } from "./seeds.js";
 import type { OffchainWorld } from "./world.js";
 
 /** One tool call in an off-chain episode's trace. */
@@ -29,23 +31,35 @@ export interface SentReply {
  * breaches. A payment that breaks the mandate in Monitor mode goes through without comment,
  * as it would on a real payment API.
  */
+export interface OffchainToolboxOptions {
+  /** Serve attachments' images (default). Off, agents get each attachment's text layer only. */
+  images?: boolean;
+  /** O6: who answers the agent's replies on the counterparty's thread. */
+  counterparty?: { seed: CounterpartySeed; model: Counterparty };
+}
+
 export class OffchainToolbox implements AgentToolbox {
   readonly trace: OffchainTraceStep[] = [];
   readonly replies: SentReply[] = [];
+  /** The exchanges on an O6 counterparty's thread, in order. */
+  readonly conversation: CounterpartyTurn[] = [];
   readonly #abort = new AbortController();
+  readonly images: boolean;
   // Truly private: the agent holds this object, and must reach the ledger only through `call`.
   readonly #world: OffchainWorld;
   readonly #ledger: Ledger;
+  readonly #options: OffchainToolboxOptions;
 
   constructor(
     world: OffchainWorld,
     ledger: Ledger,
     readonly maxSteps: number,
-    /** Serve attachments' images. Off, agents get each attachment's text layer only. */
-    readonly images = true,
+    options: OffchainToolboxOptions = {},
   ) {
+    this.images = options.images ?? true;
     this.#world = world;
     this.#ledger = ledger;
+    this.#options = options;
   }
 
   get signal(): AbortSignal {
@@ -68,6 +82,7 @@ export class OffchainToolbox implements AgentToolbox {
     };
     this.trace.push(entry);
     const before = this.#ledger.breaches().length;
+    const replyIndex = this.replies.length;
     entry.result =
       entry.step > this.maxSteps
         ? { ok: false, error: `step limit of ${this.maxSteps} reached` }
@@ -76,7 +91,57 @@ export class OffchainToolbox implements AgentToolbox {
       .breaches()
       .slice(before)
       .map((b) => b.id);
+    if (name === "reply_email" && entry.result.ok) {
+      const reply = this.replies[replyIndex]!;
+      const delivered = await this.answer(reply);
+      if (delivered) entry.result = ok({ ...(entry.result.output as object), newEmails: 1 });
+    }
     return entry.result;
+  }
+
+  /**
+   * O6: when the agent replies on the counterparty's thread, the counterparty's model answers and
+   * its email lands in the inbox, newest first, like a real reply. True when one arrived.
+   */
+  private async answer(reply: SentReply): Promise<boolean> {
+    const cp = this.#options.counterparty;
+    const email = this.#world.inbox.find((e) => e.id === reply.emailId);
+    if (!cp || !email || email.threadId !== cp.seed.threadId) return false;
+    if (this.conversation.length >= cp.seed.maxReplies) return false;
+    // Take the slot before waiting, so replies sent in parallel can't exceed maxReplies.
+    const earlier = this.conversation.slice();
+    const turn: CounterpartyTurn = { agentReply: reply.body, reply: null };
+    this.conversation.push(turn);
+    // The planted emails, then each earlier exchange: the agent's sent replies aren't in its inbox.
+    const agent = `Accounts payable, ${this.#world.company}`;
+    const sender = `${cp.seed.from.name} <${cp.seed.from.address}>`;
+    const thread = [
+      ...threadOf(
+        this.#world.inbox.filter((e) => !e.id.startsWith("cp-")),
+        cp.seed.threadId,
+      ),
+      ...earlier.flatMap((t) => [
+        { from: agent, body: t.agentReply },
+        ...(t.reply === null ? [] : [{ from: sender, body: t.reply }]),
+      ]),
+    ];
+    const body = await cp.model.reply({ thread, agentReply: reply.body });
+    turn.reply = body;
+    if (body === null || this.#abort.signal.aborted) return false;
+    const n = this.conversation.indexOf(turn) + 1;
+    const opener = this.#world.inbox
+      .filter((e) => e.threadId === cp.seed.threadId)
+      .sort((a, b) => a.receivedAt.localeCompare(b.receivedAt))[0]!;
+    this.#world.inbox.unshift({
+      id: `cp-${n}`,
+      threadId: cp.seed.threadId,
+      from: cp.seed.from,
+      subject: opener.subject.startsWith("Re:") ? opener.subject : `Re: ${opener.subject}`,
+      body,
+      receivedAt: `${this.#world.today}T10:${String(n * 5).padStart(2, "0")}:00Z`,
+      attachments: [],
+    });
+    return true;
   }
 
   private dispatch(name: string, args: unknown): ToolResult {

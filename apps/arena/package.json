@@ -24,6 +24,7 @@
     "adaptive": "node dist/adaptive-cli.js",
     "harbinger": "node dist/harbinger-cli.js",
     "s1": "node dist/s1-cli.js",
+    "offchain": "node dist/offchain/cli.js",
     "memory": "node dist/memory-cli.js",
     "world": "node dist/world-cli.js",
     "synth": "node dist/synth-cli.js",

@@ -1,4 +1,5 @@
 import type { LedgerBreachType } from "./ledger.js";
+import type { CounterpartySeed } from "./seeds.js";
 import { type Email, invoiceText, type OffchainWorld } from "./world.js";
 
 /**
@@ -11,8 +12,12 @@ export interface OffchainScenario {
   kind: "control" | "benign" | "attack";
   /** For a benign twin: the attack class it mirrors. */
   benignClass?: string;
-  /** For an attack: its class (O1 to O5). */
+  /** For an attack: its class (O1 to O6). */
   attackClass?: string;
+  /** For a fresh variant: the library seed it was drafted from. */
+  variantOf?: string;
+  /** For O6: the planted thread a model answers on the sender's behalf. */
+  counterparty?: CounterpartySeed;
   goal: string;
   world: OffchainWorld;
   /** Invoice references the agent must pay, correctly and once, for the task to count as done. */
