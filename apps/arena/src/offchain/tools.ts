@@ -45,14 +45,21 @@ export class OffchainToolbox implements AgentToolbox {
   readonly conversation: CounterpartyTurn[] = [];
   readonly #abort = new AbortController();
   readonly images: boolean;
+  // Truly private: the agent holds this object, and must reach the ledger only through `call`.
+  readonly #world: OffchainWorld;
+  readonly #ledger: Ledger;
+  readonly #options: OffchainToolboxOptions;
 
   constructor(
-    private readonly world: OffchainWorld,
-    readonly ledger: Ledger,
+    world: OffchainWorld,
+    ledger: Ledger,
     readonly maxSteps: number,
-    private readonly options: OffchainToolboxOptions = {},
+    options: OffchainToolboxOptions = {},
   ) {
     this.images = options.images ?? true;
+    this.#world = world;
+    this.#ledger = ledger;
+    this.#options = options;
   }
 
   get signal(): AbortSignal {
@@ -74,12 +81,12 @@ export class OffchainToolbox implements AgentToolbox {
       breaches: [],
     };
     this.trace.push(entry);
-    const before = this.ledger.breaches().length;
+    const before = this.#ledger.breaches().length;
     entry.result =
       entry.step > this.maxSteps
         ? { ok: false, error: `step limit of ${this.maxSteps} reached` }
         : this.dispatch(name, args);
-    entry.breaches = this.ledger
+    entry.breaches = this.#ledger
       .breaches()
       .slice(before)
       .map((b) => b.id);
@@ -96,16 +103,16 @@ export class OffchainToolbox implements AgentToolbox {
    * its email lands in the inbox, newest first, like a real reply. True when one arrived.
    */
   private async answer(reply: SentReply): Promise<boolean> {
-    const cp = this.options.counterparty;
-    const email = this.world.inbox.find((e) => e.id === reply.emailId);
+    const cp = this.#options.counterparty;
+    const email = this.#world.inbox.find((e) => e.id === reply.emailId);
     if (!cp || !email || email.threadId !== cp.seed.threadId) return false;
     if (this.conversation.length >= cp.seed.maxReplies) return false;
     // The planted emails, then each earlier exchange: the agent's sent replies aren't in its inbox.
-    const agent = `Accounts payable, ${this.world.company}`;
+    const agent = `Accounts payable, ${this.#world.company}`;
     const sender = `${cp.seed.from.name} <${cp.seed.from.address}>`;
     const thread = [
       ...threadOf(
-        this.world.inbox.filter((e) => !e.id.startsWith("cp-")),
+        this.#world.inbox.filter((e) => !e.id.startsWith("cp-")),
         cp.seed.threadId,
       ),
       ...this.conversation.flatMap((t) => [
@@ -117,16 +124,16 @@ export class OffchainToolbox implements AgentToolbox {
     this.conversation.push({ agentReply: reply.body, reply: body });
     if (body === null || this.#abort.signal.aborted) return false;
     const n = this.conversation.length;
-    const opener = this.world.inbox
+    const opener = this.#world.inbox
       .filter((e) => e.threadId === cp.seed.threadId)
       .sort((a, b) => a.receivedAt.localeCompare(b.receivedAt))[0]!;
-    this.world.inbox.unshift({
+    this.#world.inbox.unshift({
       id: `cp-${n}`,
       threadId: cp.seed.threadId,
       from: cp.seed.from,
       subject: opener.subject.startsWith("Re:") ? opener.subject : `Re: ${opener.subject}`,
       body,
-      receivedAt: `${this.world.today}T10:${String(n * 5).padStart(2, "0")}:00Z`,
+      receivedAt: `${this.#world.today}T10:${String(n * 5).padStart(2, "0")}:00Z`,
       attachments: [],
     });
     return true;
@@ -139,13 +146,13 @@ export class OffchainToolbox implements AgentToolbox {
       return { ok: false, error: `invalid arguments: ${z.prettifyError(parsed.error)}` };
     }
     const input = parsed.data as Record<string, unknown>;
-    const w = this.world;
+    const w = this.#world;
     switch (name as OffchainToolName) {
       case "list_emails":
         return ok(
           w.inbox.map((e) => ({
             id: e.id,
-            from: e.from,
+            from: { ...e.from },
             subject: e.subject,
             receivedAt: e.receivedAt,
             attachments: e.attachments.map((a) => ({ id: a.id, filename: a.filename })),
@@ -156,6 +163,7 @@ export class OffchainToolbox implements AgentToolbox {
         if (!email) return { ok: false, error: `no email with id ${String(input.emailId)}` };
         return ok({
           ...email,
+          from: { ...email.from },
           attachments: email.attachments.map((a) => ({ id: a.id, filename: a.filename })),
         });
       }
@@ -173,22 +181,22 @@ export class OffchainToolbox implements AgentToolbox {
         });
       }
       case "list_vendors":
-        return ok(this.ledger.vendors());
+        return ok(this.#ledger.vendors());
       case "get_vendor": {
-        const vendor = this.ledger.vendors().find((v) => v.id === input.vendorId);
+        const vendor = this.#ledger.vendors().find((v) => v.id === input.vendorId);
         return vendor
           ? ok(vendor)
           : { ok: false, error: `no vendor with id ${String(input.vendorId)}` };
       }
       case "list_payments":
-        return ok(this.ledger.payments());
+        return ok(this.#ledger.payments());
       case "list_approved_invoices":
-        return ok(this.ledger.approvedInvoices());
+        return ok(this.#ledger.approvedInvoices());
       case "pay_invoice": {
         const { account, amountUsd, invoiceReference, memo } = parsed.data as z.infer<
           (typeof OFFCHAIN_TOOLS)["pay_invoice"]["input"]
         >;
-        const result = this.ledger.pay({
+        const result = this.#ledger.pay({
           account,
           amountUsd,
           invoiceReference,
