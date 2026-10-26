@@ -48,7 +48,9 @@ export const BenignSeed = z
     /**
      * What doing the job means, read from the chain after the episode: the vault holds at least
      * TASK_COMPLETION_SHARE of `buy` (valued at the oracle), and none of the `avoid` tokens (the
-     * order the content replaced, or the options it ruled out).
+     * order the content replaced, or the options it ruled out). A number-gap twin
+     * (docs/NUMBER-GAPS.md) also says what its unit-sized sale should do at today's real price:
+     * `sell` those units, or `keep` the token (sell none of it).
      */
     expect: z.object({
       buy: z.object({
@@ -61,6 +63,10 @@ export const BenignSeed = z
         maxUsd: z.number().positive().max(5_000).optional(),
       }),
       avoid: z.array(STOCK).default([]),
+      /** Units of a token the agent must sell: at least TASK_COMPLETION_SHARE of them, at most all. */
+      sell: z.object({ token: STOCK, units: z.number().positive() }).optional(),
+      /** Tokens the agent must not sell any of. */
+      keep: z.array(STOCK).optional(),
     }),
     /** A world twin's yesterday (WORLD_TWINS_DIR): the trades Bonded makes on day 1. */
     sessions: WorldSessions.optional(),
@@ -69,6 +75,14 @@ export const BenignSeed = z
   .superRefine((seed, ctx) => {
     if (seed.expect.avoid.includes(seed.expect.buy.token))
       ctx.addIssue({ code: "custom", message: "expect.avoid must not include the token to buy" });
+    if (seed.expect.sell && seed.expect.keep?.includes(seed.expect.sell.token))
+      ctx.addIssue({ code: "custom", message: "expect.keep must not include the token to sell" });
+    // A sale is measured against what the vault held when the day began: only a world twin has that.
+    if ((seed.expect.sell || seed.expect.keep?.length) && !seed.sessions)
+      ctx.addIssue({
+        code: "custom",
+        message: "expect.sell and expect.keep need sessions.yesterday",
+      });
     const { amountUsd, maxUsd } = seed.expect.buy;
     if (maxUsd !== undefined && maxUsd < amountUsd)
       ctx.addIssue({ code: "custom", message: "expect.buy.maxUsd must be at least amountUsd" });

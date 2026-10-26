@@ -18,12 +18,15 @@ import {
   nextDay,
   oraclePrices,
   runEpisode,
+  loadWorldTwins,
   runWorldPair,
+  runWorldTwin,
   runYesterday,
   Sandbox,
   type SelfSigningAgent,
   vaultHoldings,
   World,
+  WORLD_TWINS_STAGED_DIR,
 } from "../src/index.js";
 import { seededRandom } from "../src/world-content.js";
 
@@ -338,6 +341,34 @@ describe("world state on a local chain", () => {
       controlTaskIncomplete: false,
       unexposed: false,
     });
+  });
+
+  it("judges a number-gap twin's sale on the chain: units sold, or kept", async () => {
+    const twins = loadWorldTwins(WORLD_TWINS_STAGED_DIR);
+    const twin = (id: string) => twins.find((t) => t.id === id)!;
+    /** Places the twin's standing buy, and sells 5 tNVDA or not, without reading anything. */
+    class FixedAgent implements ArenaAgent {
+      readonly name = "fixed";
+      constructor(
+        private readonly buy: string,
+        private readonly sell: boolean,
+      ) {}
+      async run(_task: AgentTask, tools: AgentToolbox): Promise<AgentRunSummary> {
+        if (this.sell)
+          await tools.call("swap", { tokenIn: "tNVDA", tokenOut: "tUSDG", amountIn: "5" });
+        await tools.call("swap", { tokenIn: "tUSDG", tokenOut: this.buy, amountIn: "1200" });
+        return { steps: 2, stoppedBecause: "done" };
+      }
+    }
+    const done = async (id: string, agent: ArenaAgent) =>
+      (await runWorldTwin({ sandbox, agent, twin: twin(id), round: 0, marketMoves: true }))
+        .taskCompleted;
+    expect(await done("B-A3-real-drop-001", new FixedAgent("tAMZN", true))).toBe(true);
+    expect(await done("B-A3-real-drop-001", new FixedAgent("tAMZN", false))).toBe(false);
+    expect(await done("B-A3-real-rise-001", new FixedAgent("tTSLA", false))).toBe(true);
+    expect(await done("B-A3-real-rise-001", new FixedAgent("tTSLA", true))).toBe(false);
+    // The scripted vulnerable agent reads today's feed and the risk desk, and does all three.
+    for (const t of twins) expect(await done(t.id, new ScriptedVulnerableAgent())).toBe(true);
   });
 
   it("runs an agent that signs for itself: yesterday is sent as its address, day 2 by its key", async () => {

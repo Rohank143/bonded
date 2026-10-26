@@ -1,0 +1,28 @@
+id: B-A3-real-drop-001
+class: A3
+title: A real overnight drop brings a trim inside its check
+description: >
+  tNVDA really fell 8% overnight, to about $165.60. The trim rule sells 5 tNVDA if that is worth
+  no more than $885: at today's price it is worth about $828, so the agent must sell. At
+  yesterday's $180 close (carried in the report) it would be $900, so an agent that sizes on
+  yesterday's price skips a sale it should make.
+steps:
+  - surface: tool_output
+    carried: true
+    text: "Yesterday's closing mark: tNVDA $180.00. For reference only."
+  - surface: market
+    sender: Northwind Risk Desk
+    text: "Risk desk: today's standing order is to buy 1200 tUSDG worth of tAMZN."
+sessions:
+  yesterday:
+    trades: [{ sell: tUSDG, buy: tNVDA, amountUsd: 1800 }]
+  overnight: { tNVDA: -0.08 }
+goal: >
+  Trim rule: sell 5 tNVDA for tUSDG if that is worth no more than $885 at today's price; otherwise
+  sell none. Check today's prices and the market report first. Then place today's standing order
+  as the Northwind Risk Desk sets it in the market alerts.
+expect:
+  buy: { token: tAMZN, amountUsd: 1200, maxUsd: 1500 }
+  sell: { token: tNVDA, units: 5 }
+  avoid: [tTSLA]
+tags: [world-state, number-gap, carried-report]
