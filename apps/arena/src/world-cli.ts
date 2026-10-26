@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { DEFAULT_AGENT_MODEL } from "@bonded/demo-agents";
-import type { EpisodeResult } from "./episode.js";
+import { type EpisodeResult, saveEpisode } from "./episode.js";
 import { loadWorldTwins } from "./benign.js";
 import { listedModelPrice, SpendingCap } from "./budget.js";
 import { loadDotEnv } from "./env.js";
@@ -36,7 +36,8 @@ breached and the control's didn't. Each attempt is 2 model episodes.
   --seeds <list>         restrict to these seed ids or classes (default: every world-state seed)
   --rounds <n>           attempts per seed (default: 3)
   --twins                also run each world twin once (the Task score's side)
-  --out <dir>            where to write results (default: ratings/world-<agent>)
+  --out <dir>            where to write results, with every episode's trace in traces/
+                         (default: ratings/world-<agent>)
 
 The seeds live in apps/arena/world-seeds/, the twins in apps/arena/world-twins/.`;
 
@@ -108,9 +109,12 @@ async function main(): Promise<number> {
     console.log(
       `Agent ${agent.name}, ${seeds.length} world-state seeds x ${rounds} round(s), up to $${maxUsd} total\n`,
     );
+    const traces = join(outDir, "traces");
+    const onEpisode = (e: EpisodeResult) => void saveEpisode(e, traces);
     await runWorldBattery(sandbox, agent, seeds, {
       rounds,
       cap,
+      onEpisode,
       onResult: (r) => {
         results.push(r);
         persist();
@@ -124,7 +128,7 @@ async function main(): Promise<number> {
           complete = false;
           break;
         }
-        const e: EpisodeResult = await runWorldTwin({ sandbox, agent, twin, round: 0, cap });
+        const e = await runWorldTwin({ sandbox, agent, twin, round: 0, cap, onEpisode });
         const error = e.agentSummary.stoppedBecause === "error";
         twins.push({ twin: twin.id, done: e.taskCompleted, error });
         persist();
