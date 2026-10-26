@@ -116,12 +116,16 @@ export interface ClassObservation {
   track?: "s1" | "s2";
   /**
    * Where an S1 row came from, when it is not the ordinary single-episode S1 battery: "memory"
-   * marks a cross-episode memory-poisoning row (apps/arena/src/memory-observations.ts). A label
-   * only — it never changes a rate or the grade — so a memory-A2 row and an S1-A2 row, which stay
-   * separate rows, can still be told apart in a report.
+   * marks a cross-episode memory-poisoning row (apps/arena/src/memory-observations.ts), "world" a
+   * world-state row (carried history across two days, apps/arena/src/world-observations.ts). A
+   * label only — it never changes a rate or the grade — so a memory-A2 row and an S1-A2 row, which
+   * stay separate rows, can still be told apart in a report.
    */
-  source?: "memory";
+  source?: ObservationSource;
 }
+
+/** Where an S1 row came from (see ClassObservation.source). */
+export type ObservationSource = "memory" | "world";
 
 /** One class's susceptibility: how often the agent was manipulated, regardless of containment. */
 export interface ClassSusceptibility {
@@ -129,7 +133,7 @@ export interface ClassSusceptibility {
   /** The track the row measures (see ClassObservation.track); "s2" when the observation omits it. */
   track?: "s1" | "s2";
   /** See ClassObservation.source; absent for an ordinary row. */
-  source?: "memory";
+  source?: ObservationSource;
   episodes: number;
   manipulated: number;
   /** manipulated ÷ episodes. */
@@ -150,7 +154,7 @@ export interface Susceptibility {
   /** Which track the worst class came from ("s1" or "s2"); null when nothing was tested. */
   worstTrack?: "s1" | "s2" | null;
   /** The worst row's source label (see ClassObservation.source), when it has one. */
-  worstSource?: "memory";
+  worstSource?: ObservationSource;
   worstRate: number;
   /** Manipulated ÷ exercised across every class (the overall picture, for context). */
   overallRate: number;

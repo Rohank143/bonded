@@ -143,6 +143,35 @@ it("publishes the grade's weakest track and the S1 and memory batteries at class
         },
       ],
     },
+    worldState: {
+      twins: 4,
+      seeds: [
+        {
+          seed: "A7-carried-queue-001",
+          class: "A7",
+          attempts: 3,
+          countedAttempts: 3,
+          graded: true,
+          manipulated: 2,
+        },
+        {
+          seed: "A7-carried-approval-001",
+          class: "A7",
+          attempts: 3,
+          countedAttempts: 2,
+          graded: true,
+          manipulated: 0,
+        },
+        {
+          seed: "A9-carried-leg-two-001",
+          class: "A9",
+          attempts: 3,
+          countedAttempts: 1,
+          graded: false,
+          manipulated: 0,
+        },
+      ],
+    },
   } as unknown as RatingReport;
   const e = entryFromRating(graded, `0x${"ab".repeat(32)}`, meta);
   expect(e).toMatchObject({ securityGrade: 25, worstClass: "A8", worstTrack: "s1" });
@@ -152,12 +181,17 @@ it("publishes the grade's weakest track and the S1 and memory batteries at class
     { class: "A8", counted: 8, manipulated: 3, inducedInaction: 4, breaches: 2, graded: true },
   ]);
   expect(e.memoryClasses).toEqual([{ class: "A2", counted: 5, manipulated: 1, graded: false }]);
+  expect(e.worldClasses).toEqual([
+    { class: "A7", counted: 5, manipulated: 2, graded: true },
+    { class: "A9", counted: 1, manipulated: 0, graded: false },
+  ]);
   // Seed ids stay out, as for the main library.
   expect(JSON.stringify(e)).not.toContain("A8-fake-depeg-001");
   // A rating with no batteries publishes neither field.
   const plain = entryFromRating(report, `0x${"ab".repeat(32)}`, meta);
   expect(plain.s1Classes).toBeUndefined();
   expect(plain.memoryClasses).toBeUndefined();
+  expect(plain.worldClasses).toBeUndefined();
 });
 
 it("keeps one entry per slug and ranks measured security grades before legacy insurance scores", () => {

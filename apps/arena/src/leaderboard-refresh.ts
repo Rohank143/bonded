@@ -24,10 +24,12 @@ export const REFRESH_DEFAULTS = {
   /** One rating's model spend cap, also bounded by what's left of the total. */
   perRatingMaxUsd: 1,
   /**
-   * The cost estimate for one model-driven rating at 5 runs with S1: the Oct 19–20 re-rating spent
-   * $0.33–0.41 per entry on DeepSeek v4.1 Flash and GLM 5.3 Flash. Scripted agents cost nothing.
+   * The cost estimate for one model-driven rating at 5 runs with S1 and the world-state battery:
+   * the Oct 19–20 re-rating spent $0.33–0.41 per entry on DeepSeek v4.1 Flash and GLM 5.3 Flash,
+   * and the world-state battery adds 36 two-day episodes and its twins at 3 attempts a seed
+   * (about $0.05–0.10). Scripted agents cost nothing.
    */
-  estimateUsd: 0.45,
+  estimateUsd: 0.55,
   /** Tries per entry in one invocation; a later invocation tries again. */
   attempts: 2,
   parallel: 1,

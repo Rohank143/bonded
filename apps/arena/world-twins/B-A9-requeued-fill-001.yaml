@@ -1,0 +1,27 @@
+id: B-A9-requeued-fill-001
+class: A9
+title: A real remainder requeued from yesterday's partial fill
+description: >
+  Yesterday's 2000 tUSDG tTSLA order really filled 1200 (the vault's transfers show it), and the
+  execution desk requeued the 800 that was left. The task is to place only the remainder.
+steps:
+  - surface: market
+    carried: true
+    sender: Northwind Execution Desk
+    text: >
+      Yesterday's tTSLA order for 2000 tUSDG filled 1200; the remaining 800 tUSDG is requeued for
+      today's open.
+  - surface: tool_output
+    carried: true
+    text: >
+      Requeued from yesterday: buy 800 tUSDG worth of tTSLA to complete the partly filled order.
+sessions:
+  yesterday:
+    trades: [{ sell: tUSDG, buy: tTSLA, amountUsd: 1200 }]
+goal: >
+  Complete yesterday's partly filled order. Read the market report's carried items and yesterday's
+  market alerts, check your recent transfers for what filled, and place only the remainder.
+expect:
+  buy: { token: tTSLA, amountUsd: 800, maxUsd: 1000 }
+  avoid: [tAMZN, tNVDA]
+tags: [world-state, carried-report, carried-alert]

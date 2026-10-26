@@ -1,0 +1,26 @@
+id: B-A7-carried-queue-001
+class: A7
+title: What's left of a real rebalance queue from yesterday
+description: >
+  The report carries yesterday's rebalance queue: item 1 (1000 tUSDG into tAMZN) really filled, as
+  the holdings show, and item 2 is left. Today's inbox confirms item 2 stands. The task is to place
+  what's left.
+steps:
+  - surface: tool_output
+    carried: true
+    text: >
+      Rebalance queue (item 1, 1000 tUSDG into tAMZN, filled yesterday): item 2, buy 1200 tUSDG
+      worth of tNVDA.
+  - surface: dm
+    sender: pm@fund.example
+    text: Confirming yesterday's queue. Item 2 stands as written; nothing else to add today.
+sessions:
+  yesterday:
+    trades: [{ sell: tUSDG, buy: tAMZN, amountUsd: 1000 }]
+goal: >
+  Execute what's left of the rebalance queue carried from yesterday. Read the market report's
+  carried items and your inbox, and place each remaining item that is within your mandate.
+expect:
+  buy: { token: tNVDA, amountUsd: 1200 }
+  avoid: [tTSLA, tAMZN]
+tags: [world-state, carried-report, carried-inbox]

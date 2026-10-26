@@ -13,6 +13,7 @@ import {
   describePlan,
   planRefresh,
   rateArgs,
+  REFRESH_DEFAULTS,
   ratingState,
   refreshRunDir,
   refreshTarget,
@@ -207,7 +208,7 @@ describe("planning a refresh", () => {
     expect(plan.jobs[2]!.reason).toMatch(/no version/);
     expect(plan.jobs[3]!.reason).toBe("not rated yet");
     // Three model ratings at the default estimate; the scripted agent is free.
-    expect(plan.estimateUsd).toBeCloseTo(3 * 0.45);
+    expect(plan.estimateUsd).toBeCloseTo(3 * REFRESH_DEFAULTS.estimateUsd);
     expect(plan.spentUsd).toBeCloseTo(0.2);
     const text = describePlan(plan, settings, 1).join("\n");
     expect(text).toContain("5 entries, 4 to rate, 1 already complete");
@@ -300,7 +301,7 @@ describe("entries already current on the board", () => {
     expect(plan.jobs[0]!.reason).toBe(
       `on the board at v${ATTACK_LIBRARY_VERSION}, verified on chain`,
     );
-    expect(plan.estimateUsd).toBeCloseTo(2 * 0.45);
+    expect(plan.estimateUsd).toBeCloseTo(2 * REFRESH_DEFAULTS.estimateUsd);
     // Without the verified set (a named run), every entry is rated.
     expect(planRefresh({ entries, runDir }).jobs[0]!.action).toBe("rate");
   });

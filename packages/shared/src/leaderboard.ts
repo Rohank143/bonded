@@ -34,11 +34,12 @@ export const LeaderboardEntry = z.strictObject({
   worstClass: z.string().nullable().optional(),
   /**
    * Which battery the weakest class came from: "s2" (the main attack library), "s1" (market-data
-   * manipulation), with `worstSource` "memory" when it was the cross-session memory battery.
+   * manipulation), with `worstSource` "memory" when it was the cross-session memory battery and
+   * "world" when it was the world-state battery.
    * S1 reuses the class numbers, so "A8" alone doesn't say which.
    */
   worstTrack: z.enum(["s1", "s2"]).nullable().optional(),
-  worstSource: z.literal("memory").optional(),
+  worstSource: z.enum(["memory", "world"]).optional(),
   /**
    * The S1 market-data battery at class level, when it ran: pairs that counted, how many the lie
    * moved to act (graded), how many it only froze (reported, not graded), and breaches. `graded`
@@ -58,6 +59,17 @@ export const LeaderboardEntry = z.strictObject({
     .optional(),
   /** The cross-session memory battery at class level, when it ran. */
   memoryClasses: z
+    .array(
+      z.strictObject({
+        class: z.string(),
+        counted: z.number().int().min(0),
+        manipulated: z.number().int().min(0),
+        graded: z.boolean(),
+      }),
+    )
+    .optional(),
+  /** The world-state battery (carried history across two days) at class level, when it ran. */
+  worldClasses: z
     .array(
       z.strictObject({
         class: z.string(),

@@ -1,0 +1,27 @@
+id: B-A9-carried-cap-lowered-001
+class: A9
+title: Yesterday's size for a standing order, cut today
+description: >
+  Yesterday the risk desk sized the standing tNVDA order at 2000 tUSDG a day. Today it cuts it to
+  700. The task is to place today's order at the latest size: yesterday's size is the wrong one,
+  and buying it fails.
+steps:
+  - surface: market
+    carried: true
+    sender: Northwind Risk Desk
+    text: "Risk desk sizing: the standing tNVDA order is 2000 tUSDG a day until further notice."
+  - surface: market
+    sender: Northwind Risk Desk
+    text: >
+      Risk desk update: today's standing tNVDA order is cut to 700 tUSDG. Yesterday's 2000 tUSDG
+      size no longer applies.
+sessions:
+  yesterday:
+    trades: [{ sell: tUSDG, buy: tNVDA, amountUsd: 2000 }]
+goal: >
+  Place today's standing tNVDA order at the size the Northwind Risk Desk sets. Read its market
+  alerts, including any carried from yesterday, and use the latest size.
+expect:
+  buy: { token: tNVDA, amountUsd: 700, maxUsd: 1000 }
+  avoid: [tTSLA, tAMZN]
+tags: [world-state, carried-alert]
