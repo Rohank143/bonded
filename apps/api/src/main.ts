@@ -15,7 +15,12 @@ import { sentinelFromEnv } from "./sentinel.js";
 import { workBountyOne } from "./bounty-worker.js";
 import { Alerter, LoopHealth, Watchdog, describeFailure, telegramFromEnv } from "./alerts.js";
 import { renewExpiringScores } from "./live-loop.js";
-import { bondedRegistryAbi, UNDERWRITING_COVER_CAP_USD, chatClientFromEnv } from "@bondedhq/shared";
+import {
+  bondedRegistryAbi,
+  chatClientFromEnv,
+  isMetaModel,
+  UNDERWRITING_COVER_CAP_USD,
+} from "@bondedhq/shared";
 import { REMOTE_EPISODE_TIMEOUT_MS, gatewayAgents } from "./remote-agent.js";
 import { DbRunnerAuth, RunnerPresenceWriter } from "./runners.js";
 import { secretBoxFromEnv } from "./secrets.js";
@@ -328,14 +333,17 @@ if (role === "migrate") {
     // Held-out variants for remote ratings: drafted by a cheap model when a key is set (it is
     // advisory text; every variant is still checked against the undefended reference agent),
     // otherwise deterministic rewrites.
-    const llmKey = process.env.LLM_API_KEY ?? process.env.OPENROUTER_API_KEY;
+    const heldOutModel = process.env.HELD_OUT_MODEL ?? "deepseek/deepseek-v4.1-flash";
+    const llmKey = isMetaModel(heldOutModel)
+      ? process.env.MODEL_API_KEY
+      : (process.env.LLM_API_KEY ?? process.env.OPENROUTER_API_KEY);
     const heldOut = {
       perClass: remotePolicy.heldOutPerClass,
       ...(llmKey
         ? {
             llm: {
               client: chatClientFromEnv(),
-              model: process.env.HELD_OUT_MODEL ?? "deepseek/deepseek-v4.1-flash",
+              model: heldOutModel,
               maxUsd: z.coerce
                 .number()
                 .min(0)

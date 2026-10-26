@@ -13,9 +13,12 @@ export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 /** Meta Model API: Muse Spark, Muse Wonder and the other hosted Meta models. */
 export const META_MODEL_API_BASE_URL = "https://api.meta.ai/v1";
 
-/** Whether a model id names a model served by Meta Model API (`muse-spark-1.3`, `sam-3.1`, ...). */
+/**
+ * Whether a model id names a chat model served by Meta Model API (`muse-spark-1.3`,
+ * `muse-wonder-1.0`, ...). SAM 3.1 isn't one: it segments images through the Responses API.
+ */
 export function isMetaModel(model: string): boolean {
-  return /^(muse-|sam-)/.test(model);
+  return /^muse-/.test(model);
 }
 
 export interface ToolCall {
@@ -67,6 +70,11 @@ export interface ChatClient {
 export interface LlmConfig {
   baseUrl: string;
   apiKey: string;
+  /**
+   * The endpoint is Meta Model API, which takes `reasoning_effort`. Set by `llmConfigForModel`,
+   * so a META_MODEL_API_BASE_URL proxy keeps Meta's request format; inferred from the URL if unset.
+   */
+  provider?: "meta";
 }
 
 /**
@@ -94,7 +102,7 @@ export function llmConfigForModel(
   const apiKey = env.MODEL_API_KEY;
   if (!apiKey) throw new Error(`no Meta Model API key for ${model}: set MODEL_API_KEY`);
   const baseUrl = env.META_MODEL_API_BASE_URL ?? META_MODEL_API_BASE_URL;
-  return { baseUrl: baseUrl.replace(/\/+$/, ""), apiKey };
+  return { baseUrl: baseUrl.replace(/\/+$/, ""), apiKey, provider: "meta" };
 }
 
 /**
@@ -112,10 +120,12 @@ export class RoutingChatClient implements ChatClient {
 
   complete(request: ChatRequest, options?: { signal?: AbortSignal }): Promise<ChatResponse> {
     const config = llmConfigForModel(request.model, this.env);
-    let client = this.clients.get(config.baseUrl);
+    // Two routes can share a URL (a gateway) with different keys and request formats.
+    const key = JSON.stringify([config.baseUrl, config.apiKey, config.provider ?? null]);
+    let client = this.clients.get(key);
     if (!client) {
       client = new OpenAICompatibleClient(config, this.options);
-      this.clients.set(config.baseUrl, client);
+      this.clients.set(key, client);
     }
     return client.complete(request, options);
   }
@@ -163,7 +173,9 @@ export class OpenAICompatibleClient implements ChatClient {
     options: OpenAICompatibleClientOptions = {},
   ) {
     this.isOpenRouter = new URL(config.baseUrl).hostname.endsWith("openrouter.ai");
-    this.isMeta = new URL(config.baseUrl).hostname === new URL(META_MODEL_API_BASE_URL).hostname;
+    this.isMeta =
+      config.provider === "meta" ||
+      new URL(config.baseUrl).hostname === new URL(META_MODEL_API_BASE_URL).hostname;
     this.fetch = options.fetch ?? fetch;
     this.maxRetries = options.maxRetries ?? 2;
     this.retryDelayMs = options.retryDelayMs ?? 1000;

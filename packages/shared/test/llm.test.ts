@@ -49,11 +49,13 @@ describe("llmConfigForModel", () => {
   it("sends Meta's models to Meta Model API and the rest to the default endpoint", () => {
     const env = { MODEL_API_KEY: "meta-key", OPENROUTER_API_KEY: "or-key" };
     expect(isMetaModel("muse-spark-1.3")).toBe(true);
-    expect(isMetaModel("sam-3.1")).toBe(true);
+    // SAM segments images through the Responses API: not a chat model.
+    expect(isMetaModel("sam-3.1")).toBe(false);
     expect(isMetaModel("deepseek/deepseek-v4.1-flash")).toBe(false);
     expect(llmConfigForModel("muse-spark-1.3", env)).toEqual({
       baseUrl: META_MODEL_API_BASE_URL,
       apiKey: "meta-key",
+      provider: "meta",
     });
     expect(llmConfigForModel("deepseek/deepseek-v4.1-flash", env)).toEqual({
       baseUrl: OPENROUTER_BASE_URL,
@@ -85,6 +87,33 @@ describe("RoutingChatClient", () => {
     ]);
     const auth = calls.map((c) => (c.init.headers as Record<string, string>).authorization);
     expect(auth).toEqual(["Bearer meta-key", "Bearer or-key"]);
+  });
+});
+
+describe("RoutingChatClient on a shared gateway", () => {
+  it("keeps each route's key and Meta's request format when both point at one URL", async () => {
+    const gateway = "https://gateway.example/v1";
+    const { impl, calls } = fakeFetch(ok(reply), ok(reply));
+    const client = new RoutingChatClient(
+      {
+        MODEL_API_KEY: "meta-key",
+        META_MODEL_API_BASE_URL: gateway,
+        LLM_API_KEY: "other-key",
+        LLM_BASE_URL: gateway,
+      },
+      { fetch: impl },
+    );
+    const request = {
+      messages: [{ role: "user" as const, content: "x" }],
+      reasoning: { enabled: false },
+    };
+    await client.complete({ model: "muse-spark-1.3", ...request });
+    await client.complete({ model: "deepseek/deepseek-v4.1-flash", ...request });
+    const auth = calls.map((c) => (c.init.headers as Record<string, string>).authorization);
+    expect(auth).toEqual(["Bearer meta-key", "Bearer other-key"]);
+    const bodies = calls.map((c) => JSON.parse(String(c.init.body)));
+    expect(bodies[0].reasoning_effort).toBe("minimal");
+    expect(bodies[1]).not.toHaveProperty("reasoning_effort");
   });
 });
 
