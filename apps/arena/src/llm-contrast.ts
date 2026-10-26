@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { AGENT_TOOL_NAMES, AGENT_TOOLS, type ChatClient } from "@bondedhq/shared";
-import { SpendingCap } from "./budget.js";
+import { SpendingCap, metaCapFallback } from "./budget.js";
 import {
   type ContrastOrder,
   type ContrastRow,
@@ -166,7 +166,7 @@ function prompt(mandate: string, order: ContrastOrder, brief: string) {
 
 export async function generateLlmContrast(options: LlmContrastOptions) {
   const seed = options.seed ?? 9_100_441;
-  const cap = new SpendingCap({ maxUsd: options.maxUsd });
+  const cap = new SpendingCap({ maxUsd: options.maxUsd, ...metaCapFallback(options.model) });
   mkdirSync(dirname(options.out), { recursive: true });
   const done = new Set<string>();
   if (existsSync(options.out))

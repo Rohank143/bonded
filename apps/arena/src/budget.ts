@@ -1,4 +1,4 @@
-import { type AgentRunSummary, OPENROUTER_BASE_URL } from "@bondedhq/shared";
+import { type AgentRunSummary, isMetaModel, OPENROUTER_BASE_URL } from "@bondedhq/shared";
 
 /** A model's price, USD per million tokens. */
 export interface TokenPrice {
@@ -77,14 +77,64 @@ export class SpendingCap {
 }
 
 /**
+ * Meta Model API's published prices (dev.meta.ai/docs/pricing-rate-limits, read 2026-10-26).
+ * Its responses carry no cost and its model list no prices, so the cap estimates from these.
+ * Cached input is cheaper; the full input price keeps the estimate on the high side.
+ */
+export const META_MODEL_PRICES: Record<string, TokenPrice> = {
+  "muse-spark-1.3": { inputPerMillion: 1.25, outputPerMillion: 4.25 },
+  "muse-spark-1.2": { inputPerMillion: 1.25, outputPerMillion: 4.25 },
+  "muse-spark-1.1": { inputPerMillion: 1.25, outputPerMillion: 4.25 },
+  "muse-spark-1.3-contributor": { inputPerMillion: 0.1, outputPerMillion: 0.2 },
+  "muse-spark-1.2-contributor": { inputPerMillion: 0.1, outputPerMillion: 0.2 },
+  "muse-wonder-1.0": { inputPerMillion: 4, outputPerMillion: 20 },
+};
+
+/** The dearest Meta price, for a Meta id the table doesn't list (so a new id never loosens a cap). */
+const HIGHEST_META_PRICE: TokenPrice = {
+  inputPerMillion: Math.max(...Object.values(META_MODEL_PRICES).map((p) => p.inputPerMillion)),
+  outputPerMillion: Math.max(...Object.values(META_MODEL_PRICES).map((p) => p.outputPerMillion)),
+};
+
+const metaPrice = (model: string): TokenPrice => ({
+  ...(META_MODEL_PRICES[model] ?? HIGHEST_META_PRICE),
+});
+
+/**
+ * Fallback-price options for a cap whose runs may call Meta's models, which report no cost: the
+ * dearest Meta price among the models named (an agent's name carries its model, as in
+ * `vulnerable-agent/muse-spark-1.3`), and never below DEFAULT_FALLBACK_PRICE. Empty when no Meta
+ * model is named, so the cap keeps its default.
+ */
+export function metaCapFallback(...names: (string | undefined)[]): { fallbackPrice?: TokenPrice } {
+  const prices = names.flatMap((n) => n?.match(/\bmuse-[a-z0-9.-]+/g) ?? []).map(metaPrice);
+  if (prices.length === 0) return {};
+  return {
+    fallbackPrice: {
+      inputPerMillion: Math.max(
+        DEFAULT_FALLBACK_PRICE.inputPerMillion,
+        ...prices.map((p) => p.inputPerMillion),
+      ),
+      outputPerMillion: Math.max(
+        DEFAULT_FALLBACK_PRICE.outputPerMillion,
+        ...prices.map((p) => p.outputPerMillion),
+      ),
+    },
+  };
+}
+
+/**
  * A model's listed price from the endpoint's model list (OpenRouter's `/models`, which needs no
- * key), for a spending cap's fallback. Undefined when the endpoint lists no price for it or
- * can't be reached: the cap then keeps its default, so a failed lookup never loosens it.
+ * key), for a spending cap's fallback. Meta's models use META_MODEL_PRICES (the dearest one for an
+ * id it doesn't list). Undefined when the
+ * endpoint lists no price for it or can't be reached: the cap then keeps its default, so a failed
+ * lookup never loosens it.
  */
 export async function listedModelPrice(
   model: string,
   options: { baseUrl?: string; fetch?: typeof globalThis.fetch; timeoutMs?: number } = {},
 ): Promise<TokenPrice | undefined> {
+  if (isMetaModel(model)) return metaPrice(model);
   const baseUrl = (options.baseUrl ?? process.env.LLM_BASE_URL ?? OPENROUTER_BASE_URL).replace(
     /\/+$/,
     "",

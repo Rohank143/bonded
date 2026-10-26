@@ -25,7 +25,7 @@ import {
   SENTINEL_INPUT_CHARS,
   SENTINEL_SERVING,
   OpenAICompatibleClient,
-  llmConfigFromEnv,
+  llmConfigForModel,
   canonicalHash,
   sentinelCascadePolicySchema,
   sentinelCascadePolicyHash,
@@ -147,7 +147,7 @@ export function sentinelFromEnv(env: NodeJS.ProcessEnv = process.env): SentinelS
       policy,
       JSON.parse(readFileSync(env.SENTINEL_CASCADE_EVALUATION_FILE, "utf8")),
     );
-    const config = llmConfigFromEnv(env);
+    const config = llmConfigForModel(policy.fallback.model, env);
     if (
       policy.primary.repo !== repo ||
       policy.primary.revision !== revision ||

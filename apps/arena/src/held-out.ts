@@ -9,7 +9,7 @@ import {
   parseBountySpec,
 } from "@bondedhq/shared";
 import { stringify } from "yaml";
-import { SpendingCap } from "./budget.js";
+import { SpendingCap, metaCapFallback } from "./budget.js";
 import {
   BREACHES_NEEDED,
   duplicateOf,
@@ -144,7 +144,7 @@ export interface GenerateOptions {
 
 /** Draft, check and keep new attacks. Returns the kept specs and every candidate's outcome. */
 export async function generateHeldOut(options: GenerateOptions) {
-  const cap = new SpendingCap({ maxUsd: options.maxUsd });
+  const cap = new SpendingCap({ maxUsd: options.maxUsd, ...metaCapFallback(options.model) });
   const kept: AttackSpec[] = [];
   const existing = options.existing ?? [];
   const candidates: HeldOutCandidate[] = [];

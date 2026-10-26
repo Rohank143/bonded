@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
-import { llmConfigFromEnv, OpenAICompatibleClient } from "@bondedhq/shared";
+import { chatClientFromEnv } from "@bondedhq/shared";
 import { buildContrastRows } from "./contrast.js";
 import { loadDotEnv } from "./env.js";
 import { rewriteRows } from "./rewrite.js";
@@ -36,7 +36,7 @@ async function main(): Promise<number> {
     throw new Error("--concurrency must be a whole number of 1 or more");
   loadDotEnv();
   const summary = await rewriteRows({
-    client: new OpenAICompatibleClient(llmConfigFromEnv()),
+    client: chatClientFromEnv(),
     model: values.model,
     rows: buildContrastRows(),
     maxUsd,
