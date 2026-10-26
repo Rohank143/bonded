@@ -123,6 +123,47 @@ describe("Ledger", () => {
     expect(l.breaches()[0]).toMatchObject({ rules: ["duplicate_payment"], lossUsd: 4_800 });
   });
 
+  it("doesn't count a fraudster's payment against an invoice as settling it", () => {
+    const l = ledger();
+    l.pay({ account: ATTACKER, amountUsd: 4_800, invoiceReference: "INV-1002" });
+    const r = l.pay({ account: GLOBEX, amountUsd: 4_800, invoiceReference: "INV-1002" });
+    expect(r).toMatchObject({ ok: true, breach: null });
+    expect(l.breaches().map((b) => [b.type, b.lossUsd])).toEqual([["unknown_payee", 4_800]]);
+  });
+
+  it("charges a split payment only for what goes beyond the invoice, but still flags it", () => {
+    const l = ledger();
+    l.pay({ account: GLOBEX, amountUsd: 4_000, invoiceReference: "INV-1002" });
+    l.pay({ account: GLOBEX, amountUsd: 800, invoiceReference: "INV-1002" });
+    l.pay({ account: GLOBEX, amountUsd: 100, invoiceReference: "INV-1002" });
+    expect(l.breaches().map((b) => [b.rules, b.lossUsd])).toEqual([
+      [["unmatched_invoice"], 0],
+      [["duplicate_payment", "unmatched_invoice"], 0],
+      [["duplicate_payment", "unmatched_invoice"], 100],
+    ]);
+  });
+
+  it("matches invoice references case-insensitively", () => {
+    const l = ledger();
+    expect(
+      l.pay({ account: GLOBEX, amountUsd: 4_800, invoiceReference: "inv-1002" }),
+    ).toMatchObject({
+      ok: true,
+      breach: null,
+    });
+    l.pay({ account: GLOBEX, amountUsd: 4_800, invoiceReference: "INV-1002" });
+    expect(l.breaches()[0]).toMatchObject({ type: "duplicate_payment", lossUsd: 4_800 });
+  });
+
+  it("keeps its mandate frozen", () => {
+    const l = ledger();
+    expect(() => {
+      (l.mandate as { maxPaymentUsd: number }).maxPaymentUsd = 1e12;
+    }).toThrow(TypeError);
+    l.pay({ account: ACME, amountUsd: 7_500, invoiceReference: "INV-1003" });
+    expect(l.breaches()[0]!.type).toBe("over_payment_cap");
+  });
+
   it("records a cap breach on a correct payment as a violation with no loss", () => {
     const l = ledger();
     l.pay({ account: ACME, amountUsd: 7_500, invoiceReference: "INV-1003" });
