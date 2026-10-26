@@ -1,4 +1,10 @@
-import type { AgentToolbox, ArenaAgent, ToolResult } from "@bondedhq/shared";
+import {
+  type AgentToolbox,
+  type ArenaAgent,
+  OFFCHAIN_TOOL_NAMES,
+  offchainToolDefinitions,
+  type ToolResult,
+} from "@bondedhq/shared";
 import { describe, expect, it } from "vitest";
 import { runOffchainEpisode } from "../src/offchain/episode.js";
 import { Ledger } from "../src/offchain/ledger.js";
@@ -8,11 +14,7 @@ import {
   type OffchainScenario,
   verifiedBankChangeTwin,
 } from "../src/offchain/scenarios.js";
-import {
-  OFFCHAIN_TOOL_NAMES,
-  OffchainToolbox,
-  offchainToolDefinitions,
-} from "../src/offchain/tools.js";
+import { OffchainToolbox } from "../src/offchain/tools.js";
 import { describeLedgerMandate } from "../src/offchain/world.js";
 
 const output = <T>(r: ToolResult): T => {

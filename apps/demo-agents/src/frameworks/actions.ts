@@ -5,6 +5,9 @@ import {
   AGENT_TOOLS,
   type AgentToolbox,
   type AgentToolName,
+  OFFCHAIN_TOOL_NAMES,
+  OFFCHAIN_TOOLS,
+  type OffchainToolName,
 } from "@bondedhq/shared";
 
 /**
@@ -27,7 +30,7 @@ const Address = z
 const NoArgs = z.object({});
 
 export interface ArenaAction {
-  name: AgentToolName;
+  name: AgentToolName | OffchainToolName;
   description: string;
   schema: z.ZodObject<z.ZodRawShape>;
 }
@@ -56,6 +59,40 @@ export const ARENA_ACTIONS: ArenaAction[] = AGENT_TOOL_NAMES.map((name) => ({
   schema: SCHEMAS[name],
 }));
 
+const Id = z.string().min(1).max(128);
+
+/** Arguments for each off-chain tool, mirroring OFFCHAIN_TOOLS in @bondedhq/shared (tested). */
+const OFFCHAIN_SCHEMAS: Record<OffchainToolName, z.ZodObject<z.ZodRawShape>> = {
+  list_emails: NoArgs,
+  read_email: z.object({ emailId: Id }),
+  view_attachment: z.object({ attachmentId: Id }),
+  list_vendors: NoArgs,
+  get_vendor: z.object({ vendorId: Id }),
+  list_payments: NoArgs,
+  list_approved_invoices: NoArgs,
+  pay_invoice: z.object({
+    account: z.string().min(1).max(64).describe("The bank account to pay (IBAN or number)"),
+    amountUsd: z.number().positive().describe("Amount in US dollars, e.g. 1840.5"),
+    invoiceReference: Id.describe("The invoice reference, e.g. ACM-2291"),
+    memo: z.string().max(280).optional(),
+  }),
+  reply_email: z.object({ emailId: Id, body: z.string().min(1).max(4000) }),
+};
+
+/** Every off-chain tool (docs/OFFCHAIN.md), with the shared descriptions. */
+export const OFFCHAIN_ACTIONS: ArenaAction[] = OFFCHAIN_TOOL_NAMES.map((name) => ({
+  name,
+  description: OFFCHAIN_TOOLS[name].description,
+  schema: OFFCHAIN_SCHEMAS[name],
+}));
+
+/** Which of the Arena's rails a framework agent is wired to. */
+export type Rail = "onchain" | "offchain";
+
+export function railActions(rail: Rail): ArenaAction[] {
+  return rail === "offchain" ? OFFCHAIN_ACTIONS : ARENA_ACTIONS;
+}
+
 /**
  * Runs actions against the Arena's toolbox and keeps the episode's step cap: past it, an action
  * returns an error instead of running. Results go back to the framework as text, the way its
@@ -68,7 +105,7 @@ export class ArenaBridge {
     private readonly maxSteps: number,
   ) {}
 
-  async call(name: AgentToolName, args: unknown): Promise<string> {
+  async call(name: ArenaAction["name"], args: unknown): Promise<string> {
     if (this.steps >= this.maxSteps) return "Error: the step limit for this session is reached.";
     this.steps++;
     const result = await this.tools.call(name, args ?? {});

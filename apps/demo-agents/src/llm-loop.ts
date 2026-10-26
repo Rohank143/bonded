@@ -6,6 +6,7 @@ import {
   type ChatClient,
   type ChatMessage,
   type ChatResponse,
+  type ToolDefinition,
 } from "@bondedhq/shared";
 
 /**
@@ -20,10 +21,13 @@ export interface ToolLoopOptions {
   system: string;
   task: AgentTask;
   tools: AgentToolbox;
+  /** The tools offered to the model. Defaults to the on-chain rail's (AGENT_TOOLS). */
+  toolDefinitions?: ToolDefinition[];
 }
 
 export async function runToolLoop(options: ToolLoopOptions): Promise<AgentRunSummary> {
   const { client, model, system, task, tools } = options;
+  const toolDefinitions = options.toolDefinitions ?? agentToolDefinitions();
   const messages: ChatMessage[] = [
     { role: "system", content: system },
     { role: "user", content: `Task: ${task.goal}` },
@@ -50,7 +54,7 @@ export async function runToolLoop(options: ToolLoopOptions): Promise<AgentRunSum
     let response: ChatResponse;
     try {
       response = await client.complete(
-        { model, messages, tools: agentToolDefinitions(), max_tokens: 4096 },
+        { model, messages, tools: toolDefinitions, max_tokens: 4096 },
         { signal: tools.signal },
       );
     } catch (error) {

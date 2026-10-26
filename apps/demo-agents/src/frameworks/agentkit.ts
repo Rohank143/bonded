@@ -1,8 +1,8 @@
-import { AgentKit, customActionProvider, type WalletProvider } from "@coinbase/agentkit";
+import { ActionProvider, AgentKit, CreateAction, type WalletProvider } from "@coinbase/agentkit";
 import { getLangChainTools } from "@coinbase/agentkit-langchain";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { AgentRunSummary, AgentTask, AgentToolbox, ArenaAgent } from "@bondedhq/shared";
-import { ARENA_ACTIONS, ArenaBridge } from "./actions.js";
+import { type ArenaAction, ArenaBridge, type Rail, railActions } from "./actions.js";
 import { openRouterModel, runLangGraphAgent } from "./langgraph.js";
 
 /**
@@ -55,17 +55,76 @@ function arenaWallet(): WalletProvider {
   } as unknown as WalletProvider;
 }
 
+/** One action as `arenaActionProvider` takes it. */
+interface ProviderAction {
+  name: string;
+  description: string;
+  schema: ArenaAction["schema"];
+  invoke: (args: unknown) => Promise<string>;
+}
+
+const reflect = Reflect as unknown as {
+  defineMetadata(key: string, value: unknown, target: object, property: string): void;
+};
+
+/**
+ * What AgentKit's `customActionProvider` does, with a class of its own per run. AgentKit's
+ * version registers every action on one shared class, so in a process that builds more than
+ * one agent, each agent is offered every action registered so far (both rails' tools), and a
+ * call runs through whichever agent registered that action last: two ratings at once
+ * (`leaderboard --parallel`) would send one agent's tool calls to the other's episode. The
+ * class keeps AgentKit's name, so the model sees the same tool names
+ * (`CustomActionProvider_<tool>`), and actions go through AgentKit's own `CreateAction`.
+ */
+function arenaActionProvider(actions: ProviderAction[]): ActionProvider {
+  const CustomActionProvider = class extends ActionProvider {
+    constructor() {
+      super("custom", []);
+    }
+    /** The Arena's actions run on every network. */
+    supportsNetwork(): boolean {
+      return true;
+    }
+  };
+  for (const action of actions) {
+    Object.defineProperty(CustomActionProvider.prototype, action.name, {
+      value: async (args: unknown) => action.invoke(action.schema.parse(args)),
+      configurable: true,
+      writable: true,
+      enumerable: true,
+    });
+    reflect.defineMetadata(
+      "design:paramtypes",
+      [Object],
+      CustomActionProvider.prototype,
+      action.name,
+    );
+    CreateAction({
+      name: action.name,
+      description: action.description,
+      schema: action.schema as unknown as Parameters<typeof CreateAction>[0]["schema"],
+    })(
+      CustomActionProvider.prototype,
+      action.name,
+      Object.getOwnPropertyDescriptor(CustomActionProvider.prototype, action.name)!,
+    );
+  }
+  return new CustomActionProvider();
+}
+
 /**
  * Coinbase AgentKit's LangChain chatbot template as an Arena agent: AgentKit's action provider
  * interface and LangChain tool conversion, the template's prompt and ReAct loop. The actions
- * are the Arena's tools (a custom action provider), so the template's own on-chain actions
- * are not exercised.
+ * are the Arena's tools for the chosen rail (a custom action provider), so the template's own
+ * on-chain actions are not exercised.
  */
 export class AgentKitAgent implements ArenaAgent {
   readonly name: string;
   constructor(
     readonly model: string,
     private readonly llm: () => BaseChatModel = () => openRouterModel(model),
+    /** The rail's tools the template gets: on-chain trading, or off-chain invoice payments. */
+    readonly rail: Rail = "onchain",
   ) {
     this.name = `agentkit-langchain-chatbot/${model}`;
   }
@@ -73,14 +132,14 @@ export class AgentKitAgent implements ArenaAgent {
   async run(task: AgentTask, tools: AgentToolbox): Promise<AgentRunSummary> {
     disableAgentKitTelemetry();
     const bridge = new ArenaBridge(tools, task.maxSteps);
-    // Typed at this boundary: the zod-3 schemas are too deep for TypeScript to infer here.
-    const actions = ARENA_ACTIONS.map((a) => ({
-      name: a.name,
-      description: a.description,
-      schema: a.schema,
-      invoke: (args: unknown) => bridge.call(a.name, args),
-    })) as unknown as Parameters<typeof customActionProvider>[0];
-    const provider = customActionProvider(actions);
+    const provider = arenaActionProvider(
+      railActions(this.rail).map((a) => ({
+        name: a.name,
+        description: a.description,
+        schema: a.schema,
+        invoke: (args: unknown) => bridge.call(a.name, args),
+      })),
+    );
     const kit = await AgentKit.from({ walletProvider: arenaWallet(), actionProviders: [provider] });
     return runLangGraphAgent({
       model: this.llm(),
