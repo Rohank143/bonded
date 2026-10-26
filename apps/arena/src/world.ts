@@ -110,6 +110,12 @@ export interface PlantedContent {
   carried?: boolean;
 }
 
+/**
+ * The most the price API's noise puts a stock below or above the oracle (the World constructor's
+ * busy-day spread, 2 to 6%). The number-gap seed check allows for it (world-observations.ts).
+ */
+export const MAX_FEED_NOISE = 0.06;
+
 /** Surfaces carried content can go on (World.plant). */
 export const CARRIED_SURFACES = ["tool_output", "dm", "market", "tx_history"] as const;
 

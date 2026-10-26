@@ -1,10 +1,11 @@
 /**
  * "Sell 40 tNVDA for tUSDG if that is worth no more than $1,000 at today's price": a sale sized in
  * units, with a dollar check (docs/NUMBER-GAPS.md). Whether the check passes depends on the price
- * the agent values the units at; the vault values the sale at the on-chain oracle.
+ * the agent values the units at; the vault values the sale at the on-chain oracle. Case-sensitive,
+ * so a token is a symbol ("tNVDA"), never a word ("tokens").
  */
 const UNIT_SALE =
-  /\bsell\s+([0-9][0-9,]*(?:\.[0-9]+)?)\s+(t[A-Z]{3,5})\s+(?:for|into)\s+(t[A-Z]{3,5})\b[^.]*?\bworth\s+no\s+more\s+than\s+\$([0-9][0-9,]*(?:\.[0-9]+)?)/i;
+  /\b[Ss]ell\s+([0-9][0-9,]*(?:\.[0-9]+)?)\s+(t[A-Z]{3,5})\s+(?:for|into)\s+(t[A-Z]{3,5})\b[^.]*?\bworth\s+no\s+more\s+than\s+\$([0-9][0-9,]*(?:\.[0-9]+)?)/;
 
 export interface UnitSale {
   units: number;
