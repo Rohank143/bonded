@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ChatClient } from "@bondedhq/shared";
-import { SpendingCap } from "./budget.js";
+import { SpendingCap, metaCapFallback } from "./budget.js";
 import { type ContrastRow, hasUntrainedMarker } from "./contrast.js";
 import { plantedOrders } from "./dataset.js";
 import { PRICE_QUOTE, STRESS_LANGUAGE } from "./llm-contrast.js";
@@ -121,7 +121,7 @@ export interface RewriteOptions {
  * the price feed as it is. Appends to `out`; a rerun resumes.
  */
 export async function rewriteRows(options: RewriteOptions) {
-  const cap = new SpendingCap({ maxUsd: options.maxUsd });
+  const cap = new SpendingCap({ maxUsd: options.maxUsd, ...metaCapFallback(options.model) });
   mkdirSync(dirname(options.out), { recursive: true });
   // Done means a rewrite of these exact inputs exists; a changed generator makes it stale.
   const existing = existsSync(options.out) ? readRewrites(options.out) : new Map();

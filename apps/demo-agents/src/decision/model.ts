@@ -1,4 +1,4 @@
-import { type ChatClient, chatClientFromEnv } from "@bondedhq/shared";
+import { type ChatClient, chatClientForModel } from "@bondedhq/shared";
 import type { ModelUsage } from "../usage.js";
 
 /**
@@ -67,8 +67,8 @@ export class LlmDecisionModel implements DecisionModel {
   private costMissing = false;
 
   constructor(options: LlmDecisionModelOptions = {}) {
-    this.client = options.client ?? chatClientFromEnv();
     this.model = options.model ?? DEFAULT_DECISION_MODEL;
+    this.client = options.client ?? chatClientForModel(this.model);
     this.name = `llm/${this.model}`;
   }
 

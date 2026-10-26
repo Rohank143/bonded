@@ -131,6 +131,19 @@ export class RoutingChatClient implements ChatClient {
   }
 }
 
+/**
+ * The routing client for an agent on `model`, checking now that the model's key is set: a
+ * missing key fails when the agent is built, before a rating starts its sandbox, rather than on
+ * every episode's first request.
+ */
+export function chatClientForModel(
+  model: string,
+  env: Record<string, string | undefined> = process.env,
+): ChatClient {
+  llmConfigForModel(model, env);
+  return new RoutingChatClient(env);
+}
+
 /** The default `ChatClient`: routes each model to its endpoint, configured from the environment. */
 export function chatClientFromEnv(
   env: Record<string, string | undefined> = process.env,

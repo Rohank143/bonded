@@ -4,7 +4,7 @@ import {
   type AgentToolbox,
   type ArenaAgent,
   type ChatClient,
-  chatClientFromEnv,
+  chatClientForModel,
 } from "@bondedhq/shared";
 import { runToolLoop } from "../llm-loop.js";
 import { DEFAULT_AGENT_MODEL } from "../vulnerable/llm.js";
@@ -54,8 +54,8 @@ export class LlmHardenedAgent implements ArenaAgent {
   private readonly guards: ActionGuard[];
 
   constructor(options: LlmHardenedAgentOptions = {}) {
-    this.client = options.client ?? chatClientFromEnv();
     this.model = options.model ?? DEFAULT_AGENT_MODEL;
+    this.client = options.client ?? chatClientForModel(this.model);
     this.guards = options.guards ?? [new PolicyGuard()];
     this.name = `hardened-agent/${this.model}`;
   }

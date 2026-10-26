@@ -11,7 +11,7 @@ import {
   parseBountySpec,
 } from "@bondedhq/shared";
 import { stringify } from "yaml";
-import { SpendingCap } from "./budget.js";
+import { SpendingCap, metaCapFallback } from "./budget.js";
 import { type EpisodeOptions, type EpisodeResult, runEpisode } from "./episode.js";
 import { type Ruling, rulingOf } from "./report.js";
 import type { Sandbox } from "./sandbox.js";
@@ -345,7 +345,10 @@ function draftsFrom(
 
 export async function runAdaptive(options: AdaptiveOptions): Promise<AdaptiveResult> {
   const { seed, feedback = "trace" } = options;
-  const cap = new SpendingCap({ maxUsd: options.maxUsd });
+  const cap = new SpendingCap({
+    maxUsd: options.maxUsd,
+    ...metaCapFallback(options.attackerModel, options.agent.name),
+  });
   const attempts: AdaptiveAttempt[] = [];
   const steps: string[][] = [];
   const attempt =

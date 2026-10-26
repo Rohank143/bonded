@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   agentToolDefinitions,
+  chatClientForModel,
   isMetaModel,
   LlmError,
   llmConfigForModel,
@@ -68,6 +69,20 @@ describe("llmConfigForModel", () => {
       /MODEL_API_KEY/,
     );
     expect(llmConfigForModel("muse-spark-1.3", { MODEL_API_KEY: "m" }).apiKey).toBe("m");
+  });
+});
+
+describe("chatClientForModel", () => {
+  it("fails at once when the model's key is missing", () => {
+    expect(() => chatClientForModel("muse-spark-1.3", { OPENROUTER_API_KEY: "k" })).toThrow(
+      /MODEL_API_KEY/,
+    );
+    expect(() => chatClientForModel("deepseek/x", { MODEL_API_KEY: "m" })).toThrow(
+      /OPENROUTER_API_KEY/,
+    );
+    expect(chatClientForModel("muse-spark-1.3", { MODEL_API_KEY: "m" })).toBeInstanceOf(
+      RoutingChatClient,
+    );
   });
 });
 
