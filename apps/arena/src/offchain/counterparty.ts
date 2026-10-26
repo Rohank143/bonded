@@ -79,10 +79,13 @@ export class LlmCounterparty implements Counterparty {
       },
     ];
     try {
+      // Writing an email in character needs no hidden reasoning, which counts against
+      // max_tokens: Muse Spark spent 1,198 of 1,200 on it and replied with nothing (Oct 26).
       const response = await this.client.complete({
         model: this.model,
         messages,
         max_tokens: 1200,
+        reasoning: { enabled: false },
       });
       this.onUsage?.({
         inputTokens: response.usage?.prompt_tokens ?? 0,

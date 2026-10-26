@@ -172,6 +172,7 @@ describe("fresh variants", () => {
       },
     ]);
     expect(client.requests).toHaveLength(3); // one try for the kept one, two for the refusal
+    expect(client.requests.every((r) => r.reasoning?.enabled === false)).toBe(true);
     expect(usage).toEqual([0.001, 0, 0]);
 
     const dir = mkdtempSync(join(tmpdir(), "offchain-fresh-"));
@@ -333,6 +334,8 @@ describe("the live counterparty (O6)", () => {
     expect(system).toBe(counterpartySystemPrompt(o6.counterparty!, "Harbor & Pine Studio"));
     expect(system).toContain("simulated ledger");
     expect(system).toContain("LT12 1000 0111 0100 1000");
+    // No hidden reasoning: it counts against max_tokens and can leave the reply empty.
+    expect(client.requests[0]!.reasoning).toEqual({ enabled: false });
     expect(costs).toEqual([0.0002]);
   });
 

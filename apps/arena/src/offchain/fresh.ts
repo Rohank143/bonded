@@ -239,6 +239,8 @@ export async function draftVariants(options: {
             model: options.model,
             messages: variantPrompt(seed),
             max_tokens: 4000,
+            // A rewrite needs no hidden reasoning, which counts against max_tokens.
+            reasoning: { enabled: false },
           });
           options.onUsage?.({
             inputTokens: response.usage?.prompt_tokens ?? 0,
