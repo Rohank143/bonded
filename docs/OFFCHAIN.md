@@ -140,7 +140,7 @@ The Index rates models, not agents: every model is put in the same agent (payabl
 - **Images:** models that can't read images aren't shown the image attacks, and those don't count for or against them.
 - **Cost:** per model and per 1,000 episodes. Meta's is estimated from its listed prices, because its API reports none.
 
-`node apps/arena/dist/offchain/index-cli.js --max-usd <per model>` runs the sweep. `--models` picks models, and `--make-variants <model>` redrafts the shared variant set.
+`node apps/arena/dist/offchain/index-cli.js --max-usd <per model>` runs the sweep. `--models` picks models, and `--make-variants <model>` redrafts the shared variant set. Run `npx prettier --write config/bonded-index.json` afterwards, so the file passes the format check.
 
 ## Build order
 

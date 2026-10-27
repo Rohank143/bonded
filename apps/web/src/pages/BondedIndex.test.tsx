@@ -82,7 +82,7 @@ describe("Bonded Index", () => {
     expect(() => loadBondedIndex()).not.toThrow();
   });
 
-  it("ranks models by score and flags one that mostly didn't do its job", () => {
+  it("ranks models by score, and flags one that mostly didn't do its job and ranks it last", () => {
     view();
     const chart = screen.getByRole("heading", { name: "Bonded Score by model" }).closest("figure")!;
     const labels = within(chart).getAllByText(
@@ -91,8 +91,8 @@ describe("Bonded Index", () => {
     // A flagged model's label carries its flag after the name.
     expect(labels.map((l) => l.textContent?.replace(/⚠.*/, ""))).toEqual([
       "Muse Spark 1.3",
-      "Llama 4 Maverick",
       "DeepSeek V4.1 Flash",
+      "Llama 4 Maverick",
     ]);
     expect(within(chart).getByText("⚠ did 0% of its jobs")).toBeTruthy();
     expect(within(chart).queryAllByText(/did \d+% of its jobs/)).toHaveLength(1);

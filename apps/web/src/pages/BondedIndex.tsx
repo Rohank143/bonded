@@ -37,7 +37,8 @@ const idle = (e: BondedIndexEntry) => taskRate(e) < 0.5;
 
 function ScoreChart({ entries }: { entries: BondedIndexEntry[] }) {
   const { ref, bind, layer } = useTip();
-  const sorted = byScore(entries);
+  // A flagged model ranks last: its score says it wasn't tricked, mostly because it didn't act.
+  const sorted = [...byScore(entries).filter((e) => !idle(e)), ...byScore(entries).filter(idle)];
   return (
     <ChartFrame
       title="Bonded Score by model"
@@ -115,7 +116,7 @@ function ScoreChart({ entries }: { entries: BondedIndexEntry[] }) {
                 <span
                   aria-hidden
                   className="absolute top-1/2 ml-2 -translate-y-1/2 whitespace-nowrap text-[11px] font-semibold text-ink tabular-nums"
-                  style={{ left: scale(e.score) }}
+                  style={{ left: scale(Math.max(e.score, e.scoreInterval[1])) }}
                 >
                   {e.score}
                 </span>
@@ -144,7 +145,7 @@ function BriefingChart({ entries }: { entries: BondedIndexEntry[] }) {
         <Legend
           items={[
             { color: VIZ.accentSoft, label: "Rules shown", shape: "dot" },
-            { color: VIZ.lost, label: "Rules hidden", shape: "dot" },
+            { color: VIZ.accent, label: "Rules hidden", shape: "dot" },
           ]}
         />
       }
@@ -187,7 +188,7 @@ function BriefingChart({ entries }: { entries: BondedIndexEntry[] }) {
                     )}
                     {hidden && (
                       <TipRow
-                        color={VIZ.lost}
+                        color={VIZ.accent}
                         value={pct(b, 1)}
                         name={`rules hidden, ${hidden.fell} of ${hidden.attackEpisodes}`}
                       />
@@ -212,7 +213,7 @@ function BriefingChart({ entries }: { entries: BondedIndexEntry[] }) {
                     />
                     {[
                       { v: a, c: VIZ.accentSoft },
-                      { v: b, c: VIZ.lost },
+                      { v: b, c: VIZ.accent },
                     ].map((d, i) => (
                       <span
                         key={i}
@@ -290,7 +291,10 @@ function MoneyChart({ entries }: { entries: BondedIndexEntry[] }) {
                   className="absolute inset-y-[3px] left-0 right-0 flex outline-none focus-visible:ring-1 focus-visible:ring-ink rounded"
                 >
                   {lost > 0 && (
-                    <span className="h-full" style={{ width: scale(lost), background: VIZ.lost }} />
+                    <span
+                      className={`h-full ${over > 0 ? "" : "rounded-r-[4px]"}`}
+                      style={{ width: scale(lost), background: VIZ.lost }}
+                    />
                   )}
                   {over > 0 && (
                     <span
@@ -319,12 +323,12 @@ function ClassHeatmap({ entries }: { entries: BondedIndexEntry[] }) {
   return (
     <ChartFrame
       title="Where models break"
-      caption="Share of attack episodes each model fell for, by attack class, with its rules hidden (the harder briefing). Darker means it fell more often."
+      caption="Share of attack episodes each model fell for, by attack class, in its worse briefing (the row its score uses). Darker means it fell more often."
       table={
         <DataTable
           head={["Model", ...classes]}
           rows={entries.map((e) => {
-            const row = rowOf(e, "hidden") ?? worstRow(e);
+            const row = worstRow(e);
             return [
               e.label,
               ...classes.map((c) => {
@@ -348,7 +352,7 @@ function ClassHeatmap({ entries }: { entries: BondedIndexEntry[] }) {
             </div>
           ))}
           {entries.map((e) => {
-            const row = rowOf(e, "hidden") ?? worstRow(e);
+            const row = worstRow(e);
             return (
               <div key={e.model} className="contents">
                 <div className="truncate self-center pr-2 text-soft">{e.label}</div>
@@ -402,6 +406,14 @@ function AttackerChart({ entries }: { entries: BondedIndexEntry[] }) {
     <ChartFrame
       title="Which models will red-team"
       caption="The same model as the attacker: share of requests to write test attack emails it declined. A model that won't write attacks can't test other agents."
+      legend={
+        <Legend
+          items={[
+            { color: VIZ.accent, label: "Meta" },
+            { color: VIZ.other, label: "Other providers" },
+          ]}
+        />
+      }
       table={
         <DataTable
           head={["Model", "Drafts declined", "Supplier probe declined", "Supplier probe failed"]}
@@ -482,8 +494,10 @@ function ScatterChart({
 }) {
   const { ref, bind, layer } = useTip();
   const minScore = Math.min(...entries.map((e) => e.score));
-  const yMin = Math.max(0, Math.floor((minScore - 5) / 10) * 10);
-  const yTicks = Array.from({ length: (100 - yMin) / 10 + 1 }, (_, i) => yMin + i * 10).filter(
+  // Start just below the lowest score, on a round step, so close scores don't crowd the top.
+  const step = minScore >= 70 ? 5 : 10;
+  const yMin = Math.max(0, Math.floor((minScore - 2) / step) * step);
+  const yTicks = Array.from({ length: (100 - yMin) / step + 1 }, (_, i) => yMin + i * step).filter(
     (_, i, all) => all.length <= 6 || i % 2 === 0,
   );
   return (
