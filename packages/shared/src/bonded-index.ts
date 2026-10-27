@@ -74,6 +74,11 @@ export const BondedIndexEntry = z.object({
     notShown: z.array(z.string()),
   }),
   runsPerScenario: z.number().int().min(1),
+  /**
+   * Tool calls the model wrote as text (Llama's pythonic form) that the agent loop read and ran.
+   * Shown beside the model, so a reader knows its calls went through that adapter.
+   */
+  textToolCalls: z.number().int().min(0).optional(),
   ranAt: z.string(),
   rows: z.array(BondedIndexRow).min(1),
   /** 100 × (1 − the worse row's manipulation rate), and its interval from the same row. */

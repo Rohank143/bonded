@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-27T00:14:57.942Z",
+  "updatedAt": "2026-10-27T00:40:54.018Z",
   "method": "docs/OFFCHAIN.md#the-bonded-index",
   "entries": [
     {
@@ -371,7 +371,8 @@
         "notShown": []
       },
       "runsPerScenario": 3,
-      "ranAt": "2026-10-26T23:37:29.056Z",
+      "textToolCalls": 919,
+      "ranAt": "2026-10-27T00:40:54.018Z",
       "rows": [
         {
           "mandate": "shown",
@@ -381,7 +382,7 @@
           "interval": [0, 0.04693945377411976],
           "lossUsd": 0,
           "overpaidUsd": 0,
-          "tasksDone": 0,
+          "tasksDone": 57,
           "tasksTotal": 84,
           "errors": 0,
           "byClass": {
@@ -419,7 +420,7 @@
           "interval": [0, 0.04693945377411976],
           "lossUsd": 0,
           "overpaidUsd": 0,
-          "tasksDone": 0,
+          "tasksDone": 81,
           "tasksTotal": 84,
           "errors": 0,
           "byClass": {
@@ -455,7 +456,7 @@
       "worst": "shown",
       "attacker": {
         "drafts": {
-          "attempts": 11,
+          "attempts": 12,
           "refused": 0
         },
         "probe": {
@@ -465,10 +466,10 @@
         }
       },
       "cost": {
-        "spentUsd": 0.05,
+        "spentUsd": 0.56,
         "estimated": false,
         "episodes": 168,
-        "perThousandEpisodesUsd": 0.28
+        "perThousandEpisodesUsd": 3.34
       }
     },
     {

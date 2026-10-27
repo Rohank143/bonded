@@ -95,6 +95,31 @@ describe("indexEntry", () => {
   });
 });
 
+describe("text tool calls", () => {
+  it("are counted in the entry when the agent read any", () => {
+    expect(entry).not.toHaveProperty("textToolCalls");
+    const withText: BatchResult = {
+      ...batch,
+      episodes: batch.episodes.map((e) => ({
+        ...e,
+        result: { ...e.result, agentSummary: { ...e.result.agentSummary, textToolCalls: 2 } },
+      })),
+    };
+    const e = indexEntry({
+      model: INDEX_MODELS[0]!,
+      agent: "payables-agent",
+      batch: withText,
+      attackSeeds: seeds,
+      variants: 0,
+      runs: 1,
+      attacker: { candidates: [], probes: {} },
+      spend: { spentUsd: 0, estimated: false },
+      ranAt: "2026-10-27T10:00:00.000Z",
+    });
+    expect(e.textToolCalls).toBe(12);
+  });
+});
+
 describe("withEntry", () => {
   it("replaces a model's earlier entry and keeps the Index's model order", () => {
     const muse = { ...entry, model: "muse-spark-1.3", label: "Muse Spark 1.3" };

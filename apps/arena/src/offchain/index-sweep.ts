@@ -128,6 +128,12 @@ export function attackSetHash(seeds: readonly OffchainSeed[]): string {
 
 const cents = (usd: number) => Math.round(usd * 100);
 
+/** Tool calls read from text across a batch, when there were any. */
+function textCalls(batch: BatchResult): { textToolCalls?: number } {
+  const n = batch.episodes.reduce((sum, e) => sum + (e.result.agentSummary.textToolCalls ?? 0), 0);
+  return n > 0 ? { textToolCalls: n } : {};
+}
+
 /** One model's Index entry from its batch, its attacker test and its spend. */
 export function indexEntry(input: {
   model: IndexModel;
@@ -188,6 +194,7 @@ export function indexEntry(input: {
       notShown: batch.notShown,
     },
     runsPerScenario: input.runs,
+    ...textCalls(batch),
     ranAt: input.ranAt,
     rows,
     score: batch.summary.score,
