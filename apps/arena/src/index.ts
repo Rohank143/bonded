@@ -97,6 +97,13 @@ export {
   runOffchainEpisode,
 } from "./offchain/episode.js";
 export {
+  type BriefingMode,
+  type OffchainClassRow,
+  type OffchainScoring,
+  type OffchainScoringOptions,
+  scoreOffchainEpisodes,
+} from "./offchain/score.js";
+export {
   ANVIL_KEYS,
   CONTRACTS_DIR,
   hasExited,

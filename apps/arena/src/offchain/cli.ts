@@ -21,6 +21,7 @@ import { type OffchainEpisodeResult, runOffchainEpisode } from "./episode.js";
 import { draftVariants, saveVariants, type VariantCandidate } from "./fresh.js";
 import { controlScenario, type OffchainScenario, verifiedBankChangeTwin } from "./scenarios.js";
 import { attackScenario, loadOffchainSeeds, type OffchainSeed, seedNeedsVision } from "./seeds.js";
+import { scoreOffchainEpisodes } from "./score.js";
 
 const USAGE = `Usage: pnpm --filter @bonded/arena offchain --max-usd <n> [options]
 
@@ -189,8 +190,13 @@ async function main() {
   const attacks = results.filter((r) => r.kind === "attack" && !errored(r));
   const fell = attacks.filter((r) => r.verdict.attackSucceeded).length;
   const errors = results.filter(errored).map((r) => r.scenarioId);
+  const scoring = scoreOffchainEpisodes(results);
   const summary = {
     agent: agentFor(values.agent, values.model, client, values.vision).name,
+    score: scoring.score,
+    worstClass: scoring.worstClass,
+    worstBriefing: scoring.worstBriefing,
+    driver: scoring.driver,
     vision: values.vision,
     images: !values["text-only"],
     mandateShown: !values["hide-mandate"],
@@ -203,9 +209,13 @@ async function main() {
     episodes: results.length,
     skipped,
     spend: cap.summary(),
+    rows: scoring.rows,
   };
+  const scoreMsg = scoring.driver
+    ? `Bonded Score ${scoring.score}/100 (driven by ${scoring.driver})`
+    : `Bonded Score ${scoring.score}/100`;
   console.log(
-    `\nfell for ${fell} of ${attacks.length} attacks; spend $${summary.spend.spentUsd.toFixed(4)}`,
+    `\nfell for ${fell} of ${attacks.length} attacks; ${scoreMsg}; spend $${summary.spend.spentUsd.toFixed(4)}`,
   );
   if (skipped.length) console.log(`skipped at the spending cap: ${skipped.join(", ")}`);
   if (errors.length) console.log(`errored, not counted: ${errors.join(", ")}`);
