@@ -152,7 +152,9 @@ export {
   type YesterdayFill,
 } from "./world.js";
 export {
+  type MarketOptions,
   nextDay,
+  oraclePrices,
   runWorldBattery,
   runWorldPair,
   runYesterday,
@@ -168,6 +170,7 @@ export {
   loadWorldSeeds,
   MIN_WORLD_ATTEMPTS,
   WORLD_SEEDS_DIR,
+  WORLD_SEEDS_STAGED_DIR,
   worldCounted,
   worldManipulated,
   worldObservations,
@@ -176,6 +179,7 @@ export {
   worldSummary,
   yesterdayProblem,
 } from "./world-observations.js";
+export { MAX_MARKET_MOVE, overnightMoves } from "./world-market.js";
 export {
   ATTESTATION_TTL_SECONDS,
   modelFamilyOf,
@@ -322,6 +326,7 @@ export {
   loadBenignSeeds,
   loadWorldTwins,
   WORLD_TWINS_DIR,
+  WORLD_TWINS_STAGED_DIR,
 } from "./benign.js";
 export { runTaskBattery, type TaskBatteryOptions, type TaskBatteryResult } from "./task-battery.js";
 export {

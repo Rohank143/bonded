@@ -4,13 +4,14 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { DEFAULT_AGENT_MODEL } from "@bonded/demo-agents";
 import { type EpisodeResult, saveEpisode } from "./episode.js";
-import { loadWorldTwins } from "./benign.js";
+import { loadWorldTwins, WORLD_TWINS_STAGED_DIR } from "./benign.js";
 import { listedModelPrice, SpendingCap } from "./budget.js";
 import { loadDotEnv } from "./env.js";
 import { Sandbox } from "./sandbox.js";
 import { buildTarget } from "./targets.js";
 import {
   loadWorldSeeds,
+  WORLD_SEEDS_STAGED_DIR,
   type WorldPairResult,
   worldCounted,
   worldManipulated,
@@ -36,6 +37,10 @@ breached and the control's didn't. Each attempt is 2 model episodes.
   --seeds <list>         restrict to these seed ids or classes (default: every world-state seed)
   --rounds <n>           attempts per seed (default: 3)
   --twins                also run each world twin once (the Task score's side)
+  --staged               run the seeds and twins still being validated (world-seeds-staged/ and
+                         world-twins-staged/), with --market on (docs/NUMBER-GAPS.md)
+  --market               prices move overnight (one or two stocks, 3 to 12%), and day 2 sometimes
+                         carries yesterday's closing prices; off in ratings for now
   --out <dir>            where to write results, with every episode's trace in traces/
                          (default: ratings/world-<agent>)
 
@@ -66,6 +71,8 @@ async function main(): Promise<number> {
       seeds: { type: "string" },
       rounds: { type: "string", default: "3" },
       twins: { type: "boolean", default: false },
+      staged: { type: "boolean", default: false },
+      market: { type: "boolean", default: false },
       out: { type: "string" },
       help: { type: "boolean", default: false },
     },
@@ -84,7 +91,8 @@ async function main(): Promise<number> {
   }
   loadDotEnv();
   const agent = buildTarget(values.agent, values.brain, values.model, !values["hide-mandate"]);
-  const library = loadWorldSeeds();
+  const library = loadWorldSeeds(values.staged ? WORLD_SEEDS_STAGED_DIR : undefined);
+  const marketMoves = values.staged || values.market;
   const wanted = values.seeds?.split(",").map((s) => s.trim());
   const seeds = wanted
     ? library.filter((s) => wanted.some((w) => w === s.class || w === s.id))
@@ -114,6 +122,7 @@ async function main(): Promise<number> {
     await runWorldBattery(sandbox, agent, seeds, {
       rounds,
       cap,
+      marketMoves,
       onEpisode,
       onResult: (r) => {
         results.push(r);
@@ -123,12 +132,20 @@ async function main(): Promise<number> {
     });
     complete = results.length === seeds.length * rounds;
     if (values.twins)
-      for (const twin of loadWorldTwins()) {
+      for (const twin of loadWorldTwins(values.staged ? WORLD_TWINS_STAGED_DIR : undefined)) {
         if (cap.exceeded) {
           complete = false;
           break;
         }
-        const e = await runWorldTwin({ sandbox, agent, twin, round: 0, cap, onEpisode });
+        const e = await runWorldTwin({
+          sandbox,
+          agent,
+          twin,
+          round: 0,
+          cap,
+          onEpisode,
+          marketMoves,
+        });
         const error = e.agentSummary.stoppedBecause === "error";
         twins.push({ twin: twin.id, done: e.taskCompleted, error });
         persist();

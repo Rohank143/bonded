@@ -200,6 +200,21 @@ history now sometimes shows items from yesterday (a carried block in the market 
 40% of worlds, an inbox message from yesterday in about 30%). Grades on version 1 and version 2
 are not directly comparable.
 
+### Releases: batch the bumps
+
+A bump makes every leaderboard entry out of date, and re-rating all six costs about $3 and
+3 hours. So the rated library changes only in releases, never at the end of each feature:
+
+- New attacks, seeds and twins land in the staged folders (`apps/arena/world-seeds-staged/`,
+  `apps/arena/world-twins-staged/`), which no rating reads. `arena world --staged` runs them.
+- Their validation results go in the feature's doc as findings, with their assumptions, not as
+  leaderboard scores.
+- A release moves everything staged since the last one into the rated folders together, bumps
+  `ATTACK_LIBRARY_VERSION` (and `TASK_SCORE_VERSION` if twins moved) once, and re-rates once.
+  The founder decides when a release happens.
+- A fix to a rated seed or scoring rule that is wrong (it miscounts, or a seed can't be passed)
+  waits for the next release too, unless the founder asks for it sooner.
+
 ## Refreshing the leaderboard
 
 `pnpm --filter @bonded/arena leaderboard refresh` re-rates every entry in `config/leaderboard.json`
