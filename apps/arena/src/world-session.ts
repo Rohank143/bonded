@@ -20,10 +20,11 @@ import { goalOk } from "./harbinger/goals.js";
 import { isMemoryCapable } from "./memory-attempt.js";
 import { sawAttack } from "./report.js";
 import type { Sandbox } from "./sandbox.js";
-import { type AgentVault, type ArenaToken, createAgentVault, marketTokens } from "./vault.js";
+import { type AgentVault, type ArenaToken, createAgentVault, marketTokens, send } from "./vault.js";
 import { World, type YesterdayFill } from "./world.js";
 import { type WorldPairResult, worldSeedProblem } from "./world-observations.js";
 import { type Random, seededRandom } from "./world-content.js";
+import { overnightMoves } from "./world-market.js";
 
 export type { WorldPairResult } from "./world-observations.js";
 
@@ -134,12 +135,36 @@ export async function runYesterday(
   return fills;
 }
 
+/** The oracle's price of each Arena token, in USD. */
+export async function oraclePrices(
+  sandbox: Sandbox,
+  tokens: readonly ArenaToken[],
+): Promise<Record<string, number>> {
+  const prices = await Promise.all(
+    tokens.map((token) =>
+      sandbox.publicClient.readContract({
+        address: sandbox.deployment.oracle,
+        abi: mockOracleAbi,
+        functionName: "priceUsd6",
+        args: [token.address],
+      }),
+    ),
+  );
+  return Object.fromEntries(tokens.map((t, i) => [t.symbol, Number(prices[i]!) / 1e6]));
+}
+
 /**
  * Moves the chain clock to the next day: 1 to 4 hours past the end of the vault's daily window,
  * so yesterday's spending no longer counts against today's limit and "yesterday" dates match the
- * chain's clock. The Arena's oracle has no staleness check, so prices stay valid.
+ * chain's clock. The Arena's oracle has no staleness check, so prices stay valid. `moves` then
+ * moves the oracle's prices overnight (overnightMoves), as fractions by token.
  */
-export async function nextDay(sandbox: Sandbox, vault: `0x${string}`, random: Random) {
+export async function nextDay(
+  sandbox: Sandbox,
+  vault: `0x${string}`,
+  random: Random,
+  moves: Readonly<Record<string, number>> = {},
+) {
   const chain = createTestClient({ mode: "anvil", transport: http(sandbox.rpcUrl) });
   const [windowStart, window, block] = await Promise.all([
     sandbox.publicClient.readContract({
@@ -158,6 +183,23 @@ export async function nextDay(sandbox: Sandbox, vault: `0x${string}`, random: Ra
   if (target > block.timestamp)
     await chain.increaseTime({ seconds: Number(target - block.timestamp) });
   await chain.mine({ blocks: 1 });
+  const tokens = marketTokens(sandbox);
+  for (const [symbol, move] of Object.entries(moves)) {
+    const token = tokens.find((t) => t.symbol === symbol);
+    if (!token) throw new Error(`an overnight move names unknown token ${symbol}`);
+    const price = await sandbox.publicClient.readContract({
+      address: sandbox.deployment.oracle,
+      abi: mockOracleAbi,
+      functionName: "priceUsd6",
+      args: [token.address],
+    });
+    await send(sandbox, "deployer", {
+      address: sandbox.deployment.oracle,
+      abi: mockOracleAbi,
+      functionName: "setPrice",
+      args: [token.address, (price * BigInt(Math.round((1 + move) * 1e6))) / 1_000_000n],
+    });
+  }
 }
 
 /** What a day-2 episode needs besides its agent and plant (world-session.ts's arms and twins). */
@@ -165,8 +207,22 @@ interface Day2Options {
   sandbox: Sandbox;
   agent: EpisodeOptions["agent"];
   trades: readonly YesterdayTrade[];
+  /** The seed's or twin's own overnight moves (`sessions.overnight`). */
+  overnight?: Readonly<Record<string, number>>;
+  /** Whether the market moves too, and day 2 carries yesterday's closing prices (MarketOptions). */
+  marketMoves?: boolean;
   worldSeed: string;
   episode?: Pick<EpisodeOptions, "vault" | "maxSteps" | "timeoutMs">;
+}
+
+/** How a world-state run treats prices (docs/NUMBER-GAPS.md). */
+export interface MarketOptions {
+  /**
+   * Prices move overnight beyond the seed's own moves (overnightMoves), and day 2's carried
+   * block sometimes holds yesterday's real closing prices. Off by default until the number-gap
+   * seeds join ratings, so the rated world-state battery runs as before.
+   */
+  marketMoves?: boolean;
 }
 
 /**
@@ -197,13 +253,19 @@ async function yesterdayThenToday(options: Day2Options) {
     options.trades,
     tokens,
   );
-  const history = day1.carryOver(fills);
-  await nextDay(sandbox, vault.address, seededRandom(`${options.worldSeed}-clock`));
+  const closes = options.marketMoves ? await oraclePrices(sandbox, tokens) : undefined;
+  const history = day1.carryOver(fills, closes);
+  const moves = overnightMoves(
+    seededRandom(`${options.worldSeed}-market`),
+    options.overnight,
+    options.marketMoves,
+  );
+  await nextDay(sandbox, vault.address, seededRandom(`${options.worldSeed}-clock`), moves);
   if (isMemoryCapable(agent)) agent.reset();
-  return { vault, history, fills };
+  return { vault, history, fills, moves };
 }
 
-export interface WorldPairOptions {
+export interface WorldPairOptions extends MarketOptions {
   sandbox: Sandbox;
   agent: EpisodeOptions["agent"];
   seed: AttackSpec;
@@ -238,10 +300,12 @@ export async function runWorldPair(options: WorldPairOptions): Promise<WorldPair
 
   const arm = async (attack: AttackSpec | null, label: string) => {
     if (options.cap?.exceeded) throw new WorldBudgetExceeded();
-    const { vault, history, fills } = await yesterdayThenToday({
+    const { vault, history, fills, moves } = await yesterdayThenToday({
       sandbox,
       agent,
       trades: seed.sessions!.yesterday.trades,
+      ...(seed.sessions!.overnight ? { overnight: seed.sessions!.overnight } : {}),
+      ...(options.marketMoves ? { marketMoves: true } : {}),
       worldSeed,
       ...(options.episode ? { episode: options.episode } : {}),
     });
@@ -257,7 +321,7 @@ export async function runWorldPair(options: WorldPairOptions): Promise<WorldPair
     });
     options.cap?.add(result.agentSummary.usage);
     await options.onEpisode?.(result);
-    return { result, fills };
+    return { result, fills, moves };
   };
 
   const original = await chain.snapshot();
@@ -274,6 +338,7 @@ export async function runWorldPair(options: WorldPairOptions): Promise<WorldPair
       round,
       goal,
       yesterday: control.fills,
+      ...(Object.keys(control.moves).length ? { overnight: control.moves } : {}),
       breached: poisoned.result.verdict.breached,
       controlBreached: control.result.verdict.breached,
       taskIncomplete: poisoned.result.taskCompleted !== true,
@@ -297,7 +362,7 @@ export async function runWorldPair(options: WorldPairOptions): Promise<WorldPair
   }
 }
 
-export interface WorldTwinOptions {
+export interface WorldTwinOptions extends MarketOptions {
   sandbox: Sandbox;
   agent: EpisodeOptions["agent"];
   /** A world twin (loadWorldTwins): true carried content, and a task that acts on it. */
@@ -325,6 +390,8 @@ export async function runWorldTwin(options: WorldTwinOptions): Promise<EpisodeRe
       sandbox,
       agent,
       trades: twin.sessions.yesterday.trades,
+      ...(twin.sessions.overnight ? { overnight: twin.sessions.overnight } : {}),
+      ...(options.marketMoves ? { marketMoves: true } : {}),
       worldSeed,
       ...(options.episode ? { episode: options.episode } : {}),
     });
@@ -350,7 +417,7 @@ export async function runWorldTwin(options: WorldTwinOptions): Promise<EpisodeRe
   }
 }
 
-export interface WorldBatteryOptions {
+export interface WorldBatteryOptions extends MarketOptions {
   /** Attempts per seed (default 1). */
   rounds?: number;
   /** Shared spending cap: every session's usage is added, and no arm starts once it trips. */
@@ -382,6 +449,7 @@ export async function runWorldBattery(
           round,
           cap: options.cap,
           onEpisode: options.onEpisode,
+          ...(options.marketMoves ? { marketMoves: true } : {}),
           ...(options.episode ? { episode: options.episode } : {}),
           ...(options.worldSeed ? { worldSeed: `${options.worldSeed}-${seed.id}-${round}` } : {}),
         });
