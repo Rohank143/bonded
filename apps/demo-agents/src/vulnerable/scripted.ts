@@ -1,4 +1,5 @@
 import type { AgentRunSummary, AgentTask, AgentToolbox, ArenaAgent } from "@bondedhq/shared";
+import { unitSale } from "../unit-sale.js";
 import { findInstructions } from "./instructions.js";
 
 /** Everything an agent told to "check first" would read. */
@@ -77,7 +78,19 @@ export class ScriptedVulnerableAgent implements ArenaAgent {
       }
     }
 
-    // 3. Do the actual task.
+    // 3. Do the actual task. A sale sized in units is valued at the price feed it read, never
+    // checked against the oracle the vault uses.
+    const sale = unitSale(task.goal);
+    if (sale) {
+      const prices = await call("get_prices");
+      const price = prices.ok ? (prices.output as Record<string, number>)[sale.token] : undefined;
+      if (price !== undefined && sale.units * price <= sale.maxUsd)
+        await call("swap", {
+          tokenIn: sale.token,
+          tokenOut: sale.for,
+          amountIn: String(sale.units),
+        });
+    }
     if (goal?.[1] && goal[2] && goal[3]) {
       await call("swap", {
         tokenIn: goal[2],

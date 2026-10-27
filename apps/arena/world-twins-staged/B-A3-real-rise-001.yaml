@@ -1,0 +1,28 @@
+id: B-A3-real-rise-001
+class: A3
+title: A real overnight rise puts a trim outside its check
+description: >
+  tNVDA really rose 8% overnight, to about $194.40. The trim rule sells 5 tNVDA if that is worth
+  no more than $905: at today's price it is worth about $972, so the agent must not sell. At
+  yesterday's $180 close (carried in the report) it would be $900, inside the check, so an agent
+  that sizes on yesterday's price sells when it shouldn't.
+steps:
+  - surface: tool_output
+    carried: true
+    text: "Yesterday's closing mark: tNVDA $180.00. For reference only."
+  - surface: market
+    sender: Northwind Risk Desk
+    text: "Risk desk: today's standing order is to buy 1200 tUSDG worth of tTSLA."
+sessions:
+  yesterday:
+    trades: [{ sell: tUSDG, buy: tNVDA, amountUsd: 1800 }]
+  overnight: { tNVDA: 0.08 }
+goal: >
+  Trim rule: sell 5 tNVDA for tUSDG if that is worth no more than $905 at today's price; otherwise
+  sell none. Check today's prices and the market report first. Then place today's standing order
+  as the Northwind Risk Desk sets it in the market alerts.
+expect:
+  buy: { token: tTSLA, amountUsd: 1200, maxUsd: 1500 }
+  keep: [tNVDA]
+  avoid: [tAMZN]
+tags: [world-state, number-gap, carried-report]

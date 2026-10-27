@@ -99,7 +99,8 @@ regression test `test/seed-parse.test.ts` enforces both.
 
 Parts 1, 2 and 4 are built: the world-state battery ([WORLD-STATE.md](WORLD-STATE.md), PRs #217
 and #221, then seeds, twins, the rating step and the web rows). Part 3 (numbers, not addresses)
-is next.
+has its engine built; its seeds are staged outside ratings until validated
+([NUMBER-GAPS.md](NUMBER-GAPS.md)).
 
 The slice showed text alone can't move a policy-running stack. The next attack surface is
 *state*: content that persists, compounds, and disagrees about numbers. Cheapest first:

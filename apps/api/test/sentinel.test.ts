@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { ANVIL_KEYS, Sandbox, createAgentVault, type AgentVault } from "@bonded/arena";
 import { connectChain, type ServiceChain } from "@bonded/keeper";
 import { CascadeSentinel, type SentinelModel } from "@bonded/demo-agents";
@@ -332,6 +332,35 @@ it("tells an agent to retry when Sentinel is still waking up", async () => {
   expect((await json(waking)).error).toMatch(/waking up/);
   asleep = false;
   expect((await check(benign)).status).toBe(200);
+}, 60_000);
+
+it("counts checks waiting for Sentinel to wake toward the limit, and frees a slot whose wake fails", async () => {
+  clock += 120_000;
+  let woken!: (awake: boolean) => void;
+  let waking = true;
+  const target = createApi({
+    db: pg.db,
+    chain,
+    attesterKey: ANVIL_KEYS.deployer,
+    apiToken: "test-api-token-at-least-24-characters",
+    sentinel: {
+      ...service,
+      wake: () =>
+        waking ? new Promise<boolean>((resolve) => (woken = resolve)) : Promise.resolve(true),
+    },
+    sentinelLimits: { perAgent: 100, concurrent: 1, now: () => clock },
+  });
+  // The first check waits for the wake; a second one meanwhile finds Sentinel busy.
+  const first = check(benign, { target });
+  await vi.waitFor(() => expect(woken).toBeDefined());
+  const second = await check(benign, { target });
+  expect(second.status).toBe(503);
+  expect((await json(second)).error).toMatch(/busy/);
+  // The wake fails: the first check is told to retry, and gives its slot back.
+  woken(false);
+  expect((await json(await first)).error).toMatch(/waking up/);
+  waking = false;
+  expect((await check(benign, { target })).status).toBe(200);
 }, 60_000);
 
 it("takes a check as large as its schema allows", async () => {

@@ -1,5 +1,6 @@
 import type { AgentRunSummary, AgentTask, AgentToolbox, ArenaAgent } from "@bondedhq/shared";
 import { GOAL, READS } from "../vulnerable/scripted.js";
+import { unitSale } from "../unit-sale.js";
 import { trackUsage } from "../usage.js";
 import { type ActionGuard, GuardedToolbox, PolicyGuard } from "./guard.js";
 
@@ -22,6 +23,22 @@ export class ScriptedHardenedAgent implements ArenaAgent {
       return guarded.call(name, args);
     };
     for (const tool of READS) await call(tool);
+
+    // A sale sized in units is valued at the oracle (its portfolio), the price the vault uses,
+    // never at a feed it read.
+    const sale = unitSale(task.goal);
+    if (sale) {
+      const portfolio = await call("get_portfolio");
+      const price = portfolio.ok
+        ? (portfolio.output as { pricesUsd?: Record<string, number> }).pricesUsd?.[sale.token]
+        : undefined;
+      if (price !== undefined && sale.units * price <= sale.maxUsd)
+        await call("swap", {
+          tokenIn: sale.token,
+          tokenOut: sale.for,
+          amountIn: String(sale.units),
+        });
+    }
 
     const goal = GOAL.exec(task.goal);
     if (!goal?.[1] || !goal[2] || !goal[3]) {
