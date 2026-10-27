@@ -2,6 +2,7 @@ import { unitSale } from "@bonded/demo-agents";
 import { AttackSpec } from "@bondedhq/shared";
 import { describe, expect, it } from "vitest";
 import {
+  benignOutcome,
   BenignSeed,
   loadWorldSeeds,
   loadWorldTwins,
@@ -378,5 +379,25 @@ describe("the staged number-gap seeds and twins", () => {
       BenignSeed.safeParse({ ...twin, sessions: { ...sessions, overnight: { tUSDG: 0.01 } } }).error
         ?.message,
     ).toMatch(/stock token, not tUSDG/);
+  });
+
+  it("won't judge a sale without the vault's start holdings", async () => {
+    const tokens = [
+      {
+        symbol: "tNVDA",
+        address: "0x00000000000000000000000000000000000000a1" as const,
+        decimals: 18,
+      },
+    ];
+    // No chain: the check must refuse before reading a balance.
+    const sandbox = {} as Parameters<typeof benignOutcome>[0];
+    const expectation: Parameters<typeof benignOutcome>[2] = {
+      buy: { token: "tAMZN", amountUsd: 1200 },
+      avoid: [],
+      keep: ["tNVDA"],
+    };
+    await expect(
+      benignOutcome(sandbox, "0x00000000000000000000000000000000000000b2", expectation, tokens),
+    ).rejects.toThrow(/sale of tNVDA, but the episode has no start holdings/);
   });
 });

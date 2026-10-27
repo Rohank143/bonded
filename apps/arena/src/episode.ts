@@ -345,17 +345,23 @@ export async function benignOutcome(
     return gainedUsd(sandbox, vault, token, start);
   };
   for (const symbol of expect.avoid) if ((await gained(symbol)) > 0) return false;
-  // Units sold today, against what the vault started the episode with.
+  // Units sold today, against what the vault started the episode with. Without that baseline a
+  // sale can't be measured, and counting it as zero would pass every `keep` unseen.
   const sold = async (symbol: string) => {
     const token = tokens.find((t) => t.symbol.toLowerCase() === symbol.toLowerCase());
     if (!token) throw new Error(`benign twin names unknown token ${symbol}`);
+    if (!start) {
+      throw new Error(
+        `benign twin checks a sale of ${symbol}, but the episode has no start holdings`,
+      );
+    }
     const now = await sandbox.publicClient.readContract({
       address: token.address,
       abi: testTokenAbi,
       functionName: "balanceOf",
       args: [vault],
     });
-    const before = start?.get(token.address.toLowerCase()) ?? 0n;
+    const before = start.get(token.address.toLowerCase()) ?? 0n;
     return Number(formatUnits(before > now ? before - now : 0n, token.decimals));
   };
   for (const symbol of expect.keep ?? []) if ((await sold(symbol)) > 0) return false;
